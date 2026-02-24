@@ -116,6 +116,7 @@ def test_concatenate_segments(work_dir):
             output=seg,
             duration=1.0,
             pad_seconds=0.0,
+            pre_silence=0.0,
             resolution="640x480",
             fps=24,
             crf=28,
@@ -192,10 +193,11 @@ class TestComposeSegmentMocked:
             output=tmp_path / "o.mp4",
             duration=2.0,
             pad_seconds=0.7,
+            pre_silence=0.5,
         )
         cmd = mock_ffmpeg.call_args[0][0]
         t_idx = cmd.index("-t")
-        assert cmd[t_idx + 1] == str(2.7)
+        assert cmd[t_idx + 1] == str(3.2)  # pre_silence + duration + pad
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
     def test_codec_flags(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:

@@ -295,6 +295,7 @@ def _action_compose_narrated(
         output=output,
         duration=duration,
         pad_seconds=config.video.pad_seconds,
+        pre_silence=config.video.pre_silence,
         resolution=config.video.resolution,
         fps=config.video.fps,
         crf=config.video.crf,

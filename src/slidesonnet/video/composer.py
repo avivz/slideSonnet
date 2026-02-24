@@ -14,16 +14,17 @@ def compose_segment(
     output: Path,
     duration: float,
     pad_seconds: float = 0.5,
+    pre_silence: float = 1.0,
     resolution: str = "1920x1080",
     fps: int = 24,
     crf: int = 23,
 ) -> None:
     """Create a video segment from a static slide image + audio.
 
-    The slide is displayed for the audio duration plus padding.
+    The slide is displayed for pre_silence + audio duration + pad_seconds.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
-    total_duration = duration + pad_seconds
+    total_duration = pre_silence + duration + pad_seconds
 
     # Scale filter: fit to resolution, pad to exact size with black bars
     w, h = resolution.split("x")
@@ -32,6 +33,10 @@ def compose_segment(
         f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,"
         f"format=yuv420p"
     )
+
+    # Delay audio by pre_silence (adelay takes milliseconds, all channels)
+    delay_ms = int(pre_silence * 1000)
+    audio_filter = f"adelay={delay_ms}|{delay_ms}"
 
     cmd = [
         "ffmpeg",
@@ -52,6 +57,8 @@ def compose_segment(
         "192k",
         "-vf",
         scale_filter,
+        "-af",
+        audio_filter,
         "-r",
         str(fps),
         "-crf",

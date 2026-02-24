@@ -45,6 +45,7 @@ pronunciation:
 video:
   resolution: 1920x1080
   pad_seconds: 0.5
+  pre_silence: 1.0
   silence_duration: 3.0
 ---
 
@@ -106,6 +107,7 @@ pronunciation:
 video:
   resolution: 1920x1080
   pad_seconds: 0.5
+  pre_silence: 1.0
   silence_duration: 3.0
 ---
 

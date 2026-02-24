@@ -105,6 +105,7 @@ class VideoConfig:
     fps: int = 24
     crf: int = 23
     pad_seconds: float = 0.5
+    pre_silence: float = 1.0
     silence_duration: float = 3.0
 
 
