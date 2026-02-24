@@ -1,0 +1,22 @@
+# Build artifacts
+.build/
+dist/
+*.egg-info/
+
+# API keys and secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# OS
+.DS_Store
+
+# doit
+.doit.db

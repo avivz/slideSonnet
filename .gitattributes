@@ -1,0 +1,4 @@
+examples/*/cache/audio/*.mp3 filter=lfs diff=lfs merge=lfs -text
+examples/showcase/images/*.jpg filter=lfs diff=lfs merge=lfs -text
+examples/showcase/animations/*.mp4 filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/*.wav filter=lfs diff=lfs merge=lfs -text
