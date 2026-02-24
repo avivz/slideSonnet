@@ -1,0 +1,34 @@
+\documentclass{beamer}
+\usetheme{default}
+\title{Deep Dive}
+\begin{document}
+
+\begin{frame}{LaTeX Formatting}
+  \begin{itemize}
+    \item Supports \textbf{bold} and \emph{italic} text
+    \item LaTeX markup is stripped before TTS
+  \end{itemize}
+  \say{This frame shows that \textbf{bold} and \emph{italic} LaTeX formatting is automatically stripped before text-to-speech synthesis.}
+\end{frame}
+
+\begin{frame}{Voice and Pace Override}
+  \begin{itemize}
+    \item Voice: expert
+    \item Pace: slow
+  \end{itemize}
+  \say[voice=expert, pace=slow]{This frame uses the expert voice preset at a slow pace. Per-slide voice and pace overrides let you vary the narration style.}
+\end{frame}
+
+\begin{frame}{Diagram}
+  \begin{center}
+    [Diagram placeholder]
+  \end{center}
+  \silent
+\end{frame}
+
+\begin{frame}{Backup Frame}
+  This frame is excluded from the build.
+  \slidesonnetskip
+\end{frame}
+
+\end{document}

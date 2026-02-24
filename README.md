@@ -32,6 +32,24 @@ cd myproject
 slidesonnet build lecture01.md
 ```
 
+## Showcase example
+
+The `examples/showcase/` directory is a full-featured project that exercises every slideSonnet capability:
+
+| Module | Format | Features demonstrated |
+|---|---|---|
+| `01-intro/slides.md` | MARP | Basic say, multiline say, multiple say blocks, silent |
+| `02-deep-dive/slides.tex` | Beamer | `\say{}` with LaTeX, voice/pace overrides, `\silent`, `\slidesonnetskip` |
+| `03-examples/slides.md` | MARP | Voice presets, pace control, skip, pronunciation triggers |
+| `animations/transition.mp4` | Video | Passthrough (no parsing/TTS) |
+
+It also includes two pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with all configuration options (`lecture01.md`).
+
+```bash
+cd examples/showcase
+slidesonnet build lecture01.md
+```
+
 ### Prerequisites
 
 - **Python 3.12+**
