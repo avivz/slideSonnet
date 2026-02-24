@@ -1,4 +1,4 @@
-"""Tests for the build pipeline with mock TTS."""
+"""Tests for the build pipeline with mock TTS and doit integration."""
 
 import shutil
 import textwrap
@@ -80,6 +80,17 @@ def _setup_project(tmp_path: Path) -> Path:
     return playlist
 
 
+def _fake_extract(source, output_dir):
+    """Mock extract_images that creates dummy PNGs."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pngs = []
+    for i in range(3):
+        p = output_dir / f"slides.{i + 1:03d}.png"
+        _create_dummy_png(p)
+        pngs.append(p)
+    return pngs
+
+
 def _fake_compose_segment(image, audio, output, **kwargs):
     """Mock compose_segment that creates a dummy output file."""
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -99,11 +110,11 @@ def _fake_concat(segments, output):
 
 
 @patch("slidesonnet.pipeline._create_tts")
-@patch("slidesonnet.pipeline.marp_extract_images")
-@patch("slidesonnet.pipeline.composer.concatenate_segments", side_effect=_fake_concat)
-@patch("slidesonnet.pipeline.composer.compose_silent_segment", side_effect=_fake_compose_silent)
-@patch("slidesonnet.pipeline.composer.compose_segment", side_effect=_fake_compose_segment)
-@patch("slidesonnet.pipeline.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
+@patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
+@patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
+@patch("slidesonnet.video.composer.get_duration", return_value=1.0)
 def test_pipeline_parses_and_synthesizes(
     mock_duration, mock_compose, mock_silent, mock_concat,
     mock_extract, mock_create_tts, tmp_path,
@@ -112,18 +123,6 @@ def test_pipeline_parses_and_synthesizes(
     playlist = _setup_project(tmp_path)
     mock_tts = MockTTS()
     mock_create_tts.return_value = mock_tts
-
-    # Mock extract_images to create dummy PNGs
-    def fake_extract(source, output_dir):
-        output_dir.mkdir(parents=True, exist_ok=True)
-        pngs = []
-        for i in range(3):
-            p = output_dir / f"slides.{i + 1:03d}.png"
-            _create_dummy_png(p)
-            pngs.append(p)
-        return pngs
-
-    mock_extract.side_effect = fake_extract
 
     build(playlist)
 
@@ -134,11 +133,11 @@ def test_pipeline_parses_and_synthesizes(
 
 
 @patch("slidesonnet.pipeline._create_tts")
-@patch("slidesonnet.pipeline.marp_extract_images")
-@patch("slidesonnet.pipeline.composer.concatenate_segments", side_effect=_fake_concat)
-@patch("slidesonnet.pipeline.composer.compose_silent_segment", side_effect=_fake_compose_silent)
-@patch("slidesonnet.pipeline.composer.compose_segment", side_effect=_fake_compose_segment)
-@patch("slidesonnet.pipeline.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
+@patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
+@patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
+@patch("slidesonnet.video.composer.get_duration", return_value=1.0)
 def test_content_addressed_cache(
     mock_duration, mock_compose, mock_silent, mock_concat,
     mock_extract, mock_create_tts, tmp_path,
@@ -147,17 +146,6 @@ def test_content_addressed_cache(
     playlist = _setup_project(tmp_path)
     mock_tts = MockTTS()
     mock_create_tts.return_value = mock_tts
-
-    def fake_extract(source, output_dir):
-        output_dir.mkdir(parents=True, exist_ok=True)
-        pngs = []
-        for i in range(3):
-            p = output_dir / f"slides.{i + 1:03d}.png"
-            _create_dummy_png(p)
-            pngs.append(p)
-        return pngs
-
-    mock_extract.side_effect = fake_extract
 
     # First build
     build(playlist)
@@ -172,11 +160,11 @@ def test_content_addressed_cache(
 
 
 @patch("slidesonnet.pipeline._create_tts")
-@patch("slidesonnet.pipeline.marp_extract_images")
-@patch("slidesonnet.pipeline.composer.concatenate_segments", side_effect=_fake_concat)
-@patch("slidesonnet.pipeline.composer.compose_silent_segment", side_effect=_fake_compose_silent)
-@patch("slidesonnet.pipeline.composer.compose_segment", side_effect=_fake_compose_segment)
-@patch("slidesonnet.pipeline.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
+@patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
+@patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
+@patch("slidesonnet.video.composer.get_duration", return_value=1.0)
 def test_edit_one_slide_rebuilds_only_that(
     mock_duration, mock_compose, mock_silent, mock_concat,
     mock_extract, mock_create_tts, tmp_path,
@@ -185,17 +173,6 @@ def test_edit_one_slide_rebuilds_only_that(
     playlist = _setup_project(tmp_path)
     mock_tts = MockTTS()
     mock_create_tts.return_value = mock_tts
-
-    def fake_extract(source, output_dir):
-        output_dir.mkdir(parents=True, exist_ok=True)
-        pngs = []
-        for i in range(3):
-            p = output_dir / f"slides.{i + 1:03d}.png"
-            _create_dummy_png(p)
-            pngs.append(p)
-        return pngs
-
-    mock_extract.side_effect = fake_extract
 
     # First build
     build(playlist)
@@ -219,11 +196,11 @@ def test_edit_one_slide_rebuilds_only_that(
 
 
 @patch("slidesonnet.pipeline._create_tts")
-@patch("slidesonnet.pipeline.marp_extract_images")
-@patch("slidesonnet.pipeline.composer.concatenate_segments", side_effect=_fake_concat)
-@patch("slidesonnet.pipeline.composer.compose_silent_segment", side_effect=_fake_compose_silent)
-@patch("slidesonnet.pipeline.composer.compose_segment", side_effect=_fake_compose_segment)
-@patch("slidesonnet.pipeline.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
+@patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
+@patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
+@patch("slidesonnet.video.composer.get_duration", return_value=1.0)
 def test_utterance_files_created(
     mock_duration, mock_compose, mock_silent, mock_concat,
     mock_extract, mock_create_tts, tmp_path,
@@ -232,17 +209,6 @@ def test_utterance_files_created(
     playlist = _setup_project(tmp_path)
     mock_tts = MockTTS()
     mock_create_tts.return_value = mock_tts
-
-    def fake_extract(source, output_dir):
-        output_dir.mkdir(parents=True, exist_ok=True)
-        pngs = []
-        for i in range(3):
-            p = output_dir / f"slides.{i + 1:03d}.png"
-            _create_dummy_png(p)
-            pngs.append(p)
-        return pngs
-
-    mock_extract.side_effect = fake_extract
 
     build(playlist)
 

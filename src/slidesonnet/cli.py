@@ -10,6 +10,7 @@ import click
 from slidesonnet import __version__
 from slidesonnet.init import init_blank, init_example, init_from
 from slidesonnet.pipeline import build as run_build
+from slidesonnet.preview import preview_single_slide
 
 
 @click.group()
@@ -33,6 +34,20 @@ def build(playlist: Path, tts: str | None, force: bool):
 def preview(playlist: Path):
     """Quick preview build using local Piper TTS."""
     run_build(playlist, tts_override="piper")
+
+
+@main.command("preview-slide")
+@click.argument("slides", type=click.Path(exists=True, path_type=Path))
+@click.argument("slide_number", type=int)
+@click.option("--playlist", "-p", type=click.Path(exists=True, path_type=Path),
+              help="Playlist file for config (pronunciation, voice settings)")
+def preview_slide(slides: Path, slide_number: int, playlist: Path | None):
+    """Play a single slide's narration audio.
+
+    Parse SLIDES file and synthesize audio for SLIDE_NUMBER using Piper TTS.
+    Useful for quick iteration on narration text.
+    """
+    preview_single_slide(slides, slide_number, playlist_path=playlist)
 
 
 @main.command()

@@ -20,3 +20,4 @@ video:
 // Build with: slidesonnet build lecture01.md
 
 1. [Introduction](01-intro/slides.md)
+2. [Definitions](02-definitions/slides.md)

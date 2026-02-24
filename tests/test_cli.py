@@ -26,6 +26,7 @@ def test_help(runner):
     assert "slideSonnet" in result.output
     assert "build" in result.output
     assert "preview" in result.output
+    assert "preview-slide" in result.output
     assert "clean" in result.output
     assert "init" in result.output
 
@@ -152,3 +153,25 @@ def test_init_default_is_blank(runner, tmp_path):
     result = runner.invoke(main, ["init", str(target)])
     assert result.exit_code == 0
     assert (target / "lecture01.md").exists()
+
+
+def test_preview_slide_calls_preview(runner, tmp_path):
+    slides = tmp_path / "slides.md"
+    slides.write_text("---\nmarp: true\n---\n\n# Hello\n\n<!-- say: Welcome. -->\n")
+
+    with patch("slidesonnet.cli.preview_single_slide") as mock_preview:
+        result = runner.invoke(main, ["preview-slide", str(slides), "1"])
+        assert result.exit_code == 0
+        mock_preview.assert_called_once_with(slides, 1, playlist_path=None)
+
+
+def test_preview_slide_with_playlist(runner, tmp_path):
+    slides = tmp_path / "slides.md"
+    slides.write_text("---\nmarp: true\n---\n\n# Hello\n\n<!-- say: Welcome. -->\n")
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](slides.md)\n")
+
+    with patch("slidesonnet.cli.preview_single_slide") as mock_preview:
+        result = runner.invoke(main, ["preview-slide", str(slides), "1", "-p", str(playlist)])
+        assert result.exit_code == 0
+        mock_preview.assert_called_once_with(slides, 1, playlist_path=playlist)
