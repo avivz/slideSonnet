@@ -1,6 +1,5 @@
 """Tests for Beamer parser."""
 
-import textwrap
 from pathlib import Path
 
 import pytest

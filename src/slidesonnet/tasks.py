@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from doit.tools import config_changed
@@ -23,7 +24,6 @@ from slidesonnet.models import (
     ModuleType,
     PlaylistEntry,
     ProjectConfig,
-    SlideNarration,
 )
 from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.pronunciation import apply_pronunciation
@@ -56,13 +56,15 @@ def generate_tasks(
         module_name = f"{i:02d}_{entry.path.stem}"
 
         if entry.module_type == ModuleType.VIDEO:
-            all_tasks.append({
-                'name': f'passthrough:{module_name}',
-                'actions': [(_action_passthrough, [source_path, module_output])],
-                'file_dep': [str(source_path)],
-                'targets': [str(module_output)],
-                'verbosity': 2,
-            })
+            all_tasks.append(
+                {
+                    "name": f"passthrough:{module_name}",
+                    "actions": [(_action_passthrough, [source_path, module_output])],
+                    "file_dep": [str(source_path)],
+                    "targets": [str(module_output)],
+                    "verbosity": 2,
+                }
+            )
             continue
 
         # Get parser and extract function
@@ -73,50 +75,76 @@ def generate_tasks(
         parser = parser_cls()
         slides = parser.parse(source_path, slides_dir)
 
-        # Preprocess pronunciation
+        # Preprocess pronunciation and resolve voice presets
         for slide in slides:
             if slide.has_narration:
                 slide.narration_processed = apply_pronunciation(
                     slide.narration_raw, config.pronunciation
                 )
+                if slide.voice:
+                    voice_cfg = config.voices.get(slide.voice)
+                    if voice_cfg:
+                        slide.voice = voice_cfg.backend_voice
+                    else:
+                        print(
+                            f"WARNING: {source_path} slide {slide.index}: "
+                            f"unknown voice '{slide.voice}'",
+                            file=sys.stderr,
+                        )
 
         utterances_dir = module_dir / "utterances"
         segments_dir = module_dir / "segments"
         manifest_path = slides_dir / "manifest.json"
 
         # Task: extract images
-        all_tasks.append({
-            'name': f'extract_images:{module_name}',
-            'actions': [(_action_extract_images, [source_path, slides_dir, extract_fn, manifest_path])],
-            'file_dep': [str(source_path)],
-            'targets': [str(manifest_path)],
-            'verbosity': 2,
-        })
+        all_tasks.append(
+            {
+                "name": f"extract_images:{module_name}",
+                "actions": [
+                    (_action_extract_images, [source_path, slides_dir, extract_fn, manifest_path])
+                ],
+                "file_dep": [str(source_path)],
+                "targets": [str(manifest_path)],
+                "verbosity": 2,
+            }
+        )
 
         # Per-slide tasks
         segment_paths: list[Path] = []
         for slide in slides:
-            slide_id = f'{module_name}_slide_{slide.index:03d}'
+            slide_id = f"{module_name}_slide_{slide.index:03d}"
 
             # TTS task for narrated slides
             if slide.has_narration:
-                text_hash = hashlib.sha256(
-                    slide.narration_processed.encode("utf-8")
-                ).hexdigest()[:16]
+                # Include voice in hash so different voices produce different cache entries
+                hash_input = slide.narration_processed
+                if slide.voice:
+                    hash_input += f"\0voice={slide.voice}"
+                text_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:16]
                 cached_audio = audio_cache_dir / f"{text_hash}.wav"
                 slide.audio_path = cached_audio
 
-                all_tasks.append({
-                    'name': f'tts:{slide_id}',
-                    'actions': [(_action_tts, [
-                        slide.narration_processed, cached_audio, tts,
-                        utterances_dir / f"slide_{slide.index:03d}.txt",
-                        force,
-                    ])],
-                    'targets': [str(cached_audio)],
-                    'uptodate': [config_changed(slide.narration_processed)],
-                    'verbosity': 2,
-                })
+                all_tasks.append(
+                    {
+                        "name": f"tts:{slide_id}",
+                        "actions": [
+                            (
+                                _action_tts,
+                                [
+                                    slide.narration_processed,
+                                    cached_audio,
+                                    tts,
+                                    utterances_dir / f"slide_{slide.index:03d}.txt",
+                                    force,
+                                    slide.voice,
+                                ],
+                            )
+                        ],
+                        "targets": [str(cached_audio)],
+                        "uptodate": [config_changed(hash_input)],
+                        "verbosity": 2,
+                    }
+                )
 
             # Skip slides don't get composed
             if slide.is_skip:
@@ -126,53 +154,77 @@ def generate_tasks(
             segment_paths.append(seg_path)
 
             # Compose task
-            task_deps = [f'extract_images:{module_name}']
+            task_deps = [f"extract_images:{module_name}"]
             file_deps = [str(manifest_path)]
 
             if slide.has_narration and slide.audio_path:
-                task_deps.append(f'tts:{slide_id}')
+                task_deps.append(f"tts:{slide_id}")
                 file_deps.append(str(slide.audio_path))
 
-                all_tasks.append({
-                    'name': f'compose:{slide_id}',
-                    'actions': [(_action_compose_narrated, [
-                        manifest_path, slide.index, slide.audio_path,
-                        seg_path, config,
-                    ])],
-                    'file_dep': file_deps,
-                    'task_dep': task_deps,
-                    'targets': [str(seg_path)],
-                    'verbosity': 2,
-                })
+                all_tasks.append(
+                    {
+                        "name": f"compose:{slide_id}",
+                        "actions": [
+                            (
+                                _action_compose_narrated,
+                                [
+                                    manifest_path,
+                                    slide.index,
+                                    slide.audio_path,
+                                    seg_path,
+                                    config,
+                                ],
+                            )
+                        ],
+                        "file_dep": file_deps,
+                        "task_dep": task_deps,
+                        "targets": [str(seg_path)],
+                        "verbosity": 2,
+                    }
+                )
             else:
-                all_tasks.append({
-                    'name': f'compose:{slide_id}',
-                    'actions': [(_action_compose_silent, [
-                        manifest_path, slide.index, seg_path, config,
-                    ])],
-                    'file_dep': file_deps,
-                    'task_dep': task_deps,
-                    'targets': [str(seg_path)],
-                    'verbosity': 2,
-                })
+                all_tasks.append(
+                    {
+                        "name": f"compose:{slide_id}",
+                        "actions": [
+                            (
+                                _action_compose_silent,
+                                [
+                                    manifest_path,
+                                    slide.index,
+                                    seg_path,
+                                    config,
+                                ],
+                            )
+                        ],
+                        "file_dep": file_deps,
+                        "task_dep": task_deps,
+                        "targets": [str(seg_path)],
+                        "verbosity": 2,
+                    }
+                )
 
         # Task: module concat
-        all_tasks.append({
-            'name': f'concat:{module_name}',
-            'actions': [(_action_concat, [segment_paths, module_output])],
-            'file_dep': [str(p) for p in segment_paths],
-            'targets': [str(module_output)],
-            'verbosity': 2,
-        })
+        all_tasks.append(
+            {
+                "name": f"concat:{module_name}",
+                "actions": [(_action_concat, [segment_paths, module_output])],
+                "file_dep": [str(p) for p in segment_paths],
+                "targets": [str(module_output)],
+                "verbosity": 2,
+            }
+        )
 
     # Task: final assembly
-    all_tasks.append({
-        'name': 'assemble',
-        'actions': [(_action_assemble, [module_videos, output_path])],
-        'file_dep': [str(p) for p in module_videos],
-        'targets': [str(output_path)],
-        'verbosity': 2,
-    })
+    all_tasks.append(
+        {
+            "name": "assemble",
+            "actions": [(_action_assemble, [module_videos, output_path])],
+            "file_dep": [str(p) for p in module_videos],
+            "targets": [str(output_path)],
+            "verbosity": 2,
+        }
+    )
 
     return all_tasks
 
@@ -197,23 +249,33 @@ def _action_extract_images(source: Path, slides_dir: Path, extract_fn, manifest_
     )
 
 
-def _action_tts(text: str, output_path: Path, tts: TTSEngine, utterance_path: Path, force: bool):
+def _action_tts(
+    text: str,
+    output_path: Path,
+    tts: TTSEngine,
+    utterance_path: Path,
+    force: bool,
+    voice: str | None = None,
+):
     """Synthesize TTS audio with content-addressed caching."""
     utterance_path.parent.mkdir(parents=True, exist_ok=True)
     utterance_path.write_text(text, encoding="utf-8")
 
     if output_path.exists() and not force:
-        print(f"  slide [cached]")
+        print("  slide [cached]")
         return
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    print(f"  slide synthesizing...")
-    tts.synthesize(text, output_path)
+    print("  slide synthesizing...")
+    tts.synthesize(text, output_path, voice=voice)
 
 
 def _action_compose_narrated(
-    manifest_path: Path, slide_index: int, audio_path: Path,
-    output: Path, config: ProjectConfig,
+    manifest_path: Path,
+    slide_index: int,
+    audio_path: Path,
+    output: Path,
+    config: ProjectConfig,
 ):
     """Compose a narrated slide segment."""
     images = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -232,8 +294,10 @@ def _action_compose_narrated(
 
 
 def _action_compose_silent(
-    manifest_path: Path, slide_index: int,
-    output: Path, config: ProjectConfig,
+    manifest_path: Path,
+    slide_index: int,
+    output: Path,
+    config: ProjectConfig,
 ):
     """Compose a silent slide segment."""
     images = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -274,10 +338,12 @@ def _get_parser_and_extractor(module_type: ModuleType):
     if module_type == ModuleType.MARP:
         from slidesonnet.parsers.marp import MarpParser
         from slidesonnet.parsers.marp import extract_images as marp_extract
+
         return MarpParser, marp_extract
     elif module_type == ModuleType.BEAMER:
         from slidesonnet.parsers.beamer import BeamerParser
         from slidesonnet.parsers.beamer import extract_images as beamer_extract
+
         return BeamerParser, beamer_extract
     else:
         raise ValueError(f"No parser for module type: {module_type}")

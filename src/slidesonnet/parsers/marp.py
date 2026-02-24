@@ -53,8 +53,10 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     cmd = [
         "marp",
         str(source),
-        "--images", "png",
-        "--output", str(output_dir),
+        "--images",
+        "png",
+        "--output",
+        str(output_dir),
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)

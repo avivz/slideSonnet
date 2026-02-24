@@ -39,8 +39,12 @@ def preview(playlist: Path):
 @main.command("preview-slide")
 @click.argument("slides", type=click.Path(exists=True, path_type=Path))
 @click.argument("slide_number", type=int)
-@click.option("--playlist", "-p", type=click.Path(exists=True, path_type=Path),
-              help="Playlist file for config (pronunciation, voice settings)")
+@click.option(
+    "--playlist",
+    "-p",
+    type=click.Path(exists=True, path_type=Path),
+    help="Playlist file for config (pronunciation, voice settings)",
+)
 def preview_slide(slides: Path, slide_number: int, playlist: Path | None):
     """Play a single slide's narration audio.
 
@@ -54,8 +58,12 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None):
 @click.argument("target", type=click.Path(path_type=Path), default=".")
 @click.option("--blank", "mode", flag_value="blank", help="Create minimal scaffold")
 @click.option("--example", "mode", flag_value="example", help="Create full working demo")
-@click.option("--from", "from_path", type=click.Path(exists=True, path_type=Path),
-              help="Copy config from existing playlist")
+@click.option(
+    "--from",
+    "from_path",
+    type=click.Path(exists=True, path_type=Path),
+    help="Copy config from existing playlist",
+)
 def init(target: Path, mode: str | None, from_path: Path | None):
     """Initialize a new slideSonnet project."""
     if from_path:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from slidesonnet.config import load_config
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tasks import generate_tasks
@@ -19,6 +21,9 @@ def build(playlist_path: Path, tts_override: str | None = None, force: bool = Fa
     playlist_dir = playlist_path.parent
     build_dir = playlist_dir / ".build"
     build_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load .env from project root
+    load_dotenv(playlist_dir / ".env")
 
     # Parse playlist
     raw_config, entries = parse_playlist(playlist_path)
@@ -71,17 +76,17 @@ def _run_doit(task_list: list[dict], build_dir: Path, force: bool) -> None:
     class _Loader(TaskLoader2):
         def load_doit_config(self):
             return {
-                'backend': 'json',
-                'dep_file': db_file,
-                'verbosity': 2,
+                "backend": "json",
+                "dep_file": db_file,
+                "verbosity": 2,
             }
 
         def load_tasks(self, cmd, pos_args):
             return tasks
 
-    run_args = ['run']
+    run_args = ["run"]
     if force:
-        run_args.append('--always-execute')
+        run_args.append("--always-execute")
 
     result = DoitMain(_Loader()).run(run_args)
     if result not in (0, None):
@@ -96,6 +101,7 @@ def _create_tts(config):
         return PiperTTS(model=config.tts.piper_model)
     elif config.tts.backend == "elevenlabs":
         from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+
         return ElevenLabsTTS(config.tts)
     else:
         raise ValueError(f"Unknown TTS backend: {config.tts.backend}")

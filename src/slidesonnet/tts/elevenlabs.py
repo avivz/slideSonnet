@@ -6,8 +6,6 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
 
@@ -19,7 +17,6 @@ except ImportError:
 
 class ElevenLabsTTS(TTSEngine):
     def __init__(self, config: TTSConfig):
-        load_dotenv()
         api_key = os.environ.get(config.elevenlabs_api_key_env, "")
         if not api_key:
             print(
@@ -43,12 +40,13 @@ class ElevenLabsTTS(TTSEngine):
         self.stability = config.elevenlabs_stability
         self.similarity_boost = config.elevenlabs_similarity_boost
 
-    def synthesize(self, text: str, output_path: Path) -> float:
+    def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        voice_id = voice if voice else self.voice_id
 
         audio_generator = self.client.text_to_speech.convert(
             text=text,
-            voice_id=self.voice_id,
+            voice_id=voice_id,
             model_id=self.model_id,
             output_format="mp3_44100_128",
         )

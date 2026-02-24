@@ -1,7 +1,5 @@
 """Tests for pronunciation loading and substitution."""
 
-from pathlib import Path
-
 from slidesonnet.tts.pronunciation import (
     apply_pronunciation,
     load_pronunciation_file,

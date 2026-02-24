@@ -8,12 +8,14 @@ from pathlib import Path
 
 class TTSEngine(ABC):
     @abstractmethod
-    def synthesize(self, text: str, output_path: Path) -> float:
+    def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
         """Synthesize text to an audio file.
 
         Args:
             text: The text to synthesize.
             output_path: Where to write the audio file.
+            voice: Optional backend-specific voice override (model name for Piper,
+                   voice_id for ElevenLabs). None uses the default.
 
         Returns:
             Duration of the generated audio in seconds.

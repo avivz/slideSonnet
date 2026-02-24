@@ -11,9 +11,7 @@ from slidesonnet.models import PlaylistEntry
 
 
 # Match: 1. [label](path)  or  2. [label](path) <!-- options -->
-_LIST_ITEM_RE = re.compile(
-    r"^\s*\d+\.\s+\[([^\]]+)\]\(([^)]+)\)"
-)
+_LIST_ITEM_RE = re.compile(r"^\s*\d+\.\s+\[([^\]]+)\]\(([^)]+)\)")
 
 
 def parse_playlist(playlist_path: Path) -> tuple[dict, list[PlaylistEntry]]:

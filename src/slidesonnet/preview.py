@@ -8,7 +8,6 @@ import tempfile
 from pathlib import Path
 
 from slidesonnet.config import load_config
-from slidesonnet.models import ModuleType, SlideAnnotation
 from slidesonnet.parsers.marp import MarpParser
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.piper import PiperTTS
@@ -29,6 +28,7 @@ def preview_single_slide(
         parser = MarpParser()
     elif suffix == ".tex":
         from slidesonnet.parsers.beamer import BeamerParser
+
         parser = BeamerParser()
     else:
         print(f"ERROR: Unsupported file type '{suffix}'", file=sys.stderr)

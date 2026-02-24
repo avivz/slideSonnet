@@ -53,7 +53,8 @@ def test_unknown_extension():
 
 def test_comment_lines_ignored(tmp_path):
     playlist = tmp_path / "test.md"
-    playlist.write_text(textwrap.dedent("""\
+    playlist.write_text(
+        textwrap.dedent("""\
         ---
         title: Test
         ---
@@ -64,7 +65,8 @@ def test_comment_lines_ignored(tmp_path):
         1. [First](a.md)
         // 2. [Commented out](b.md)
         3. [Third](c.md)
-    """))
+    """)
+    )
     _, entries = parse_playlist(playlist)
     assert len(entries) == 2
     assert entries[0].label == "First"
@@ -73,7 +75,8 @@ def test_comment_lines_ignored(tmp_path):
 
 def test_non_list_text_ignored(tmp_path):
     playlist = tmp_path / "test.md"
-    playlist.write_text(textwrap.dedent("""\
+    playlist.write_text(
+        textwrap.dedent("""\
         ---
         title: Test
         ---
@@ -85,7 +88,8 @@ def test_non_list_text_ignored(tmp_path):
         1. [Only item](slides.md)
 
         More text.
-    """))
+    """)
+    )
     _, entries = parse_playlist(playlist)
     assert len(entries) == 1
     assert entries[0].label == "Only item"

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shutil
-import textwrap
 from pathlib import Path
 
 import yaml
@@ -218,7 +217,9 @@ def init_from(target_dir: Path, source_playlist: Path) -> None:
 
     # Create playlist with copied config but empty module list
     yaml_text = yaml.dump(config_dict, default_flow_style=False, sort_keys=False)
-    playlist_content = f"---\n{yaml_text}---\n\n# My Presentation\n\n1. [Introduction](01-intro/slides.md)\n"
+    playlist_content = (
+        f"---\n{yaml_text}---\n\n# My Presentation\n\n1. [Introduction](01-intro/slides.md)\n"
+    )
     _write(target_dir / "lecture01.md", playlist_content)
 
     # Copy pronunciation files

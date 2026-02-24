@@ -15,13 +15,16 @@ class PiperTTS(TTSEngine):
         self.model = model
         self.speaker = speaker
 
-    def synthesize(self, text: str, output_path: Path) -> float:
+    def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        model = voice if voice else self.model
 
         cmd = [
             "piper",
-            "--model", self.model,
-            "--output_file", str(output_path),
+            "--model",
+            model,
+            "--output_file",
+            str(output_path),
         ]
         if self.speaker:
             cmd.extend(["--speaker", str(self.speaker)])

@@ -1,12 +1,10 @@
 """Tests for the build pipeline with mock TTS and doit integration."""
 
-import shutil
 import textwrap
 import wave
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from slidesonnet.pipeline import build
 
@@ -17,7 +15,7 @@ class MockTTS:
     def __init__(self):
         self.calls = []
 
-    def synthesize(self, text: str, output_path: Path) -> float:
+    def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
         self.calls.append((text, output_path))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         duration = max(0.5, len(text) / 100.0)  # ~100 chars/sec
@@ -36,7 +34,8 @@ def _setup_project(tmp_path: Path) -> Path:
     """Create a minimal project with playlist + slides."""
     # Playlist
     playlist = tmp_path / "lecture.md"
-    playlist.write_text(textwrap.dedent("""\
+    playlist.write_text(
+        textwrap.dedent("""\
         ---
         title: Test Lecture
         tts:
@@ -50,12 +49,14 @@ def _setup_project(tmp_path: Path) -> Path:
         ---
 
         1. [Intro](01-intro/slides.md)
-    """))
+    """)
+    )
 
     # Slides
     slides_dir = tmp_path / "01-intro"
     slides_dir.mkdir()
-    (slides_dir / "slides.md").write_text(textwrap.dedent("""\
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
         ---
         marp: true
         ---
@@ -75,7 +76,8 @@ def _setup_project(tmp_path: Path) -> Path:
         # Silent Slide
 
         <!-- silent -->
-    """))
+    """)
+    )
 
     return playlist
 
@@ -116,8 +118,13 @@ def _fake_concat(segments, output):
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
 def test_pipeline_parses_and_synthesizes(
-    mock_duration, mock_compose, mock_silent, mock_concat,
-    mock_extract, mock_create_tts, tmp_path,
+    mock_duration,
+    mock_compose,
+    mock_silent,
+    mock_concat,
+    mock_extract,
+    mock_create_tts,
+    tmp_path,
 ):
     """Pipeline parses slides and calls TTS for narrated slides."""
     playlist = _setup_project(tmp_path)
@@ -139,8 +146,13 @@ def test_pipeline_parses_and_synthesizes(
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
 def test_content_addressed_cache(
-    mock_duration, mock_compose, mock_silent, mock_concat,
-    mock_extract, mock_create_tts, tmp_path,
+    mock_duration,
+    mock_compose,
+    mock_silent,
+    mock_concat,
+    mock_extract,
+    mock_create_tts,
+    tmp_path,
 ):
     """Second build with unchanged text should skip TTS (cache hit)."""
     playlist = _setup_project(tmp_path)
@@ -166,8 +178,13 @@ def test_content_addressed_cache(
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
 def test_edit_one_slide_rebuilds_only_that(
-    mock_duration, mock_compose, mock_silent, mock_concat,
-    mock_extract, mock_create_tts, tmp_path,
+    mock_duration,
+    mock_compose,
+    mock_silent,
+    mock_concat,
+    mock_extract,
+    mock_create_tts,
+    tmp_path,
 ):
     """Editing one slide's narration should only re-synthesize that slide."""
     playlist = _setup_project(tmp_path)
@@ -202,8 +219,13 @@ def test_edit_one_slide_rebuilds_only_that(
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
 def test_utterance_files_created(
-    mock_duration, mock_compose, mock_silent, mock_concat,
-    mock_extract, mock_create_tts, tmp_path,
+    mock_duration,
+    mock_compose,
+    mock_silent,
+    mock_concat,
+    mock_extract,
+    mock_create_tts,
+    tmp_path,
 ):
     """Build should create utterance text files for debugging."""
     playlist = _setup_project(tmp_path)

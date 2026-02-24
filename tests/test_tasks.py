@@ -1,9 +1,7 @@
 """Tests for doit task generation."""
 
 import textwrap
-from pathlib import Path
 
-import pytest
 
 from slidesonnet.config import load_config
 from slidesonnet.playlist import parse_playlist
@@ -12,7 +10,7 @@ from slidesonnet.tts.base import TTSEngine
 
 
 class MockTTS(TTSEngine):
-    def synthesize(self, text, output_path):
+    def synthesize(self, text, output_path, voice=None):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"fake-audio")
         return 1.0
@@ -24,7 +22,8 @@ class MockTTS(TTSEngine):
 def _setup_project(tmp_path):
     """Create a minimal project with playlist + slides."""
     playlist = tmp_path / "lecture.md"
-    playlist.write_text(textwrap.dedent("""\
+    playlist.write_text(
+        textwrap.dedent("""\
         ---
         title: Test Lecture
         tts:
@@ -36,11 +35,13 @@ def _setup_project(tmp_path):
         ---
 
         1. [Intro](01-intro/slides.md)
-    """))
+    """)
+    )
 
     slides_dir = tmp_path / "01-intro"
     slides_dir.mkdir()
-    (slides_dir / "slides.md").write_text(textwrap.dedent("""\
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
         ---
         marp: true
         ---
@@ -60,7 +61,8 @@ def _setup_project(tmp_path):
         # Silent Slide
 
         <!-- silent -->
-    """))
+    """)
+    )
 
     return playlist
 
@@ -91,12 +93,12 @@ def test_generates_correct_task_types(tmp_path):
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
-    basenames = [t['name'].split(':')[0] for t in tasks]
-    assert 'extract_images' in basenames
-    assert 'tts' in basenames
-    assert 'compose' in basenames
-    assert 'concat' in basenames
-    assert 'assemble' in basenames
+    basenames = [t["name"].split(":")[0] for t in tasks]
+    assert "extract_images" in basenames
+    assert "tts" in basenames
+    assert "compose" in basenames
+    assert "concat" in basenames
+    assert "assemble" in basenames
 
 
 def test_tts_tasks_per_narrated_slide(tmp_path):
@@ -104,24 +106,27 @@ def test_tts_tasks_per_narrated_slide(tmp_path):
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
-    tts_tasks = [t for t in tasks if t['name'].split(':')[0] == 'tts']
+    tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
     assert len(tts_tasks) == 2  # slides 1 and 2 have <!-- say: -->
 
 
 def test_compose_tasks_skip_skipped_slides(tmp_path):
     """Compose tasks skip slides with <!-- skip -->."""
     playlist = tmp_path / "lecture.md"
-    playlist.write_text(textwrap.dedent("""\
+    playlist.write_text(
+        textwrap.dedent("""\
         ---
         title: Test
         ---
 
         1. [Intro](01-intro/slides.md)
-    """))
+    """)
+    )
 
     slides_dir = tmp_path / "01-intro"
     slides_dir.mkdir()
-    (slides_dir / "slides.md").write_text(textwrap.dedent("""\
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
         ---
         marp: true
         ---
@@ -141,10 +146,11 @@ def test_compose_tasks_skip_skipped_slides(tmp_path):
         # Visible
 
         <!-- silent -->
-    """))
+    """)
+    )
 
     tasks = _generate(tmp_path, playlist)
-    compose_tasks = [t for t in tasks if t['name'].split(':')[0] == 'compose']
+    compose_tasks = [t for t in tasks if t["name"].split(":")[0] == "compose"]
     # Slide 1 (narrated) and slide 3 (silent) compose, slide 2 (skip) doesn't
     assert len(compose_tasks) == 2
 
@@ -154,8 +160,8 @@ def test_content_addressed_audio_targets(tmp_path):
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
-    tts_tasks = [t for t in tasks if t['name'].split(':')[0] == 'tts']
-    targets = [t['targets'][0] for t in tts_tasks]
+    tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
+    targets = [t["targets"][0] for t in tts_tasks]
 
     # Targets should be in audio/ dir with hash-based names
     for target in targets:
@@ -171,26 +177,28 @@ def test_task_dependencies(tmp_path):
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
-    compose_tasks = [t for t in tasks if t['name'].split(':')[0] == 'compose']
+    compose_tasks = [t for t in tasks if t["name"].split(":")[0] == "compose"]
     for ct in compose_tasks:
         # All compose tasks depend on extract_images
-        assert any('extract_images' in dep for dep in ct.get('task_dep', []))
+        assert any("extract_images" in dep for dep in ct.get("task_dep", []))
 
     # Narrated compose tasks also depend on tts
-    narrated = [ct for ct in compose_tasks if any('tts' in dep for dep in ct.get('task_dep', []))]
+    narrated = [ct for ct in compose_tasks if any("tts" in dep for dep in ct.get("task_dep", []))]
     assert len(narrated) == 2  # 2 narrated slides
 
 
 def test_video_passthrough_task(tmp_path):
     """Video modules create passthrough tasks."""
     playlist = tmp_path / "lecture.md"
-    playlist.write_text(textwrap.dedent("""\
+    playlist.write_text(
+        textwrap.dedent("""\
         ---
         title: Test
         ---
 
         1. [Clip](animations/clip.mp4)
-    """))
+    """)
+    )
 
     anim_dir = tmp_path / "animations"
     anim_dir.mkdir()
@@ -198,9 +206,9 @@ def test_video_passthrough_task(tmp_path):
 
     tasks = _generate(tmp_path, playlist)
 
-    passthrough = [t for t in tasks if t['name'].split(':')[0] == 'passthrough']
+    passthrough = [t for t in tasks if t["name"].split(":")[0] == "passthrough"]
     assert len(passthrough) == 1
-    assert str(anim_dir / "clip.mp4") in passthrough[0]['file_dep']
+    assert str(anim_dir / "clip.mp4") in passthrough[0]["file_dep"]
 
 
 def test_uptodate_uses_text_content(tmp_path):
@@ -208,10 +216,10 @@ def test_uptodate_uses_text_content(tmp_path):
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
-    tts_tasks = [t for t in tasks if t['name'].split(':')[0] == 'tts']
+    tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
     for t in tts_tasks:
-        assert 'uptodate' in t
-        assert len(t['uptodate']) > 0
+        assert "uptodate" in t
+        assert len(t["uptodate"]) > 0
 
 
 def test_concat_depends_on_segments(tmp_path):
@@ -219,12 +227,12 @@ def test_concat_depends_on_segments(tmp_path):
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
-    concat_tasks = [t for t in tasks if t['name'].split(':')[0] == 'concat']
+    concat_tasks = [t for t in tasks if t["name"].split(":")[0] == "concat"]
     assert len(concat_tasks) == 1
 
     # Should depend on segment files (3 slides - 0 skips = 3 segments)
     # Slides: say, say, silent → 3 compose tasks → 3 segments
-    assert len(concat_tasks[0]['file_dep']) == 3
+    assert len(concat_tasks[0]["file_dep"]) == 3
 
 
 def test_assemble_depends_on_modules(tmp_path):
@@ -232,6 +240,86 @@ def test_assemble_depends_on_modules(tmp_path):
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
-    assemble = [t for t in tasks if t['name'].split(':')[0] == 'assemble']
+    assemble = [t for t in tasks if t["name"].split(":")[0] == "assemble"]
     assert len(assemble) == 1
-    assert len(assemble[0]['file_dep']) == 1  # 1 module
+    assert len(assemble[0]["file_dep"]) == 1  # 1 module
+
+
+def test_voice_preset_changes_cache_key(tmp_path):
+    """Same text with different voice presets produces different audio targets."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        voices:
+          alice: en_US-amy-medium
+          bob: en_US-joe-medium
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say(voice=alice): Same text for both slides. -->
+
+        ---
+
+        # Slide Two
+
+        <!-- say(voice=bob): Same text for both slides. -->
+    """)
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
+    assert len(tts_tasks) == 2
+
+    # Different voice → different cache targets
+    assert tts_tasks[0]["targets"] != tts_tasks[1]["targets"]
+
+
+def test_unknown_voice_warns(tmp_path, capsys):
+    """Unknown voice preset emits a warning but still generates tasks."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say(voice=nonexistent): Hello world. -->
+    """)
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    captured = capsys.readouterr()
+    assert "unknown voice 'nonexistent'" in captured.err
+
+    # Task still generated
+    tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
+    assert len(tts_tasks) == 1

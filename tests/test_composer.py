@@ -1,6 +1,5 @@
 """Integration tests for video composer (require ffmpeg)."""
 
-import shutil
 import wave
 from pathlib import Path
 
@@ -110,9 +109,14 @@ def test_concatenate_segments(work_dir):
         _make_png(image)
         _make_wav(audio, duration_seconds=1.0)
         compose_segment(
-            image=image, audio=audio, output=seg,
-            duration=1.0, pad_seconds=0.0,
-            resolution="640x480", fps=24, crf=28,
+            image=image,
+            audio=audio,
+            output=seg,
+            duration=1.0,
+            pad_seconds=0.0,
+            resolution="640x480",
+            fps=24,
+            crf=28,
         )
         segments.append(seg)
 

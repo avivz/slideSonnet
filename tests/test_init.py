@@ -1,9 +1,5 @@
 """Tests for the init command."""
 
-from pathlib import Path
-
-import pytest
-
 from slidesonnet.init import init_blank, init_example, init_from
 
 

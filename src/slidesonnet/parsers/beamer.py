@@ -138,8 +138,7 @@ def _parse_frame(index: int, text: str, source: Path) -> SlideNarration:
 
         if not full_narration:
             print(
-                f"WARNING: {source} frame {index}: empty \\say{{}} "
-                f"— did you mean \\silent?",
+                f"WARNING: {source} frame {index}: empty \\say{{}} — did you mean \\silent?",
                 file=sys.stderr,
             )
             return SlideNarration(index=index, annotation=SlideAnnotation.SILENT)
@@ -154,8 +153,7 @@ def _parse_frame(index: int, text: str, source: Path) -> SlideNarration:
 
     # No annotation
     print(
-        f"WARNING: {source} frame {index}: no annotation "
-        f"(use \\say{{}}, \\silent, or \\skip)",
+        f"WARNING: {source} frame {index}: no annotation (use \\say{{}}, \\silent, or \\skip)",
         file=sys.stderr,
     )
     return SlideNarration(index=index, annotation=SlideAnnotation.NONE)
