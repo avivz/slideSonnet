@@ -1,0 +1,236 @@
+# slideSonnet
+
+Compile text-based slide presentations into narrated MP4 videos.
+
+Write your slides in [MARP](https://marp.app/) Markdown or LaTeX Beamer, add narration with `<!-- say: -->` comments, and slideSonnet handles TTS synthesis, video composition, and assembly — with incremental builds that only re-synthesize changed slides.
+
+## How it works
+
+```
+lecture01.md (playlist)
+    |
+    ├── 01-intro/slides.md   → [parse → TTS → compose] → module_01.mp4
+    ├── animations/euler.mp4  → [passthrough]            → module_02.mp4
+    ├── 02-proofs/slides.tex  → [parse → TTS → compose] → module_03.mp4
+    └── [assemble] ─────────────────────────────────────→ lecture01.mp4
+```
+
+A **playlist** file chains modules together — MARP slides, Beamer slides, and pre-existing video files. Each module is built independently, then concatenated into the final video. [pydoit](https://pydoit.org/) manages the build graph with content-hash caching, so only changed slides trigger TTS.
+
+## Quick start
+
+```bash
+pip install -e ".[piper,dev]"
+
+# Create an example project
+slidesonnet init myproject --example
+cd myproject
+
+# Build the video
+slidesonnet build lecture01.md
+```
+
+### Prerequisites
+
+- **Python 3.12+**
+- **ffmpeg** — video composition and concatenation
+- **marp-cli** — slide image extraction (`npm install -g @marp-team/marp-cli`)
+- **piper** (optional) — free local TTS (`pip install piper-tts`)
+- **pdflatex + pdftoppm** (optional) — only needed for Beamer/LaTeX slides
+
+## Writing slides
+
+### MARP Markdown
+
+Add narration with `<!-- say: -->` HTML comments:
+
+```markdown
+---
+marp: true
+---
+
+# Introduction
+
+<!-- say: Welcome to the lecture. Today we cover graph theory basics. -->
+
+---
+
+# Euler's Theorem
+
+<!-- say(voice=alice): Let me explain this theorem carefully. -->
+
+---
+
+# Diagram
+
+<!-- silent -->
+
+---
+
+# Hidden Notes
+
+<!-- skip -->
+```
+
+| Annotation | Effect |
+|---|---|
+| `<!-- say: text -->` | Narrate with default voice |
+| `<!-- say(voice=alice): text -->` | Narrate with a named voice preset |
+| `<!-- silent -->` | Show slide with silence (no narration) |
+| `<!-- skip -->` | Omit slide from video entirely |
+| *(none)* | Treated as silent, emits a warning |
+
+Multi-line narration and multiple `<!-- say: -->` blocks per slide are supported (text is concatenated).
+
+### Beamer LaTeX
+
+Use the `\say` command (defined as a no-op by `slidesonnet.sty` so LaTeX compiles normally):
+
+```latex
+\usepackage{slidesonnet}
+
+\begin{frame}
+  \frametitle{Euler's Theorem}
+  \say{The sum of all vertex degrees equals twice the number of edges.}
+  \say[voice=alice]{Let me explain more carefully.}
+\end{frame}
+```
+
+Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\silent`, `\skip`.
+
+## Playlist format
+
+A single `.md` file per presentation. YAML front matter for configuration, body for the module list:
+
+```markdown
+---
+title: Graph Theory Lecture 1
+tts:
+  backend: piper
+  piper:
+    model: en_US-lessac-medium
+  elevenlabs:
+    api_key_env: ELEVENLABS_API_KEY
+    voice_id: pNInz6obpgDQGcFmaJgB
+voices:
+  alice: en_US-amy-medium
+pronunciation:
+  - pronunciation/cs-terms.md
+  - pronunciation/math-terms.md
+video:
+  resolution: 1920x1080
+  pad_seconds: 0.5
+  silence_duration: 3.0
+---
+
+# Graph Theory Lecture 1
+
+1. [Introduction](01-intro/slides.md)
+2. [Euler animation](animations/euler.mp4)
+3. [Formal proofs](02-proofs/slides.tex)
+4. [Summary](03-summary/slides.md)
+```
+
+- Module type is auto-detected from extension (`.md` → MARP, `.tex` → Beamer, `.mp4/.mkv/.webm/.mov` → video passthrough)
+- Lines starting with `//` are comments (ignored by parser, visible in markdown)
+- Video files are used as-is
+
+## Pronunciation files
+
+Reusable `.md` files with `**word**: replacement` pairs:
+
+```markdown
+# CS Pronunciation Guide
+
+## People
+**Dijkstra**: DYKE-struh
+**Euler**: OY-ler
+
+## Terms
+**adjacency**: uh-JAY-suhn-see
+```
+
+Replacements are word-boundary aware (won't change "Eulerian") and case-insensitive. Reference them in the playlist front matter under `pronunciation:`.
+
+## Voice presets
+
+Define named voices in the playlist front matter:
+
+```yaml
+voices:
+  alice: en_US-amy-medium
+  bob: en_US-joe-medium
+```
+
+Then use them per-slide: `<!-- say(voice=alice): ... -->`. The name maps to a Piper model or an ElevenLabs voice ID depending on the TTS backend.
+
+## API keys
+
+For ElevenLabs, store keys in a `.env` file at the project root (auto-loaded at build time):
+
+```
+ELEVENLABS_API_KEY=sk-xxx-your-key
+```
+
+The playlist references env var names, never values: `api_key_env: ELEVENLABS_API_KEY`.
+
+## CLI reference
+
+```
+slidesonnet build lecture01.md              # build video
+slidesonnet build lecture01.md --tts piper  # override TTS backend
+slidesonnet build lecture01.md --force      # force full rebuild
+slidesonnet preview lecture01.md            # quick build with local Piper TTS
+slidesonnet preview-slide slides.md 3       # play one slide's audio
+slidesonnet preview-slide slides.md 3 -p lecture01.md  # with playlist config
+slidesonnet init myproject                  # create blank project
+slidesonnet init myproject --example        # create full working demo
+slidesonnet init myproject --from other.md  # copy config from existing project
+slidesonnet clean lecture01.md              # remove .build/ directory
+```
+
+## Incremental builds
+
+TTS audio is cached by content hash of the narration text, not by slide number. This means:
+
+- **No changes** → entire build is skipped
+- **Edit one slide** → only that slide's audio is re-synthesized
+- **Insert a slide** → existing slides hit the cache, only the new slide triggers TTS
+- **Change voice preset** → affected slides rebuild (voice is part of the hash)
+
+Build artifacts live in `.build/` next to the playlist file. Add it to `.gitignore`.
+
+## Project layout
+
+```
+my-course/
+├── lecture01.md              # playlist + config
+├── pronunciation/
+│   └── cs-terms.md
+├── 01-intro/slides.md        # MARP module
+├── 02-proofs/slides.tex      # Beamer module
+├── animations/euler.mp4      # video module
+├── .env                      # API keys (gitignored)
+├── .build/                   # build artifacts (gitignored)
+│   ├── audio/                # TTS cache (content-addressed)
+│   ├── 01-intro/
+│   │   ├── slides/           # extracted PNGs + manifest
+│   │   ├── utterances/       # text sent to TTS (for debugging)
+│   │   ├── segments/         # per-slide video segments
+│   │   └── module.mp4
+│   └── lecture01.mp4         # final output
+└── .gitignore
+```
+
+## Development
+
+```bash
+pip install -e ".[piper,dev]"
+make test          # run all tests (needs ffmpeg)
+make test-unit     # unit tests only (no external tools)
+make lint          # ruff check + format
+```
+
+## License
+
+MIT
