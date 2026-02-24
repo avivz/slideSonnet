@@ -3,10 +3,12 @@
 import textwrap
 import wave
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import pytest
 
-from slidesonnet.pipeline import build
+from slidesonnet.models import ProjectConfig, TTSConfig
+from slidesonnet.pipeline import _create_tts, _run_doit, build
 
 
 class MockTTS:
@@ -262,3 +264,84 @@ def _create_dummy_png(path: Path) -> None:
 
     with open(path, "wb") as f:
         f.write(sig + _chunk(b"IHDR", ihdr) + _chunk(b"IDAT", idat) + _chunk(b"IEND", b""))
+
+
+# ---- Mocked unit tests for _create_tts and _run_doit ----
+
+
+class TestCreateTTS:
+    """Tests for _create_tts()."""
+
+    def test_piper_backend(self) -> None:
+        config = ProjectConfig(tts=TTSConfig(backend="piper", piper_model="en_US-lessac-medium"))
+        tts = _create_tts(config)
+        from slidesonnet.tts.piper import PiperTTS
+
+        assert isinstance(tts, PiperTTS)
+        assert tts.model == "en_US-lessac-medium"
+
+    @patch("slidesonnet.tts.elevenlabs.ElevenLabsTTS")
+    def test_elevenlabs_backend(self, mock_cls: MagicMock) -> None:
+        config = ProjectConfig(tts=TTSConfig(backend="elevenlabs"))
+        _create_tts(config)
+        mock_cls.assert_called_once_with(config.tts)
+
+    def test_unknown_backend(self) -> None:
+        config = ProjectConfig(tts=TTSConfig(backend="unknown_engine"))
+        with pytest.raises(ValueError, match="Unknown TTS backend"):
+            _create_tts(config)
+
+
+class TestRunDoit:
+    """Tests for _run_doit()."""
+
+    @patch("doit.doit_cmd.DoitMain")
+    @patch("doit.task.dict_to_task")
+    def test_success(self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path) -> None:
+        mock_d2t.side_effect = lambda t: t
+        mock_main = MagicMock()
+        mock_main.run.return_value = 0
+        mock_doit.return_value = mock_main
+
+        _run_doit([{"name": "test"}], tmp_path, force=False)
+
+        mock_main.run.assert_called_once()
+        args = mock_main.run.call_args[0][0]
+        assert args == ["run"]
+
+    @patch("doit.doit_cmd.DoitMain")
+    @patch("doit.task.dict_to_task")
+    def test_force_flag(self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path) -> None:
+        mock_d2t.side_effect = lambda t: t
+        mock_main = MagicMock()
+        mock_main.run.return_value = 0
+        mock_doit.return_value = mock_main
+
+        _run_doit([{"name": "test"}], tmp_path, force=True)
+
+        args = mock_main.run.call_args[0][0]
+        assert "--always-execute" in args
+
+    @patch("doit.doit_cmd.DoitMain")
+    @patch("doit.task.dict_to_task")
+    def test_nonzero_exit_raises(
+        self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_d2t.side_effect = lambda t: t
+        mock_main = MagicMock()
+        mock_main.run.return_value = 2
+        mock_doit.return_value = mock_main
+
+        with pytest.raises(SystemExit):
+            _run_doit([{"name": "test"}], tmp_path, force=False)
+
+    @patch("doit.doit_cmd.DoitMain")
+    @patch("doit.task.dict_to_task")
+    def test_none_exit_ok(self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path) -> None:
+        mock_d2t.side_effect = lambda t: t
+        mock_main = MagicMock()
+        mock_main.run.return_value = None
+        mock_doit.return_value = mock_main
+
+        # Should not raise
+        _run_doit([{"name": "test"}], tmp_path, force=False)

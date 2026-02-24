@@ -1,11 +1,22 @@
 """Tests for doit task generation."""
 
 import textwrap
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import pytest
 
 from slidesonnet.config import load_config
+from slidesonnet.models import ModuleType
 from slidesonnet.playlist import parse_playlist
-from slidesonnet.tasks import generate_tasks
+from slidesonnet.tasks import (
+    _action_assemble,
+    _action_concat,
+    _action_passthrough,
+    _action_tts,
+    _get_parser_and_extractor,
+    generate_tasks,
+)
 from slidesonnet.tts.base import TTSEngine
 
 
@@ -323,3 +334,162 @@ def test_unknown_voice_warns(tmp_path, capsys):
     # Task still generated
     tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
     assert len(tts_tasks) == 1
+
+
+# ---- Mocked unit tests for action functions and helpers ----
+
+
+class TestActionPassthrough:
+    """Tests for _action_passthrough()."""
+
+    def test_copies_file(self, tmp_path: Path) -> None:
+        src = tmp_path / "input.mp4"
+        src.write_bytes(b"video-data")
+        out = tmp_path / "build" / "module.mp4"
+
+        _action_passthrough(src, out)
+
+        assert out.exists()
+        assert out.read_bytes() == b"video-data"
+
+    def test_creates_output_dir(self, tmp_path: Path) -> None:
+        src = tmp_path / "input.mp4"
+        src.write_bytes(b"data")
+        out = tmp_path / "deep" / "nested" / "out.mp4"
+
+        _action_passthrough(src, out)
+
+        assert out.parent.exists()
+        assert out.exists()
+
+
+class TestActionTTS:
+    """Tests for _action_tts()."""
+
+    def test_cache_hit_skips_synthesis(self, tmp_path: Path) -> None:
+        cached = tmp_path / "audio" / "abc123.wav"
+        cached.parent.mkdir(parents=True)
+        cached.write_bytes(b"cached-audio")
+        utterance = tmp_path / "utterances" / "slide_001.txt"
+        mock_tts = MagicMock()
+
+        _action_tts("Hello", cached, mock_tts, utterance, force=False)
+
+        mock_tts.synthesize.assert_not_called()
+        assert utterance.read_text() == "Hello"
+
+    def test_force_overrides_cache(self, tmp_path: Path) -> None:
+        cached = tmp_path / "audio" / "abc123.wav"
+        cached.parent.mkdir(parents=True)
+        cached.write_bytes(b"cached-audio")
+        utterance = tmp_path / "utterances" / "slide_001.txt"
+        mock_tts = MagicMock()
+
+        _action_tts("Hello", cached, mock_tts, utterance, force=True)
+
+        mock_tts.synthesize.assert_called_once_with("Hello", cached, voice=None)
+
+    def test_synthesizes_when_no_cache(self, tmp_path: Path) -> None:
+        cached = tmp_path / "audio" / "abc123.wav"
+        utterance = tmp_path / "utterances" / "slide_001.txt"
+        mock_tts = MagicMock()
+
+        _action_tts("Hello", cached, mock_tts, utterance, force=False)
+
+        mock_tts.synthesize.assert_called_once_with("Hello", cached, voice=None)
+
+    def test_passes_voice(self, tmp_path: Path) -> None:
+        cached = tmp_path / "audio" / "abc123.wav"
+        utterance = tmp_path / "utterances" / "slide_001.txt"
+        mock_tts = MagicMock()
+
+        _action_tts("Hello", cached, mock_tts, utterance, force=False, voice="alice")
+
+        mock_tts.synthesize.assert_called_once_with("Hello", cached, voice="alice")
+
+    def test_writes_utterance_file(self, tmp_path: Path) -> None:
+        cached = tmp_path / "audio" / "abc123.wav"
+        utterance = tmp_path / "utterances" / "slide_001.txt"
+        mock_tts = MagicMock()
+
+        _action_tts("Some narration text", cached, mock_tts, utterance, force=False)
+
+        assert utterance.exists()
+        assert utterance.read_text() == "Some narration text"
+
+
+class TestActionConcat:
+    """Tests for _action_concat()."""
+
+    def test_single_segment_copies(self, tmp_path: Path) -> None:
+        seg = tmp_path / "seg.mp4"
+        seg.write_bytes(b"segment-data")
+        out = tmp_path / "out" / "module.mp4"
+
+        _action_concat([seg], out)
+
+        assert out.read_bytes() == b"segment-data"
+
+    @patch("slidesonnet.tasks.composer.concatenate_segments")
+    def test_multiple_segments_concatenates(self, mock_concat: MagicMock, tmp_path: Path) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        out = tmp_path / "module.mp4"
+
+        _action_concat(segs, out)
+
+        mock_concat.assert_called_once_with(segs, out)
+
+    @patch("slidesonnet.tasks.composer.concatenate_segments")
+    def test_empty_segments_noop(self, mock_concat: MagicMock, tmp_path: Path) -> None:
+        out = tmp_path / "module.mp4"
+
+        _action_concat([], out)
+
+        mock_concat.assert_not_called()
+        assert not out.exists()
+
+
+class TestActionAssemble:
+    """Tests for _action_assemble()."""
+
+    def test_single_module_copies(self, tmp_path: Path) -> None:
+        mod = tmp_path / "module.mp4"
+        mod.write_bytes(b"module-data")
+        out = tmp_path / "out" / "final.mp4"
+
+        _action_assemble([mod], out)
+
+        assert out.read_bytes() == b"module-data"
+
+    @patch("slidesonnet.tasks.composer.concatenate_segments")
+    def test_multiple_modules_concatenates(self, mock_concat: MagicMock, tmp_path: Path) -> None:
+        mods = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        out = tmp_path / "final.mp4"
+
+        _action_assemble(mods, out)
+
+        mock_concat.assert_called_once_with(mods, out)
+
+
+class TestGetParserAndExtractor:
+    """Tests for _get_parser_and_extractor()."""
+
+    def test_marp(self) -> None:
+        from slidesonnet.parsers.marp import MarpParser
+        from slidesonnet.parsers.marp import extract_images as marp_extract
+
+        cls, fn = _get_parser_and_extractor(ModuleType.MARP)
+        assert cls is MarpParser
+        assert fn is marp_extract
+
+    def test_beamer(self) -> None:
+        from slidesonnet.parsers.beamer import BeamerParser
+        from slidesonnet.parsers.beamer import extract_images as beamer_extract
+
+        cls, fn = _get_parser_and_extractor(ModuleType.BEAMER)
+        assert cls is BeamerParser
+        assert fn is beamer_extract
+
+    def test_video_raises(self) -> None:
+        with pytest.raises(ValueError, match="No parser"):
+            _get_parser_and_extractor(ModuleType.VIDEO)

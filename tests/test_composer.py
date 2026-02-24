@@ -1,18 +1,20 @@
-"""Integration tests for video composer (require ffmpeg)."""
+"""Tests for video composer — integration (require ffmpeg) and mocked unit tests."""
 
+import json
+import subprocess
 import wave
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from slidesonnet.video.composer import (
+    _run_ffmpeg,
     compose_segment,
     compose_silent_segment,
     concatenate_segments,
     get_duration,
 )
-
-pytestmark = pytest.mark.integration
 
 
 def _make_wav(path: Path, duration_seconds: float = 1.0) -> None:
@@ -130,3 +132,218 @@ def test_concatenate_segments(work_dir):
 
 def test_get_duration_nonexistent():
     assert get_duration(Path("/nonexistent.mp4")) == 0.0
+
+
+# ---- Mocked unit tests (no ffmpeg required) ----
+
+
+class TestComposeSegmentMocked:
+    """Mocked tests for compose_segment()."""
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_command_structure(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        image = tmp_path / "slide.png"
+        audio = tmp_path / "audio.wav"
+        output = tmp_path / "out" / "segment.mp4"
+        image.touch()
+        audio.touch()
+
+        compose_segment(
+            image=image, audio=audio, output=output,
+            duration=3.0, pad_seconds=0.5, resolution="1920x1080", fps=24, crf=23,
+        )
+
+        mock_ffmpeg.assert_called_once()
+        cmd = mock_ffmpeg.call_args[0][0]
+
+        assert cmd[0] == "ffmpeg"
+        assert "-y" in cmd
+        assert str(image) in cmd
+        assert str(audio) in cmd
+        assert str(output) in cmd
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_scale_filter(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_segment(
+            image=tmp_path / "s.png", audio=tmp_path / "a.wav",
+            output=tmp_path / "o.mp4", duration=1.0, resolution="1280x720",
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        vf_idx = cmd.index("-vf")
+        scale_filter = cmd[vf_idx + 1]
+        assert "scale=1280:720" in scale_filter
+        assert "pad=1280:720" in scale_filter
+        assert "yuv420p" in scale_filter
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_duration_includes_padding(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_segment(
+            image=tmp_path / "s.png", audio=tmp_path / "a.wav",
+            output=tmp_path / "o.mp4", duration=2.0, pad_seconds=0.7,
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        t_idx = cmd.index("-t")
+        assert cmd[t_idx + 1] == str(2.7)
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_codec_flags(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_segment(
+            image=tmp_path / "s.png", audio=tmp_path / "a.wav",
+            output=tmp_path / "o.mp4", duration=1.0, fps=30, crf=18,
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        assert "libx264" in cmd
+        assert "aac" in cmd
+        r_idx = cmd.index("-r")
+        assert cmd[r_idx + 1] == "30"
+        crf_idx = cmd.index("-crf")
+        assert cmd[crf_idx + 1] == "18"
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_creates_output_dir(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        output = tmp_path / "deep" / "dir" / "out.mp4"
+        compose_segment(
+            image=tmp_path / "s.png", audio=tmp_path / "a.wav",
+            output=output, duration=1.0,
+        )
+        assert output.parent.exists()
+
+
+class TestComposeSilentSegmentMocked:
+    """Mocked tests for compose_silent_segment()."""
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_command_has_anullsrc(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_silent_segment(
+            image=tmp_path / "s.png", output=tmp_path / "o.mp4",
+            duration=3.0, resolution="1920x1080",
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        assert "anullsrc=r=44100:cl=stereo" in cmd
+        assert "-f" in cmd
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_duration_flag(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_silent_segment(
+            image=tmp_path / "s.png", output=tmp_path / "o.mp4", duration=5.0,
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        t_idx = cmd.index("-t")
+        assert cmd[t_idx + 1] == "5.0"
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_no_shortest_flag(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_silent_segment(
+            image=tmp_path / "s.png", output=tmp_path / "o.mp4", duration=1.0,
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        assert "-shortest" not in cmd
+
+
+class TestConcatenateSegmentsMocked:
+    """Mocked tests for concatenate_segments()."""
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_writes_concat_file_and_cleans_up(
+        self, mock_ffmpeg: MagicMock, tmp_path: Path
+    ) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments(segs, output)
+
+        mock_ffmpeg.assert_called_once()
+        cmd = mock_ffmpeg.call_args[0][0]
+        assert "concat" in cmd
+        assert "-safe" in cmd
+        assert "copy" in cmd
+
+        # Concat file should be cleaned up after run
+        concat_file = tmp_path / "concat_list.txt"
+        assert not concat_file.exists()
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_concat_file_contents(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+        concat_file = tmp_path / "concat_list.txt"
+
+        # Capture concat file contents before cleanup
+        written_content: list[str] = []
+
+        def capture_and_run(cmd: list[str]) -> None:
+            if concat_file.exists():
+                written_content.append(concat_file.read_text())
+
+        mock_ffmpeg.side_effect = capture_and_run
+
+        concatenate_segments(segs, output)
+
+        assert len(written_content) == 1
+        for seg in segs:
+            assert str(seg.resolve()) in written_content[0]
+
+
+class TestGetDurationMocked:
+    """Mocked tests for get_duration()."""
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_success(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(
+            stdout=json.dumps({"format": {"duration": "12.345"}})
+        )
+        assert get_duration(Path("test.mp4")) == pytest.approx(12.345)
+
+    @patch("slidesonnet.video.composer.subprocess.run", side_effect=FileNotFoundError)
+    def test_ffprobe_not_found(self, mock_run: MagicMock) -> None:
+        assert get_duration(Path("test.mp4")) == 0.0
+
+    @patch(
+        "slidesonnet.video.composer.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "ffprobe"),
+    )
+    def test_ffprobe_error(self, mock_run: MagicMock) -> None:
+        assert get_duration(Path("test.mp4")) == 0.0
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_bad_json(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(stdout="not json")
+        assert get_duration(Path("test.mp4")) == 0.0
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_missing_key(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(stdout=json.dumps({"format": {}}))
+        assert get_duration(Path("test.mp4")) == 0.0
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_non_numeric_duration(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(
+            stdout=json.dumps({"format": {"duration": "N/A"}})
+        )
+        assert get_duration(Path("test.mp4")) == 0.0
+
+
+class TestRunFfmpeg:
+    """Mocked tests for _run_ffmpeg()."""
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_success(self, mock_run: MagicMock) -> None:
+        _run_ffmpeg(["ffmpeg", "-version"])
+        mock_run.assert_called_once_with(
+            ["ffmpeg", "-version"], check=True, capture_output=True, text=True
+        )
+
+    @patch("slidesonnet.video.composer.subprocess.run", side_effect=FileNotFoundError)
+    def test_ffmpeg_not_found(self, mock_run: MagicMock) -> None:
+        with pytest.raises(SystemExit, match="1"):
+            _run_ffmpeg(["ffmpeg", "-version"])
+
+    @patch(
+        "slidesonnet.video.composer.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "ffmpeg", stderr="encode failed"),
+    )
+    def test_ffmpeg_error(self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit, match="1"):
+            _run_ffmpeg(["ffmpeg", "-i", "in.mp4"])
+        captured = capsys.readouterr()
+        assert "encode failed" in captured.err

@@ -1,6 +1,8 @@
 """Tests for Beamer parser."""
 
+import subprocess
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,6 +14,7 @@ from slidesonnet.parsers.beamer import (
     _find_say_commands,
     _parse_frame,
     _strip_latex,
+    extract_images,
 )
 
 
@@ -120,3 +123,109 @@ def test_empty_say_warns(capsys):
     assert slide.annotation == SlideAnnotation.SILENT
     captured = capsys.readouterr()
     assert "did you mean" in captured.err
+
+
+# ---- Mocked tests for extract_images and edge cases ----
+
+
+class TestExtractImages:
+    """Mocked tests for extract_images()."""
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_success(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text(r"\documentclass{beamer}")
+        output_dir = tmp_path / "out"
+
+        # After pdflatex + pdftoppm, create fake PNGs
+        def side_effect(cmd, **kwargs):
+            if cmd[0] == "pdftoppm":
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "slide-1.png").touch()
+                (output_dir / "slide-2.png").touch()
+            return MagicMock()
+
+        mock_run.side_effect = side_effect
+
+        result = extract_images(source, output_dir)
+
+        assert mock_run.call_count == 2
+        # First call: pdflatex
+        assert mock_run.call_args_list[0][0][0][0] == "pdflatex"
+        # Second call: pdftoppm
+        assert mock_run.call_args_list[1][0][0][0] == "pdftoppm"
+        assert len(result) == 2
+
+    @patch(
+        "slidesonnet.parsers.beamer.subprocess.run",
+        side_effect=FileNotFoundError,
+    )
+    def test_pdflatex_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        with pytest.raises(SystemExit, match="1"):
+            extract_images(source, tmp_path / "out")
+
+    @patch(
+        "slidesonnet.parsers.beamer.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "pdflatex", "error log here"),
+    )
+    def test_pdflatex_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        with pytest.raises(SystemExit, match="1"):
+            extract_images(source, tmp_path / "out")
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_pdftoppm_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+
+        def side_effect(cmd, **kwargs):
+            if cmd[0] == "pdftoppm":
+                raise FileNotFoundError
+            return MagicMock()
+
+        mock_run.side_effect = side_effect
+
+        with pytest.raises(SystemExit, match="1"):
+            extract_images(source, tmp_path / "out")
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_pdftoppm_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+
+        def side_effect(cmd, **kwargs):
+            if cmd[0] == "pdftoppm":
+                raise subprocess.CalledProcessError(1, "pdftoppm", stderr="convert failed")
+            return MagicMock()
+
+        mock_run.side_effect = side_effect
+
+        with pytest.raises(SystemExit, match="1"):
+            extract_images(source, tmp_path / "out")
+
+
+class TestExtractBracedEdgeCases:
+    """Edge case tests for _extract_braced()."""
+
+    def test_start_not_at_brace(self) -> None:
+        content, pos = _extract_braced("hello", 0)
+        assert content is None
+        assert pos == 0
+
+    def test_unmatched_braces(self) -> None:
+        content, pos = _extract_braced("{unclosed", 0)
+        assert content is None
+        assert pos == 0
+
+    def test_start_past_end(self) -> None:
+        content, pos = _extract_braced("abc", 5)
+        assert content is None
+        assert pos == 5
+
+    def test_empty_braces(self) -> None:
+        content, pos = _extract_braced("{}", 0)
+        assert content == ""
+        assert pos == 2

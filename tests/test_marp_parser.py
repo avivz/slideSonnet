@@ -1,10 +1,14 @@
 """Tests for MARP parser."""
 
+import subprocess
 import textwrap
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from slidesonnet.models import SlideAnnotation
-from slidesonnet.parsers.marp import MarpParser, _split_slides, _parse_slide
+from slidesonnet.parsers.marp import MarpParser, _split_slides, _parse_slide, extract_images
 
 
 def test_split_slides(simple_md):
@@ -141,3 +145,69 @@ def test_has_narration_property():
 
     s3 = SlideNarration(index=3, annotation=SlideAnnotation.SILENT)
     assert not s3.has_narration
+
+
+# ---- Mocked tests for extract_images ----
+
+
+class TestExtractImages:
+    """Mocked tests for extract_images()."""
+
+    @patch("slidesonnet.parsers.marp.subprocess.run")
+    def test_success(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("---\nmarp: true\n---\n# Hi")
+        output_dir = tmp_path / "out"
+
+        def side_effect(cmd, **kwargs):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "slides.001.png").touch()
+            (output_dir / "slides.002.png").touch()
+            return MagicMock()
+
+        mock_run.side_effect = side_effect
+
+        result = extract_images(source, output_dir)
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "marp"
+        assert "--images" in cmd
+        assert "png" in cmd
+        assert len(result) == 2
+
+    @patch("slidesonnet.parsers.marp.subprocess.run", side_effect=FileNotFoundError)
+    def test_marp_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        with pytest.raises(SystemExit, match="1"):
+            extract_images(source, tmp_path / "out")
+
+    @patch(
+        "slidesonnet.parsers.marp.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "marp", stderr="marp error"),
+    )
+    def test_marp_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        with pytest.raises(SystemExit, match="1"):
+            extract_images(source, tmp_path / "out")
+
+    @patch("slidesonnet.parsers.marp.subprocess.run")
+    def test_fallback_glob_pattern(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """When stem-based pattern finds nothing, falls back to *.png."""
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        output_dir = tmp_path / "out"
+
+        def side_effect(cmd, **kwargs):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            # Create PNGs that don't match the stem pattern
+            (output_dir / "001.png").touch()
+            (output_dir / "002.png").touch()
+            return MagicMock()
+
+        mock_run.side_effect = side_effect
+
+        result = extract_images(source, output_dir)
+        assert len(result) == 2
