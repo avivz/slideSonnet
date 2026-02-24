@@ -27,6 +27,7 @@ def test_help(runner):
     assert "build" in result.output
     assert "preview" in result.output
     assert "clean" in result.output
+    assert "init" in result.output
 
 
 def test_build_help(runner):
@@ -106,3 +107,48 @@ def test_preview_calls_build_with_piper(runner, tmp_path):
         result = runner.invoke(main, ["preview", str(playlist)])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(playlist, tts_override="piper")
+
+
+def test_init_blank(runner, tmp_path):
+    target = tmp_path / "newproject"
+    result = runner.invoke(main, ["init", str(target), "--blank"])
+    assert result.exit_code == 0
+    assert "Project created" in result.output
+    assert (target / "lecture01.md").exists()
+    assert (target / ".gitignore").exists()
+
+
+def test_init_example(runner, tmp_path):
+    target = tmp_path / "newproject"
+    result = runner.invoke(main, ["init", str(target), "--example"])
+    assert result.exit_code == 0
+    assert "Example project" in result.output
+    assert (target / "lecture01.md").exists()
+    assert (target / "02-definitions" / "slides.md").exists()
+
+
+def test_init_from(runner, tmp_path):
+    # Create source project
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    source_playlist = source_dir / "lecture.md"
+    source_playlist.write_text(
+        "---\ntitle: Source\ntts:\n  backend: piper\npronunciation:\n"
+        "  - pron/terms.md\n---\n1. [Intro](intro/slides.md)\n"
+    )
+    pron_dir = source_dir / "pron"
+    pron_dir.mkdir()
+    (pron_dir / "terms.md").write_text("**Euler**: OY-ler\n")
+
+    target = tmp_path / "target"
+    result = runner.invoke(main, ["init", str(target), "--from", str(source_playlist)])
+    assert result.exit_code == 0
+    assert "copied config" in result.output
+    assert (target / "lecture01.md").exists()
+
+
+def test_init_default_is_blank(runner, tmp_path):
+    target = tmp_path / "newproject"
+    result = runner.invoke(main, ["init", str(target)])
+    assert result.exit_code == 0
+    assert (target / "lecture01.md").exists()

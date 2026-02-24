@@ -14,7 +14,8 @@ from slidesonnet.models import (
     SlideAnnotation,
     SlideNarration,
 )
-from slidesonnet.parsers.marp import MarpParser, extract_images
+from slidesonnet.parsers.marp import MarpParser
+from slidesonnet.parsers.marp import extract_images as marp_extract_images
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.piper import PiperTTS
@@ -95,8 +96,18 @@ def _build_module(
         return _build_video_module(source_path, module_dir)
 
     if entry.module_type == ModuleType.MARP:
-        return _build_marp_module(
-            source_path, module_dir, config, tts, audio_cache_dir, force
+        return _build_slides_module(
+            source_path, module_dir, config, tts, audio_cache_dir, force,
+            parser_cls=MarpParser, extract_fn=marp_extract_images,
+        )
+
+    if entry.module_type == ModuleType.BEAMER:
+        from slidesonnet.parsers.beamer import BeamerParser
+        from slidesonnet.parsers.beamer import extract_images as beamer_extract_images
+
+        return _build_slides_module(
+            source_path, module_dir, config, tts, audio_cache_dir, force,
+            parser_cls=BeamerParser, extract_fn=beamer_extract_images,
         )
 
     raise ValueError(f"Unsupported module type: {entry.module_type}")
@@ -110,15 +121,17 @@ def _build_video_module(source_path: Path, module_dir: Path) -> Path:
     return output
 
 
-def _build_marp_module(
+def _build_slides_module(
     source_path: Path,
     module_dir: Path,
     config: ProjectConfig,
     tts: TTSEngine,
     audio_cache_dir: Path,
     force: bool,
+    parser_cls: type,
+    extract_fn: callable,
 ) -> Path:
-    """Build a MARP module: parse → TTS → compose → concat."""
+    """Build a slide module (MARP or Beamer): parse → TTS → compose → concat."""
     module_dir.mkdir(parents=True, exist_ok=True)
     slides_dir = module_dir / "slides"
     utterances_dir = module_dir / "utterances"
@@ -128,11 +141,11 @@ def _build_marp_module(
     segments_dir.mkdir(parents=True, exist_ok=True)
 
     # Stage 1: Parse
-    parser = MarpParser()
+    parser = parser_cls()
     slides = parser.parse(source_path, slides_dir)
 
-    # Extract images via marp CLI
-    images = extract_images(source_path, slides_dir)
+    # Extract images
+    images = extract_fn(source_path, slides_dir)
 
     # Assign images to slides
     for slide, img_path in zip(slides, images):

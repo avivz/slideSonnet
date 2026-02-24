@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from slidesonnet import __version__
+from slidesonnet.init import init_blank, init_example, init_from
 from slidesonnet.pipeline import build as run_build
 
 
@@ -32,6 +33,25 @@ def build(playlist: Path, tts: str | None, force: bool):
 def preview(playlist: Path):
     """Quick preview build using local Piper TTS."""
     run_build(playlist, tts_override="piper")
+
+
+@main.command()
+@click.argument("target", type=click.Path(path_type=Path), default=".")
+@click.option("--blank", "mode", flag_value="blank", help="Create minimal scaffold")
+@click.option("--example", "mode", flag_value="example", help="Create full working demo")
+@click.option("--from", "from_path", type=click.Path(exists=True, path_type=Path),
+              help="Copy config from existing playlist")
+def init(target: Path, mode: str | None, from_path: Path | None):
+    """Initialize a new slideSonnet project."""
+    if from_path:
+        init_from(target, from_path)
+        click.echo(f"Project created at {target} (copied config from {from_path})")
+    elif mode == "example":
+        init_example(target)
+        click.echo(f"Example project created at {target}")
+    else:
+        init_blank(target)
+        click.echo(f"Project created at {target}")
 
 
 @main.command()
