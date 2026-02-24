@@ -65,9 +65,11 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     except FileNotFoundError:
         print("ERROR: 'pdflatex' not found. Install TeX Live.", file=sys.stderr)
         raise SystemExit(1)
-    except subprocess.CalledProcessError as e:
-        print(f"ERROR: pdflatex failed:\n{e.stdout[-500:]}", file=sys.stderr)
-        raise SystemExit(1)
+    except subprocess.CalledProcessError:
+        # pdflatex often returns non-zero for warnings; check if PDF was produced
+        if not pdf_path.exists():
+            print("ERROR: pdflatex failed and no PDF was produced.", file=sys.stderr)
+            raise SystemExit(1)
 
     # Extract images with pdftoppm
     prefix = str(output_dir / "slide")

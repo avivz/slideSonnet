@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -44,6 +45,26 @@ def _generate_placeholder_mp4(path: Path) -> None:
     )
 
 
+def _ffprobe_json(path: Path) -> dict[str, object]:
+    """Return ffprobe output as a dict."""
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-show_streams",
+            "-show_format",
+            "-print_format",
+            "json",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)  # type: ignore[no-any-return]
+
+
 @pytest.mark.integration
 def test_showcase_builds(tmp_path: Path) -> None:
     """Full showcase project builds with all external tools."""
@@ -56,7 +77,37 @@ def test_showcase_builds(tmp_path: Path) -> None:
 
     output = build(project / "lecture01.md")
 
+    # --- Final output exists and is a valid video ---
     expected = project / ".build" / "lecture01.mp4"
     assert output == expected
     assert expected.exists()
     assert expected.stat().st_size > 0
+
+    info = _ffprobe_json(expected)
+    streams = info["streams"]
+    assert isinstance(streams, list)
+
+    codec_types = {s["codec_type"] for s in streams}  # type: ignore[index]
+    assert "video" in codec_types, "output has no video stream"
+    assert "audio" in codec_types, "output has no audio stream"
+
+    duration = float(info["format"]["duration"])  # type: ignore[index]
+    assert duration > 10, f"output too short ({duration:.1f}s) — likely incomplete"
+
+    # --- All four modules produced videos ---
+    build_dir = project / ".build"
+    module_videos = sorted(build_dir.rglob("module.mp4"))
+    assert len(module_videos) == 4, (
+        f"expected 4 module videos, got {len(module_videos)}: {module_videos}"
+    )
+
+    # --- Per-module segment counts (narrated + silent slides, excluding skip) ---
+    # 01-intro (MARP): 3 narrated + 1 silent = 4 segments
+    # 02-deep-dive (Beamer): 2 narrated + 1 silent = 3 segments (1 skip excluded)
+    # 03-examples (MARP): 3 narrated = 3 segments (1 skip excluded)
+    segments = sorted(build_dir.rglob("segments/*.mp4"))
+    assert len(segments) == 10, f"expected 10 segments, got {len(segments)}"
+
+    # --- TTS audio files were generated for narrated slides ---
+    audio_files = sorted(build_dir.rglob("audio/*.wav"))
+    assert len(audio_files) >= 8, f"expected at least 8 audio files, got {len(audio_files)}"

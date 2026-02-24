@@ -15,7 +15,9 @@ class TestPiperSynthesize:
 
     @patch("slidesonnet.tts.piper._wav_duration", return_value=2.5)
     @patch("slidesonnet.tts.piper.subprocess.run")
-    def test_basic_synthesis(self, mock_run: MagicMock, mock_dur: MagicMock, tmp_path: Path) -> None:
+    def test_basic_synthesis(
+        self, mock_run: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
         tts = PiperTTS(model="en_US-lessac-medium")
         out = tmp_path / "out.wav"
 

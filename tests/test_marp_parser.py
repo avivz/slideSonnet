@@ -194,17 +194,17 @@ class TestExtractImages:
             extract_images(source, tmp_path / "out")
 
     @patch("slidesonnet.parsers.marp.subprocess.run")
-    def test_fallback_glob_pattern(self, mock_run: MagicMock, tmp_path: Path) -> None:
-        """When stem-based pattern finds nothing, falls back to *.png."""
+    def test_extensionless_glob_pattern(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        """When .png pattern finds nothing, falls back to extensionless numbered files."""
         source = tmp_path / "slides.md"
         source.write_text("dummy")
         output_dir = tmp_path / "out"
 
         def side_effect(cmd, **kwargs):
             output_dir.mkdir(parents=True, exist_ok=True)
-            # Create PNGs that don't match the stem pattern
-            (output_dir / "001.png").touch()
-            (output_dir / "002.png").touch()
+            # Newer marp produces extensionless numbered files
+            (output_dir / "slides.001").touch()
+            (output_dir / "slides.002").touch()
             return MagicMock()
 
         mock_run.side_effect = side_effect

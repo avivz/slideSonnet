@@ -50,13 +50,18 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # marp --output treats the path as a file prefix, so we use
+    # output_dir/source_stem to get files like output_dir/slides.001, etc.
+    output_prefix = output_dir / source.stem
+
     cmd = [
         "marp",
+        "--no-stdin",
         str(source),
         "--images",
         "png",
         "--output",
-        str(output_dir),
+        str(output_prefix),
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -70,11 +75,12 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
         print(f"ERROR: marp failed:\n{e.stderr}", file=sys.stderr)
         raise SystemExit(1)
 
-    # marp --images png produces files like: source.001.png, source.002.png, ...
-    images = sorted(output_dir.glob(f"{source.stem}.*.png"))
+    # marp --images png produces files like: slides.001.png, slides.002.png
+    # or extensionless: slides.001, slides.002 (newer marp versions)
+    stem = source.stem
+    images = sorted(output_dir.glob(f"{stem}.[0-9][0-9][0-9].png"))
     if not images:
-        # Also try plain numbered pattern
-        images = sorted(output_dir.glob("*.png"))
+        images = sorted(output_dir.glob(f"{stem}.[0-9][0-9][0-9]"))
     return images
 
 
