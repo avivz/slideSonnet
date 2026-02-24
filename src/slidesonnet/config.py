@@ -56,6 +56,7 @@ def _parse_video(raw: dict[str, Any]) -> VideoConfig:
     cfg.pad_seconds = float(raw.get("pad_seconds", cfg.pad_seconds))
     cfg.pre_silence = float(raw.get("pre_silence", cfg.pre_silence))
     cfg.silence_duration = float(raw.get("silence_duration", cfg.silence_duration))
+    cfg.crossfade = float(raw.get("crossfade", cfg.crossfade))
     return cfg
 
 

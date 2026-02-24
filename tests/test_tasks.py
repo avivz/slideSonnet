@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from slidesonnet.config import load_config
-from slidesonnet.models import ModuleType
+from slidesonnet.models import ModuleType, ProjectConfig, VideoConfig
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tasks import (
     _action_assemble,
@@ -421,12 +421,15 @@ class TestActionTTS:
 class TestActionConcat:
     """Tests for _action_concat()."""
 
+    def _config(self, crossfade: float = 0.0) -> ProjectConfig:
+        return ProjectConfig(video=VideoConfig(crossfade=crossfade))
+
     def test_single_segment_copies(self, tmp_path: Path) -> None:
         seg = tmp_path / "seg.mp4"
         seg.write_bytes(b"segment-data")
         out = tmp_path / "out" / "module.mp4"
 
-        _action_concat([seg], out)
+        _action_concat([seg], out, self._config())
 
         assert out.read_bytes() == b"segment-data"
 
@@ -435,7 +438,7 @@ class TestActionConcat:
         segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         out = tmp_path / "module.mp4"
 
-        _action_concat(segs, out)
+        _action_concat(segs, out, self._config(crossfade=0.0))
 
         mock_concat.assert_called_once_with(segs, out)
 
@@ -443,21 +446,43 @@ class TestActionConcat:
     def test_empty_segments_noop(self, mock_concat: MagicMock, tmp_path: Path) -> None:
         out = tmp_path / "module.mp4"
 
-        _action_concat([], out)
+        _action_concat([], out, self._config())
 
         mock_concat.assert_not_called()
         assert not out.exists()
 
+    @patch("slidesonnet.tasks.composer.concatenate_segments_xfade")
+    def test_crossfade_dispatches_xfade(self, mock_xfade: MagicMock, tmp_path: Path) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        out = tmp_path / "module.mp4"
+        cfg = self._config(crossfade=0.5)
+
+        _action_concat(segs, out, cfg)
+
+        mock_xfade.assert_called_once_with(segs, out, crossfade=0.5, crf=23)
+
+    @patch("slidesonnet.tasks.composer.concatenate_segments")
+    def test_zero_crossfade_uses_concat(self, mock_concat: MagicMock, tmp_path: Path) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        out = tmp_path / "module.mp4"
+
+        _action_concat(segs, out, self._config(crossfade=0.0))
+
+        mock_concat.assert_called_once_with(segs, out)
+
 
 class TestActionAssemble:
     """Tests for _action_assemble()."""
+
+    def _config(self, crossfade: float = 0.0) -> ProjectConfig:
+        return ProjectConfig(video=VideoConfig(crossfade=crossfade))
 
     def test_single_module_copies(self, tmp_path: Path) -> None:
         mod = tmp_path / "module.mp4"
         mod.write_bytes(b"module-data")
         out = tmp_path / "out" / "final.mp4"
 
-        _action_assemble([mod], out)
+        _action_assemble([mod], out, self._config())
 
         assert out.read_bytes() == b"module-data"
 
@@ -466,9 +491,19 @@ class TestActionAssemble:
         mods = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         out = tmp_path / "final.mp4"
 
-        _action_assemble(mods, out)
+        _action_assemble(mods, out, self._config(crossfade=0.0))
 
         mock_concat.assert_called_once_with(mods, out)
+
+    @patch("slidesonnet.tasks.composer.concatenate_segments_xfade")
+    def test_crossfade_dispatches_xfade(self, mock_xfade: MagicMock, tmp_path: Path) -> None:
+        mods = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        out = tmp_path / "final.mp4"
+        cfg = self._config(crossfade=0.8)
+
+        _action_assemble(mods, out, cfg)
+
+        mock_xfade.assert_called_once_with(mods, out, crossfade=0.8, crf=23)
 
 
 class TestGetParserAndExtractor:

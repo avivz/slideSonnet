@@ -211,9 +211,10 @@ def generate_tasks(
         all_tasks.append(
             {
                 "name": f"concat:{module_name}",
-                "actions": [(_action_concat, [segment_paths, module_output])],
+                "actions": [(_action_concat, [segment_paths, module_output, config])],
                 "file_dep": [str(p) for p in segment_paths],
                 "targets": [str(module_output)],
+                "uptodate": [config_changed({"crossfade": config.video.crossfade})],
                 "verbosity": 2,
             }
         )
@@ -222,9 +223,10 @@ def generate_tasks(
     all_tasks.append(
         {
             "name": "assemble",
-            "actions": [(_action_assemble, [module_videos, output_path])],
+            "actions": [(_action_assemble, [module_videos, output_path, config])],
             "file_dep": [str(p) for p in module_videos],
             "targets": [str(output_path)],
+            "uptodate": [config_changed({"crossfade": config.video.crossfade})],
             "verbosity": 2,
         }
     )
@@ -321,22 +323,38 @@ def _action_compose_silent(
     )
 
 
-def _action_concat(segments: list[Path], output: Path) -> None:
+def _action_concat(segments: list[Path], output: Path, config: ProjectConfig) -> None:
     """Concatenate segments into a module video."""
     if len(segments) == 1:
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(segments[0], output)
     elif segments:
-        composer.concatenate_segments(segments, output)
+        if config.video.crossfade > 0:
+            composer.concatenate_segments_xfade(
+                segments,
+                output,
+                crossfade=config.video.crossfade,
+                crf=config.video.crf,
+            )
+        else:
+            composer.concatenate_segments(segments, output)
 
 
-def _action_assemble(module_videos: list[Path], output: Path) -> None:
+def _action_assemble(module_videos: list[Path], output: Path, config: ProjectConfig) -> None:
     """Assemble module videos into final output."""
     if len(module_videos) == 1:
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(module_videos[0], output)
     elif module_videos:
-        composer.concatenate_segments(module_videos, output)
+        if config.video.crossfade > 0:
+            composer.concatenate_segments_xfade(
+                module_videos,
+                output,
+                crossfade=config.video.crossfade,
+                crf=config.video.crf,
+            )
+        else:
+            composer.concatenate_segments(module_videos, output)
 
 
 # --- Helpers ---

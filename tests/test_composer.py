@@ -13,6 +13,7 @@ from slidesonnet.video.composer import (
     compose_segment,
     compose_silent_segment,
     concatenate_segments,
+    concatenate_segments_xfade,
     get_duration,
 )
 
@@ -341,6 +342,125 @@ class TestGetDurationMocked:
     def test_non_numeric_duration(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=json.dumps({"format": {"duration": "N/A"}}))
         assert get_duration(Path("test.mp4")) == 0.0
+
+
+class TestConcatenateSegmentsXfadeMocked:
+    """Mocked tests for concatenate_segments_xfade()."""
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_filter_chain_structure(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4", tmp_path / "c.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5, crf=20)
+
+        mock_ffmpeg.assert_called_once()
+        cmd = mock_ffmpeg.call_args[0][0]
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+
+        # Should have 2 xfade + 2 acrossfade for 3 segments
+        assert fc.count("xfade") == 2
+        assert fc.count("acrossfade") == 2
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_offsets(self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4", tmp_path / "c.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5, crf=23)
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+
+        # First offset: D0(5.0) - 0.5 = 4.5
+        assert "offset=4.500000" in fc
+        # Second offset: 4.5 + D1(5.0) - 0.5 = 9.0
+        assert "offset=9.000000" in fc
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_codecs(self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5, crf=18)
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        assert "libx264" in cmd
+        assert "aac" in cmd
+        crf_idx = cmd.index("-crf")
+        assert cmd[crf_idx + 1] == "18"
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_creates_output_dir(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "deep" / "dir" / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5)
+
+        assert output.parent.exists()
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=0.3)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_offset_clamped_to_zero(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        """When duration < crossfade, offset should be clamped to 0."""
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5)
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+        assert "offset=0.000000" in fc
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_single_segment_copies(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        seg = tmp_path / "only.mp4"
+        seg.write_bytes(b"video-data")
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade([seg], output, crossfade=0.5)
+
+        mock_ffmpeg.assert_not_called()
+        assert output.read_bytes() == b"video-data"
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_empty_segments_noop(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade([], output, crossfade=0.5)
+
+        mock_ffmpeg.assert_not_called()
+        assert not output.exists()
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_maps_final_labels(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5)
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        # Final map labels should be [v1] and [a1]
+        map_indices = [i for i, v in enumerate(cmd) if v == "-map"]
+        assert len(map_indices) == 2
+        assert cmd[map_indices[0] + 1] == "[v1]"
+        assert cmd[map_indices[1] + 1] == "[a1]"
 
 
 class TestRunFfmpeg:

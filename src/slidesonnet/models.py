@@ -107,6 +107,7 @@ class VideoConfig:
     pad_seconds: float = 0.5
     pre_silence: float = 1.0
     silence_duration: float = 3.0
+    crossfade: float = 0.5
 
 
 @dataclass

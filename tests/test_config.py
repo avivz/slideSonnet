@@ -71,3 +71,20 @@ def test_voices_dict_format():
     raw = {"voices": {"default": {"backend_voice": "model-a"}}}
     config = load_config(raw, Path("."))
     assert config.voices["default"].backend_voice == "model-a"
+
+
+def test_crossfade_default():
+    config = load_config({}, Path("."))
+    assert config.video.crossfade == 0.5
+
+
+def test_crossfade_custom():
+    raw = {"video": {"crossfade": 0.8}}
+    config = load_config(raw, Path("."))
+    assert config.video.crossfade == 0.8
+
+
+def test_crossfade_zero():
+    raw = {"video": {"crossfade": 0}}
+    config = load_config(raw, Path("."))
+    assert config.video.crossfade == 0.0

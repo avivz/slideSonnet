@@ -113,8 +113,15 @@ def _fake_concat(segments, output):
     output.write_bytes(b"fake-concat-video")
 
 
+def _fake_concat_xfade(segments, output, **kwargs):
+    """Mock concatenate_segments_xfade that creates a dummy output file."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"fake-xfade-video")
+
+
 @patch("slidesonnet.pipeline._create_tts")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
@@ -124,6 +131,7 @@ def test_pipeline_parses_and_synthesizes(
     mock_compose,
     mock_silent,
     mock_concat,
+    mock_concat_xfade,
     mock_extract,
     mock_create_tts,
     tmp_path,
@@ -143,6 +151,7 @@ def test_pipeline_parses_and_synthesizes(
 
 @patch("slidesonnet.pipeline._create_tts")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
@@ -152,6 +161,7 @@ def test_content_addressed_cache(
     mock_compose,
     mock_silent,
     mock_concat,
+    mock_concat_xfade,
     mock_extract,
     mock_create_tts,
     tmp_path,
@@ -175,6 +185,7 @@ def test_content_addressed_cache(
 
 @patch("slidesonnet.pipeline._create_tts")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
@@ -184,6 +195,7 @@ def test_edit_one_slide_rebuilds_only_that(
     mock_compose,
     mock_silent,
     mock_concat,
+    mock_concat_xfade,
     mock_extract,
     mock_create_tts,
     tmp_path,
@@ -216,6 +228,7 @@ def test_edit_one_slide_rebuilds_only_that(
 
 @patch("slidesonnet.pipeline._create_tts")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
@@ -225,6 +238,7 @@ def test_utterance_files_created(
     mock_compose,
     mock_silent,
     mock_concat,
+    mock_concat_xfade,
     mock_extract,
     mock_create_tts,
     tmp_path,

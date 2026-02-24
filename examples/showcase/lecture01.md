@@ -24,6 +24,7 @@ video:
   crf: 23
   pad_seconds: 0.5
   silence_duration: 3.0
+  crossfade: 0.5
 ---
 
 # slideSonnet Feature Showcase

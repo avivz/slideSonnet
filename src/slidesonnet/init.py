@@ -47,6 +47,7 @@ video:
   pad_seconds: 0.5
   pre_silence: 1.0
   silence_duration: 3.0
+  crossfade: 0.5
 ---
 
 # My Presentation
@@ -109,6 +110,7 @@ video:
   pad_seconds: 0.5
   pre_silence: 1.0
   silence_duration: 3.0
+  crossfade: 0.5
 ---
 
 # Graph Theory - Lecture 1

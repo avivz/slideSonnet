@@ -147,6 +147,83 @@ def concatenate_segments(segments: list[Path], output: Path) -> None:
     concat_file.unlink(missing_ok=True)
 
 
+def concatenate_segments_xfade(
+    segments: list[Path],
+    output: Path,
+    crossfade: float = 0.5,
+    crf: int = 23,
+) -> None:
+    """Concatenate video segments with crossfade transitions using xfade/acrossfade filters."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    if len(segments) < 2:
+        # Fallback: single segment, just copy
+        if segments:
+            import shutil
+
+            shutil.copy2(segments[0], output)
+        return
+
+    # Get durations for offset calculation
+    durations = [get_duration(seg) for seg in segments]
+
+    # Build filter_complex string with pairwise xfade + acrossfade
+    inputs: list[str] = []
+    for i, seg in enumerate(segments):
+        inputs.extend(["-i", str(seg)])
+
+    # Track cumulative offset: first offset = D0 - crossfade
+    # Each subsequent: prev_offset + D_i - crossfade
+    video_label = "[0:v]"
+    audio_label = "[0:a]"
+    filter_parts: list[str] = []
+    offset = durations[0] - crossfade
+
+    for i in range(1, len(segments)):
+        safe_offset = max(0.0, offset)
+        out_v = f"[v{i}]"
+        out_a = f"[a{i}]"
+
+        filter_parts.append(
+            f"{video_label}[{i}:v]xfade=transition=fade:duration={crossfade}"
+            f":offset={safe_offset:.6f}{out_v}"
+        )
+        filter_parts.append(f"{audio_label}[{i}:a]acrossfade=d={crossfade}:c1=tri:c2=tri{out_a}")
+
+        video_label = out_v
+        audio_label = out_a
+
+        if i < len(segments) - 1:
+            # Next offset: current safe_offset + next duration - crossfade
+            offset = safe_offset + durations[i] - crossfade
+
+    filter_complex = ";".join(filter_parts)
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        *inputs,
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        video_label,
+        "-map",
+        audio_label,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-crf",
+        str(crf),
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        str(output),
+    ]
+    _run_ffmpeg(cmd)
+
+
 def get_duration(media_path: Path) -> float:
     """Get duration of a media file in seconds using ffprobe."""
     cmd = [
