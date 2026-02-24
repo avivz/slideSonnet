@@ -1,4 +1,4 @@
-.PHONY: install test test-unit lint clean
+.PHONY: install test test-unit lint typecheck clean
 
 install:
 	pip install -e ".[piper,dev]"
@@ -12,6 +12,9 @@ test-unit:
 lint:
 	ruff check src/ tests/
 	ruff format --check src/ tests/
+
+typecheck:
+	mypy src/slidesonnet/
 
 clean:
 	rm -rf .build/ dist/ *.egg-info/

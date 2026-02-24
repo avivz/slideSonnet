@@ -20,6 +20,8 @@ A **playlist** file chains modules together — MARP slides, Beamer slides, and 
 ## Quick start
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e ".[piper,dev]"
 
 # Create an example project
@@ -225,6 +227,8 @@ my-course/
 ## Development
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e ".[piper,dev]"
 make test          # run all tests (needs ffmpeg)
 make test-unit     # unit tests only (no external tools)

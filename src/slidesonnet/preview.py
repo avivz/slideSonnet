@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from slidesonnet.config import load_config
+from slidesonnet.parsers.base import SlideParser
 from slidesonnet.parsers.marp import MarpParser
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.piper import PiperTTS
@@ -24,6 +25,7 @@ def preview_single_slide(
 
     # Determine parser from extension
     suffix = slides_path.suffix.lower()
+    parser: SlideParser
     if suffix == ".md":
         parser = MarpParser()
     elif suffix == ".tex":

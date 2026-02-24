@@ -5,18 +5,22 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
 
 try:
-    from elevenlabs import ElevenLabs
+    from elevenlabs import ElevenLabs as _ElevenLabs
 except ImportError:
-    ElevenLabs = None  # type: ignore[assignment,misc]
+    _ElevenLabs = None
+
+# Keep module-level name for test mocking via @patch("slidesonnet.tts.elevenlabs.ElevenLabs")
+ElevenLabs: Any = _ElevenLabs
 
 
 class ElevenLabsTTS(TTSEngine):
-    def __init__(self, config: TTSConfig):
+    def __init__(self, config: TTSConfig) -> None:
         api_key = os.environ.get(config.elevenlabs_api_key_env, "")
         if not api_key:
             print(
@@ -34,11 +38,11 @@ class ElevenLabsTTS(TTSEngine):
             )
             raise SystemExit(1)
 
-        self.client = ElevenLabs(api_key=api_key)
-        self.voice_id = config.elevenlabs_voice_id
-        self.model_id = config.elevenlabs_model_id
-        self.stability = config.elevenlabs_stability
-        self.similarity_boost = config.elevenlabs_similarity_boost
+        self.client: Any = ElevenLabs(api_key=api_key)
+        self.voice_id: str = config.elevenlabs_voice_id
+        self.model_id: str = config.elevenlabs_model_id
+        self.stability: float = config.elevenlabs_stability
+        self.similarity_boost: float = config.elevenlabs_similarity_boost
 
     def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
         output_path.parent.mkdir(parents=True, exist_ok=True)

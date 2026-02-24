@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -14,7 +15,7 @@ from slidesonnet.models import PlaylistEntry
 _LIST_ITEM_RE = re.compile(r"^\s*\d+\.\s+\[([^\]]+)\]\(([^)]+)\)")
 
 
-def parse_playlist(playlist_path: Path) -> tuple[dict, list[PlaylistEntry]]:
+def parse_playlist(playlist_path: Path) -> tuple[dict[str, Any], list[PlaylistEntry]]:
     """Parse a playlist markdown file.
 
     Returns:
@@ -26,7 +27,7 @@ def parse_playlist(playlist_path: Path) -> tuple[dict, list[PlaylistEntry]]:
     return config_dict, entries
 
 
-def _split_front_matter(text: str) -> tuple[dict, str]:
+def _split_front_matter(text: str) -> tuple[dict[str, Any], str]:
     """Extract YAML front matter from markdown text.
 
     Returns (config_dict, remaining_body).

@@ -15,6 +15,10 @@ __pycache__/
 htmlcov/
 .coverage
 
+# Editor / IDE
+.vscode/
+CLAUDE.md
+
 # OS
 .DS_Store
 

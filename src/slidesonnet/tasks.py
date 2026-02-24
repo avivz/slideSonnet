@@ -16,7 +16,9 @@ import hashlib
 import json
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from doit.tools import config_changed
 
@@ -25,6 +27,7 @@ from slidesonnet.models import (
     PlaylistEntry,
     ProjectConfig,
 )
+from slidesonnet.parsers.base import SlideParser
 from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.pronunciation import apply_pronunciation
 from slidesonnet.video import composer
@@ -38,7 +41,7 @@ def generate_tasks(
     playlist_dir: Path,
     output_path: Path,
     force: bool = False,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Generate doit task dicts for the full build pipeline.
 
     Each dict is suitable for doit.task.dict_to_task(). Task names use
@@ -46,7 +49,7 @@ def generate_tasks(
     """
     audio_cache_dir = build_dir / "audio"
     module_videos: list[Path] = []
-    all_tasks: list[dict] = []
+    all_tasks: list[dict[str, Any]] = []
 
     for i, entry in enumerate(entries, start=1):
         source_path = playlist_dir / entry.path
@@ -232,13 +235,18 @@ def generate_tasks(
 # --- Action functions (executed by doit) ---
 
 
-def _action_passthrough(source: Path, output: Path):
+def _action_passthrough(source: Path, output: Path) -> None:
     """Copy a video file as-is."""
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, output)
 
 
-def _action_extract_images(source: Path, slides_dir: Path, extract_fn, manifest_path: Path):
+def _action_extract_images(
+    source: Path,
+    slides_dir: Path,
+    extract_fn: Callable[[Path, Path], list[Path]],
+    manifest_path: Path,
+) -> None:
     """Run image extraction and write manifest."""
     slides_dir.mkdir(parents=True, exist_ok=True)
     images = extract_fn(source, slides_dir)
@@ -256,7 +264,7 @@ def _action_tts(
     utterance_path: Path,
     force: bool,
     voice: str | None = None,
-):
+) -> None:
     """Synthesize TTS audio with content-addressed caching."""
     utterance_path.parent.mkdir(parents=True, exist_ok=True)
     utterance_path.write_text(text, encoding="utf-8")
@@ -276,7 +284,7 @@ def _action_compose_narrated(
     audio_path: Path,
     output: Path,
     config: ProjectConfig,
-):
+) -> None:
     """Compose a narrated slide segment."""
     images = json.loads(manifest_path.read_text(encoding="utf-8"))
     image = Path(images[slide_index - 1])
@@ -298,7 +306,7 @@ def _action_compose_silent(
     slide_index: int,
     output: Path,
     config: ProjectConfig,
-):
+) -> None:
     """Compose a silent slide segment."""
     images = json.loads(manifest_path.read_text(encoding="utf-8"))
     image = Path(images[slide_index - 1])
@@ -312,7 +320,7 @@ def _action_compose_silent(
     )
 
 
-def _action_concat(segments: list[Path], output: Path):
+def _action_concat(segments: list[Path], output: Path) -> None:
     """Concatenate segments into a module video."""
     if len(segments) == 1:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -321,7 +329,7 @@ def _action_concat(segments: list[Path], output: Path):
         composer.concatenate_segments(segments, output)
 
 
-def _action_assemble(module_videos: list[Path], output: Path):
+def _action_assemble(module_videos: list[Path], output: Path) -> None:
     """Assemble module videos into final output."""
     if len(module_videos) == 1:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -333,7 +341,9 @@ def _action_assemble(module_videos: list[Path], output: Path):
 # --- Helpers ---
 
 
-def _get_parser_and_extractor(module_type: ModuleType):
+def _get_parser_and_extractor(
+    module_type: ModuleType,
+) -> tuple[type[SlideParser], Callable[[Path, Path], list[Path]]]:
     """Get parser class and image extraction function for a module type."""
     if module_type == ModuleType.MARP:
         from slidesonnet.parsers.marp import MarpParser

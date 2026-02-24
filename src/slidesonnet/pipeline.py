@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
 from slidesonnet.config import load_config
+from slidesonnet.models import ProjectConfig
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tasks import generate_tasks
+from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.pronunciation import load_pronunciation_files
 
 
@@ -64,7 +67,7 @@ def build(playlist_path: Path, tts_override: str | None = None, force: bool = Fa
     return output_path
 
 
-def _run_doit(task_list: list[dict], build_dir: Path, force: bool) -> None:
+def _run_doit(task_list: list[dict[str, Any]], build_dir: Path, force: bool) -> None:
     """Run doit programmatically with the given tasks."""
     from doit.cmd_base import TaskLoader2
     from doit.doit_cmd import DoitMain
@@ -73,15 +76,15 @@ def _run_doit(task_list: list[dict], build_dir: Path, force: bool) -> None:
     db_file = str(build_dir / ".doit.db")
     tasks = [dict_to_task(t) for t in task_list]
 
-    class _Loader(TaskLoader2):
-        def load_doit_config(self):
+    class _Loader(TaskLoader2):  # type: ignore[misc]
+        def load_doit_config(self) -> dict[str, Any]:
             return {
                 "backend": "json",
                 "dep_file": db_file,
                 "verbosity": 2,
             }
 
-        def load_tasks(self, cmd, pos_args):
+        def load_tasks(self, cmd: Any, pos_args: Any) -> list[Any]:
             return tasks
 
     run_args = ["run"]
@@ -93,7 +96,7 @@ def _run_doit(task_list: list[dict], build_dir: Path, force: bool) -> None:
         raise SystemExit(result)
 
 
-def _create_tts(config):
+def _create_tts(config: ProjectConfig) -> TTSEngine:
     """Create TTS engine from config."""
     from slidesonnet.tts.piper import PiperTTS
 

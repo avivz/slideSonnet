@@ -15,7 +15,7 @@ from slidesonnet.preview import preview_single_slide
 
 @click.group()
 @click.version_option(version=__version__)
-def main():
+def main() -> None:
     """slideSonnet — compile text-based presentations into narrated videos."""
     pass
 
@@ -24,14 +24,14 @@ def main():
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
 @click.option("--tts", type=click.Choice(["piper", "elevenlabs"]), help="Override TTS backend")
 @click.option("--force", "-f", is_flag=True, help="Force rebuild all stages")
-def build(playlist: Path, tts: str | None, force: bool):
+def build(playlist: Path, tts: str | None, force: bool) -> None:
     """Build a presentation video from a playlist file."""
     run_build(playlist, tts_override=tts, force=force)
 
 
 @main.command()
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
-def preview(playlist: Path):
+def preview(playlist: Path) -> None:
     """Quick preview build using local Piper TTS."""
     run_build(playlist, tts_override="piper")
 
@@ -45,7 +45,7 @@ def preview(playlist: Path):
     type=click.Path(exists=True, path_type=Path),
     help="Playlist file for config (pronunciation, voice settings)",
 )
-def preview_slide(slides: Path, slide_number: int, playlist: Path | None):
+def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> None:
     """Play a single slide's narration audio.
 
     Parse SLIDES file and synthesize audio for SLIDE_NUMBER using Piper TTS.
@@ -64,7 +64,7 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None):
     type=click.Path(exists=True, path_type=Path),
     help="Copy config from existing playlist",
 )
-def init(target: Path, mode: str | None, from_path: Path | None):
+def init(target: Path, mode: str | None, from_path: Path | None) -> None:
     """Initialize a new slideSonnet project."""
     if from_path:
         init_from(target, from_path)
@@ -79,7 +79,7 @@ def init(target: Path, mode: str | None, from_path: Path | None):
 
 @main.command()
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
-def clean(playlist: Path):
+def clean(playlist: Path) -> None:
     """Remove all build artifacts."""
     build_dir = playlist.resolve().parent / ".build"
     if build_dir.exists():

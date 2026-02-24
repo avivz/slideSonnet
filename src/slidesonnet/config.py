@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from slidesonnet.models import ProjectConfig, TTSConfig, VideoConfig, VoiceConfig
 
 
-def load_config(raw: dict, playlist_dir: Path) -> ProjectConfig:
+def load_config(raw: dict[str, Any], playlist_dir: Path) -> ProjectConfig:
     """Build a validated ProjectConfig from a raw YAML dict.
 
     Args:
@@ -28,7 +29,7 @@ def load_config(raw: dict, playlist_dir: Path) -> ProjectConfig:
     )
 
 
-def _parse_tts(raw: dict) -> TTSConfig:
+def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     cfg = TTSConfig()
     cfg.backend = raw.get("backend", cfg.backend)
 
@@ -47,7 +48,7 @@ def _parse_tts(raw: dict) -> TTSConfig:
     return cfg
 
 
-def _parse_video(raw: dict) -> VideoConfig:
+def _parse_video(raw: dict[str, Any]) -> VideoConfig:
     cfg = VideoConfig()
     cfg.resolution = raw.get("resolution", cfg.resolution)
     cfg.fps = int(raw.get("fps", cfg.fps))
@@ -57,20 +58,21 @@ def _parse_video(raw: dict) -> VideoConfig:
     return cfg
 
 
-def _parse_voices(raw: dict) -> dict[str, VoiceConfig]:
+def _parse_voices(raw: dict[str, Any]) -> dict[str, VoiceConfig]:
     voices = {}
     for name, value in raw.items():
         if isinstance(value, str):
             voices[name] = VoiceConfig(name=name, backend_voice=value)
         elif isinstance(value, dict):
+            backend_voice = str(value.get("backend_voice", value.get("model", "")))
             voices[name] = VoiceConfig(
                 name=name,
-                backend_voice=value.get("backend_voice", value.get("model", "")),
+                backend_voice=backend_voice,
             )
     return voices
 
 
-def _parse_pronunciation_paths(raw: list | None, playlist_dir: Path) -> list[Path]:
+def _parse_pronunciation_paths(raw: list[Any] | None, playlist_dir: Path) -> list[Path]:
     if not raw:
         return []
     return [playlist_dir / p for p in raw]
