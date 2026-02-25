@@ -88,14 +88,27 @@ def _split_slides(text: str) -> list[str]:
     """Split MARP markdown into individual slides on --- separators.
 
     The first slide includes any front matter.
+    Ignores ``---`` inside fenced code blocks (``` or ~~~).
     """
     # MARP uses --- as slide separator (at start of line, possibly with whitespace)
     # But the first --- pair is YAML front matter
     lines = text.split("\n")
     separator_indices = []
+    in_fence = False
 
     for i, line in enumerate(lines):
-        if line.strip() == "---":
+        stripped = line.strip()
+        # Detect fenced code block boundaries (``` or ~~~, with optional info string)
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            fence_char = stripped[:3]
+            if in_fence:
+                # Closing fence: must be only fence chars (no info string)
+                if stripped.rstrip(fence_char[0]) == "":
+                    in_fence = False
+            else:
+                in_fence = True
+            continue
+        if not in_fence and stripped == "---":
             separator_indices.append(i)
 
     if len(separator_indices) < 2:

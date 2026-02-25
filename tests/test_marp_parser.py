@@ -108,6 +108,57 @@ def test_multiple_say_blocks():
     assert "Second paragraph." in slide.narration_raw
 
 
+def test_triple_dash_inside_code_fence_not_a_separator():
+    """D4: --- inside a fenced code block should not split slides."""
+    text = textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide 1
+
+        ```markdown
+        ---
+        title: example
+        ---
+        ```
+
+        <!-- say: This slide has a code fence with dashes. -->
+
+        ---
+
+        # Slide 2
+
+        <!-- say: Second slide. -->
+    """)
+    slides = _split_slides(text)
+    assert len(slides) == 2
+    assert "code fence with dashes" in slides[0]
+    assert "Second slide" in slides[1]
+
+
+def test_tilde_code_fence_not_a_separator():
+    """--- inside a ~~~ fenced code block should not split slides."""
+    text = textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide 1
+
+        ~~~yaml
+        ---
+        key: value
+        ---
+        ~~~
+
+        <!-- say: Tilde fence test. -->
+    """)
+    slides = _split_slides(text)
+    assert len(slides) == 1
+    assert "Tilde fence test" in slides[0]
+
+
 def test_regular_comment_ignored():
     text = textwrap.dedent("""\
         ---
