@@ -166,6 +166,17 @@ def concatenate_segments_xfade(
     # Get durations for offset calculation
     durations = [get_duration(seg) for seg in segments]
 
+    # Clamp crossfade if it exceeds the shortest segment's duration
+    min_dur = min(durations) if durations else 0.0
+    if crossfade >= min_dur > 0:
+        clamped = min_dur * 0.5
+        print(
+            f"WARNING: crossfade ({crossfade:.2f}s) >= shortest segment ({min_dur:.2f}s); "
+            f"clamping to {clamped:.2f}s",
+            file=sys.stderr,
+        )
+        crossfade = clamped
+
     # Build filter_complex string with pairwise xfade + acrossfade
     inputs: list[str] = []
     for i, seg in enumerate(segments):

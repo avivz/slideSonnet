@@ -414,19 +414,25 @@ class TestConcatenateSegmentsXfadeMocked:
 
     @patch("slidesonnet.video.composer.get_duration", return_value=0.3)
     @patch("slidesonnet.video.composer._run_ffmpeg")
-    def test_offset_clamped_to_zero(
-        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    def test_crossfade_clamped_to_short_segment(
+        self,
+        mock_ffmpeg: MagicMock,
+        mock_dur: MagicMock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """When duration < crossfade, offset should be clamped to 0."""
+        """When crossfade >= shortest segment, crossfade is clamped to half that duration."""
         segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         output = tmp_path / "out.mp4"
 
         concatenate_segments_xfade(segs, output, crossfade=0.5)
 
+        captured = capsys.readouterr()
+        assert "clamping to 0.15s" in captured.err
         cmd = mock_ffmpeg.call_args[0][0]
         fc_idx = cmd.index("-filter_complex")
         fc = cmd[fc_idx + 1]
-        assert "offset=0.000000" in fc
+        assert "duration=0.15" in fc
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
     def test_single_segment_copies(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
