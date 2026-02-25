@@ -59,6 +59,7 @@ def work_dir(tmp_path):
     return tmp_path / "composer_test"
 
 
+@pytest.mark.integration
 def test_compose_segment(work_dir):
     image = work_dir / "slide.png"
     audio = work_dir / "audio.wav"
@@ -83,6 +84,7 @@ def test_compose_segment(work_dir):
     assert 2.0 <= dur <= 3.0  # 2s audio + 0.5s pad, with tolerance
 
 
+@pytest.mark.integration
 def test_compose_silent_segment(work_dir):
     image = work_dir / "slide.png"
     output = work_dir / "silent.mp4"
@@ -103,6 +105,7 @@ def test_compose_silent_segment(work_dir):
     assert 2.5 <= dur <= 3.5
 
 
+@pytest.mark.integration
 def test_concatenate_segments(work_dir):
     segments = []
     for i in range(3):

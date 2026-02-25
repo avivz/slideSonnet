@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 
 class ModuleType(Enum):
@@ -88,13 +90,16 @@ class VoiceConfig:
 class TTSConfig:
     """TTS backend configuration."""
 
-    backend: str = "piper"  # "piper" | "elevenlabs"
+    backend: Literal["piper", "elevenlabs"] = "piper"
     piper_model: str = "en_US-lessac-medium"
     elevenlabs_api_key_env: str = "ELEVENLABS_API_KEY"
     elevenlabs_voice_id: str = ""
     elevenlabs_model_id: str = "eleven_multilingual_v2"
     elevenlabs_stability: float = 0.5
     elevenlabs_similarity_boost: float = 0.75
+
+
+_RESOLUTION_RE = re.compile(r"^\d+x\d+$")
 
 
 @dataclass
@@ -108,6 +113,12 @@ class VideoConfig:
     pre_silence: float = 1.0
     silence_duration: float = 3.0
     crossfade: float = 0.5
+
+    def __post_init__(self) -> None:
+        if not _RESOLUTION_RE.match(self.resolution):
+            raise ValueError(
+                f"Invalid resolution '{self.resolution}': expected 'WIDTHxHEIGHT' (e.g. '1920x1080')"
+            )
 
 
 @dataclass

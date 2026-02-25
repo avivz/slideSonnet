@@ -2,6 +2,7 @@
 
 import subprocess
 import wave
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,12 @@ from slidesonnet.tts.piper import PiperTTS, _wav_duration
 
 class TestPiperSynthesize:
     """Tests for PiperTTS.synthesize()."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_ensure_voice(self) -> Iterator[None]:
+        """Prevent _ensure_voice from hitting real filesystem or network."""
+        with patch("slidesonnet.tts.piper._ensure_voice"):
+            yield
 
     @patch("slidesonnet.tts.piper._wav_duration", return_value=2.5)
     @patch("slidesonnet.tts.piper.subprocess.run")
@@ -126,6 +133,29 @@ class TestWavDuration:
             wf.writeframes(b"\x00\x00" * num_frames)
 
         assert _wav_duration(path) == pytest.approx(1.0)
+
+
+class TestEnsureVoice:
+    """Tests for _ensure_voice()."""
+
+    @patch("slidesonnet.tts.piper._VOICES_DIR")
+    def test_missing_package_gives_helpful_error(
+        self, mock_dir: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """If piper-tts package is missing, should exit with a helpful message."""
+        from slidesonnet.tts.piper import _ensure_voice
+
+        # Point _VOICES_DIR to tmp_path so the model file won't exist
+        mock_dir.__truediv__ = lambda self, x: tmp_path / x
+        mock_dir.mkdir = MagicMock()
+
+        with patch.dict("sys.modules", {"piper": None, "piper.download_voices": None}):
+            with pytest.raises(SystemExit, match="1"):
+                _ensure_voice("en_US-lessac-medium")
+
+        captured = capsys.readouterr()
+        assert "piper-tts" in captured.err
+        assert "auto-download" in captured.err
 
 
 class TestName:

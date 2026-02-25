@@ -62,6 +62,25 @@ def test_synthesize_calls_api(mock_elevenlabs_cls, tmp_path):
 
 
 @patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key"})
+@patch("slidesonnet.tts.elevenlabs.ElevenLabs", None)
+def test_missing_package(capsys):
+    """Should exit if elevenlabs package is not installed."""
+    config = TTSConfig(
+        backend="elevenlabs",
+        elevenlabs_api_key_env="ELEVENLABS_API_KEY",
+        elevenlabs_voice_id="test-voice",
+    )
+
+    with pytest.raises(SystemExit):
+        from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+
+        ElevenLabsTTS(config)
+
+    captured = capsys.readouterr()
+    assert "elevenlabs package not installed" in captured.err
+
+
+@patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key"})
 @patch("slidesonnet.tts.elevenlabs.ElevenLabs")
 def test_name(mock_cls):
     config = TTSConfig(

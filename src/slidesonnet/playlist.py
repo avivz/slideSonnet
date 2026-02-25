@@ -22,12 +22,12 @@ def parse_playlist(playlist_path: Path) -> tuple[dict[str, Any], list[PlaylistEn
         (raw_config_dict, list_of_playlist_entries)
     """
     text = playlist_path.read_text(encoding="utf-8")
-    config_dict, body = _split_front_matter(text)
+    config_dict, body = split_front_matter(text)
     entries = _parse_body(body, playlist_path.parent)
     return config_dict, entries
 
 
-def _split_front_matter(text: str) -> tuple[dict[str, Any], str]:
+def split_front_matter(text: str) -> tuple[dict[str, Any], str]:
     """Extract YAML front matter from markdown text.
 
     Returns (config_dict, remaining_body).

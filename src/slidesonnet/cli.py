@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Literal, cast
 
 import click
 
@@ -26,7 +27,7 @@ def main() -> None:
 @click.option("--force", "-f", is_flag=True, help="Force rebuild all stages")
 def build(playlist: Path, tts: str | None, force: bool) -> None:
     """Build a presentation video from a playlist file."""
-    run_build(playlist, tts_override=tts, force=force)
+    run_build(playlist, tts_override=cast(Literal["piper", "elevenlabs"] | None, tts), force=force)
 
 
 @main.command()

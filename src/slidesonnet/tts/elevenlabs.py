@@ -5,18 +5,21 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
+
+if TYPE_CHECKING:
+    from elevenlabs import ElevenLabs as _ElevenLabsType
 
 try:
     from elevenlabs import ElevenLabs as _ElevenLabs
 except ImportError:
     _ElevenLabs = None
 
-# Keep module-level name for test mocking via @patch("slidesonnet.tts.elevenlabs.ElevenLabs")
-ElevenLabs: Any = _ElevenLabs
+# Module-level alias for test mocking via @patch("slidesonnet.tts.elevenlabs.ElevenLabs")
+ElevenLabs: type[_ElevenLabsType] | None = _ElevenLabs
 
 
 class ElevenLabsTTS(TTSEngine):
@@ -38,7 +41,7 @@ class ElevenLabsTTS(TTSEngine):
             )
             raise SystemExit(1)
 
-        self.client: Any = ElevenLabs(api_key=api_key)
+        self.client: _ElevenLabsType = ElevenLabs(api_key=api_key)
         self.voice_id: str = config.elevenlabs_voice_id
         self.model_id: str = config.elevenlabs_model_id
         self.stability: float = config.elevenlabs_stability

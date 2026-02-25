@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from slidesonnet.playlist import _split_front_matter
+from slidesonnet.playlist import split_front_matter
 
 GITIGNORE_CONTENT = """\
 # slideSonnet build artifacts
@@ -217,7 +217,7 @@ def init_from(target_dir: Path, source_playlist: Path) -> None:
 
     # Read and copy front matter
     text = source_playlist.read_text(encoding="utf-8")
-    config_dict, _ = _split_front_matter(text)
+    config_dict, _ = split_front_matter(text)
 
     # Create playlist with copied config but empty module list
     yaml_text = yaml.dump(config_dict, default_flow_style=False, sort_keys=False)

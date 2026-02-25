@@ -8,7 +8,9 @@ import tempfile
 from pathlib import Path
 
 from slidesonnet.config import load_config
+from slidesonnet.models import EXTENSION_TO_TYPE, ModuleType
 from slidesonnet.parsers.base import SlideParser
+from slidesonnet.parsers.beamer import BeamerParser
 from slidesonnet.parsers.marp import MarpParser
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.piper import PiperTTS
@@ -25,12 +27,11 @@ def preview_single_slide(
 
     # Determine parser from extension
     suffix = slides_path.suffix.lower()
+    module_type = EXTENSION_TO_TYPE.get(suffix)
     parser: SlideParser
-    if suffix == ".md":
+    if module_type == ModuleType.MARP:
         parser = MarpParser()
-    elif suffix == ".tex":
-        from slidesonnet.parsers.beamer import BeamerParser
-
+    elif module_type == ModuleType.BEAMER:
         parser = BeamerParser()
     else:
         print(f"ERROR: Unsupported file type '{suffix}'", file=sys.stderr)
@@ -81,9 +82,13 @@ def preview_single_slide(
 
 def _play_audio(path: Path) -> None:
     """Play an audio file using available system player."""
-    players = ["aplay", "paplay", "ffplay -nodisp -autoexit", "afplay"]
-    for player_cmd in players:
-        parts = player_cmd.split()
+    players: list[list[str]] = [
+        ["aplay"],
+        ["paplay"],
+        ["ffplay", "-nodisp", "-autoexit"],
+        ["afplay"],
+    ]
+    for parts in players:
         try:
             subprocess.run(
                 [*parts, str(path)],

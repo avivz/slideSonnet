@@ -20,7 +20,17 @@ def _ensure_voice(voice_name: str) -> None:
         return
 
     print(f"Downloading Piper voice '{voice_name}'...")
-    from piper.download_voices import download_voice
+    try:
+        from piper.download_voices import download_voice
+    except ImportError:
+        print(
+            f"ERROR: Piper voice '{voice_name}' not found at {model_path} and "
+            f"auto-download requires the piper-tts Python package.\n"
+            f"Install with: pip install piper-tts\n"
+            f"Or download the voice manually to {_VOICES_DIR}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
     download_voice(voice_name, _VOICES_DIR)
     print(f"Downloaded Piper voice '{voice_name}' to {_VOICES_DIR}")

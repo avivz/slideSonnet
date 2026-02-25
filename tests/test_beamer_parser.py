@@ -118,6 +118,28 @@ def test_strip_latex():
     assert "First point" in result
 
 
+def test_strip_latex_nested():
+    """Nested markup like \\textbf{This has \\emph{nested} markup} should be fully stripped."""
+    result = _strip_latex(r"\textbf{This has \emph{nested} markup}")
+    assert "This has" in result
+    assert "nested" in result
+    assert "markup" in result
+    assert "\\" not in result
+    assert "{" not in result
+
+
+def test_strip_latex_deeply_nested():
+    """Deeply nested: \\textbf{a \\emph{b \\underline{c} d} e}."""
+    result = _strip_latex(r"\textbf{a \emph{b \underline{c} d} e}")
+    assert "a" in result
+    assert "b" in result
+    assert "c" in result
+    assert "d" in result
+    assert "e" in result
+    assert "\\" not in result
+    assert "{" not in result
+
+
 def test_empty_say_warns(capsys):
     slide = _parse_frame(1, r"\say{}", Path("test.tex"))
     assert slide.annotation == SlideAnnotation.SILENT
@@ -168,13 +190,45 @@ class TestExtractImages:
 
     @patch(
         "slidesonnet.parsers.beamer.subprocess.run",
-        side_effect=subprocess.CalledProcessError(1, "pdflatex", "error log here"),
+        side_effect=subprocess.CalledProcessError(1, "pdflatex", stderr="latex error log"),
     )
-    def test_pdflatex_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    def test_pdflatex_error(
+        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
         with pytest.raises(SystemExit, match="1"):
             extract_images(source, tmp_path / "out")
+        captured = capsys.readouterr()
+        assert "latex error log" in captured.err
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_pdflatex_error_with_pdf_warns(
+        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """When pdflatex fails but a PDF was produced, warn with stderr."""
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        output_dir = tmp_path / "out"
+
+        def side_effect(cmd, **kwargs):
+            if cmd[0] == "pdflatex":
+                # Create a partial PDF before raising
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / f"{source.stem}.pdf").touch()
+                raise subprocess.CalledProcessError(1, "pdflatex", stderr="Overfull hbox")
+            if cmd[0] == "pdftoppm":
+                (output_dir / "slide-1.png").touch()
+            return MagicMock()
+
+        mock_run.side_effect = side_effect
+
+        result = extract_images(source, output_dir)
+
+        assert len(result) == 1
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err
+        assert "Overfull hbox" in captured.err
 
     @patch("slidesonnet.parsers.beamer.subprocess.run")
     def test_pdftoppm_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
@@ -229,3 +283,17 @@ class TestExtractBracedEdgeCases:
         content, pos = _extract_braced("{}", 0)
         assert content == ""
         assert pos == 2
+
+    def test_escaped_braces_symmetric(self) -> None:
+        """Escaped \\{ and \\} in matching pairs should not affect depth."""
+        text = r"{The set \{1, 2\} is finite}"
+        content, pos = _extract_braced(text, 0)
+        assert content == r"The set \{1, 2\} is finite"
+        assert pos == len(text)
+
+    def test_escaped_brace_asymmetric(self) -> None:
+        """A lone escaped brace should not unbalance the counter."""
+        text = r"{Open bracket: \{}"
+        content, pos = _extract_braced(text, 0)
+        assert content == r"Open bracket: \{"
+        assert pos == len(text)

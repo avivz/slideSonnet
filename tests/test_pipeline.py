@@ -301,7 +301,7 @@ class TestCreateTTS:
         mock_cls.assert_called_once_with(config.tts)
 
     def test_unknown_backend(self) -> None:
-        config = ProjectConfig(tts=TTSConfig(backend="unknown_engine"))
+        config = ProjectConfig(tts=TTSConfig(backend="unknown_engine"))  # type: ignore[arg-type]
         with pytest.raises(ValueError, match="Unknown TTS backend"):
             _create_tts(config)
 

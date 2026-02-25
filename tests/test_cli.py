@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from slidesonnet import __version__
 from slidesonnet.cli import main
 
 
@@ -16,7 +17,7 @@ def runner():
 def test_version(runner):
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.output
+    assert __version__ in result.output
 
 
 def test_help(runner):

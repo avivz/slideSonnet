@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 
@@ -15,7 +15,7 @@ from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.pronunciation import load_pronunciation_files
 
 
-def build(playlist_path: Path, tts_override: str | None = None, force: bool = False) -> Path:
+def build(playlist_path: Path, tts_override: Literal["piper", "elevenlabs"] | None = None, force: bool = False) -> Path:
     """Execute the full build pipeline for a playlist.
 
     Returns path to the final output video.

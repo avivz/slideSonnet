@@ -66,6 +66,14 @@ def test_multiple_replacements():
     assert "DYKE-struh" in result
 
 
+def test_no_double_substitution():
+    """If replacement A produces text matching word B, it should not be substituted again."""
+    d = {"foo": "bar", "bar": "baz"}
+    result = apply_pronunciation("foo is here", d)
+    # "foo" -> "bar", but "bar" should NOT then become "baz"
+    assert result == "bar is here"
+
+
 def test_empty_dictionary():
     text = "No changes here."
     assert apply_pronunciation(text, {}) == text

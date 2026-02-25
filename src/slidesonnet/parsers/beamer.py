@@ -28,7 +28,7 @@ _FRAME_END_RE = re.compile(r"\\end\{frame\}")
 _PARAM_RE = re.compile(r"(\w+)\s*=\s*(\w+)")
 
 # Strip common LaTeX markup from narration text
-_LATEX_CMD_RE = re.compile(r"\\(?:textbf|textit|emph|underline|text)\{([^}]*)\}")
+_LATEX_CMD_WITH_ARG_RE = re.compile(r"\\(?:textbf|textit|emph|underline|text)\s*\{")
 _LATEX_SIMPLE_RE = re.compile(r"\\[a-zA-Z]+\b\s*")
 
 
@@ -65,11 +65,12 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     except FileNotFoundError:
         print("ERROR: 'pdflatex' not found. Install TeX Live.", file=sys.stderr)
         raise SystemExit(1)
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
         # pdflatex often returns non-zero for warnings; check if PDF was produced
         if not pdf_path.exists():
-            print("ERROR: pdflatex failed and no PDF was produced.", file=sys.stderr)
+            print(f"ERROR: pdflatex failed and no PDF was produced.\n{e.stderr}", file=sys.stderr)
             raise SystemExit(1)
+        print(f"WARNING: pdflatex exited with errors (continuing with PDF):\n{e.stderr}", file=sys.stderr)
 
     # Extract images with pdftoppm
     prefix = str(output_dir / "slide")
@@ -191,6 +192,7 @@ def _extract_braced(text: str, start: int) -> tuple[str | None, int]:
     """Extract content between matched braces starting at text[start] == '{'.
 
     Returns (content, position_after_closing_brace) or (None, start) on failure.
+    Escaped braces (``\\{`` and ``\\}``) are ignored by the brace counter.
     """
     if start >= len(text) or text[start] != "{":
         return None, start
@@ -198,6 +200,9 @@ def _extract_braced(text: str, start: int) -> tuple[str | None, int]:
     depth = 0
     i = start
     while i < len(text):
+        if text[i] == "\\" and i + 1 < len(text):
+            i += 2  # skip escaped character
+            continue
         if text[i] == "{":
             depth += 1
         elif text[i] == "}":
@@ -210,9 +215,24 @@ def _extract_braced(text: str, start: int) -> tuple[str | None, int]:
 
 
 def _strip_latex(text: str) -> str:
-    """Strip common LaTeX formatting commands from text for TTS."""
-    # Replace \textbf{word} → word, etc.
-    result = _LATEX_CMD_RE.sub(r"\1", text)
+    """Strip common LaTeX formatting commands from text for TTS.
+
+    Handles nested commands like ``\\textbf{This has \\emph{nested} markup}``
+    by using brace-counting instead of a flat regex.
+    """
+    result = text
+    # Iteratively replace \textbf{...}, \emph{...}, etc. with their content,
+    # handling arbitrary nesting depth.
+    changed = True
+    while changed:
+        changed = False
+        match = _LATEX_CMD_WITH_ARG_RE.search(result)
+        if match:
+            brace_start = match.end() - 1  # position of the opening {
+            body, end_pos = _extract_braced(result, brace_start)
+            if body is not None:
+                result = result[: match.start()] + body + result[end_pos:]
+                changed = True
     # Remove remaining simple commands like \item, \newline, etc.
     result = _LATEX_SIMPLE_RE.sub(" ", result)
     # Clean up

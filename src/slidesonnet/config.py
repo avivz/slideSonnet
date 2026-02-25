@@ -30,34 +30,45 @@ def load_config(raw: dict[str, Any], playlist_dir: Path) -> ProjectConfig:
 
 
 def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
-    cfg = TTSConfig()
-    cfg.backend = raw.get("backend", cfg.backend)
-
     piper = raw.get("piper", {})
-    cfg.piper_model = piper.get("model", cfg.piper_model)
-
     el = raw.get("elevenlabs", {})
-    cfg.elevenlabs_api_key_env = el.get("api_key_env", cfg.elevenlabs_api_key_env)
-    cfg.elevenlabs_voice_id = el.get("voice_id", cfg.elevenlabs_voice_id)
-    cfg.elevenlabs_model_id = el.get("model_id", cfg.elevenlabs_model_id)
-    cfg.elevenlabs_stability = float(el.get("stability", cfg.elevenlabs_stability))
-    cfg.elevenlabs_similarity_boost = float(
-        el.get("similarity_boost", cfg.elevenlabs_similarity_boost)
-    )
 
-    return cfg
+    kwargs: dict[str, Any] = {}
+    if "backend" in raw:
+        kwargs["backend"] = raw["backend"]
+    if "model" in piper:
+        kwargs["piper_model"] = piper["model"]
+    if "api_key_env" in el:
+        kwargs["elevenlabs_api_key_env"] = el["api_key_env"]
+    if "voice_id" in el:
+        kwargs["elevenlabs_voice_id"] = el["voice_id"]
+    if "model_id" in el:
+        kwargs["elevenlabs_model_id"] = el["model_id"]
+    if "stability" in el:
+        kwargs["elevenlabs_stability"] = float(el["stability"])
+    if "similarity_boost" in el:
+        kwargs["elevenlabs_similarity_boost"] = float(el["similarity_boost"])
+
+    return TTSConfig(**kwargs)
 
 
 def _parse_video(raw: dict[str, Any]) -> VideoConfig:
-    cfg = VideoConfig()
-    cfg.resolution = raw.get("resolution", cfg.resolution)
-    cfg.fps = int(raw.get("fps", cfg.fps))
-    cfg.crf = int(raw.get("crf", cfg.crf))
-    cfg.pad_seconds = float(raw.get("pad_seconds", cfg.pad_seconds))
-    cfg.pre_silence = float(raw.get("pre_silence", cfg.pre_silence))
-    cfg.silence_duration = float(raw.get("silence_duration", cfg.silence_duration))
-    cfg.crossfade = float(raw.get("crossfade", cfg.crossfade))
-    return cfg
+    kwargs: dict[str, Any] = {}
+    if "resolution" in raw:
+        kwargs["resolution"] = raw["resolution"]
+    if "fps" in raw:
+        kwargs["fps"] = int(raw["fps"])
+    if "crf" in raw:
+        kwargs["crf"] = int(raw["crf"])
+    if "pad_seconds" in raw:
+        kwargs["pad_seconds"] = float(raw["pad_seconds"])
+    if "pre_silence" in raw:
+        kwargs["pre_silence"] = float(raw["pre_silence"])
+    if "silence_duration" in raw:
+        kwargs["silence_duration"] = float(raw["silence_duration"])
+    if "crossfade" in raw:
+        kwargs["crossfade"] = float(raw["crossfade"])
+    return VideoConfig(**kwargs)
 
 
 def _parse_voices(raw: dict[str, Any]) -> dict[str, VoiceConfig]:

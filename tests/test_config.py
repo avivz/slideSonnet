@@ -2,7 +2,10 @@
 
 from pathlib import Path
 
+import pytest
+
 from slidesonnet.config import load_config
+from slidesonnet.models import VideoConfig
 
 
 def test_load_defaults():
@@ -88,3 +91,14 @@ def test_crossfade_zero():
     raw = {"video": {"crossfade": 0}}
     config = load_config(raw, Path("."))
     assert config.video.crossfade == 0.0
+
+
+def test_resolution_valid():
+    vc = VideoConfig(resolution="1280x720")
+    assert vc.resolution == "1280x720"
+
+
+@pytest.mark.parametrize("bad", ["1920", "abc", "1920X1080", "x1080", "1920x", ""])
+def test_resolution_invalid(bad: str) -> None:
+    with pytest.raises(ValueError, match="Invalid resolution"):
+        VideoConfig(resolution=bad)

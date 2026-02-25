@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -159,8 +160,6 @@ def concatenate_segments_xfade(
     if len(segments) < 2:
         # Fallback: single segment, just copy
         if segments:
-            import shutil
-
             shutil.copy2(segments[0], output)
         return
 

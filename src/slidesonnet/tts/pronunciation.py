@@ -46,14 +46,20 @@ def apply_pronunciation(text: str, dictionary: dict[str, str]) -> str:
     """Apply pronunciation substitutions to text.
 
     Replaces whole words only (word boundaries), case-insensitive.
+    Uses a single regex pass to avoid double-substitution when a
+    replacement produces text that matches another dictionary entry.
     """
     if not dictionary:
         return text
 
-    for word, replacement in dictionary.items():
-        # Use word boundaries to avoid replacing substrings
-        # e.g. "Euler" should not replace "Eulerian"
-        pattern = rf"\b{re.escape(word)}\b"
-        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    # Build a single pattern matching all words at once (longest first)
+    sorted_words = sorted(dictionary.keys(), key=len, reverse=True)
+    pattern = "|".join(rf"\b{re.escape(word)}\b" for word in sorted_words)
 
-    return text
+    # Case-insensitive lookup table
+    lower_dict = {word.lower(): replacement for word, replacement in dictionary.items()}
+
+    def _replacer(match: re.Match[str]) -> str:
+        return lower_dict[match.group(0).lower()]
+
+    return re.sub(pattern, _replacer, text, flags=re.IGNORECASE)
