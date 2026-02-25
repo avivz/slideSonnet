@@ -327,38 +327,31 @@ def _action_concat(segments: list[Path], output: Path, config: ProjectConfig) ->
     """Concatenate segments into a module video."""
     if not segments:
         raise RuntimeError("No segments to concatenate — all slides may have been skipped.")
-    if len(segments) == 1:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(segments[0], output)
-    elif segments:
-        if config.video.crossfade > 0:
-            composer.concatenate_segments_xfade(
-                segments,
-                output,
-                crossfade=config.video.crossfade,
-                crf=config.video.crf,
-            )
-        else:
-            composer.concatenate_segments(segments, output)
+    _merge_videos(segments, output, config)
 
 
 def _action_assemble(module_videos: list[Path], output: Path, config: ProjectConfig) -> None:
     """Assemble module videos into final output."""
     if not module_videos:
         raise RuntimeError("No module videos to assemble — the playlist may be empty.")
-    if len(module_videos) == 1:
+    _merge_videos(module_videos, output, config)
+
+
+def _merge_videos(inputs: list[Path], output: Path, config: ProjectConfig) -> None:
+    """Merge one or more video files into a single output."""
+    if len(inputs) == 1:
         output.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(module_videos[0], output)
-    elif module_videos:
+        shutil.copy2(inputs[0], output)
+    else:
         if config.video.crossfade > 0:
             composer.concatenate_segments_xfade(
-                module_videos,
+                inputs,
                 output,
                 crossfade=config.video.crossfade,
                 crf=config.video.crf,
             )
         else:
-            composer.concatenate_segments(module_videos, output)
+            composer.concatenate_segments(inputs, output)
 
 
 # --- Helpers ---
