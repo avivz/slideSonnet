@@ -159,6 +159,70 @@ def test_tilde_code_fence_not_a_separator():
     assert "Tilde fence test" in slides[0]
 
 
+def test_say_inside_code_fence_ignored():
+    """D5: <!-- say: --> inside a fenced code block should not be parsed as narration."""
+    slide_text = textwrap.dedent("""\
+        # Example Slide
+
+        ```html
+        <!-- say: This is example code, not narration. -->
+        ```
+
+        <!-- say: Real narration outside the fence. -->
+    """)
+    slide = _parse_slide(1, slide_text, Path("test.md"))
+    assert slide.annotation == SlideAnnotation.SAY
+    assert "Real narration" in slide.narration_raw
+    assert "example code" not in slide.narration_raw
+
+
+def test_silent_inside_code_fence_ignored(capsys):
+    """<!-- silent --> inside a fenced code block should not mark the slide silent."""
+    slide_text = textwrap.dedent("""\
+        # Example Slide
+
+        ```markdown
+        <!-- silent -->
+        ```
+
+        <!-- say: This slide is narrated. -->
+    """)
+    slide = _parse_slide(1, slide_text, Path("test.md"))
+    assert slide.annotation == SlideAnnotation.SAY
+    assert "narrated" in slide.narration_raw
+
+
+def test_skip_inside_code_fence_ignored(capsys):
+    """<!-- skip --> inside a fenced code block should not mark the slide as skipped."""
+    slide_text = textwrap.dedent("""\
+        # Example Slide
+
+        ~~~html
+        <!-- skip -->
+        ~~~
+
+        <!-- say: Not skipped. -->
+    """)
+    slide = _parse_slide(1, slide_text, Path("test.md"))
+    assert slide.annotation == SlideAnnotation.SAY
+    assert "Not skipped" in slide.narration_raw
+
+
+def test_only_say_inside_code_fence_no_annotation(capsys):
+    """If the only say directive is inside a code block, slide has no annotation."""
+    slide_text = textwrap.dedent("""\
+        # Example Slide
+
+        ```html
+        <!-- say: This is inside a code block. -->
+        ```
+    """)
+    slide = _parse_slide(1, slide_text, Path("test.md"))
+    assert slide.annotation == SlideAnnotation.NONE
+    captured = capsys.readouterr()
+    assert "no annotation" in captured.err
+
+
 def test_regular_comment_ignored():
     text = textwrap.dedent("""\
         ---

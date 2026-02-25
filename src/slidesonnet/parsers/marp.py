@@ -26,6 +26,14 @@ _SILENT_RE = re.compile(r"<!--\s*silent\s*-->", re.IGNORECASE)
 # Match <!-- skip -->
 _SKIP_RE = re.compile(r"<!--\s*skip\s*-->", re.IGNORECASE)
 
+# Match fenced code blocks (``` or ~~~, with optional info string)
+_FENCE_RE = re.compile(
+    r"^(?P<fence>`{3,}|~{3,})[^\n]*\n"  # opening fence + info string
+    r".*?"  # content (non-greedy)
+    r"^(?P=fence)\s*$",  # matching closing fence
+    re.MULTILINE | re.DOTALL,
+)
+
 # Parse key=value pairs from say(...) params
 _PARAM_RE = re.compile(r"(\w+)\s*=\s*(\w+)")
 
@@ -148,6 +156,8 @@ def _split_slides(text: str) -> list[str]:
 
 def _parse_slide(index: int, text: str, source: Path) -> SlideNarration:
     """Parse annotations from a single slide's text."""
+    # Strip fenced code blocks so directives inside them are ignored
+    text = _FENCE_RE.sub("", text)
 
     # Check for <!-- skip -->
     if _SKIP_RE.search(text):
