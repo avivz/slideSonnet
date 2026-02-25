@@ -235,7 +235,11 @@ def concatenate_segments_xfade(
 
 
 def get_duration(media_path: Path) -> float:
-    """Get duration of a media file in seconds using ffprobe."""
+    """Get duration of a media file in seconds using ffprobe.
+
+    Raises RuntimeError if ffprobe is missing, the file cannot be probed,
+    or the output doesn't contain a valid duration.
+    """
     cmd = [
         "ffprobe",
         "-v",
@@ -247,10 +251,29 @@ def get_duration(media_path: Path) -> float:
     ]
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except FileNotFoundError:
+        raise RuntimeError("'ffprobe' not found. Install ffmpeg.")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"ffprobe failed for '{media_path}': {e.stderr}") from e
+
+    try:
         info = json.loads(result.stdout)
-        return float(info["format"]["duration"])
-    except (FileNotFoundError, subprocess.CalledProcessError, KeyError, ValueError):
-        return 0.0
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"ffprobe returned invalid JSON for '{media_path}'") from e
+
+    try:
+        duration_str = info["format"]["duration"]
+    except KeyError:
+        raise RuntimeError(
+            f"ffprobe output missing 'format.duration' for '{media_path}'"
+        )
+
+    try:
+        return float(duration_str)
+    except (ValueError, TypeError) as e:
+        raise RuntimeError(
+            f"ffprobe returned non-numeric duration '{duration_str}' for '{media_path}'"
+        ) from e
 
 
 def _run_ffmpeg(cmd: list[str]) -> None:

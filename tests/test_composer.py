@@ -136,7 +136,8 @@ def test_concatenate_segments(work_dir):
 
 
 def test_get_duration_nonexistent():
-    assert get_duration(Path("/nonexistent.mp4")) == 0.0
+    with pytest.raises(RuntimeError, match="ffprobe failed"):
+        get_duration(Path("/nonexistent.mp4"))
 
 
 # ---- Mocked unit tests (no ffmpeg required) ----
@@ -322,29 +323,34 @@ class TestGetDurationMocked:
 
     @patch("slidesonnet.video.composer.subprocess.run", side_effect=FileNotFoundError)
     def test_ffprobe_not_found(self, mock_run: MagicMock) -> None:
-        assert get_duration(Path("test.mp4")) == 0.0
+        with pytest.raises(RuntimeError, match="ffprobe.*not found"):
+            get_duration(Path("test.mp4"))
 
     @patch(
         "slidesonnet.video.composer.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "ffprobe"),
     )
     def test_ffprobe_error(self, mock_run: MagicMock) -> None:
-        assert get_duration(Path("test.mp4")) == 0.0
+        with pytest.raises(RuntimeError, match="ffprobe failed"):
+            get_duration(Path("test.mp4"))
 
     @patch("slidesonnet.video.composer.subprocess.run")
     def test_bad_json(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout="not json")
-        assert get_duration(Path("test.mp4")) == 0.0
+        with pytest.raises(RuntimeError, match="invalid JSON"):
+            get_duration(Path("test.mp4"))
 
     @patch("slidesonnet.video.composer.subprocess.run")
     def test_missing_key(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=json.dumps({"format": {}}))
-        assert get_duration(Path("test.mp4")) == 0.0
+        with pytest.raises(RuntimeError, match="missing.*format.duration"):
+            get_duration(Path("test.mp4"))
 
     @patch("slidesonnet.video.composer.subprocess.run")
     def test_non_numeric_duration(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=json.dumps({"format": {"duration": "N/A"}}))
-        assert get_duration(Path("test.mp4")) == 0.0
+        with pytest.raises(RuntimeError, match="non-numeric duration"):
+            get_duration(Path("test.mp4"))
 
 
 class TestConcatenateSegmentsXfadeMocked:
