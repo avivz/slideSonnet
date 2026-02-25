@@ -442,14 +442,11 @@ class TestActionConcat:
 
         mock_concat.assert_called_once_with(segs, out)
 
-    @patch("slidesonnet.tasks.composer.concatenate_segments")
-    def test_empty_segments_noop(self, mock_concat: MagicMock, tmp_path: Path) -> None:
+    def test_empty_segments_raises(self, tmp_path: Path) -> None:
         out = tmp_path / "module.mp4"
 
-        _action_concat([], out, self._config())
-
-        mock_concat.assert_not_called()
-        assert not out.exists()
+        with pytest.raises(RuntimeError, match="No segments"):
+            _action_concat([], out, self._config())
 
     @patch("slidesonnet.tasks.composer.concatenate_segments_xfade")
     def test_crossfade_dispatches_xfade(self, mock_xfade: MagicMock, tmp_path: Path) -> None:
@@ -504,6 +501,12 @@ class TestActionAssemble:
         _action_assemble(mods, out, cfg)
 
         mock_xfade.assert_called_once_with(mods, out, crossfade=0.8, crf=23)
+
+    def test_empty_modules_raises(self, tmp_path: Path) -> None:
+        out = tmp_path / "final.mp4"
+
+        with pytest.raises(RuntimeError, match="No module videos"):
+            _action_assemble([], out, self._config())
 
 
 class TestGetParserAndExtractor:

@@ -325,6 +325,8 @@ def _action_compose_silent(
 
 def _action_concat(segments: list[Path], output: Path, config: ProjectConfig) -> None:
     """Concatenate segments into a module video."""
+    if not segments:
+        raise RuntimeError("No segments to concatenate — all slides may have been skipped.")
     if len(segments) == 1:
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(segments[0], output)
@@ -342,6 +344,8 @@ def _action_concat(segments: list[Path], output: Path, config: ProjectConfig) ->
 
 def _action_assemble(module_videos: list[Path], output: Path, config: ProjectConfig) -> None:
     """Assemble module videos into final output."""
+    if not module_videos:
+        raise RuntimeError("No module videos to assemble — the playlist may be empty.")
     if len(module_videos) == 1:
         output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(module_videos[0], output)
