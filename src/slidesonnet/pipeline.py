@@ -57,7 +57,6 @@ def build(playlist_path: Path, tts_override: Literal["piper", "elevenlabs"] | No
         build_dir=build_dir,
         playlist_dir=playlist_dir,
         output_path=output_path,
-        force=force,
     )
 
     # Run doit

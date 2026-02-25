@@ -369,35 +369,12 @@ class TestActionPassthrough:
 class TestActionTTS:
     """Tests for _action_tts()."""
 
-    def test_cache_hit_skips_synthesis(self, tmp_path: Path) -> None:
-        cached = tmp_path / "audio" / "abc123.wav"
-        cached.parent.mkdir(parents=True)
-        cached.write_bytes(b"cached-audio")
-        utterance = tmp_path / "utterances" / "slide_001.txt"
-        mock_tts = MagicMock()
-
-        _action_tts("Hello", cached, mock_tts, utterance, force=False)
-
-        mock_tts.synthesize.assert_not_called()
-        assert utterance.read_text() == "Hello"
-
-    def test_force_overrides_cache(self, tmp_path: Path) -> None:
-        cached = tmp_path / "audio" / "abc123.wav"
-        cached.parent.mkdir(parents=True)
-        cached.write_bytes(b"cached-audio")
-        utterance = tmp_path / "utterances" / "slide_001.txt"
-        mock_tts = MagicMock()
-
-        _action_tts("Hello", cached, mock_tts, utterance, force=True)
-
-        mock_tts.synthesize.assert_called_once_with("Hello", cached, voice=None)
-
-    def test_synthesizes_when_no_cache(self, tmp_path: Path) -> None:
+    def test_synthesizes(self, tmp_path: Path) -> None:
         cached = tmp_path / "audio" / "abc123.wav"
         utterance = tmp_path / "utterances" / "slide_001.txt"
         mock_tts = MagicMock()
 
-        _action_tts("Hello", cached, mock_tts, utterance, force=False)
+        _action_tts("Hello", cached, mock_tts, utterance)
 
         mock_tts.synthesize.assert_called_once_with("Hello", cached, voice=None)
 
@@ -406,7 +383,7 @@ class TestActionTTS:
         utterance = tmp_path / "utterances" / "slide_001.txt"
         mock_tts = MagicMock()
 
-        _action_tts("Hello", cached, mock_tts, utterance, force=False, voice="alice")
+        _action_tts("Hello", cached, mock_tts, utterance, voice="alice")
 
         mock_tts.synthesize.assert_called_once_with("Hello", cached, voice="alice")
 
@@ -415,7 +392,7 @@ class TestActionTTS:
         utterance = tmp_path / "utterances" / "slide_001.txt"
         mock_tts = MagicMock()
 
-        _action_tts("Some narration text", cached, mock_tts, utterance, force=False)
+        _action_tts("Some narration text", cached, mock_tts, utterance)
 
         assert utterance.exists()
         assert utterance.read_text() == "Some narration text"

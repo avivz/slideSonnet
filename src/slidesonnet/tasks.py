@@ -40,7 +40,6 @@ def generate_tasks(
     build_dir: Path,
     playlist_dir: Path,
     output_path: Path,
-    force: bool = False,
 ) -> list[dict[str, Any]]:
     """Generate doit task dicts for the full build pipeline.
 
@@ -138,7 +137,6 @@ def generate_tasks(
                                     cached_audio,
                                     tts,
                                     utterances_dir / f"slide_{slide.index:03d}.txt",
-                                    force,
                                     slide.voice,
                                 ],
                             )
@@ -264,16 +262,15 @@ def _action_tts(
     output_path: Path,
     tts: TTSEngine,
     utterance_path: Path,
-    force: bool,
     voice: str | None = None,
 ) -> None:
-    """Synthesize TTS audio with content-addressed caching."""
+    """Synthesize TTS audio.
+
+    Caching is handled by doit's uptodate/targets mechanism;
+    force-rebuild is handled by doit's --always-execute flag.
+    """
     utterance_path.parent.mkdir(parents=True, exist_ok=True)
     utterance_path.write_text(text, encoding="utf-8")
-
-    if output_path.exists() and not force:
-        print("  slide [cached]")
-        return
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     print("  slide synthesizing...")
