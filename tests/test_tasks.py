@@ -668,6 +668,108 @@ class TestActionAssemble:
             _action_assemble([], out, self._config())
 
 
+def test_mixed_type_playlist(tmp_path):
+    """Mixed-type playlist (MARP + Beamer + video) generates correct task graph."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Mixed Lecture
+        video:
+          resolution: 640x480
+        ---
+
+        1. [Intro](01-intro/slides.md)
+        2. [Animation](animations/clip.mp4)
+        3. [Theory](02-theory/slides.tex)
+    """)
+    )
+
+    # MARP module: 2 slides (1 narrated, 1 silent)
+    marp_dir = tmp_path / "01-intro"
+    marp_dir.mkdir()
+    (marp_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say: Welcome to the intro. -->
+
+        ---
+
+        # Slide Two
+
+        <!-- silent -->
+    """)
+    )
+
+    # Video passthrough
+    anim_dir = tmp_path / "animations"
+    anim_dir.mkdir()
+    (anim_dir / "clip.mp4").write_bytes(b"fake-video")
+
+    # Beamer module: 2 frames (1 narrated, 1 silent)
+    beamer_dir = tmp_path / "02-theory"
+    beamer_dir.mkdir()
+    (beamer_dir / "slides.tex").write_text(
+        textwrap.dedent(r"""
+        \documentclass{beamer}
+        \begin{document}
+
+        \begin{frame}
+        \frametitle{Frame One}
+        \say{This is the theory section.}
+        \end{frame}
+
+        \begin{frame}
+        \frametitle{Frame Two}
+        \silent
+        \end{frame}
+
+        \end{document}
+    """).lstrip()
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    task_names = [t["name"] for t in tasks]
+
+    # Module names follow "{i:02d}_{path.stem}" pattern:
+    #   01-intro/slides.md  → "01_slides"
+    #   animations/clip.mp4 → "02_clip"
+    #   02-theory/slides.tex → "03_slides"
+    # Use the sequence prefix to distinguish modules with the same stem.
+
+    # -- Module 1 (MARP): extract_images, tts, compose, concat --
+    assert "extract_images:01_slides" in task_names
+    marp_tts = [n for n in task_names if n.startswith("tts:01_slides")]
+    assert len(marp_tts) == 1  # only slide 1 is narrated
+    marp_compose = [n for n in task_names if n.startswith("compose:01_slides")]
+    assert len(marp_compose) == 2  # narrated + silent (not skipped)
+    assert "concat:01_slides" in task_names
+
+    # -- Module 2 (video): passthrough only, no parse/tts/compose --
+    passthrough = [n for n in task_names if n.startswith("passthrough:")]
+    assert len(passthrough) == 1
+    assert passthrough[0] == "passthrough:02_clip"
+    assert not any(n.startswith(("extract_images:02_", "tts:02_", "compose:02_")) for n in task_names)
+
+    # -- Module 3 (Beamer): extract_images, tts, compose, concat --
+    assert "extract_images:03_slides" in task_names
+    beamer_tts = [n for n in task_names if n.startswith("tts:03_slides")]
+    assert len(beamer_tts) == 1  # only frame 1 is narrated
+    beamer_compose = [n for n in task_names if n.startswith("compose:03_slides")]
+    assert len(beamer_compose) == 2  # narrated + silent
+    assert "concat:03_slides" in task_names
+
+    # -- Final assemble depends on all 3 module videos --
+    assemble = [t for t in tasks if t["name"] == "assemble"]
+    assert len(assemble) == 1
+    assert len(assemble[0]["file_dep"]) == 3
+
+
 class TestGetParserAndExtractor:
     """Tests for _get_parser_and_extractor()."""
 
