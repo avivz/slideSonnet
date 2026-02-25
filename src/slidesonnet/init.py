@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 import shutil
 from pathlib import Path
 
@@ -9,206 +10,29 @@ import yaml
 
 from slidesonnet.playlist import split_front_matter
 
-GITIGNORE_CONTENT = """\
-# slideSonnet build artifacts
-.build/
+_TEMPLATES = importlib.resources.files("slidesonnet.templates")
 
-# API keys and secrets
-.env
 
-# OS
-.DS_Store
-"""
-
-ENV_TEMPLATE = """\
-# ElevenLabs API key (get from https://elevenlabs.io)
-ELEVENLABS_API_KEY=your_api_key_here
-"""
-
-BLANK_PLAYLIST = """\
----
-title: My Presentation
-tts:
-  backend: piper
-  piper:
-    model: en_US-lessac-medium
-  // To use ElevenLabs, uncomment below and set backend to elevenlabs:
-  // elevenlabs:
-  //   api_key_env: ELEVENLABS_API_KEY
-  //   voice_id: your_voice_id_here
-  //   model_id: eleven_multilingual_v2
-voices:
-  default: en_US-lessac-medium
-  // alice: en_US-amy-medium
-pronunciation:
-  - pronunciation/terms.md
-video:
-  resolution: 1920x1080
-  pad_seconds: 0.5
-  pre_silence: 1.0
-  silence_duration: 3.0
-  crossfade: 0.5
----
-
-# My Presentation
-
-// Add your modules below. Each line links to a slide deck or video file.
-// Type is auto-detected: .md = MARP, .tex = Beamer, .mp4 = video
-// Lines starting with // are comments and ignored by the build.
-
-1. [Introduction](01-intro/slides.md)
-"""
-
-BLANK_SLIDES = """\
----
-marp: true
----
-
-# Welcome
-
-<!-- say: Welcome to this presentation. -->
-
----
-
-# Main Content
-
-<!-- say: Here is the main content of the talk. -->
-
----
-
-# Summary
-
-<!-- say: That concludes this presentation. Thank you for watching. -->
-"""
-
-BLANK_PRONUNCIATION = """\
-# Pronunciation Guide
-
-// Add pronunciation overrides below.
-// Format: **Word**: phonetic-spelling
-// These are applied before text-to-speech synthesis.
-
-// ## Example
-//
-// **Dijkstra**: DYKE-struh
-// **Euler**: OY-ler
-"""
-
-EXAMPLE_PLAYLIST = """\
----
-title: Graph Theory - Lecture 1
-tts:
-  backend: piper
-  piper:
-    model: en_US-lessac-medium
-voices:
-  default: en_US-lessac-medium
-pronunciation:
-  - pronunciation/cs-terms.md
-video:
-  resolution: 1920x1080
-  pad_seconds: 0.5
-  pre_silence: 1.0
-  silence_duration: 3.0
-  crossfade: 0.5
----
-
-# Graph Theory - Lecture 1
-
-// This is an example slideSonnet project.
-// Build with: slidesonnet build lecture01.md
-// Preview with: slidesonnet preview lecture01.md
-
-1. [Introduction](01-intro/slides.md)
-2. [Definitions](02-definitions/slides.md)
-"""
-
-EXAMPLE_SLIDES_INTRO = """\
----
-marp: true
----
-
-# Introduction to Graph Theory
-
-<!-- say: Welcome to the first lecture on graph theory. Today we will cover the basic definitions and some fundamental properties of graphs. -->
-
----
-
-# Why Study Graphs?
-
-- Model relationships and connections
-- Used in computer science, biology, social networks
-
-<!-- say: Graphs are one of the most versatile tools in mathematics and computer science. They let us model any kind of relationship or connection between objects. -->
-
----
-
-# Course Overview
-
-<!-- silent -->
-"""
-
-EXAMPLE_SLIDES_DEFS = """\
----
-marp: true
----
-
-# What is a Graph?
-
-- A set of **vertices** (nodes)
-- Connected by **edges**
-
-<!-- say: A graph is a mathematical structure consisting of a set of vertices, sometimes called nodes, connected by edges. Think of it like a social network where people are vertices and friendships are edges. -->
-
----
-
-# Euler's Theorem
-
-$$\\sum_{v \\in V} \\deg(v) = 2|E|$$
-
-<!-- say: Euler's handshaking theorem tells us that the sum of all vertex degrees equals twice the number of edges. This is because each edge contributes exactly two to the total degree count. -->
-
----
-
-# Dijkstra's Algorithm
-
-- Finds shortest paths in weighted graphs
-- Greedy approach
-
-<!-- say: Dijkstra's algorithm is a fundamental algorithm for finding the shortest path between nodes in a weighted graph. It uses a greedy approach, always expanding the closest unvisited node. -->
-"""
-
-EXAMPLE_PRONUNCIATION = """\
-# CS Pronunciation Guide
-
-## People
-
-**Dijkstra**: DYKE-struh
-**Euler**: OY-ler
-**Knuth**: kuh-NOOTH
-
-## Terms
-
-**adjacency**: uh-JAY-suhn-see
-**isomorphism**: eye-so-MOR-fizm
-"""
+def _load_template(name: str) -> str:
+    """Read a template file from the templates package."""
+    return (_TEMPLATES / name).read_text(encoding="utf-8")
 
 
 def init_blank(target_dir: Path) -> None:
     """Create a blank project scaffold with documented config."""
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    _write(target_dir / "lecture01.md", BLANK_PLAYLIST)
-    _write(target_dir / ".gitignore", GITIGNORE_CONTENT)
-    _write(target_dir / ".env", ENV_TEMPLATE)
+    _write(target_dir / "lecture01.md", _load_template("blank_playlist.md"))
+    _write(target_dir / ".gitignore", _load_template("gitignore.txt"))
+    _write(target_dir / ".env", _load_template("env.txt"))
 
     pron_dir = target_dir / "pronunciation"
     pron_dir.mkdir(exist_ok=True)
-    _write(pron_dir / "terms.md", BLANK_PRONUNCIATION)
+    _write(pron_dir / "terms.md", _load_template("blank_pronunciation.md"))
 
     slides_dir = target_dir / "01-intro"
     slides_dir.mkdir(exist_ok=True)
-    _write(slides_dir / "slides.md", BLANK_SLIDES)
+    _write(slides_dir / "slides.md", _load_template("blank_slides.md"))
 
 
 def init_from(target_dir: Path, source_playlist: Path) -> None:
@@ -248,35 +72,35 @@ def init_from(target_dir: Path, source_playlist: Path) -> None:
                 blanked.append(line)
         _write(target_dir / ".env", "\n".join(blanked) + "\n")
     else:
-        _write(target_dir / ".env", ENV_TEMPLATE)
+        _write(target_dir / ".env", _load_template("env.txt"))
 
-    _write(target_dir / ".gitignore", GITIGNORE_CONTENT)
+    _write(target_dir / ".gitignore", _load_template("gitignore.txt"))
 
     # Create starter slides
     slides_dir = target_dir / "01-intro"
     slides_dir.mkdir(exist_ok=True)
-    _write(slides_dir / "slides.md", BLANK_SLIDES)
+    _write(slides_dir / "slides.md", _load_template("blank_slides.md"))
 
 
 def init_example(target_dir: Path) -> None:
     """Create a full working example project."""
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    _write(target_dir / "lecture01.md", EXAMPLE_PLAYLIST)
-    _write(target_dir / ".gitignore", GITIGNORE_CONTENT)
-    _write(target_dir / ".env", ENV_TEMPLATE)
+    _write(target_dir / "lecture01.md", _load_template("example_playlist.md"))
+    _write(target_dir / ".gitignore", _load_template("gitignore.txt"))
+    _write(target_dir / ".env", _load_template("env.txt"))
 
     pron_dir = target_dir / "pronunciation"
     pron_dir.mkdir(exist_ok=True)
-    _write(pron_dir / "cs-terms.md", EXAMPLE_PRONUNCIATION)
+    _write(pron_dir / "cs-terms.md", _load_template("example_pronunciation.md"))
 
     intro_dir = target_dir / "01-intro"
     intro_dir.mkdir(exist_ok=True)
-    _write(intro_dir / "slides.md", EXAMPLE_SLIDES_INTRO)
+    _write(intro_dir / "slides.md", _load_template("example_slides_intro.md"))
 
     defs_dir = target_dir / "02-definitions"
     defs_dir.mkdir(exist_ok=True)
-    _write(defs_dir / "slides.md", EXAMPLE_SLIDES_DEFS)
+    _write(defs_dir / "slides.md", _load_template("example_slides_defs.md"))
 
 
 def _write(path: Path, content: str) -> None:

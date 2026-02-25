@@ -1,0 +1,8 @@
+# slideSonnet build artifacts
+.build/
+
+# API keys and secrets
+.env
+
+# OS
+.DS_Store
