@@ -197,21 +197,24 @@ class TestPlayAudio:
 
     @patch("slidesonnet.preview.subprocess.run")
     def test_falls_through_on_called_process_error(
-        self, mock_run: MagicMock, tmp_path: Path
+        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         audio = tmp_path / "test.wav"
         audio.write_bytes(b"fake")
 
         mock_run.side_effect = [
-            subprocess.CalledProcessError(1, "aplay"),
+            subprocess.CalledProcessError(1, "aplay", stderr="device busy"),
             MagicMock(),  # paplay succeeds
         ]
 
         _play_audio(audio)
         assert mock_run.call_count == 2
+        captured = capsys.readouterr()
+        assert "aplay failed" in captured.err
+        assert "device busy" in captured.err
 
     @patch("slidesonnet.preview.subprocess.run", side_effect=FileNotFoundError)
-    def test_all_players_fail(
+    def test_all_players_not_found(
         self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         audio = tmp_path / "test.wav"
@@ -221,3 +224,17 @@ class TestPlayAudio:
 
         captured = capsys.readouterr()
         assert "no audio player found" in captured.err
+
+    @patch("slidesonnet.preview.subprocess.run")
+    def test_all_players_error(
+        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        audio = tmp_path / "test.wav"
+        audio.write_bytes(b"fake")
+
+        mock_run.side_effect = subprocess.CalledProcessError(1, "player", stderr="bad audio")
+
+        _play_audio(audio)
+
+        captured = capsys.readouterr()
+        assert "All audio players failed" in captured.err

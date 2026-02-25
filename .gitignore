@@ -17,6 +17,7 @@ htmlcov/
 
 # Editor / IDE
 .vscode/
+.claude/
 CLAUDE.md
 TODO.md
 

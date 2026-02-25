@@ -88,6 +88,7 @@ def _play_audio(path: Path) -> None:
         ["ffplay", "-nodisp", "-autoexit"],
         ["afplay"],
     ]
+    last_error: subprocess.CalledProcessError | None = None
     for parts in players:
         try:
             subprocess.run(
@@ -98,7 +99,16 @@ def _play_audio(path: Path) -> None:
             return
         except FileNotFoundError:
             continue
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or b"").decode(errors="replace").strip() if isinstance(e.stderr, bytes) else (e.stderr or "").strip()
+            print(
+                f"WARNING: {parts[0]} failed (exit {e.returncode}){': ' + stderr if stderr else ''}",
+                file=sys.stderr,
+            )
+            last_error = e
             continue
 
-    print(f"Audio saved to {path} (no audio player found to play it)", file=sys.stderr)
+    if last_error is not None:
+        print(f"ERROR: All audio players failed for {path}", file=sys.stderr)
+    else:
+        print(f"Audio saved to {path} (no audio player found to play it)", file=sys.stderr)
