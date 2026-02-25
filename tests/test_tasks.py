@@ -11,7 +11,10 @@ from slidesonnet.models import ModuleType, ProjectConfig, VideoConfig
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tasks import (
     _action_assemble,
+    _action_compose_narrated,
+    _action_compose_silent,
     _action_concat,
+    _action_extract_images,
     _action_passthrough,
     _action_tts,
     _get_parser_and_extractor,
@@ -416,6 +419,162 @@ class TestActionTTS:
 
         assert utterance.exists()
         assert utterance.read_text() == "Some narration text"
+
+
+class TestActionExtractImages:
+    """Tests for _action_extract_images()."""
+
+    def test_writes_manifest(self, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        slides_dir = tmp_path / "slides"
+        manifest = tmp_path / "slides" / "manifest.json"
+
+        fake_images = [slides_dir / "slide.001.png", slides_dir / "slide.002.png"]
+
+        def mock_extract(src: Path, out_dir: Path) -> list[Path]:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            for img in fake_images:
+                img.touch()
+            return fake_images
+
+        _action_extract_images(source, slides_dir, mock_extract, manifest)
+
+        assert manifest.exists()
+        import json
+
+        paths = json.loads(manifest.read_text())
+        assert len(paths) == 2
+        assert all("slide" in p for p in paths)
+
+    def test_creates_slides_dir(self, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        slides_dir = tmp_path / "deep" / "nested" / "slides"
+        manifest = slides_dir / "manifest.json"
+
+        def mock_extract(src: Path, out_dir: Path) -> list[Path]:
+            return []
+
+        _action_extract_images(source, slides_dir, mock_extract, manifest)
+
+        assert slides_dir.exists()
+        assert manifest.exists()
+
+    def test_passes_source_and_dir_to_extract_fn(self, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        slides_dir = tmp_path / "slides"
+        manifest = tmp_path / "slides" / "manifest.json"
+        mock_fn = MagicMock(return_value=[])
+
+        _action_extract_images(source, slides_dir, mock_fn, manifest)
+
+        mock_fn.assert_called_once_with(source, slides_dir)
+
+
+class TestActionComposeNarrated:
+    """Tests for _action_compose_narrated()."""
+
+    def _setup_manifest(self, tmp_path: Path) -> Path:
+        import json
+
+        slides_dir = tmp_path / "slides"
+        slides_dir.mkdir(parents=True)
+        images = [str(slides_dir / "slide.001.png"), str(slides_dir / "slide.002.png")]
+        for img in images:
+            Path(img).touch()
+        manifest = slides_dir / "manifest.json"
+        manifest.write_text(json.dumps(images))
+        return manifest
+
+    @patch("slidesonnet.tasks.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.tasks.composer.compose_segment")
+    def test_calls_compose_segment(
+        self, mock_compose: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        manifest = self._setup_manifest(tmp_path)
+        audio = tmp_path / "audio.wav"
+        audio.write_bytes(b"fake")
+        output = tmp_path / "seg.mp4"
+        config = ProjectConfig()
+
+        _action_compose_narrated(manifest, 1, audio, output, config)
+
+        mock_dur.assert_called_once_with(audio)
+        mock_compose.assert_called_once_with(
+            image=Path(tmp_path / "slides" / "slide.001.png"),
+            audio=audio,
+            output=output,
+            duration=5.0,
+            pad_seconds=config.video.pad_seconds,
+            pre_silence=config.video.pre_silence,
+            resolution=config.video.resolution,
+            fps=config.video.fps,
+            crf=config.video.crf,
+        )
+
+    @patch("slidesonnet.tasks.composer.get_duration", return_value=3.0)
+    @patch("slidesonnet.tasks.composer.compose_segment")
+    def test_selects_correct_image_by_index(
+        self, mock_compose: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        manifest = self._setup_manifest(tmp_path)
+        audio = tmp_path / "audio.wav"
+        audio.write_bytes(b"fake")
+        output = tmp_path / "seg.mp4"
+
+        _action_compose_narrated(manifest, 2, audio, output, ProjectConfig())
+
+        called_image = mock_compose.call_args[1]["image"]
+        assert called_image == Path(tmp_path / "slides" / "slide.002.png")
+
+
+class TestActionComposeSilent:
+    """Tests for _action_compose_silent()."""
+
+    def _setup_manifest(self, tmp_path: Path) -> Path:
+        import json
+
+        slides_dir = tmp_path / "slides"
+        slides_dir.mkdir(parents=True)
+        images = [str(slides_dir / "slide.001.png"), str(slides_dir / "slide.002.png")]
+        for img in images:
+            Path(img).touch()
+        manifest = slides_dir / "manifest.json"
+        manifest.write_text(json.dumps(images))
+        return manifest
+
+    @patch("slidesonnet.tasks.composer.compose_silent_segment")
+    def test_calls_compose_silent_segment(
+        self, mock_compose: MagicMock, tmp_path: Path
+    ) -> None:
+        manifest = self._setup_manifest(tmp_path)
+        output = tmp_path / "seg.mp4"
+        config = ProjectConfig()
+
+        _action_compose_silent(manifest, 1, output, config)
+
+        mock_compose.assert_called_once_with(
+            image=Path(tmp_path / "slides" / "slide.001.png"),
+            output=output,
+            duration=config.video.silence_duration,
+            resolution=config.video.resolution,
+            fps=config.video.fps,
+            crf=config.video.crf,
+        )
+
+    @patch("slidesonnet.tasks.composer.compose_silent_segment")
+    def test_selects_correct_image_by_index(
+        self, mock_compose: MagicMock, tmp_path: Path
+    ) -> None:
+        manifest = self._setup_manifest(tmp_path)
+        output = tmp_path / "seg.mp4"
+
+        _action_compose_silent(manifest, 2, output, ProjectConfig())
+
+        called_image = mock_compose.call_args[1]["image"]
+        assert called_image == Path(tmp_path / "slides" / "slide.002.png")
 
 
 class TestActionConcat:
