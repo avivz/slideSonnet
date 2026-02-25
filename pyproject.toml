@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slidesonnet"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Compile text-based presentations into narrated videos"
 requires-python = ">=3.12"
 dependencies = [
@@ -27,6 +27,9 @@ dev = [
 
 [project.scripts]
 slidesonnet = "slidesonnet.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "slidesonnet.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
