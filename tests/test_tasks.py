@@ -522,9 +522,7 @@ class TestActionComposeSilent:
         return manifest
 
     @patch("slidesonnet.actions.composer.compose_silent_segment")
-    def test_calls_compose_silent_segment(
-        self, mock_compose: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_calls_compose_silent_segment(self, mock_compose: MagicMock, tmp_path: Path) -> None:
         manifest = self._setup_manifest(tmp_path)
         output = tmp_path / "seg.mp4"
         config = ProjectConfig()
@@ -541,9 +539,7 @@ class TestActionComposeSilent:
         )
 
     @patch("slidesonnet.actions.composer.compose_silent_segment")
-    def test_selects_correct_image_by_index(
-        self, mock_compose: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_selects_correct_image_by_index(self, mock_compose: MagicMock, tmp_path: Path) -> None:
         manifest = self._setup_manifest(tmp_path)
         output = tmp_path / "seg.mp4"
 
@@ -730,7 +726,9 @@ def test_mixed_type_playlist(tmp_path):
     passthrough = [n for n in task_names if n.startswith("passthrough:")]
     assert len(passthrough) == 1
     assert passthrough[0] == "passthrough:02_clip"
-    assert not any(n.startswith(("extract_images:02_", "tts:02_", "compose:02_")) for n in task_names)
+    assert not any(
+        n.startswith(("extract_images:02_", "tts:02_", "compose:02_")) for n in task_names
+    )
 
     # -- Module 3 (Beamer): extract_images, tts, compose, concat --
     assert "extract_images:03_slides" in task_names

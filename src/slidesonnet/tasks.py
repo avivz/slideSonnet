@@ -97,7 +97,9 @@ def generate_tasks(
                     else:
                         logger.warning(
                             "%s slide %d: unknown voice '%s'",
-                            source_path, slide.index, slide.voice,
+                            source_path,
+                            slide.index,
+                            slide.voice,
                         )
 
         utterances_dir = module_dir / "utterances"

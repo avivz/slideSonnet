@@ -140,9 +140,7 @@ class TestEnsureVoice:
     """Tests for _ensure_voice()."""
 
     @patch("slidesonnet.tts.piper._VOICES_DIR")
-    def test_missing_package_gives_helpful_error(
-        self, mock_dir: MagicMock, tmp_path: Path
-    ) -> None:
+    def test_missing_package_gives_helpful_error(self, mock_dir: MagicMock, tmp_path: Path) -> None:
         """If piper-tts package is missing, should exit with a helpful message."""
         from slidesonnet.tts.piper import _ensure_voice
 

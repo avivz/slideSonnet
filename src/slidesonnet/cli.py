@@ -49,7 +49,9 @@ def main() -> None:
 def build(playlist: Path, tts: str | None, force: bool) -> None:
     """Build a presentation video from a playlist file."""
     try:
-        run_build(playlist, tts_override=cast(Literal["piper", "elevenlabs"] | None, tts), force=force)
+        run_build(
+            playlist, tts_override=cast(Literal["piper", "elevenlabs"] | None, tts), force=force
+        )
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)

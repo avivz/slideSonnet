@@ -136,9 +136,7 @@ def _parse_frame(index: int, text: str, source: Path) -> SlideNarration:
         full_narration = " ".join(narration_parts)
 
         if not full_narration:
-            logger.warning(
-                "%s frame %d: empty \\say{} — did you mean \\silent?", source, index
-            )
+            logger.warning("%s frame %d: empty \\say{} — did you mean \\silent?", source, index)
             return SlideNarration(index=index, annotation=SlideAnnotation.SILENT)
 
         return SlideNarration(
@@ -150,9 +148,7 @@ def _parse_frame(index: int, text: str, source: Path) -> SlideNarration:
         )
 
     # No annotation
-    logger.warning(
-        "%s frame %d: no annotation (use \\say{}, \\silent, or \\skip)", source, index
-    )
+    logger.warning("%s frame %d: no annotation (use \\say{}, \\silent, or \\skip)", source, index)
     return SlideNarration(index=index, annotation=SlideAnnotation.NONE)
 
 

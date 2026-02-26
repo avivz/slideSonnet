@@ -45,9 +45,7 @@ def preview_single_slide(
 
     # Validate slide number
     if slide_number < 1 or slide_number > len(slides):
-        raise SlideSonnetError(
-            f"Slide {slide_number} out of range (1–{len(slides)})"
-        )
+        raise SlideSonnetError(f"Slide {slide_number} out of range (1–{len(slides)})")
 
     slide = slides[slide_number - 1]
 
@@ -100,10 +98,16 @@ def _play_audio(path: Path) -> None:
         except FileNotFoundError:
             continue
         except subprocess.CalledProcessError as e:
-            stderr = (e.stderr or b"").decode(errors="replace").strip() if isinstance(e.stderr, bytes) else (e.stderr or "").strip()
+            stderr = (
+                (e.stderr or b"").decode(errors="replace").strip()
+                if isinstance(e.stderr, bytes)
+                else (e.stderr or "").strip()
+            )
             logger.warning(
                 "%s failed (exit %d)%s",
-                parts[0], e.returncode, ": " + stderr if stderr else "",
+                parts[0],
+                e.returncode,
+                ": " + stderr if stderr else "",
             )
             last_error = e
             continue

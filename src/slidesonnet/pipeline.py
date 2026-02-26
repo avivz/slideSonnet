@@ -19,7 +19,11 @@ from slidesonnet.tts.pronunciation import load_pronunciation_files
 logger = logging.getLogger(__name__)
 
 
-def build(playlist_path: Path, tts_override: Literal["piper", "elevenlabs"] | None = None, force: bool = False) -> Path:
+def build(
+    playlist_path: Path,
+    tts_override: Literal["piper", "elevenlabs"] | None = None,
+    force: bool = False,
+) -> Path:
     """Execute the full build pipeline for a playlist.
 
     Returns path to the final output video.

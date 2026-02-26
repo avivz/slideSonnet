@@ -191,7 +191,8 @@ def _parse_slide(index: int, text: str, source: Path) -> SlideNarration:
         if not full_narration:
             logger.warning(
                 "%s slide %d: empty <!-- say: --> — did you mean <!-- silent -->?",
-                source, index,
+                source,
+                index,
             )
             return SlideNarration(index=index, annotation=SlideAnnotation.SILENT)
 
@@ -206,6 +207,7 @@ def _parse_slide(index: int, text: str, source: Path) -> SlideNarration:
     # No annotation at all — warn
     logger.warning(
         "%s slide %d: no annotation (use <!-- say: -->, <!-- silent -->, or <!-- skip -->)",
-        source, index,
+        source,
+        index,
     )
     return SlideNarration(index=index, annotation=SlideAnnotation.NONE)

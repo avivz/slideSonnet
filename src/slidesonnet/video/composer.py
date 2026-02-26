@@ -176,7 +176,9 @@ def concatenate_segments_xfade(
         clamped = min_dur * 0.5
         logger.warning(
             "crossfade (%.2fs) >= shortest segment (%.2fs); clamping to %.2fs",
-            crossfade, min_dur, clamped,
+            crossfade,
+            min_dur,
+            clamped,
         )
         crossfade = clamped
 
@@ -267,9 +269,7 @@ def get_duration(media_path: Path) -> float:
     try:
         duration_str = info["format"]["duration"]
     except KeyError:
-        raise RuntimeError(
-            f"ffprobe output missing 'format.duration' for '{media_path}'"
-        )
+        raise RuntimeError(f"ffprobe output missing 'format.duration' for '{media_path}'")
 
     try:
         return float(duration_str)
