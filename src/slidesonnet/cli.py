@@ -10,9 +10,12 @@ from typing import Literal, cast
 import click
 
 from slidesonnet import __version__
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.init import init_blank, init_example, init_from
 from slidesonnet.pipeline import build as run_build
 from slidesonnet.preview import preview_single_slide
+
+logger = logging.getLogger(__name__)
 
 
 class _CliFormatter(logging.Formatter):
@@ -45,14 +48,22 @@ def main() -> None:
 @click.option("--force", "-f", is_flag=True, help="Force rebuild all stages")
 def build(playlist: Path, tts: str | None, force: bool) -> None:
     """Build a presentation video from a playlist file."""
-    run_build(playlist, tts_override=cast(Literal["piper", "elevenlabs"] | None, tts), force=force)
+    try:
+        run_build(playlist, tts_override=cast(Literal["piper", "elevenlabs"] | None, tts), force=force)
+    except SlideSonnetError as e:
+        logger.error("%s", e)
+        raise SystemExit(1)
 
 
 @main.command()
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
 def preview(playlist: Path) -> None:
     """Quick preview build using local Piper TTS."""
-    run_build(playlist, tts_override="piper")
+    try:
+        run_build(playlist, tts_override="piper")
+    except SlideSonnetError as e:
+        logger.error("%s", e)
+        raise SystemExit(1)
 
 
 @main.command("preview-slide")
@@ -70,7 +81,11 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
     Parse SLIDES file and synthesize audio for SLIDE_NUMBER using Piper TTS.
     Useful for quick iteration on narration text.
     """
-    preview_single_slide(slides, slide_number, playlist_path=playlist)
+    try:
+        preview_single_slide(slides, slide_number, playlist_path=playlist)
+    except SlideSonnetError as e:
+        logger.error("%s", e)
+        raise SystemExit(1)
 
 
 @main.command()

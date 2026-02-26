@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from slidesonnet.exceptions import ParserError
 from slidesonnet.models import SlideAnnotation
 from slidesonnet.parsers.marp import MarpParser, _split_slides, _parse_slide, extract_images
 
@@ -292,7 +293,7 @@ class TestExtractImages:
     def test_marp_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
         source = tmp_path / "slides.md"
         source.write_text("dummy")
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(ParserError):
             extract_images(source, tmp_path / "out")
 
     @patch(
@@ -302,7 +303,7 @@ class TestExtractImages:
     def test_marp_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
         source = tmp_path / "slides.md"
         source.write_text("dummy")
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(ParserError):
             extract_images(source, tmp_path / "out")
 
     @patch("slidesonnet.parsers.marp.subprocess.run")

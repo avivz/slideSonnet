@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import ProjectConfig, TTSConfig
 from slidesonnet.pipeline import _create_tts, _run_doit, build
 
@@ -346,7 +347,7 @@ class TestRunDoit:
         mock_main.run.return_value = 2
         mock_doit.return_value = mock_main
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(SlideSonnetError, match="doit exit code"):
             _run_doit([{"name": "test"}], tmp_path, force=False)
 
     @patch("doit.doit_cmd.DoitMain")

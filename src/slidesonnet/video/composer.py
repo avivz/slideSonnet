@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from slidesonnet.exceptions import FFmpegError
+
 logger = logging.getLogger(__name__)
 
 
@@ -282,8 +284,6 @@ def _run_ffmpeg(cmd: list[str]) -> None:
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except FileNotFoundError:
-        logger.error("'ffmpeg' not found. Install ffmpeg.")
-        raise SystemExit(1)
+        raise FFmpegError("'ffmpeg' not found. Install ffmpeg.")
     except subprocess.CalledProcessError as e:
-        logger.error("ffmpeg failed:\n%s", e.stderr)
-        raise SystemExit(1)
+        raise FFmpegError(f"ffmpeg failed:\n{e.stderr}")

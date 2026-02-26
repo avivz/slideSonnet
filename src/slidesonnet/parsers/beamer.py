@@ -7,6 +7,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from slidesonnet.exceptions import ParserError
 from slidesonnet.models import SlideAnnotation, SlideNarration
 from slidesonnet.parsers.base import SlideParser
 
@@ -65,13 +66,11 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     try:
         subprocess.run(cmd_latex, check=True, capture_output=True, text=True, cwd=source.parent)
     except FileNotFoundError:
-        logger.error("'pdflatex' not found. Install TeX Live.")
-        raise SystemExit(1)
+        raise ParserError("'pdflatex' not found. Install TeX Live.")
     except subprocess.CalledProcessError as e:
         # pdflatex often returns non-zero for warnings; check if PDF was produced
         if not pdf_path.exists():
-            logger.error("pdflatex failed and no PDF was produced.\n%s", e.stderr)
-            raise SystemExit(1)
+            raise ParserError(f"pdflatex failed and no PDF was produced.\n{e.stderr}")
         logger.warning("pdflatex exited with errors (continuing with PDF):\n%s", e.stderr)
 
     # Extract images with pdftoppm
@@ -80,11 +79,9 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     try:
         subprocess.run(cmd_ppm, check=True, capture_output=True, text=True)
     except FileNotFoundError:
-        logger.error("'pdftoppm' not found. Install poppler-utils.")
-        raise SystemExit(1)
+        raise ParserError("'pdftoppm' not found. Install poppler-utils.")
     except subprocess.CalledProcessError as e:
-        logger.error("pdftoppm failed:\n%s", e.stderr)
-        raise SystemExit(1)
+        raise ParserError(f"pdftoppm failed:\n{e.stderr}")
 
     images = sorted(output_dir.glob("slide-*.png"))
     return images

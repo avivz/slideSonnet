@@ -10,6 +10,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from slidesonnet.config import load_config
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import EXTENSION_TO_TYPE, ModuleType
 from slidesonnet.parsers.base import SlideParser
 from slidesonnet.parsers.beamer import BeamerParser
@@ -36,8 +37,7 @@ def preview_single_slide(
     elif module_type == ModuleType.BEAMER:
         parser = BeamerParser()
     else:
-        logger.error("Unsupported file type '%s'", suffix)
-        raise SystemExit(1)
+        raise SlideSonnetError(f"Unsupported file type '{suffix}'")
 
     # Parse slides
     with tempfile.TemporaryDirectory() as tmp:
@@ -45,8 +45,9 @@ def preview_single_slide(
 
     # Validate slide number
     if slide_number < 1 or slide_number > len(slides):
-        logger.error("Slide %d out of range (1–%d)", slide_number, len(slides))
-        raise SystemExit(1)
+        raise SlideSonnetError(
+            f"Slide {slide_number} out of range (1–{len(slides)})"
+        )
 
     slide = slides[slide_number - 1]
 

@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from slidesonnet.exceptions import TTSError
 from slidesonnet.models import TTSConfig
 
 
@@ -17,7 +18,7 @@ def test_missing_api_key(monkeypatch):
         elevenlabs_voice_id="test-voice",
     )
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(TTSError):
         from slidesonnet.tts.elevenlabs import ElevenLabsTTS
 
         ElevenLabsTTS(config)
@@ -63,7 +64,7 @@ def test_synthesize_calls_api(mock_elevenlabs_cls, tmp_path):
 
 @patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key"})
 @patch("slidesonnet.tts.elevenlabs.ElevenLabs", None)
-def test_missing_package(caplog):
+def test_missing_package():
     """Should exit if elevenlabs package is not installed."""
     config = TTSConfig(
         backend="elevenlabs",
@@ -71,12 +72,10 @@ def test_missing_package(caplog):
         elevenlabs_voice_id="test-voice",
     )
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(TTSError, match="elevenlabs package not installed"):
         from slidesonnet.tts.elevenlabs import ElevenLabsTTS
 
         ElevenLabsTTS(config)
-
-    assert "elevenlabs package not installed" in caplog.text
 
 
 @patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key"})

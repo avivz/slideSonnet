@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from slidesonnet.exceptions import ParserError
 from slidesonnet.models import SlideAnnotation
 from slidesonnet.parsers.beamer import (
     BeamerParser,
@@ -183,21 +184,18 @@ class TestExtractImages:
     def test_pdflatex_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(ParserError):
             extract_images(source, tmp_path / "out")
 
     @patch(
         "slidesonnet.parsers.beamer.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "pdflatex", stderr="latex error log"),
     )
-    def test_pdflatex_error(
-        self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_pdflatex_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(ParserError, match="latex error log"):
             extract_images(source, tmp_path / "out")
-        assert "latex error log" in caplog.text
 
     @patch("slidesonnet.parsers.beamer.subprocess.run")
     def test_pdflatex_error_with_pdf_warns(
@@ -238,7 +236,7 @@ class TestExtractImages:
 
         mock_run.side_effect = side_effect
 
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(ParserError):
             extract_images(source, tmp_path / "out")
 
     @patch("slidesonnet.parsers.beamer.subprocess.run")
@@ -253,7 +251,7 @@ class TestExtractImages:
 
         mock_run.side_effect = side_effect
 
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(ParserError):
             extract_images(source, tmp_path / "out")
 
 

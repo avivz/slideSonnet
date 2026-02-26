@@ -7,6 +7,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from slidesonnet.exceptions import ParserError
 from slidesonnet.models import SlideAnnotation, SlideNarration
 from slidesonnet.parsers.base import SlideParser
 
@@ -76,11 +77,9 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except FileNotFoundError:
-        logger.error("'marp' not found. Install with: npm install -g @marp-team/marp-cli")
-        raise SystemExit(1)
+        raise ParserError("'marp' not found. Install with: npm install -g @marp-team/marp-cli")
     except subprocess.CalledProcessError as e:
-        logger.error("marp failed:\n%s", e.stderr)
-        raise SystemExit(1)
+        raise ParserError(f"marp failed:\n{e.stderr}")
 
     # marp --images png produces files like: slides.001.png, slides.002.png
     # or extensionless: slides.001, slides.002 (newer marp versions)

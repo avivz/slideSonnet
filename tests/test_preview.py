@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.preview import _play_audio, preview_single_slide
 
 
@@ -17,7 +18,7 @@ class TestPreviewSingleSlide:
     def test_unsupported_extension(self, tmp_path: Path) -> None:
         bad_file = tmp_path / "slides.pptx"
         bad_file.write_text("dummy")
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(SlideSonnetError):
             preview_single_slide(bad_file, 1)
 
     def test_slide_number_too_high(self, tmp_path: Path) -> None:
@@ -33,7 +34,7 @@ class TestPreviewSingleSlide:
             <!-- say: Hello. -->
         """)
         )
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(SlideSonnetError):
             preview_single_slide(md, 5)
 
     def test_slide_number_zero(self, tmp_path: Path) -> None:
@@ -49,7 +50,7 @@ class TestPreviewSingleSlide:
             <!-- say: Hello. -->
         """)
         )
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(SlideSonnetError):
             preview_single_slide(md, 0)
 
     def test_silent_slide_no_tts(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:

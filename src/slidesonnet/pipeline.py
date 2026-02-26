@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
 
 from slidesonnet.config import load_config
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import ProjectConfig
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tasks import generate_tasks
@@ -95,7 +96,7 @@ def _run_doit(task_list: list[dict[str, Any]], build_dir: Path, force: bool) -> 
 
     result = DoitMain(_Loader()).run(run_args)
     if result not in (0, None):
-        raise SystemExit(result)
+        raise SlideSonnetError(f"Build failed (doit exit code {result})")
 
 
 def _create_tts(config: ProjectConfig) -> TTSEngine:

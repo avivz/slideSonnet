@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from slidesonnet.exceptions import FFmpegError
 from slidesonnet.video.composer import (
     _run_ffmpeg,
     compose_segment,
@@ -489,14 +490,13 @@ class TestRunFfmpeg:
 
     @patch("slidesonnet.video.composer.subprocess.run", side_effect=FileNotFoundError)
     def test_ffmpeg_not_found(self, mock_run: MagicMock) -> None:
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(FFmpegError):
             _run_ffmpeg(["ffmpeg", "-version"])
 
     @patch(
         "slidesonnet.video.composer.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "ffmpeg", stderr="encode failed"),
     )
-    def test_ffmpeg_error(self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
-        with pytest.raises(SystemExit, match="1"):
+    def test_ffmpeg_error(self, mock_run: MagicMock) -> None:
+        with pytest.raises(FFmpegError, match="encode failed"):
             _run_ffmpeg(["ffmpeg", "-i", "in.mp4"])
-        assert "encode failed" in caplog.text

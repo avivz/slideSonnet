@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from slidesonnet.exceptions import TTSError
 from slidesonnet.tts.piper import PiperTTS, _wav_duration
 
 
@@ -94,7 +95,7 @@ class TestPiperSynthesize:
     @patch("slidesonnet.tts.piper.subprocess.run", side_effect=FileNotFoundError)
     def test_piper_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
         tts = PiperTTS()
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(TTSError):
             tts.synthesize("Hi", tmp_path / "out.wav")
 
     @patch(
@@ -103,7 +104,7 @@ class TestPiperSynthesize:
     )
     def test_piper_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
         tts = PiperTTS()
-        with pytest.raises(SystemExit, match="1"):
+        with pytest.raises(TTSError):
             tts.synthesize("Hi", tmp_path / "out.wav")
 
 
@@ -140,7 +141,7 @@ class TestEnsureVoice:
 
     @patch("slidesonnet.tts.piper._VOICES_DIR")
     def test_missing_package_gives_helpful_error(
-        self, mock_dir: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
+        self, mock_dir: MagicMock, tmp_path: Path
     ) -> None:
         """If piper-tts package is missing, should exit with a helpful message."""
         from slidesonnet.tts.piper import _ensure_voice
@@ -150,11 +151,11 @@ class TestEnsureVoice:
         mock_dir.mkdir = MagicMock()
 
         with patch.dict("sys.modules", {"piper": None, "piper.download_voices": None}):
-            with pytest.raises(SystemExit, match="1"):
+            with pytest.raises(TTSError) as exc_info:
                 _ensure_voice("en_US-lessac-medium")
 
-        assert "piper-tts" in caplog.text
-        assert "auto-download" in caplog.text
+        assert "piper-tts" in str(exc_info.value)
+        assert "auto-download" in str(exc_info.value)
 
 
 class TestName:

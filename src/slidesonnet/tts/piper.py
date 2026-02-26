@@ -7,6 +7,7 @@ import subprocess
 import wave
 from pathlib import Path
 
+from slidesonnet.exceptions import TTSError
 from slidesonnet.tts.base import TTSEngine
 
 logger = logging.getLogger(__name__)
@@ -25,13 +26,11 @@ def _ensure_voice(voice_name: str) -> None:
     try:
         from piper.download_voices import download_voice
     except ImportError:
-        logger.error(
-            "Piper voice '%s' not found at %s and auto-download requires the "
-            "piper-tts Python package.\nInstall with: pip install piper-tts\n"
-            "Or download the voice manually to %s",
-            voice_name, model_path, _VOICES_DIR,
+        raise TTSError(
+            f"Piper voice '{voice_name}' not found at {model_path} and auto-download "
+            f"requires the piper-tts Python package.\nInstall with: pip install piper-tts\n"
+            f"Or download the voice manually to {_VOICES_DIR}"
         )
-        raise SystemExit(1)
 
     download_voice(voice_name, _VOICES_DIR)
     logger.info("Downloaded Piper voice '%s' to %s", voice_name, _VOICES_DIR)
@@ -68,11 +67,9 @@ class PiperTTS(TTSEngine):
                 text=True,
             )
         except FileNotFoundError:
-            logger.error("'piper' not found. Install with: pip install piper-tts")
-            raise SystemExit(1)
+            raise TTSError("'piper' not found. Install with: pip install piper-tts")
         except subprocess.CalledProcessError as e:
-            logger.error("piper failed:\n%s", e.stderr)
-            raise SystemExit(1)
+            raise TTSError(f"piper failed:\n{e.stderr}")
 
         return _wav_duration(output_path)
 
