@@ -6,8 +6,6 @@ import logging
 from pathlib import Path
 from typing import Any, Literal
 
-logger = logging.getLogger(__name__)
-
 from dotenv import load_dotenv
 
 from slidesonnet.config import load_config
@@ -17,6 +15,8 @@ from slidesonnet.playlist import parse_playlist
 from slidesonnet.tasks import generate_tasks
 from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.pronunciation import load_pronunciation_files
+
+logger = logging.getLogger(__name__)
 
 
 def build(playlist_path: Path, tts_override: Literal["piper", "elevenlabs"] | None = None, force: bool = False) -> Path:

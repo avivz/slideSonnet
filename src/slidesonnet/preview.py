@@ -7,8 +7,6 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 from slidesonnet.config import load_config
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import EXTENSION_TO_TYPE, ModuleType
@@ -18,6 +16,8 @@ from slidesonnet.parsers.marp import MarpParser
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.piper import PiperTTS
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
+
+logger = logging.getLogger(__name__)
 
 
 def preview_single_slide(

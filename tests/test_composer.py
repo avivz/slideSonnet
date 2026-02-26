@@ -136,6 +136,7 @@ def test_concatenate_segments(work_dir):
     assert 2.5 <= dur <= 4.0  # ~3s total with tolerance
 
 
+@pytest.mark.integration
 def test_get_duration_nonexistent():
     with pytest.raises(RuntimeError, match="ffprobe failed"):
         get_duration(Path("/nonexistent.mp4"))

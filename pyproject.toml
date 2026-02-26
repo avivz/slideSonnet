@@ -65,6 +65,7 @@ module = [
     "doit.*",
     "elevenlabs.*",
     "dotenv.*",
+    "piper.*",
 ]
 ignore_missing_imports = true
 
