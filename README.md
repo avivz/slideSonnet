@@ -17,13 +17,37 @@ lecture01.md (playlist)
 
 A **playlist** file chains modules together — MARP slides, Beamer slides, and pre-existing video files. Each module is built independently, then concatenated into the final video. [pydoit](https://pydoit.org/) manages the build graph with content-hash caching, so only changed slides trigger TTS.
 
+## Installation
+
+### External dependencies
+
+Install these system packages first:
+
+| Tool | Required? | What it does | Install |
+|---|---|---|---|
+| **ffmpeg** | Yes | Video composition and concatenation | `sudo apt install ffmpeg` |
+| **marp-cli** | Yes (for MARP slides) | Converts Markdown slides to PNG images | `npm install -g @marp-team/marp-cli` |
+| **pdflatex + pdftoppm** | Only for Beamer | Compiles LaTeX and extracts slide images | `sudo apt install texlive-latex-base poppler-utils` |
+
+### Install slideSonnet
+
+With [uv](https://docs.astral.sh/uv/) (recommended):
+
+```bash
+uv tool install slidesonnet[piper]
+```
+
+With [pipx](https://pipx.pypa.io/):
+
+```bash
+pipx install slidesonnet[piper]
+```
+
+The `[piper]` extra includes [Piper TTS](https://github.com/rhasspy/piper) for free local speech synthesis. Omit it if you plan to use ElevenLabs instead.
+
 ## Quick start
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[piper,dev]"
-
 # Create an example project
 slidesonnet init myproject --example
 cd myproject
@@ -49,14 +73,6 @@ It also includes two pronunciation dictionaries (`pronunciation/general.md` and 
 cd examples/showcase
 slidesonnet build lecture01.md
 ```
-
-### Prerequisites
-
-- **Python 3.12+**
-- **ffmpeg** — video composition and concatenation
-- **marp-cli** — slide image extraction (`npm install -g @marp-team/marp-cli`)
-- **piper** (optional) — free local TTS (`pip install piper-tts`)
-- **pdflatex + pdftoppm** (optional) — only needed for Beamer/LaTeX slides
 
 ## Writing slides
 
@@ -245,12 +261,16 @@ my-course/
 ## Development
 
 ```bash
+git clone https://github.com/avivz/slideSonnet.git
+cd slideSonnet
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[piper,dev]"
-make test          # run all tests (needs ffmpeg)
-make test-unit     # unit tests only (no external tools)
+
+make test-unit     # unit tests only (fast, no external tools)
+make test          # all tests (requires ffmpeg, marp, pdflatex, piper)
 make lint          # ruff check + format
+make typecheck     # mypy --strict
 ```
 
 ## License
