@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
-import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # Match: **word**: replacement
@@ -21,7 +23,7 @@ def load_pronunciation_file(path: Path) -> dict[str, str]:
     Section headings (## ...) are ignored (for human readability only).
     """
     if not path.exists():
-        print(f"WARNING: {path}: pronunciation file not found", file=sys.stderr)
+        logger.warning("%s: pronunciation file not found", path)
         return {}
 
     entries: dict[str, str] = {}

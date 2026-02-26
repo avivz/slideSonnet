@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from slidesonnet.config import load_config
 from slidesonnet.models import EXTENSION_TO_TYPE, ModuleType
@@ -34,7 +36,7 @@ def preview_single_slide(
     elif module_type == ModuleType.BEAMER:
         parser = BeamerParser()
     else:
-        print(f"ERROR: Unsupported file type '{suffix}'", file=sys.stderr)
+        logger.error("Unsupported file type '%s'", suffix)
         raise SystemExit(1)
 
     # Parse slides
@@ -43,17 +45,14 @@ def preview_single_slide(
 
     # Validate slide number
     if slide_number < 1 or slide_number > len(slides):
-        print(
-            f"ERROR: Slide {slide_number} out of range (1–{len(slides)})",
-            file=sys.stderr,
-        )
+        logger.error("Slide %d out of range (1–%d)", slide_number, len(slides))
         raise SystemExit(1)
 
     slide = slides[slide_number - 1]
 
     if not slide.has_narration:
         label = slide.annotation.value
-        print(f"Slide {slide_number}: [{label}] — no narration to preview.")
+        logger.info("Slide %d: [%s] — no narration to preview.", slide_number, label)
         return
 
     # Load pronunciation from playlist config if available
@@ -67,14 +66,14 @@ def preview_single_slide(
 
     # Apply pronunciation
     text = apply_pronunciation(slide.narration_raw, pronunciation)
-    print(f"Slide {slide_number}: {text}")
+    logger.info("Slide %d: %s", slide_number, text)
 
     # Synthesize with Piper
     tts = PiperTTS(model=piper_model)
     with tempfile.TemporaryDirectory() as tmp:
         audio_path = Path(tmp) / "preview.wav"
         duration = tts.synthesize(text, audio_path)
-        print(f"Duration: {duration:.1f}s")
+        logger.info("Duration: %.1fs", duration)
 
         # Play audio
         _play_audio(audio_path)
@@ -101,14 +100,14 @@ def _play_audio(path: Path) -> None:
             continue
         except subprocess.CalledProcessError as e:
             stderr = (e.stderr or b"").decode(errors="replace").strip() if isinstance(e.stderr, bytes) else (e.stderr or "").strip()
-            print(
-                f"WARNING: {parts[0]} failed (exit {e.returncode}){': ' + stderr if stderr else ''}",
-                file=sys.stderr,
+            logger.warning(
+                "%s failed (exit %d)%s",
+                parts[0], e.returncode, ": " + stderr if stderr else "",
             )
             last_error = e
             continue
 
     if last_error is not None:
-        print(f"ERROR: All audio players failed for {path}", file=sys.stderr)
+        logger.error("All audio players failed for %s", path)
     else:
-        print(f"Audio saved to {path} (no audio player found to play it)", file=sys.stderr)
+        logger.warning("Audio saved to %s (no audio player found to play it)", path)

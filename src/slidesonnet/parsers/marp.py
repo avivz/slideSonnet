@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 from slidesonnet.models import SlideAnnotation, SlideNarration
 from slidesonnet.parsers.base import SlideParser
+
+logger = logging.getLogger(__name__)
 
 # Match <!-- say: text --> or <!-- say(voice=alice, pace=slow): text -->
 _SAY_RE = re.compile(
@@ -74,13 +76,10 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except FileNotFoundError:
-        print(
-            "ERROR: 'marp' not found. Install with: npm install -g @marp-team/marp-cli",
-            file=sys.stderr,
-        )
+        logger.error("'marp' not found. Install with: npm install -g @marp-team/marp-cli")
         raise SystemExit(1)
     except subprocess.CalledProcessError as e:
-        print(f"ERROR: marp failed:\n{e.stderr}", file=sys.stderr)
+        logger.error("marp failed:\n%s", e.stderr)
         raise SystemExit(1)
 
     # marp --images png produces files like: slides.001.png, slides.002.png
@@ -191,10 +190,9 @@ def _parse_slide(index: int, text: str, source: Path) -> SlideNarration:
         full_narration = " ".join(narration_parts)
 
         if not full_narration:
-            print(
-                f"WARNING: {source} slide {index}: empty <!-- say: --> "
-                f"— did you mean <!-- silent -->?",
-                file=sys.stderr,
+            logger.warning(
+                "%s slide %d: empty <!-- say: --> — did you mean <!-- silent -->?",
+                source, index,
             )
             return SlideNarration(index=index, annotation=SlideAnnotation.SILENT)
 
@@ -207,9 +205,8 @@ def _parse_slide(index: int, text: str, source: Path) -> SlideNarration:
         )
 
     # No annotation at all — warn
-    print(
-        f"WARNING: {source} slide {index}: no annotation "
-        f"(use <!-- say: -->, <!-- silent -->, or <!-- skip -->)",
-        file=sys.stderr,
+    logger.warning(
+        "%s slide %d: no annotation (use <!-- say: -->, <!-- silent -->, or <!-- skip -->)",
+        source, index,
     )
     return SlideNarration(index=index, annotation=SlideAnnotation.NONE)

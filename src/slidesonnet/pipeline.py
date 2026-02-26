@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Literal
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
@@ -62,7 +65,7 @@ def build(playlist_path: Path, tts_override: Literal["piper", "elevenlabs"] | No
     # Run doit
     _run_doit(task_list, build_dir, force)
 
-    print(f"Done: {output_path}")
+    logger.info("Done: %s", output_path)
     return output_path
 
 

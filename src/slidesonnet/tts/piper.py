@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
-import sys
 import wave
 from pathlib import Path
 
 from slidesonnet.tts.base import TTSEngine
+
+logger = logging.getLogger(__name__)
 
 _VOICES_DIR = Path.home() / ".local" / "share" / "piper_models"
 
@@ -19,21 +21,20 @@ def _ensure_voice(voice_name: str) -> None:
     if model_path.exists() and model_path.stat().st_size > 0:
         return
 
-    print(f"Downloading Piper voice '{voice_name}'...")
+    logger.info("Downloading Piper voice '%s'...", voice_name)
     try:
         from piper.download_voices import download_voice
     except ImportError:
-        print(
-            f"ERROR: Piper voice '{voice_name}' not found at {model_path} and "
-            f"auto-download requires the piper-tts Python package.\n"
-            f"Install with: pip install piper-tts\n"
-            f"Or download the voice manually to {_VOICES_DIR}",
-            file=sys.stderr,
+        logger.error(
+            "Piper voice '%s' not found at %s and auto-download requires the "
+            "piper-tts Python package.\nInstall with: pip install piper-tts\n"
+            "Or download the voice manually to %s",
+            voice_name, model_path, _VOICES_DIR,
         )
         raise SystemExit(1)
 
     download_voice(voice_name, _VOICES_DIR)
-    print(f"Downloaded Piper voice '{voice_name}' to {_VOICES_DIR}")
+    logger.info("Downloaded Piper voice '%s' to %s", voice_name, _VOICES_DIR)
 
 
 class PiperTTS(TTSEngine):
@@ -67,13 +68,10 @@ class PiperTTS(TTSEngine):
                 text=True,
             )
         except FileNotFoundError:
-            print(
-                "ERROR: 'piper' not found. Install with: pip install piper-tts",
-                file=sys.stderr,
-            )
+            logger.error("'piper' not found. Install with: pip install piper-tts")
             raise SystemExit(1)
         except subprocess.CalledProcessError as e:
-            print(f"ERROR: piper failed:\n{e.stderr}", file=sys.stderr)
+            logger.error("piper failed:\n%s", e.stderr)
             raise SystemExit(1)
 
         return _wav_duration(output_path)

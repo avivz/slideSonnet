@@ -16,11 +16,10 @@ def test_load_pronunciation_file(pronunciation_cs):
     assert entries["isomorphism"] == "eye-so-MOR-fizm"
 
 
-def test_missing_file_returns_empty(tmp_path, capsys):
+def test_missing_file_returns_empty(tmp_path, caplog):
     entries = load_pronunciation_file(tmp_path / "nonexistent.md")
     assert entries == {}
-    captured = capsys.readouterr()
-    assert "not found" in captured.err
+    assert "not found" in caplog.text
 
 
 def test_empty_file_returns_empty(tmp_path):

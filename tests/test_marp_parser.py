@@ -56,14 +56,13 @@ def test_parse_skip(simple_md):
     assert slides[4].is_skip
 
 
-def test_parse_unannotated(simple_md, capsys):
+def test_parse_unannotated(simple_md, caplog):
     parser = MarpParser()
     slides = parser.parse(simple_md, Path("/tmp/build"))
 
     # Slide 6: unannotated
     assert slides[5].annotation == SlideAnnotation.NONE
-    captured = capsys.readouterr()
-    assert "no annotation" in captured.err
+    assert "no annotation" in caplog.text
 
 
 def test_multiline_say():
@@ -176,7 +175,7 @@ def test_say_inside_code_fence_ignored():
     assert "example code" not in slide.narration_raw
 
 
-def test_silent_inside_code_fence_ignored(capsys):
+def test_silent_inside_code_fence_ignored():
     """<!-- silent --> inside a fenced code block should not mark the slide silent."""
     slide_text = textwrap.dedent("""\
         # Example Slide
@@ -192,7 +191,7 @@ def test_silent_inside_code_fence_ignored(capsys):
     assert "narrated" in slide.narration_raw
 
 
-def test_skip_inside_code_fence_ignored(capsys):
+def test_skip_inside_code_fence_ignored():
     """<!-- skip --> inside a fenced code block should not mark the slide as skipped."""
     slide_text = textwrap.dedent("""\
         # Example Slide
@@ -208,7 +207,7 @@ def test_skip_inside_code_fence_ignored(capsys):
     assert "Not skipped" in slide.narration_raw
 
 
-def test_only_say_inside_code_fence_no_annotation(capsys):
+def test_only_say_inside_code_fence_no_annotation(caplog):
     """If the only say directive is inside a code block, slide has no annotation."""
     slide_text = textwrap.dedent("""\
         # Example Slide
@@ -219,8 +218,7 @@ def test_only_say_inside_code_fence_no_annotation(capsys):
     """)
     slide = _parse_slide(1, slide_text, Path("test.md"))
     assert slide.annotation == SlideAnnotation.NONE
-    captured = capsys.readouterr()
-    assert "no annotation" in captured.err
+    assert "no annotation" in caplog.text
 
 
 def test_regular_comment_ignored():
@@ -242,11 +240,10 @@ def test_regular_comment_ignored():
     assert "regular comment" not in slide.narration_raw
 
 
-def test_empty_say_warns(capsys):
+def test_empty_say_warns(caplog):
     slide = _parse_slide(1, "<!-- say: -->", Path("test.md"))
     assert slide.annotation == SlideAnnotation.SILENT
-    captured = capsys.readouterr()
-    assert "did you mean <!-- silent -->" in captured.err
+    assert "did you mean <!-- silent -->" in caplog.text
 
 
 def test_has_narration_property():

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
-import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def compose_segment(
@@ -170,10 +172,9 @@ def concatenate_segments_xfade(
     min_dur = min(durations) if durations else 0.0
     if crossfade >= min_dur > 0:
         clamped = min_dur * 0.5
-        print(
-            f"WARNING: crossfade ({crossfade:.2f}s) >= shortest segment ({min_dur:.2f}s); "
-            f"clamping to {clamped:.2f}s",
-            file=sys.stderr,
+        logger.warning(
+            "crossfade (%.2fs) >= shortest segment (%.2fs); clamping to %.2fs",
+            crossfade, min_dur, clamped,
         )
         crossfade = clamped
 
@@ -281,8 +282,8 @@ def _run_ffmpeg(cmd: list[str]) -> None:
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except FileNotFoundError:
-        print("ERROR: 'ffmpeg' not found. Install ffmpeg.", file=sys.stderr)
+        logger.error("'ffmpeg' not found. Install ffmpeg.")
         raise SystemExit(1)
     except subprocess.CalledProcessError as e:
-        print(f"ERROR: ffmpeg failed:\n{e.stderr}", file=sys.stderr)
+        logger.error("ffmpeg failed:\n%s", e.stderr)
         raise SystemExit(1)

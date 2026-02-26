@@ -73,14 +73,13 @@ def test_parse_skip(simple_tex):
     assert slides[4].annotation == SlideAnnotation.SKIP
 
 
-def test_parse_unannotated(simple_tex, capsys):
+def test_parse_unannotated(simple_tex, caplog):
     parser = BeamerParser()
     slides = parser.parse(simple_tex, Path("/tmp/build"))
 
     # Frame 6 (index 5) is unannotated
     assert slides[5].annotation == SlideAnnotation.NONE
-    captured = capsys.readouterr()
-    assert "no annotation" in captured.err
+    assert "no annotation" in caplog.text
 
 
 def test_extract_braced_simple():
@@ -140,11 +139,10 @@ def test_strip_latex_deeply_nested():
     assert "{" not in result
 
 
-def test_empty_say_warns(capsys):
+def test_empty_say_warns(caplog):
     slide = _parse_frame(1, r"\say{}", Path("test.tex"))
     assert slide.annotation == SlideAnnotation.SILENT
-    captured = capsys.readouterr()
-    assert "did you mean" in captured.err
+    assert "did you mean" in caplog.text
 
 
 # ---- Mocked tests for extract_images and edge cases ----
@@ -193,18 +191,17 @@ class TestExtractImages:
         side_effect=subprocess.CalledProcessError(1, "pdflatex", stderr="latex error log"),
     )
     def test_pdflatex_error(
-        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
         with pytest.raises(SystemExit, match="1"):
             extract_images(source, tmp_path / "out")
-        captured = capsys.readouterr()
-        assert "latex error log" in captured.err
+        assert "latex error log" in caplog.text
 
     @patch("slidesonnet.parsers.beamer.subprocess.run")
     def test_pdflatex_error_with_pdf_warns(
-        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """When pdflatex fails but a PDF was produced, warn with stderr."""
         source = tmp_path / "slides.tex"
@@ -226,9 +223,8 @@ class TestExtractImages:
         result = extract_images(source, output_dir)
 
         assert len(result) == 1
-        captured = capsys.readouterr()
-        assert "WARNING" in captured.err
-        assert "Overfull hbox" in captured.err
+        assert "WARNING" in caplog.text
+        assert "Overfull hbox" in caplog.text
 
     @patch("slidesonnet.parsers.beamer.subprocess.run")
     def test_pdftoppm_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:

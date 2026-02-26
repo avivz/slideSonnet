@@ -63,7 +63,7 @@ def test_synthesize_calls_api(mock_elevenlabs_cls, tmp_path):
 
 @patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key"})
 @patch("slidesonnet.tts.elevenlabs.ElevenLabs", None)
-def test_missing_package(capsys):
+def test_missing_package(caplog):
     """Should exit if elevenlabs package is not installed."""
     config = TTSConfig(
         backend="elevenlabs",
@@ -76,8 +76,7 @@ def test_missing_package(capsys):
 
         ElevenLabsTTS(config)
 
-    captured = capsys.readouterr()
-    assert "elevenlabs package not installed" in captured.err
+    assert "elevenlabs package not installed" in caplog.text
 
 
 @patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key"})

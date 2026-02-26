@@ -1,5 +1,6 @@
 """Tests for single-slide preview."""
 
+import logging
 import subprocess
 import textwrap
 from pathlib import Path
@@ -51,7 +52,7 @@ class TestPreviewSingleSlide:
         with pytest.raises(SystemExit, match="1"):
             preview_single_slide(md, 0)
 
-    def test_silent_slide_no_tts(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_silent_slide_no_tts(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         md = tmp_path / "slides.md"
         md.write_text(
             textwrap.dedent("""\
@@ -64,9 +65,9 @@ class TestPreviewSingleSlide:
             <!-- silent -->
         """)
         )
-        preview_single_slide(md, 1)
-        captured = capsys.readouterr()
-        assert "no narration to preview" in captured.out
+        with caplog.at_level(logging.INFO):
+            preview_single_slide(md, 1)
+        assert "no narration to preview" in caplog.text
 
     @patch("slidesonnet.preview._play_audio")
     @patch("slidesonnet.preview.PiperTTS")
@@ -197,7 +198,7 @@ class TestPlayAudio:
 
     @patch("slidesonnet.preview.subprocess.run")
     def test_falls_through_on_called_process_error(
-        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         audio = tmp_path / "test.wav"
         audio.write_bytes(b"fake")
@@ -209,25 +210,23 @@ class TestPlayAudio:
 
         _play_audio(audio)
         assert mock_run.call_count == 2
-        captured = capsys.readouterr()
-        assert "aplay failed" in captured.err
-        assert "device busy" in captured.err
+        assert "aplay failed" in caplog.text
+        assert "device busy" in caplog.text
 
     @patch("slidesonnet.preview.subprocess.run", side_effect=FileNotFoundError)
     def test_all_players_not_found(
-        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         audio = tmp_path / "test.wav"
         audio.write_bytes(b"fake")
 
         _play_audio(audio)
 
-        captured = capsys.readouterr()
-        assert "no audio player found" in captured.err
+        assert "no audio player found" in caplog.text
 
     @patch("slidesonnet.preview.subprocess.run")
     def test_all_players_error(
-        self, mock_run: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         audio = tmp_path / "test.wav"
         audio.write_bytes(b"fake")
@@ -236,5 +235,4 @@ class TestPlayAudio:
 
         _play_audio(audio)
 
-        captured = capsys.readouterr()
-        assert "All audio players failed" in captured.err
+        assert "All audio players failed" in caplog.text

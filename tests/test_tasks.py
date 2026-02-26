@@ -303,7 +303,7 @@ def test_voice_preset_changes_cache_key(tmp_path):
     assert tts_tasks[0]["targets"] != tts_tasks[1]["targets"]
 
 
-def test_unknown_voice_warns(tmp_path, capsys):
+def test_unknown_voice_warns(tmp_path, caplog):
     """Unknown voice preset emits a warning but still generates tasks."""
     playlist = tmp_path / "lecture.md"
     playlist.write_text(
@@ -331,8 +331,7 @@ def test_unknown_voice_warns(tmp_path, capsys):
     )
 
     tasks = _generate(tmp_path, playlist)
-    captured = capsys.readouterr()
-    assert "unknown voice 'nonexistent'" in captured.err
+    assert "unknown voice 'nonexistent'" in caplog.text
 
     # Task still generated
     tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]

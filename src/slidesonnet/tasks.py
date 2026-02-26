@@ -14,11 +14,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import shutil
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from doit.tools import config_changed
 
@@ -88,10 +90,9 @@ def generate_tasks(
                     if voice_cfg:
                         slide.voice = voice_cfg.backend_voice
                     else:
-                        print(
-                            f"WARNING: {source_path} slide {slide.index}: "
-                            f"unknown voice '{slide.voice}'",
-                            file=sys.stderr,
+                        logger.warning(
+                            "%s slide %d: unknown voice '%s'",
+                            source_path, slide.index, slide.voice,
                         )
 
         utterances_dir = module_dir / "utterances"
@@ -273,7 +274,7 @@ def _action_tts(
     utterance_path.write_text(text, encoding="utf-8")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    print("  slide synthesizing...")
+    logger.info("  slide synthesizing...")
     tts.synthesize(text, output_path, voice=voice)
 
 

@@ -425,7 +425,7 @@ class TestConcatenateSegmentsXfadeMocked:
         mock_ffmpeg: MagicMock,
         mock_dur: MagicMock,
         tmp_path: Path,
-        capsys: pytest.CaptureFixture[str],
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """When crossfade >= shortest segment, crossfade is clamped to half that duration."""
         segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
@@ -433,8 +433,7 @@ class TestConcatenateSegmentsXfadeMocked:
 
         concatenate_segments_xfade(segs, output, crossfade=0.5)
 
-        captured = capsys.readouterr()
-        assert "clamping to 0.15s" in captured.err
+        assert "clamping to 0.15s" in caplog.text
         cmd = mock_ffmpeg.call_args[0][0]
         fc_idx = cmd.index("-filter_complex")
         fc = cmd[fc_idx + 1]
@@ -497,8 +496,7 @@ class TestRunFfmpeg:
         "slidesonnet.video.composer.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "ffmpeg", stderr="encode failed"),
     )
-    def test_ffmpeg_error(self, mock_run: MagicMock, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_ffmpeg_error(self, mock_run: MagicMock, caplog: pytest.LogCaptureFixture) -> None:
         with pytest.raises(SystemExit, match="1"):
             _run_ffmpeg(["ffmpeg", "-i", "in.mp4"])
-        captured = capsys.readouterr()
-        assert "encode failed" in captured.err
+        assert "encode failed" in caplog.text

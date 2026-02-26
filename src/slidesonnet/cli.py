@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
 from typing import Literal, cast
@@ -14,11 +15,28 @@ from slidesonnet.pipeline import build as run_build
 from slidesonnet.preview import preview_single_slide
 
 
+class _CliFormatter(logging.Formatter):
+    """Format WARNING/ERROR with level prefix, INFO without."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        if record.levelno >= logging.WARNING:
+            return f"{record.levelname}: {record.getMessage()}"
+        return record.getMessage()
+
+
+def _configure_logging() -> None:
+    """Set up logging for CLI use."""
+    handler = logging.StreamHandler()  # stderr by default
+    handler.setFormatter(_CliFormatter())
+    logging.root.addHandler(handler)
+    logging.root.setLevel(logging.INFO)
+
+
 @click.group()
 @click.version_option(version=__version__)
 def main() -> None:
     """slideSonnet — compile text-based presentations into narrated videos."""
-    pass
+    _configure_logging()
 
 
 @main.command()

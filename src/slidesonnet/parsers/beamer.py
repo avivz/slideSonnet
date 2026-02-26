@@ -2,13 +2,15 @@ r"""Beamer LaTeX parser: extract \say{} narration and slide images."""
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 from slidesonnet.models import SlideAnnotation, SlideNarration
 from slidesonnet.parsers.base import SlideParser
+
+logger = logging.getLogger(__name__)
 
 # Match \say{text} or \say[params]{text}
 # Handles nested braces via a non-regex approach for the body
@@ -63,14 +65,14 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     try:
         subprocess.run(cmd_latex, check=True, capture_output=True, text=True, cwd=source.parent)
     except FileNotFoundError:
-        print("ERROR: 'pdflatex' not found. Install TeX Live.", file=sys.stderr)
+        logger.error("'pdflatex' not found. Install TeX Live.")
         raise SystemExit(1)
     except subprocess.CalledProcessError as e:
         # pdflatex often returns non-zero for warnings; check if PDF was produced
         if not pdf_path.exists():
-            print(f"ERROR: pdflatex failed and no PDF was produced.\n{e.stderr}", file=sys.stderr)
+            logger.error("pdflatex failed and no PDF was produced.\n%s", e.stderr)
             raise SystemExit(1)
-        print(f"WARNING: pdflatex exited with errors (continuing with PDF):\n{e.stderr}", file=sys.stderr)
+        logger.warning("pdflatex exited with errors (continuing with PDF):\n%s", e.stderr)
 
     # Extract images with pdftoppm
     prefix = str(output_dir / "slide")
@@ -78,13 +80,10 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     try:
         subprocess.run(cmd_ppm, check=True, capture_output=True, text=True)
     except FileNotFoundError:
-        print(
-            "ERROR: 'pdftoppm' not found. Install poppler-utils.",
-            file=sys.stderr,
-        )
+        logger.error("'pdftoppm' not found. Install poppler-utils.")
         raise SystemExit(1)
     except subprocess.CalledProcessError as e:
-        print(f"ERROR: pdftoppm failed:\n{e.stderr}", file=sys.stderr)
+        logger.error("pdftoppm failed:\n%s", e.stderr)
         raise SystemExit(1)
 
     images = sorted(output_dir.glob("slide-*.png"))
@@ -140,9 +139,8 @@ def _parse_frame(index: int, text: str, source: Path) -> SlideNarration:
         full_narration = " ".join(narration_parts)
 
         if not full_narration:
-            print(
-                f"WARNING: {source} frame {index}: empty \\say{{}} — did you mean \\silent?",
-                file=sys.stderr,
+            logger.warning(
+                "%s frame %d: empty \\say{} — did you mean \\silent?", source, index
             )
             return SlideNarration(index=index, annotation=SlideAnnotation.SILENT)
 
@@ -155,9 +153,8 @@ def _parse_frame(index: int, text: str, source: Path) -> SlideNarration:
         )
 
     # No annotation
-    print(
-        f"WARNING: {source} frame {index}: no annotation (use \\say{{}}, \\silent, or \\skip)",
-        file=sys.stderr,
+    logger.warning(
+        "%s frame %d: no annotation (use \\say{}, \\silent, or \\skip)", source, index
     )
     return SlideNarration(index=index, annotation=SlideAnnotation.NONE)
 

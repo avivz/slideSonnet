@@ -140,7 +140,7 @@ class TestEnsureVoice:
 
     @patch("slidesonnet.tts.piper._VOICES_DIR")
     def test_missing_package_gives_helpful_error(
-        self, mock_dir: MagicMock, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+        self, mock_dir: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """If piper-tts package is missing, should exit with a helpful message."""
         from slidesonnet.tts.piper import _ensure_voice
@@ -153,9 +153,8 @@ class TestEnsureVoice:
             with pytest.raises(SystemExit, match="1"):
                 _ensure_voice("en_US-lessac-medium")
 
-        captured = capsys.readouterr()
-        assert "piper-tts" in captured.err
-        assert "auto-download" in captured.err
+        assert "piper-tts" in caplog.text
+        assert "auto-download" in caplog.text
 
 
 class TestName:

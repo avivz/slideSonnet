@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from elevenlabs import ElevenLabs as _ElevenLabsType
@@ -26,18 +28,16 @@ class ElevenLabsTTS(TTSEngine):
     def __init__(self, config: TTSConfig) -> None:
         api_key = os.environ.get(config.elevenlabs_api_key_env, "")
         if not api_key:
-            print(
-                f"ERROR: Environment variable '{config.elevenlabs_api_key_env}' not set. "
-                f"Add it to your .env file.",
-                file=sys.stderr,
+            logger.error(
+                "Environment variable '%s' not set. Add it to your .env file.",
+                config.elevenlabs_api_key_env,
             )
             raise SystemExit(1)
 
         if ElevenLabs is None:
-            print(
-                "ERROR: elevenlabs package not installed. "
-                "Install with: pip install slidesonnet[elevenlabs]",
-                file=sys.stderr,
+            logger.error(
+                "elevenlabs package not installed. "
+                "Install with: pip install slidesonnet[elevenlabs]"
             )
             raise SystemExit(1)
 
