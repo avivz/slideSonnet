@@ -9,17 +9,17 @@ import pytest
 from slidesonnet.config import load_config
 from slidesonnet.models import ModuleType, ProjectConfig, VideoConfig
 from slidesonnet.playlist import parse_playlist
-from slidesonnet.tasks import (
-    _action_assemble,
-    _action_compose_narrated,
-    _action_compose_silent,
-    _action_concat,
-    _action_extract_images,
-    _action_passthrough,
-    _action_tts,
-    _get_parser_and_extractor,
-    generate_tasks,
+from slidesonnet.actions import (
+    action_assemble,
+    action_compose_narrated,
+    action_compose_silent,
+    action_concat,
+    action_extract_images,
+    action_passthrough,
+    action_tts,
+    get_parser_and_extractor,
 )
+from slidesonnet.tasks import generate_tasks
 from slidesonnet.tts.base import TTSEngine
 
 
@@ -342,14 +342,14 @@ def test_unknown_voice_warns(tmp_path, caplog):
 
 
 class TestActionPassthrough:
-    """Tests for _action_passthrough()."""
+    """Tests for action_passthrough()."""
 
     def test_copies_file(self, tmp_path: Path) -> None:
         src = tmp_path / "input.mp4"
         src.write_bytes(b"video-data")
         out = tmp_path / "build" / "module.mp4"
 
-        _action_passthrough(src, out)
+        action_passthrough(src, out)
 
         assert out.exists()
         assert out.read_bytes() == b"video-data"
@@ -359,21 +359,21 @@ class TestActionPassthrough:
         src.write_bytes(b"data")
         out = tmp_path / "deep" / "nested" / "out.mp4"
 
-        _action_passthrough(src, out)
+        action_passthrough(src, out)
 
         assert out.parent.exists()
         assert out.exists()
 
 
 class TestActionTTS:
-    """Tests for _action_tts()."""
+    """Tests for action_tts()."""
 
     def test_synthesizes(self, tmp_path: Path) -> None:
         cached = tmp_path / "audio" / "abc123.wav"
         utterance = tmp_path / "utterances" / "slide_001.txt"
         mock_tts = MagicMock()
 
-        _action_tts("Hello", cached, mock_tts, utterance)
+        action_tts("Hello", cached, mock_tts, utterance)
 
         mock_tts.synthesize.assert_called_once_with("Hello", cached, voice=None)
 
@@ -382,7 +382,7 @@ class TestActionTTS:
         utterance = tmp_path / "utterances" / "slide_001.txt"
         mock_tts = MagicMock()
 
-        _action_tts("Hello", cached, mock_tts, utterance, voice="alice")
+        action_tts("Hello", cached, mock_tts, utterance, voice="alice")
 
         mock_tts.synthesize.assert_called_once_with("Hello", cached, voice="alice")
 
@@ -391,14 +391,14 @@ class TestActionTTS:
         utterance = tmp_path / "utterances" / "slide_001.txt"
         mock_tts = MagicMock()
 
-        _action_tts("Some narration text", cached, mock_tts, utterance)
+        action_tts("Some narration text", cached, mock_tts, utterance)
 
         assert utterance.exists()
         assert utterance.read_text() == "Some narration text"
 
 
 class TestActionExtractImages:
-    """Tests for _action_extract_images()."""
+    """Tests for action_extract_images()."""
 
     def test_writes_manifest(self, tmp_path: Path) -> None:
         source = tmp_path / "slides.md"
@@ -414,7 +414,7 @@ class TestActionExtractImages:
                 img.touch()
             return fake_images
 
-        _action_extract_images(source, slides_dir, mock_extract, manifest)
+        action_extract_images(source, slides_dir, mock_extract, manifest)
 
         assert manifest.exists()
         import json
@@ -432,7 +432,7 @@ class TestActionExtractImages:
         def mock_extract(src: Path, out_dir: Path) -> list[Path]:
             return []
 
-        _action_extract_images(source, slides_dir, mock_extract, manifest)
+        action_extract_images(source, slides_dir, mock_extract, manifest)
 
         assert slides_dir.exists()
         assert manifest.exists()
@@ -444,13 +444,13 @@ class TestActionExtractImages:
         manifest = tmp_path / "slides" / "manifest.json"
         mock_fn = MagicMock(return_value=[])
 
-        _action_extract_images(source, slides_dir, mock_fn, manifest)
+        action_extract_images(source, slides_dir, mock_fn, manifest)
 
         mock_fn.assert_called_once_with(source, slides_dir)
 
 
 class TestActionComposeNarrated:
-    """Tests for _action_compose_narrated()."""
+    """Tests for action_compose_narrated()."""
 
     def _setup_manifest(self, tmp_path: Path) -> Path:
         import json
@@ -464,8 +464,8 @@ class TestActionComposeNarrated:
         manifest.write_text(json.dumps(images))
         return manifest
 
-    @patch("slidesonnet.tasks.composer.get_duration", return_value=5.0)
-    @patch("slidesonnet.tasks.composer.compose_segment")
+    @patch("slidesonnet.actions.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.actions.composer.compose_segment")
     def test_calls_compose_segment(
         self, mock_compose: MagicMock, mock_dur: MagicMock, tmp_path: Path
     ) -> None:
@@ -475,7 +475,7 @@ class TestActionComposeNarrated:
         output = tmp_path / "seg.mp4"
         config = ProjectConfig()
 
-        _action_compose_narrated(manifest, 1, audio, output, config)
+        action_compose_narrated(manifest, 1, audio, output, config)
 
         mock_dur.assert_called_once_with(audio)
         mock_compose.assert_called_once_with(
@@ -490,8 +490,8 @@ class TestActionComposeNarrated:
             crf=config.video.crf,
         )
 
-    @patch("slidesonnet.tasks.composer.get_duration", return_value=3.0)
-    @patch("slidesonnet.tasks.composer.compose_segment")
+    @patch("slidesonnet.actions.composer.get_duration", return_value=3.0)
+    @patch("slidesonnet.actions.composer.compose_segment")
     def test_selects_correct_image_by_index(
         self, mock_compose: MagicMock, mock_dur: MagicMock, tmp_path: Path
     ) -> None:
@@ -500,14 +500,14 @@ class TestActionComposeNarrated:
         audio.write_bytes(b"fake")
         output = tmp_path / "seg.mp4"
 
-        _action_compose_narrated(manifest, 2, audio, output, ProjectConfig())
+        action_compose_narrated(manifest, 2, audio, output, ProjectConfig())
 
         called_image = mock_compose.call_args[1]["image"]
         assert called_image == Path(tmp_path / "slides" / "slide.002.png")
 
 
 class TestActionComposeSilent:
-    """Tests for _action_compose_silent()."""
+    """Tests for action_compose_silent()."""
 
     def _setup_manifest(self, tmp_path: Path) -> Path:
         import json
@@ -521,7 +521,7 @@ class TestActionComposeSilent:
         manifest.write_text(json.dumps(images))
         return manifest
 
-    @patch("slidesonnet.tasks.composer.compose_silent_segment")
+    @patch("slidesonnet.actions.composer.compose_silent_segment")
     def test_calls_compose_silent_segment(
         self, mock_compose: MagicMock, tmp_path: Path
     ) -> None:
@@ -529,7 +529,7 @@ class TestActionComposeSilent:
         output = tmp_path / "seg.mp4"
         config = ProjectConfig()
 
-        _action_compose_silent(manifest, 1, output, config)
+        action_compose_silent(manifest, 1, output, config)
 
         mock_compose.assert_called_once_with(
             image=Path(tmp_path / "slides" / "slide.001.png"),
@@ -540,21 +540,21 @@ class TestActionComposeSilent:
             crf=config.video.crf,
         )
 
-    @patch("slidesonnet.tasks.composer.compose_silent_segment")
+    @patch("slidesonnet.actions.composer.compose_silent_segment")
     def test_selects_correct_image_by_index(
         self, mock_compose: MagicMock, tmp_path: Path
     ) -> None:
         manifest = self._setup_manifest(tmp_path)
         output = tmp_path / "seg.mp4"
 
-        _action_compose_silent(manifest, 2, output, ProjectConfig())
+        action_compose_silent(manifest, 2, output, ProjectConfig())
 
         called_image = mock_compose.call_args[1]["image"]
         assert called_image == Path(tmp_path / "slides" / "slide.002.png")
 
 
 class TestActionConcat:
-    """Tests for _action_concat()."""
+    """Tests for action_concat()."""
 
     def _config(self, crossfade: float = 0.0) -> ProjectConfig:
         return ProjectConfig(video=VideoConfig(crossfade=crossfade))
@@ -564,16 +564,16 @@ class TestActionConcat:
         seg.write_bytes(b"segment-data")
         out = tmp_path / "out" / "module.mp4"
 
-        _action_concat([seg], out, self._config())
+        action_concat([seg], out, self._config())
 
         assert out.read_bytes() == b"segment-data"
 
-    @patch("slidesonnet.tasks.composer.concatenate_segments")
+    @patch("slidesonnet.actions.composer.concatenate_segments")
     def test_multiple_segments_concatenates(self, mock_concat: MagicMock, tmp_path: Path) -> None:
         segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         out = tmp_path / "module.mp4"
 
-        _action_concat(segs, out, self._config(crossfade=0.0))
+        action_concat(segs, out, self._config(crossfade=0.0))
 
         mock_concat.assert_called_once_with(segs, out)
 
@@ -581,30 +581,30 @@ class TestActionConcat:
         out = tmp_path / "module.mp4"
 
         with pytest.raises(RuntimeError, match="No segments"):
-            _action_concat([], out, self._config())
+            action_concat([], out, self._config())
 
-    @patch("slidesonnet.tasks.composer.concatenate_segments_xfade")
+    @patch("slidesonnet.actions.composer.concatenate_segments_xfade")
     def test_crossfade_dispatches_xfade(self, mock_xfade: MagicMock, tmp_path: Path) -> None:
         segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         out = tmp_path / "module.mp4"
         cfg = self._config(crossfade=0.5)
 
-        _action_concat(segs, out, cfg)
+        action_concat(segs, out, cfg)
 
         mock_xfade.assert_called_once_with(segs, out, crossfade=0.5, crf=23)
 
-    @patch("slidesonnet.tasks.composer.concatenate_segments")
+    @patch("slidesonnet.actions.composer.concatenate_segments")
     def test_zero_crossfade_uses_concat(self, mock_concat: MagicMock, tmp_path: Path) -> None:
         segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         out = tmp_path / "module.mp4"
 
-        _action_concat(segs, out, self._config(crossfade=0.0))
+        action_concat(segs, out, self._config(crossfade=0.0))
 
         mock_concat.assert_called_once_with(segs, out)
 
 
 class TestActionAssemble:
-    """Tests for _action_assemble()."""
+    """Tests for action_assemble()."""
 
     def _config(self, crossfade: float = 0.0) -> ProjectConfig:
         return ProjectConfig(video=VideoConfig(crossfade=crossfade))
@@ -614,26 +614,26 @@ class TestActionAssemble:
         mod.write_bytes(b"module-data")
         out = tmp_path / "out" / "final.mp4"
 
-        _action_assemble([mod], out, self._config())
+        action_assemble([mod], out, self._config())
 
         assert out.read_bytes() == b"module-data"
 
-    @patch("slidesonnet.tasks.composer.concatenate_segments")
+    @patch("slidesonnet.actions.composer.concatenate_segments")
     def test_multiple_modules_concatenates(self, mock_concat: MagicMock, tmp_path: Path) -> None:
         mods = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         out = tmp_path / "final.mp4"
 
-        _action_assemble(mods, out, self._config(crossfade=0.0))
+        action_assemble(mods, out, self._config(crossfade=0.0))
 
         mock_concat.assert_called_once_with(mods, out)
 
-    @patch("slidesonnet.tasks.composer.concatenate_segments_xfade")
+    @patch("slidesonnet.actions.composer.concatenate_segments_xfade")
     def test_crossfade_dispatches_xfade(self, mock_xfade: MagicMock, tmp_path: Path) -> None:
         mods = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         out = tmp_path / "final.mp4"
         cfg = self._config(crossfade=0.8)
 
-        _action_assemble(mods, out, cfg)
+        action_assemble(mods, out, cfg)
 
         mock_xfade.assert_called_once_with(mods, out, crossfade=0.8, crf=23)
 
@@ -641,7 +641,7 @@ class TestActionAssemble:
         out = tmp_path / "final.mp4"
 
         with pytest.raises(RuntimeError, match="No module videos"):
-            _action_assemble([], out, self._config())
+            action_assemble([], out, self._config())
 
 
 def test_mixed_type_playlist(tmp_path):
@@ -747,13 +747,13 @@ def test_mixed_type_playlist(tmp_path):
 
 
 class TestGetParserAndExtractor:
-    """Tests for _get_parser_and_extractor()."""
+    """Tests for get_parser_and_extractor()."""
 
     def test_marp(self) -> None:
         from slidesonnet.parsers.marp import MarpParser
         from slidesonnet.parsers.marp import extract_images as marp_extract
 
-        cls, fn = _get_parser_and_extractor(ModuleType.MARP)
+        cls, fn = get_parser_and_extractor(ModuleType.MARP)
         assert cls is MarpParser
         assert fn is marp_extract
 
@@ -761,10 +761,10 @@ class TestGetParserAndExtractor:
         from slidesonnet.parsers.beamer import BeamerParser
         from slidesonnet.parsers.beamer import extract_images as beamer_extract
 
-        cls, fn = _get_parser_and_extractor(ModuleType.BEAMER)
+        cls, fn = get_parser_and_extractor(ModuleType.BEAMER)
         assert cls is BeamerParser
         assert fn is beamer_extract
 
     def test_video_raises(self) -> None:
         with pytest.raises(ValueError, match="No parser"):
-            _get_parser_and_extractor(ModuleType.VIDEO)
+            get_parser_and_extractor(ModuleType.VIDEO)
