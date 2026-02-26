@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check src/ tests/
+      - run: ruff format --check src/ tests/
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: mypy src/slidesonnet/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/ -m "not integration" -v
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - name: Verify wheel contains templates
+        run: |
+          python -c "
+          import zipfile, sys
+          whl = list(__import__('pathlib').Path('dist').glob('*.whl'))[0]
+          names = zipfile.ZipFile(whl).namelist()
+          templates = [n for n in names if 'templates/' in n and not n.endswith('.py')]
+          assert len(templates) >= 9, f'Expected >=9 template files, got {len(templates)}: {templates}'
+          assert any(n.endswith('.txt') for n in templates), 'No .txt templates found'
+          assert any(n.endswith('.md') for n in templates), 'No .md templates found'
+          print(f'Wheel OK: {len(names)} files, {len(templates)} templates')
+          "
+      - name: Smoke-test wheel install
+        run: |
+          pip install dist/slidesonnet-*.whl
+          slidesonnet --version

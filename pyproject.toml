@@ -6,7 +6,20 @@ build-backend = "setuptools.build_meta"
 name = "slidesonnet"
 dynamic = ["version"]
 description = "Compile text-based presentations into narrated videos"
+readme = "README.md"
+license = "MIT"
+authors = [{name = "Aviv Zohar"}]
 requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Education",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+]
 dependencies = [
     "click>=8.0",
     "pyyaml>=6.0",
@@ -25,11 +38,18 @@ dev = [
     "types-PyYAML",
 ]
 
+[project.urls]
+Homepage = "https://github.com/avivz/slideSonnet"
+Source = "https://github.com/avivz/slideSonnet"
+
 [project.scripts]
 slidesonnet = "slidesonnet.cli:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "slidesonnet.__version__"}
+
+[tool.setuptools.package-data]
+"slidesonnet.templates" = ["*.md", "*.txt"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
