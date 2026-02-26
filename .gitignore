@@ -17,9 +17,6 @@ htmlcov/
 
 # Editor / IDE
 .vscode/
-.claude/
-CLAUDE.md
-TODO.md
 
 # OS
 .DS_Store
