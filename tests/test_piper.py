@@ -34,7 +34,7 @@ class TestPiperSynthesize:
         assert duration == 2.5
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        assert cmd[0] == "piper"
+        assert Path(cmd[0]).name == "piper"
         assert "--model" in cmd
         assert "en_US-lessac-medium" in cmd
         assert "--output_file" in cmd

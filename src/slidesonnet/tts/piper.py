@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
+import sys
 import wave
 from pathlib import Path
 
@@ -13,6 +15,19 @@ from slidesonnet.tts.base import TTSEngine
 logger = logging.getLogger(__name__)
 
 _VOICES_DIR = Path.home() / ".local" / "share" / "piper_models"
+
+# Resolve piper binary: prefer PATH, fall back to the venv's bin/ directory.
+_VENV_BIN = Path(sys.executable).parent
+
+
+def _find_piper() -> str:
+    found = shutil.which("piper")
+    if found:
+        return found
+    venv_piper = _VENV_BIN / "piper"
+    if venv_piper.is_file():
+        return str(venv_piper)
+    return "piper"  # let subprocess raise FileNotFoundError
 
 
 def _ensure_voice(voice_name: str) -> None:
@@ -47,7 +62,7 @@ class PiperTTS(TTSEngine):
         _ensure_voice(model)
 
         cmd = [
-            "piper",
+            _find_piper(),
             "--model",
             model,
             "--data-dir",

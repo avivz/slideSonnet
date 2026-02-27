@@ -149,7 +149,9 @@ tts:
     api_key_env: ELEVENLABS_API_KEY
     voice_id: pNInz6obpgDQGcFmaJgB
 voices:
-  alice: en_US-amy-medium
+  alice:
+    piper: en_US-amy-medium
+    elevenlabs: 21m00Tcm4TlvDq8ikWAM
 pronunciation:
   - pronunciation/cs-terms.md
   - pronunciation/math-terms.md
@@ -190,15 +192,26 @@ Replacements are word-boundary aware (won't change "Eulerian") and case-insensit
 
 ## Voice presets
 
-Define named voices in the playlist front matter:
+Define named voices in the playlist front matter. Each preset can map to different voice IDs per TTS backend, so `--tts piper` and `--tts elevenlabs` both resolve correctly:
+
+```yaml
+voices:
+  alice:
+    piper: en_US-amy-medium
+    elevenlabs: 21m00Tcm4TlvDq8ikWAM
+  bob:
+    piper: en_US-joe-medium
+    elevenlabs: pNInz6obpgDQGcFmaJgB
+```
+
+A simple string value is also supported — it is used as-is regardless of backend:
 
 ```yaml
 voices:
   alice: en_US-amy-medium
-  bob: en_US-joe-medium
 ```
 
-Then use them per-slide: `<!-- say(voice=alice): ... -->`. The name maps to a Piper model or an ElevenLabs voice ID depending on the TTS backend.
+Then use presets per-slide: `<!-- say(voice=alice): ... -->`. If a preset has no mapping for the active backend, the slide falls back to the default voice with a warning.
 
 ## API keys
 
