@@ -4,6 +4,18 @@ tts:
   backend: piper
   piper:
     model: en_US-lessac-medium
+  elevenlabs:
+    voice_id: nPczCjzI2devNBz1zQrb
+    model_id: eleven_v3
+voices:
+  default:
+    piper: en_US-lessac-medium
+    elevenlabs: nPczCjzI2devNBz1zQrb
+  narrator:
+    piper: en_US-amy-medium
+    elevenlabs: 21m00Tcm4TlvDq8ikWAM
+pronunciation:
+  - pronunciation/names.md
 video:
   resolution: 1920x1080
   fps: 24

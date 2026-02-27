@@ -23,7 +23,7 @@ style: |
 <!-- say: Today, I want to tell you one of my favorite stories in all of
      mathematics. It is the story of a sum that stumped the greatest
      minds in Europe for eighty-five years, until a young mathematician
-     solved it with an argument so bold, it still takes your breath away.
+     solved it with an argument of extraordinary elegance.
      This is the Basel Problem. -->
 
 ---
@@ -48,22 +48,35 @@ $$\sum_{n=1}^{\infty} \frac{1}{n^2} = \ ?$$
 
 **Pietro Mengoli**, a mathematician in Bologna, posed this problem in 1650.
 
-It was clear the sum converges — each term gets small fast. The partial sums creep toward something near **1.6449**...
+The sum converges (by comparison with $\int_1^\infty x^{-2}\,dx = 1$). The partial sums creep toward something near **1.6449**...
 
 But *what* is this number, exactly?
+
+<!-- say: The problem was first posed by Pietro Mengoli in 1650. The sum
+     converges, which you can see by comparing it with the integral of
+     one over x squared. If you add up the first hundred
+     terms, you get about 1.6349. A thousand terms, 1.6439. It clearly
+     approaches something near 1.6449. But what is this number? Is it
+     the root of some polynomial? The logarithm of something? Nobody
+     could find a closed form. -->
+
+---
+
+# The Challenge (1650)
+
+Even Jakob Bernoulli, one of the greatest mathematicians of his era, publicly admitted defeat in 1689:
 
 > "If anyone finds and communicates to us that which thusfar
 > has eluded our efforts, great will be our gratitude."
 >
 > — Jakob Bernoulli, 1689
 
-<!-- say: The problem was first posed by Pietro Mengoli in 1650. It was
-     easy to see the sum converges. If you add up the first hundred
-     terms, you get about 1.6349. A thousand terms, 1.6439. It clearly
-     approaches something near 1.6449. But what is this number? Is it
-     the root of some polynomial? The logarithm of something? Nobody
-     could find a closed form. Even Jakob Bernoulli, one of the greatest
-     mathematicians of his era, publicly admitted defeat in 1689. -->
+<!-- say: Even Jakob Bernoulli, one of the greatest mathematicians of
+     his era, publicly admitted defeat in 1689, writing: -->
+
+<!-- say(voice=narrator): "If anyone finds and communicates to us that
+     which thusfar has eluded our efforts, great will be our
+     gratitude." -->
 
 ---
 
@@ -84,7 +97,10 @@ $\pi$? In a sum that has nothing to do with circles?
      over six. This was shocking. Pi is the ratio of a circle's
      circumference to its diameter. Why would it appear in a sum of
      reciprocal squares? There is no circle anywhere in sight. Let me
-     show you Euler's beautiful argument for why this must be true. -->
+     show you Euler's original argument. It is not fully rigorous by
+     modern standards, but the intuition is so compelling that the result
+     was immediately accepted, and the gaps were filled in over the
+     following century. -->
 
 ---
 
@@ -94,19 +110,32 @@ We know the Taylor series for sine:
 
 $$\sin(x) = x - \frac{x^3}{3!} + \frac{x^5}{5!} - \frac{x^7}{7!} + \cdots$$
 
-Divide both sides by $x$:
+<!-- say: Euler's proof begins with something you might not expect: the
+     sine function. We know the Taylor series for sine of x. It equals
+     x minus x cubed over three factorial, plus x to the fifth over
+     five factorial, and so on. -->
+
+---
+
+# Step 1: Start with $\sin(x)$
+
+We know the Taylor series for sine:
+
+$$\sin(x) = x - \frac{x^3}{3!} + \frac{x^5}{5!} - \frac{x^7}{7!} + \cdots$$
+
+Divide both sides by $x$ (for $x \neq 0$, this is dividing a limit by a constant, which is valid by the algebraic limit theorem):
 
 $$\frac{\sin(x)}{x} = 1 - \frac{x^2}{6} + \frac{x^4}{120} - \cdots$$
 
 Note the coefficient of $x^2$ on the right: it is $-\frac{1}{6}$.
 
-<!-- say: Euler's proof begins with something you might not expect: the
-     sine function. We know the Taylor series for sine of x. It equals
-     x minus x cubed over three factorial, plus x to the fifth over
-     five factorial, and so on. Now divide both sides by x. You get
-     sine of x over x equals one minus x squared over six, plus
-     higher-order terms. Hold onto that coefficient of x squared. It is
-     negative one-sixth. That number is going to come back. -->
+<!-- say: Now, remember that an infinite series is defined as a limit of
+     partial sums. For any fixed nonzero x, we can divide that limit by
+     x, because dividing a limit by a nonzero constant is justified by
+     the algebraic limit theorem. So we get sine of x over x equals one
+     minus x squared over six, plus higher-order terms. Hold onto that
+     coefficient of x squared. It is negative one-sixth. That number is
+     going to come back. -->
 
 ---
 
@@ -114,42 +143,91 @@ Note the coefficient of $x^2$ on the right: it is $-\frac{1}{6}$.
 
 Now here is Euler's bold move. The function $\frac{\sin(x)}{x}$ has zeros at $x = \pm\pi, \pm 2\pi, \pm 3\pi, \ldots$
 
+<!-- say: Now here is Euler's bold move, the step that made this proof
+     famous. The function sine of x over x equals zero whenever x is
+     plus or minus pi, plus or minus two pi, plus or minus three pi,
+     and so on. -->
+
+---
+
+# Step 2: Factor by the roots
+
+The function $\frac{\sin(x)}{x}$ has zeros at $x = \pm\pi, \pm 2\pi, \pm 3\pi, \ldots$
+
 Euler treated it like a polynomial and factored it by its roots:
 
 $$\frac{\sin(x)}{x} = \left(1 - \frac{x^2}{\pi^2}\right)\!\left(1 - \frac{x^2}{4\pi^2}\right)\!\left(1 - \frac{x^2}{9\pi^2}\right)\cdots$$
 
-<!-- say: Now here is Euler's bold move, the step that made this proof
-     famous. The function sine of x over x equals zero whenever x is
-     plus or minus pi, plus or minus two pi, plus or minus three pi,
-     and so on. Euler reasoned as follows: if a polynomial has certain
-     roots, you can factor it as a product of terms, one for each root.
-     He applied the same logic to sine of x over x, even though it is
-     not a polynomial but an infinite series. He wrote it as an infinite
-     product. Each factor in the product corresponds to a pair of roots.
-     This was audacious. Euler had no proof that this factoring was
-     valid. But watch what happens next. -->
+> **Assumes:** An entire function is determined by its zeros (up to normalization).
+> Justified by the Weierstrass factorization theorem (1876).
+
+<!-- say: Euler reasoned by analogy: if a polynomial has certain roots,
+     you can factor it as a product of terms, one for each root. He
+     applied the same logic to sine of x over x, even though it is not
+     a polynomial but an infinite series. He wrote it as an infinite
+     product, where each factor corresponds to a pair of roots. This
+     was an assumption, not a proof. The rigorous justification came
+     much later, with the Weierstrass factorization theorem of 1876.
+     But watch what happens next. -->
 
 ---
 
-# Step 3: Compare the $x^2$ coefficients
+# Step 3a: How to read the $x^2$ coefficient from a product
 
-Expand the product — only collect the $x^2$ terms:
+Consider just **three** factors — write $a_k = \frac{1}{k^2\pi^2}$ for short:
 
-$$\left(1 - \frac{x^2}{\pi^2}\right)\!\left(1 - \frac{x^2}{4\pi^2}\right)\!\left(1 - \frac{x^2}{9\pi^2}\right)\cdots$$
+$$(1 - a_1 x^2)(1 - a_2 x^2)(1 - a_3 x^2)$$
+$$= 1 - (a_1 + a_2 + a_3)\,x^2 + (\text{terms in } x^4, x^6)$$
+
+Each $x^2$ contribution comes from picking $-a_k x^2$ from **one** factor and $1$ from the rest. Cross-terms (picking $x^2$ from two or more factors) yield $x^4$ or higher.
+
+So the $x^2$ coefficient is just $-(a_1 + a_2 + a_3)$.
+
+<!-- say: Before we tackle the infinite product, let us see why this
+     works for a finite one. Take just three factors. Each factor looks
+     like one minus a-k times x squared. When we multiply them out, an
+     x-squared term arises only when we pick the negative a-k x-squared
+     piece from exactly one factor and the one from every other factor.
+     If we pick the x-squared piece from two or more factors, we get x
+     to the fourth or higher. So the x-squared coefficient is simply
+     the sum a-one plus a-two plus a-three, with a minus sign. -->
+
+---
+
+# Step 3b: Apply to the infinite product
+
+The same logic applies to the full product (assuming it converges absolutely and can be expanded as a power series):
+
+$$\prod_{n=1}^{\infty}\left(1 - \frac{x^2}{n^2\pi^2}\right) = 1 - \left(\sum_{n=1}^{\infty}\frac{1}{n^2\pi^2}\right)x^2 + \cdots$$
 
 The $x^2$ coefficient is:
 
 $$-\left(\frac{1}{\pi^2} + \frac{1}{4\pi^2} + \frac{1}{9\pi^2} + \cdots\right) = -\frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}$$
 
-<!-- say: Now we expand the infinite product. We do not need to multiply
-     everything out. We only care about the x-squared terms. When you
-     expand a product of factors that each look like one minus something
-     times x squared, the x-squared coefficient is just the sum of all
-     those somethings, with a minus sign. So the x-squared coefficient
-     of the product is negative one over pi squared, plus one over four
-     pi squared, plus one over nine pi squared, and so on. We can
-     factor out one over pi squared, and we are left with exactly our
-     mystery sum. -->
+> **Assumes:** The infinite product converges absolutely and can be expanded as a power series, with coefficients computed term-by-term as for finite products.
+
+<!-- say: Now extend this to the infinite product. By exactly the same
+     reasoning, the x-squared coefficient is the sum of all the a-k's
+     with a minus sign. That gives us negative one over pi squared plus
+     one over four pi squared plus one over nine pi squared, and so on.
+     We can factor out one over pi squared, and we are left with exactly
+     our mystery sum. Now, extending the finite argument to an infinite
+     product requires that the product converges absolutely and can be
+     expanded as a power series. This is true here, but was not proven
+     in Euler's time. Granting that assumption, the extraction of the
+     x-squared coefficient works just as it does for a finite
+     product. -->
+
+---
+
+# Step 4: The punchline
+
+From the Taylor series:
+
+$$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{6}}} \, x^2 + \cdots$$
+
+<!-- say: Now we compare. The Taylor series told us the x squared
+     coefficient is negative one-sixth. -->
 
 ---
 
@@ -163,20 +241,33 @@ From the product:
 
 $$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}}} \, x^2 + \cdots$$
 
-These are the same function, so the coefficients must match:
-
-$$\frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2} = \frac{1}{6}$$
-
-<!-- say: Now we just compare. The Taylor series told us the x squared
-     coefficient is negative one-sixth. The infinite product told us it
-     is negative one over pi squared times our sum. These are two
-     representations of the same function, so the coefficients must be
-     equal. Set them equal and you get: one over pi squared times the
-     sum equals one sixth. -->
+<!-- say: The infinite product told us the x squared coefficient is
+     negative one over pi squared times our sum. -->
 
 ---
 
-# $$\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}$$
+# Step 4: The punchline
+
+From the Taylor series:
+
+$$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{6}}} \, x^2 + \cdots$$
+
+From the product:
+
+$$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}}} \, x^2 + \cdots$$
+
+These are two power series for the same function, so their coefficients must agree (by uniqueness of power series):
+
+$$\frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2} = \frac{1}{6}$$
+
+<!-- say: Both are power series representations of the same analytic
+     function, and a power series representation is unique. So the
+     coefficients must agree. Set them equal and you get: one over pi
+     squared times the sum equals one sixth. -->
+
+---
+
+# $\displaystyle\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}$
 
 Multiply both sides by $\pi^2$:
 
@@ -194,25 +285,33 @@ $$1 + \frac{1}{4} + \frac{1}{9} + \frac{1}{16} + \frac{1}{25} + \cdots = \frac{\
 
 Euler's proof was **not rigorous** by modern standards — the factoring step needed Weierstrass's theory of infinite products to justify, over 140 years later (1876).
 
-But the result opened the door to a vast landscape:
-
-- The **Riemann zeta function**: $\zeta(s) = \sum_{n=1}^{\infty} \frac{1}{n^s}$, with the Basel Problem being $\zeta(2)$
-- Euler himself showed all **even** values $\zeta(2), \zeta(4), \zeta(6), \ldots$ are rational multiples of powers of $\pi$
-- But the **odd** values $\zeta(3), \zeta(5), \zeta(7), \ldots$ remain mysterious — no closed forms are known
+But the result itself was correct, and it opened the door to a vast landscape.
 
 <!-- say: Now, Euler's original proof was not rigorous by modern
      standards. That bold factoring step required the theory of infinite
      products, which Karl Weierstrass would not develop until 1876,
      over 140 years later. But the result itself was correct, and it
-     cracked open an entire field of mathematics. The sum we computed is
-     a special value of what we now call the Riemann zeta function, at s
-     equals two. Euler himself went on to show that all even values of
-     the zeta function, zeta of two, zeta of four, zeta of six, and so
-     on, are rational multiples of powers of pi. But the odd values,
-     zeta of three, zeta of five, zeta of seven, remain mysterious. To
-     this day, no clean closed forms are known for any of them. Some of
-     the biggest open problems in mathematics trace back to this one
-     beautiful sum. -->
+     cracked open an entire field of mathematics. -->
+
+---
+
+# Why It Matters
+
+The sum we computed is $\zeta(2)$, a special value of the **Riemann zeta function**:
+
+$$\zeta(s) = \sum_{n=1}^{\infty} \frac{1}{n^s}$$
+
+- Euler himself showed all **even** values $\zeta(2), \zeta(4), \zeta(6), \ldots$ are rational multiples of powers of $\pi$
+- But the **odd** values $\zeta(3), \zeta(5), \zeta(7), \ldots$ remain mysterious — no closed forms are known
+
+<!-- say: The sum we computed is a special value of what we now call the
+     Riemann zeta function, at s equals two. Euler himself went on to
+     show that all even values of the zeta function, zeta of two, zeta
+     of four, zeta of six, and so on, are rational multiples of powers
+     of pi. But the odd values, zeta of three, zeta of five, zeta of
+     seven, remain mysterious. To this day, no clean closed forms are
+     known for any of them. Some of the biggest open problems in
+     mathematics trace back to this one beautiful sum. -->
 
 ---
 
