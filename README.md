@@ -116,7 +116,7 @@ marp: true
 | `<!-- skip -->` | Omit slide from video entirely |
 | *(none)* | Treated as silent, emits a warning |
 
-Multi-line narration and multiple `<!-- say: -->` blocks per slide are supported (text is concatenated).
+Multi-line narration is supported. Slides with multiple `<!-- say: -->` directives are expanded into animated sub-slides with progressive fragment reveal — see [MARP documentation](docs/marp.md) for details.
 
 ### Beamer LaTeX
 

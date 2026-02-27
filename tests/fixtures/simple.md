@@ -40,3 +40,12 @@ $$\sum_{v \in V} \deg(v) = 2|E|$$
 # Unannotated Slide
 
 This slide has no annotation at all.
+
+---
+
+# Fragment Slide
+
+* Point A
+<!-- say: Here is point A. -->
+* Point B
+<!-- say: And now point B. -->

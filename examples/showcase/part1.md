@@ -142,6 +142,19 @@ A skipped slide is excluded from the video entirely. Useful for backup or draft 
 
 ---
 
+# Fragment Animation
+
+Bullet points can reveal incrementally, each with its own narration:
+
+* First, we introduce the concept
+<!-- say: Fragment animation lets you reveal bullet points one at a time, just like in a live presentation. -->
+* Then, we add supporting detail
+<!-- say: Each step gets its own narration, so the viewer hears an explanation as each point appears. -->
+* Finally, we wrap up
+<!-- say: This is powered by Marp's star-bullet syntax. slideSonnet expands each step into a separate sub-slide with progressive reveal. -->
+
+---
+
 # This Slide Is Skipped
 
 If you see this slide in the video, something went wrong!
