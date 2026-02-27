@@ -167,15 +167,25 @@ def concatenate_segments_xfade(
             shutil.copy2(segments[0], output)
         return
 
-    # Get durations for offset calculation
-    durations = [get_duration(seg) for seg in segments]
+    # Use VIDEO stream durations for xfade offset calculation — the video
+    # stream is often shorter than the container/audio duration, and xfade
+    # offsets must not exceed the video stream length.
+    durations = [get_duration(seg, stream="video") for seg in segments]
+    logger.debug(
+        "xfade: %d segments, durations=%s, requested crossfade=%.3f",
+        len(segments),
+        [f"{d:.3f}" for d in durations],
+        crossfade,
+    )
 
-    # Clamp crossfade if it exceeds the shortest segment's duration
+    # A segment in a chain loses crossfade time from both sides (the
+    # preceding and following transitions), so it needs at least
+    # 2 * crossfade of content.  Clamp if necessary.
     min_dur = min(durations) if durations else 0.0
-    if crossfade >= min_dur > 0:
-        clamped = min_dur * 0.5
+    if min_dur > 0 and 2 * crossfade >= min_dur:
+        clamped = min_dur * 0.25
         logger.warning(
-            "crossfade (%.2fs) >= shortest segment (%.2fs); clamping to %.2fs",
+            "crossfade (%.2fs) too long for shortest segment (%.2fs); clamping to %.2fs",
             crossfade,
             min_dur,
             clamped,
@@ -189,28 +199,48 @@ def concatenate_segments_xfade(
 
     # Track cumulative offset: first offset = D0 - crossfade
     # Each subsequent: prev_offset + D_i - crossfade
+    #
+    # The xfade filter requires offset + duration <= first_input_duration.
+    # In a chain, each transition hits this boundary exactly (mathematically
+    # offset + CF == input_duration), so floating-point imprecision or
+    # codec-level duration rounding can push it over, producing broken
+    # output.  We subtract a small margin from each offset to guarantee
+    # headroom.
+    _OFFSET_MARGIN = 0.02  # 20ms safety margin per transition
+
+    # Normalize all audio inputs to a common format so acrossfade works
+    # even when segments have different sample rates or channel layouts
+    # (e.g. passthrough videos vs TTS-generated audio).
+    _AUDIO_FMT = "aformat=sample_rates=44100:channel_layouts=stereo"
+
     video_label = "[0:v]"
-    audio_label = "[0:a]"
-    filter_parts: list[str] = []
-    offset = durations[0] - crossfade
+    # Normalize first audio stream
+    filter_parts: list[str] = [f"[0:a]{_AUDIO_FMT}[a0n]"]
+    audio_label = "[a0n]"
+    offset = durations[0] - crossfade - _OFFSET_MARGIN
 
     for i in range(1, len(segments)):
         safe_offset = max(0.0, offset)
         out_v = f"[v{i}]"
         out_a = f"[a{i}]"
+        norm_a = f"[a{i}n]"
 
         filter_parts.append(
             f"{video_label}[{i}:v]xfade=transition=fade:duration={crossfade}"
             f":offset={safe_offset:.6f}{out_v}"
         )
-        filter_parts.append(f"{audio_label}[{i}:a]acrossfade=d={crossfade}:c1=tri:c2=tri{out_a}")
+        # Normalize this input's audio before crossfading
+        filter_parts.append(f"[{i}:a]{_AUDIO_FMT}{norm_a}")
+        filter_parts.append(
+            f"{audio_label}{norm_a}acrossfade=d={crossfade}:c1=tri:c2=tri{out_a}"
+        )
 
         video_label = out_v
         audio_label = out_a
 
         if i < len(segments) - 1:
             # Next offset: current safe_offset + next duration - crossfade
-            offset = safe_offset + durations[i] - crossfade
+            offset = safe_offset + durations[i] - crossfade - _OFFSET_MARGIN
 
     filter_complex = ";".join(filter_parts)
 
@@ -239,19 +269,26 @@ def concatenate_segments_xfade(
     _run_ffmpeg(cmd)
 
 
-def get_duration(media_path: Path) -> float:
+def get_duration(media_path: Path, *, stream: str | None = None) -> float:
     """Get duration of a media file in seconds using ffprobe.
+
+    Args:
+        media_path: Path to the media file.
+        stream: If ``"video"`` or ``"audio"``, return that stream's duration
+            instead of the container format duration.  This matters for xfade
+            offset calculation where video and audio durations may differ.
 
     Raises RuntimeError if ffprobe is missing, the file cannot be probed,
     or the output doesn't contain a valid duration.
     """
+    show_flag = "-show_streams" if stream else "-show_format"
     cmd = [
         "ffprobe",
         "-v",
         "quiet",
         "-print_format",
         "json",
-        "-show_format",
+        show_flag,
         str(media_path),
     ]
     try:
@@ -266,16 +303,28 @@ def get_duration(media_path: Path) -> float:
     except json.JSONDecodeError as e:
         raise RuntimeError(f"ffprobe returned invalid JSON for '{media_path}'") from e
 
+    if stream:
+        for s in info.get("streams", []):
+            if s.get("codec_type") == stream and "duration" in s:
+                return _parse_duration(s["duration"], media_path)
+        # Fall back to format duration if the requested stream has none
+        return get_duration(media_path)
+
     try:
         duration_str = info["format"]["duration"]
     except KeyError:
         raise RuntimeError(f"ffprobe output missing 'format.duration' for '{media_path}'")
 
+    return _parse_duration(duration_str, media_path)
+
+
+def _parse_duration(value: str, media_path: Path) -> float:
+    """Convert a duration string to float, raising on failure."""
     try:
-        return float(duration_str)
+        return float(value)
     except (ValueError, TypeError) as e:
         raise RuntimeError(
-            f"ffprobe returned non-numeric duration '{duration_str}' for '{media_path}'"
+            f"ffprobe returned non-numeric duration '{value}' for '{media_path}'"
         ) from e
 
 

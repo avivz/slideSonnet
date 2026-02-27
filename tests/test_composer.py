@@ -137,9 +137,114 @@ def test_concatenate_segments(work_dir):
 
 
 @pytest.mark.integration
+def test_concatenate_segments_xfade_output_duration(work_dir):
+    """xfade assembly should produce video with duration ≈ sum(durations) - (N-1)*crossfade."""
+    segments = []
+    durations_seconds = [2.0, 2.0, 2.0]
+    for i, dur in enumerate(durations_seconds):
+        image = work_dir / f"slide_{i}.png"
+        audio = work_dir / f"audio_{i}.wav"
+        seg = work_dir / f"seg_{i}.mp4"
+        _make_png(image)
+        _make_wav(audio, duration_seconds=dur)
+        compose_segment(
+            image=image,
+            audio=audio,
+            output=seg,
+            duration=dur,
+            pad_seconds=0.0,
+            pre_silence=0.0,
+            resolution="640x480",
+            fps=24,
+            crf=28,
+        )
+        segments.append(seg)
+
+    output = work_dir / "xfade.mp4"
+    cf = 0.3
+    concatenate_segments_xfade(segments, output, crossfade=cf, crf=28)
+
+    assert output.exists()
+    actual = get_duration(output)
+    expected = sum(durations_seconds) - (len(segments) - 1) * cf
+    # Allow 0.5s tolerance for codec rounding
+    assert expected - 0.5 <= actual <= expected + 0.5, (
+        f"Expected ~{expected:.1f}s, got {actual:.1f}s"
+    )
+
+
+@pytest.mark.integration
+def test_concatenate_segments_xfade_mixed_audio(work_dir):
+    """xfade must handle segments with different audio sample rates and channels."""
+    segments = []
+    # Create two segments with different audio properties
+    for i, (rate, channels) in enumerate([(22050, 1), (44100, 2)]):
+        image = work_dir / f"slide_{i}.png"
+        audio = work_dir / f"audio_{i}.wav"
+        seg = work_dir / f"seg_{i}.mp4"
+        _make_png(image)
+        # Create WAV with specific sample rate and channels
+        audio.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(audio), "w") as w:
+            w.setnchannels(channels)
+            w.setsampwidth(2)
+            w.setframerate(rate)
+            w.writeframes(b"\x00\x00" * (rate * channels * 2))  # 2 seconds
+        compose_segment(
+            image=image,
+            audio=audio,
+            output=seg,
+            duration=2.0,
+            pad_seconds=0.0,
+            pre_silence=0.0,
+            resolution="640x480",
+            fps=24,
+            crf=28,
+        )
+        segments.append(seg)
+
+    output = work_dir / "mixed.mp4"
+    concatenate_segments_xfade(segments, output, crossfade=0.3, crf=28)
+
+    assert output.exists()
+    actual = get_duration(output)
+    # 2 segments of ~2s each with 0.3s crossfade → ~3.7s
+    assert 3.0 <= actual <= 4.5, f"Expected ~3.7s, got {actual:.1f}s"
+
+
+@pytest.mark.integration
 def test_get_duration_nonexistent():
     with pytest.raises(RuntimeError, match="ffprobe failed"):
         get_duration(Path("/nonexistent.mp4"))
+
+
+@pytest.mark.integration
+def test_get_duration_stream_video(work_dir):
+    """get_duration(stream='video') should return video-specific duration."""
+    image = work_dir / "slide.png"
+    audio = work_dir / "audio.wav"
+    seg = work_dir / "seg.mp4"
+    _make_png(image)
+    _make_wav(audio, duration_seconds=2.0)
+    compose_segment(
+        image=image,
+        audio=audio,
+        output=seg,
+        duration=2.0,
+        pad_seconds=0.5,
+        pre_silence=0.5,
+        resolution="640x480",
+        fps=24,
+        crf=28,
+    )
+
+    vid_dur = get_duration(seg, stream="video")
+    fmt_dur = get_duration(seg)
+    # Both should be > 0 and within reasonable range
+    assert vid_dur > 0
+    assert fmt_dur > 0
+    # Video duration should not exceed format duration
+    assert vid_dur <= fmt_dur + 0.1
 
 
 # ---- Mocked unit tests (no ffmpeg required) ----
@@ -389,10 +494,10 @@ class TestConcatenateSegmentsXfadeMocked:
         fc_idx = cmd.index("-filter_complex")
         fc = cmd[fc_idx + 1]
 
-        # First offset: D0(5.0) - 0.5 = 4.5
-        assert "offset=4.500000" in fc
-        # Second offset: 4.5 + D1(5.0) - 0.5 = 9.0
-        assert "offset=9.000000" in fc
+        # First offset: D0(5.0) - 0.5 - 0.02 margin = 4.48
+        assert "offset=4.480000" in fc
+        # Second offset: 4.48 + D1(5.0) - 0.5 - 0.02 margin = 8.96
+        assert "offset=8.960000" in fc
 
     @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
     @patch("slidesonnet.video.composer._run_ffmpeg")
@@ -429,17 +534,17 @@ class TestConcatenateSegmentsXfadeMocked:
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """When crossfade >= shortest segment, crossfade is clamped to half that duration."""
+        """When 2*crossfade >= shortest segment, crossfade is clamped to 25% of that."""
         segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
         output = tmp_path / "out.mp4"
 
         concatenate_segments_xfade(segs, output, crossfade=0.5)
 
-        assert "clamping to 0.15s" in caplog.text
+        assert "clamping to 0.07s" in caplog.text
         cmd = mock_ffmpeg.call_args[0][0]
         fc_idx = cmd.index("-filter_complex")
         fc = cmd[fc_idx + 1]
-        assert "duration=0.15" in fc
+        assert "duration=0.075" in fc
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
     def test_single_segment_copies(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
