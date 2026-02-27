@@ -67,15 +67,11 @@ Dijkstra's algorithm and Knuth's contributions are foundational to computer scie
 
 In this showcase you have seen:
 
-- **MARP** and **Beamer** slide formats
-- Narration with `<!-- say: -->` and `\say{}`
-- Voice overrides, silent slides, and skip
-- Math, code, images, and pronunciation
-
-Build this showcase yourself:
-
-```bash
-slidesonnet build lecture.md
-```
-
-<!-- say: That wraps up the slideSonnet showcase. You have seen MARP and Beamer slides, narration annotations, voice overrides, silent and skip controls, math, code, images, and pronunciation dictionaries. To build this showcase yourself, run slidesonnet build lecture dot md. Thanks for watching! -->
+* **MARP** and **Beamer** slide formats
+<!-- say: That wraps up the slideSonnet showcase. You have seen how it supports both MARP Markdown and Beamer LaTeX slide formats. -->
+* Narration via `say` annotations in both formats
+<!-- say: You learned to add narration using say comments in MARP and say commands in Beamer. -->
+* Voice overrides, silent slides, and skip
+<!-- say: We covered voice and pace overrides, silent slides for pauses, and skip to exclude slides from the video. -->
+* Fragment animation, math, code, images, and pronunciation
+<!-- say: And you saw fragment animation for incremental reveals, math equations, code blocks, images, and pronunciation dictionaries. To build this showcase yourself, run slidesonnet build lecture dot md. Thanks for watching! -->

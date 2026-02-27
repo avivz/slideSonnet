@@ -13,25 +13,25 @@ Compile slide decks into narrated videos
 
 # The Problem
 
-- Recording narrated lectures is tedious
-- A single edit means re-recording the whole thing
-- Keeping slides and audio in sync is error-prone
-
-**What if narration was just part of the source?**
-
-<!-- say: Recording narrated lectures is tedious. Every time you change a slide, you have to re-record the audio. What if the narration was simply part of the slide source, so it could be regenerated automatically? -->
+* Recording narrated lectures is tedious
+<!-- say: Recording narrated lectures is tedious. You need a quiet room, a microphone, and the patience to talk through every single slide. -->
+* A single edit means re-recording the whole thing
+<!-- say: And when you change even one slide, you often have to re-record the entire section to keep everything in sync. -->
+* Keeping slides and audio in sync is error-prone
+<!-- say: Over time, keeping slides and audio aligned becomes increasingly error-prone, especially as presentations evolve. -->
+* **What if narration was just part of the source?**
+<!-- say: But what if the narration was simply part of the slide source, so it could be regenerated automatically? That is exactly what slideSonnet does. -->
 
 ---
 
 # How slideSonnet Works
 
-1. Write slides in **Markdown** (MARP) or **LaTeX** (Beamer)
-2. Add narration annotations to each slide
-3. Run `slidesonnet build` to generate a video
-
-slideSonnet synthesizes speech via TTS, composites each slide with its audio, and assembles the final MP4.
-
-<!-- say: Here is how slideSonnet works. You write slides in Markdown or LaTeX, add narration annotations, and run a single build command. slideSonnet synthesizes speech, composites each slide with its audio, and assembles the final MP4 video. -->
+1) Write slides in **Markdown** (MARP) or **LaTeX** (Beamer)
+<!-- say: First, you write your slides in Markdown using MARP, or in LaTeX using Beamer. Both formats are fully supported. -->
+2) Add narration annotations to each slide
+<!-- say: Then you add narration annotations directly in the slide source. These are simple comments containing the text you want spoken aloud. -->
+3) Run `slidesonnet build` to generate a video
+<!-- say: Finally, you run slidesonnet build. slideSonnet synthesizes speech, composites each slide with its audio, and assembles the final MP4. -->
 
 ---
 
@@ -147,11 +147,11 @@ A skipped slide is excluded from the video entirely. Useful for backup or draft 
 Bullet points can reveal incrementally, each with its own narration:
 
 * First, we introduce the concept
-<!-- say: Fragment animation lets you reveal bullet points one at a time, just like in a live presentation. -->
+<!-- say: You have already seen fragment animation in action on earlier slides. It reveals bullet points one at a time, each with its own narration, just like in a live presentation. -->
 * Then, we add supporting detail
-<!-- say: Each step gets its own narration, so the viewer hears an explanation as each point appears. -->
+<!-- say: Each fragment gets its own narration, so the viewer hears an explanation timed to each point as it appears. -->
 * Finally, we wrap up
-<!-- say: This is powered by Marp's star-bullet syntax. slideSonnet expands each step into a separate sub-slide with progressive reveal. -->
+<!-- say: In MARP, just use star bullets instead of dashes to create fragments. slideSonnet expands each step into a separate sub-slide with progressive reveal. -->
 
 ---
 

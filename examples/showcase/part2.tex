@@ -54,15 +54,15 @@
 
   \begin{itemize}
     \item \texttt{\textbackslash say\{narration text\}} \quad --- basic narration
+    \say{In Beamer, you narrate slides with the backslash say command, followed by your text in curly braces.}
+    \pause
     \item \texttt{\textbackslash say[voice=expert]\{text\}} \quad --- voice override
+    \say[2]{You can pass optional parameters in square brackets, like voice equals expert, to change the voice for a specific slide.}
+    \pause
     \item \texttt{\textbackslash silent} \quad --- silent slide
     \item \texttt{\textbackslash slidesonnetskip} \quad --- skip slide
+    \say[3, voice=expert]{Backslash silent creates a pause with no speech, and backslash slidesonnetskip excludes a slide entirely. The same voices and pronunciation dictionaries apply across all module types.}
   \end{itemize}
-
-  \vspace{0.3cm}
-  The same voices and pronunciation dictionaries apply across all module types.
-
-  \say[voice=expert]{In Beamer, annotations use LaTeX commands. Backslash say with curly braces for narration, with optional square brackets for voice and pace overrides. Backslash silent and backslash slidesonnetskip work just like their MARP counterparts.}
 \end{frame}
 
 \begin{frame}{End of Beamer Section}

@@ -100,6 +100,7 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     cmd = [
         "marp",
         "--no-stdin",
+        "--html",
         str(effective_source),
         "--images",
         "png",
@@ -384,22 +385,23 @@ def _split_with_frontmatter(text: str) -> tuple[str, list[str]]:
     return front_matter, slides
 
 
-def _convert_fragment_marker(line: str, *, visible: bool = True) -> str:
+_GRAY_COLOR = "#aaa"
+
+
+def _convert_fragment_marker(line: str, *, grayed: bool = False) -> str:
     """Convert a fragment list marker to a regular marker.
 
     ``* item`` → ``- item``, ``N) item`` → ``N. item``
 
-    When *visible* is False, the item text is wrapped in a hidden ``<span>``
-    so it occupies space but is invisible — this prevents MARP's vertical
-    centering from shifting the list as items are revealed.
+    When *grayed* is True the item text is wrapped in a colored ``<span>``
+    so it appears dimmed, indicating it has not been revealed yet.
     """
     converted = re.sub(r"^(\s*)\*(\s)", r"\1-\2", line)
     converted = re.sub(r"^(\s*)(\d+)\)(\s)", r"\1\2.\3", converted)
-    if not visible:
-        # Wrap the text portion (everything after "- " or "N. ") in a hidden span.
+    if grayed:
         converted = re.sub(
             r"^(\s*(?:-|\d+\.)\s+)(.*)",
-            r'\1<span style="visibility:hidden">\2</span>',
+            rf'\1<span style="color:{_GRAY_COLOR}">\2</span>',
             converted,
         )
     return converted
@@ -410,9 +412,9 @@ def _expand_slide(raw_text: str, n_sub: int) -> list[str]:
 
     Fragment items (``*`` / ``N)``) are revealed incrementally: sub-slide k
     shows items 1..min(k, total_fragments) with markers converted to ``-``/``N.``.
-    Hidden items are rendered as invisible placeholders to preserve vertical
-    spacing.  ``<!-- say -->`` directives are stripped.  Non-fragment content
-    appears on every sub-slide.
+    Items beyond the current reveal step are shown grayed out.
+    ``<!-- say -->`` directives are stripped.
+    Non-fragment content appears on every sub-slide.
     """
     # Remove say directives (they span the full match, possibly multi-line)
     clean_text = _SAY_RE.sub("", raw_text)
@@ -446,8 +448,8 @@ def _expand_slide(raw_text: str, n_sub: int) -> list[str]:
         sub_lines: list[str] = []
         for i, line in enumerate(lines):
             if i in fragment_line_map:
-                is_visible = fragment_line_map[i] <= visible_up_to
-                sub_lines.append(_convert_fragment_marker(line, visible=is_visible))
+                is_revealed = fragment_line_map[i] <= visible_up_to
+                sub_lines.append(_convert_fragment_marker(line, grayed=not is_revealed))
             else:
                 sub_lines.append(line)
         sub_slides.append("\n".join(sub_lines))
