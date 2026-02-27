@@ -55,7 +55,7 @@ def build(
     audio_cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Output path
-    output_path = build_dir / (playlist_path.stem + ".mp4")
+    output_path = playlist_dir / (playlist_path.stem + ".mp4")
 
     # Generate doit tasks
     task_list = generate_tasks(
