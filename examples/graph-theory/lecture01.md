@@ -10,7 +10,7 @@ pronunciation:
   - pronunciation/cs-terms.md
 video:
   resolution: 1920x1080
-  pad_seconds: 0.5
+  pad_seconds: 1.5
   silence_duration: 3.0
 ---
 

@@ -75,10 +75,10 @@ def test_showcase_builds(tmp_path: Path) -> None:
     # Replace 0-byte placeholder with a real MP4 for video passthrough
     _generate_placeholder_mp4(project / "animations" / "transition.mp4")
 
-    output = build(project / "lecture01.md")
+    output = build(project / "lecture.md")
 
     # --- Final output exists and is a valid video ---
-    expected = project / ".build" / "lecture01.mp4"
+    expected = project / "lecture.mp4"
     assert output == expected
     assert expected.exists()
     assert expected.stat().st_size > 0
@@ -102,12 +102,13 @@ def test_showcase_builds(tmp_path: Path) -> None:
     )
 
     # --- Per-module segment counts (narrated + silent slides, excluding skip) ---
-    # 01-intro (MARP): 3 narrated + 1 silent = 4 segments
-    # 02-deep-dive (Beamer): 2 narrated + 1 silent = 3 segments (1 skip excluded)
-    # 03-examples (MARP): 3 narrated = 3 segments (1 skip excluded)
+    # 01_part1 (MARP): 8 narrated (1 skip excluded) = 8 segments
+    # 02_part2 (Beamer): 3 narrated + 1 silent = 4 segments
+    # 03_transition (video passthrough, no segments)
+    # 04_part3 (MARP): 5 narrated = 5 segments
     segments = sorted(build_dir.rglob("segments/*.mp4"))
-    assert len(segments) == 10, f"expected 10 segments, got {len(segments)}"
+    assert len(segments) == 17, f"expected 17 segments, got {len(segments)}"
 
     # --- TTS audio files were generated for narrated slides ---
     audio_files = sorted(build_dir.rglob("audio/*.wav"))
-    assert len(audio_files) >= 8, f"expected at least 8 audio files, got {len(audio_files)}"
+    assert len(audio_files) >= 16, f"expected at least 16 audio files, got {len(audio_files)}"

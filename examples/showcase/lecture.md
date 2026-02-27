@@ -22,19 +22,16 @@ video:
   resolution: 1920x1080
   fps: 24
   crf: 23
-  pad_seconds: 0.5
+  pad_seconds: 1.5
   silence_duration: 3.0
   crossfade: 0.5
 ---
 
 # slideSonnet Feature Showcase
 
-// This showcase demonstrates every slideSonnet feature.
-// Build with: slidesonnet build lecture01.md
-// Preview with: slidesonnet preview lecture01.md
+// Build with: slidesonnet build lecture.md
 
-1. [Introduction](01-intro/slides.md)
-2. [Deep Dive](02-deep-dive/slides.tex)
-3. [Examples](03-examples/slides.md)
-4. [Transition](animations/transition.mp4)
-// 5. [Bonus](bonus/slides.md)
+1. [Introduction](part1.md)
+2. [Pipeline and Beamer](part2.tex)
+3. [Transition](animations/transition.mp4)
+4. [Rich Content](part3.md)
