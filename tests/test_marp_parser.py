@@ -11,12 +11,8 @@ from slidesonnet.exceptions import ParserError
 from slidesonnet.models import SlideAnnotation
 from slidesonnet.parsers.marp import (
     MarpParser,
-    _count_fragments,
-    _expand_for_images,
-    _expand_slide,
     _parse_slide,
     _split_slides,
-    _split_with_frontmatter,
     extract_images,
 )
 
@@ -289,126 +285,6 @@ def test_has_narration_property() -> None:
     assert not s3.has_narration
 
 
-# ---- Fragment expansion tests ----
-
-
-def test_count_fragments() -> None:
-    # * items
-    assert _count_fragments("* A\n* B\n* C") == 3
-    # N) items
-    assert _count_fragments("1) A\n2) B") == 2
-    # Mixed * and - (only * counts)
-    assert _count_fragments("* A\n- B\n* C") == 2
-    # Code blocks ignored
-    assert _count_fragments("```\n* not a fragment\n```\n* real") == 1
-    # N. (regular ordered) not counted
-    assert _count_fragments("1. A\n2. B") == 0
-
-
-def test_expand_slide() -> None:
-    text = (
-        "# Title\n\n* A\n* B\n* C\n\n<!-- say: First -->\n<!-- say: Second -->\n<!-- say: Third -->"
-    )
-    result = _expand_slide(text, 3)
-    assert len(result) == 3
-
-    def _line_for(sub: str, marker: str) -> str:
-        return [ln for ln in sub.split("\n") if marker in ln][0]
-
-    grayed = "color:"
-    # Sub-slide 1: A revealed, B and C grayed
-    assert "- A" in result[0]
-    assert grayed not in _line_for(result[0], "A")
-    assert grayed in _line_for(result[0], "B")
-    assert grayed in _line_for(result[0], "C")
-    # Sub-slide 2: A and B revealed, C grayed
-    assert "- A" in result[1]
-    assert "- B" in result[1]
-    assert grayed not in _line_for(result[1], "B")
-    assert grayed in _line_for(result[1], "C")
-    # Sub-slide 3: all revealed, no grayed items
-    assert "- A" in result[2]
-    assert "- B" in result[2]
-    assert "- C" in result[2]
-    assert grayed not in result[2]
-    # Say directives stripped
-    assert "say" not in result[0]
-    # Title present on all sub-slides
-    assert "# Title" in result[0]
-    assert "# Title" in result[1]
-    assert "# Title" in result[2]
-
-
-def test_expand_slide_ordered_fragments() -> None:
-    """Ordered fragment markers N) are converted to N. on reveal."""
-    text = "# Title\n\n1) Step one\n2) Step two\n\n<!-- say: A -->\n<!-- say: B -->"
-    result = _expand_slide(text, 2)
-    grayed = "color:"
-    assert len(result) == 2
-    assert "1. Step one" in result[0]
-    # Step two is present but grayed
-    assert "Step two" in result[0]
-    assert grayed in result[0]
-    assert "1. Step one" in result[1]
-    assert "2. Step two" in result[1]
-    assert grayed not in result[1]
-
-
-def test_expand_slide_no_fragments() -> None:
-    """Slide with no fragments but multiple says produces identical sub-slides."""
-    text = "# Title\n\nSome content.\n\n<!-- say: A -->\n<!-- say: B -->"
-    result = _expand_slide(text, 2)
-    assert len(result) == 2
-    assert "# Title" in result[0]
-    assert "Some content." in result[0]
-    assert "# Title" in result[1]
-    assert "Some content." in result[1]
-
-
-def test_expand_slide_multiple_lists() -> None:
-    """Two fragment lists are numbered sequentially; non-fragment content always visible."""
-    text = (
-        "# Title\n\n"
-        "* A\n* B\n\n"
-        "Middle content\n\n"
-        "* C\n* D\n\n"
-        "<!-- say: s1 -->\n<!-- say: s2 -->\n<!-- say: s3 -->\n<!-- say: s4 -->"
-    )
-    result = _expand_slide(text, 4)
-    grayed = "color:"
-    assert len(result) == 4
-
-    def _line_for(sub: str, marker: str) -> str:
-        return [ln for ln in sub.split("\n") if marker in ln][0]
-
-    # Sub-slide 1: A revealed, B/C/D grayed
-    assert "- A" in result[0]
-    assert grayed not in _line_for(result[0], "A")
-    assert grayed in _line_for(result[0], "B")
-    assert "Middle content" in result[0]
-    assert grayed in _line_for(result[0], "C")
-    # Sub-slide 2: A,B revealed, C/D grayed
-    assert "- A" in result[1]
-    assert "- B" in result[1]
-    assert grayed not in _line_for(result[1], "B")
-    assert "Middle content" in result[1]
-    assert grayed in _line_for(result[1], "C")
-    # Sub-slide 3: A,B,C revealed, D grayed
-    assert "- A" in result[2]
-    assert "- B" in result[2]
-    assert "Middle content" in result[2]
-    assert "- C" in result[2]
-    assert grayed not in _line_for(result[2], "C")
-    assert grayed in _line_for(result[2], "D")
-    # Sub-slide 4: all revealed
-    assert "- A" in result[3]
-    assert "- B" in result[3]
-    assert "Middle content" in result[3]
-    assert "- C" in result[3]
-    assert "- D" in result[3]
-    assert grayed not in result[3]
-
-
 def test_parse_slide_positional_says() -> None:
     """Multiple says without explicit targeting get positional indices."""
     text = (
@@ -492,32 +368,6 @@ def test_sequential_indices_across_slides(tmp_path: Path) -> None:
     assert slides[3].index == 4
 
 
-def test_expand_for_images() -> None:
-    """Front matter preserved and fragmented slides expanded."""
-    text = textwrap.dedent("""\
-        ---
-        marp: true
-        ---
-
-        # Slide 1
-
-        <!-- say: Single. -->
-
-        ---
-
-        # Slide 2
-
-        * A
-        <!-- say: First -->
-        * B
-        <!-- say: Second -->
-    """)
-    expanded = _expand_for_images(text)
-    fm, slides = _split_with_frontmatter(expanded)
-    assert "marp: true" in fm
-    assert len(slides) == 3  # 1 original + 2 expanded
-
-
 def test_skip_overrides_multiple_says() -> None:
     """Skip annotation takes priority over multiple says."""
     text = "<!-- skip -->\n<!-- say: First -->\n<!-- say: Second -->"
@@ -541,30 +391,111 @@ def test_parse_slide_voice_pace_in_multi_say() -> None:
 
 
 class TestExtractImages:
-    """Mocked tests for extract_images()."""
+    """Tests for extract_images() (Playwright-based)."""
 
+    @patch("slidesonnet.parsers.marp._screenshot_presentation")
     @patch("slidesonnet.parsers.marp.subprocess.run")
-    def test_success(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    def test_html_export_command(
+        self, mock_run: MagicMock, mock_screenshot: MagicMock, tmp_path: Path
+    ) -> None:
+        """Marp is called with --output *.html (not --images png)."""
         source = tmp_path / "slides.md"
         source.write_text("---\nmarp: true\n---\n# Hi\n\n<!-- say: Hello. -->")
         output_dir = tmp_path / "out"
+        output_dir.mkdir()
 
-        def side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "slides.001.png").touch()
-            (output_dir / "slides.002.png").touch()
+        html_path = output_dir / "_slides_presentation.html"
+
+        def run_side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
+            html_path.write_text("<html></html>")
             return MagicMock()
 
-        mock_run.side_effect = side_effect
+        mock_run.side_effect = run_side_effect
+        mock_screenshot.return_value = [output_dir / "slides.001.png"]
 
         result = extract_images(source, output_dir)
 
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "marp"
-        assert "--images" in cmd
-        assert "png" in cmd
-        assert len(result) == 2
+        assert "--output" in cmd
+        output_idx = cmd.index("--output")
+        assert cmd[output_idx + 1].endswith(".html")
+        assert "--images" not in cmd
+        assert result == [output_dir / "slides.001.png"]
+
+    @patch("slidesonnet.parsers.marp._screenshot_presentation")
+    @patch("slidesonnet.parsers.marp.subprocess.run")
+    def test_screenshot_called_with_html_path(
+        self, mock_run: MagicMock, mock_screenshot: MagicMock, tmp_path: Path
+    ) -> None:
+        """_screenshot_presentation receives the HTML path and output dir."""
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+
+        html_path = output_dir / "_slides_presentation.html"
+
+        def run_side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
+            html_path.write_text("<html></html>")
+            return MagicMock()
+
+        mock_run.side_effect = run_side_effect
+        mock_screenshot.return_value = []
+
+        extract_images(source, output_dir)
+
+        mock_screenshot.assert_called_once_with(html_path, output_dir, "slides")
+
+    @patch("slidesonnet.parsers.marp._screenshot_presentation")
+    @patch("slidesonnet.parsers.marp.subprocess.run")
+    def test_html_cleanup(
+        self, mock_run: MagicMock, mock_screenshot: MagicMock, tmp_path: Path
+    ) -> None:
+        """Temp HTML file is deleted after extraction."""
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+
+        html_path = output_dir / "_slides_presentation.html"
+
+        def run_side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
+            html_path.write_text("<html></html>")
+            return MagicMock()
+
+        mock_run.side_effect = run_side_effect
+        mock_screenshot.return_value = []
+
+        extract_images(source, output_dir)
+
+        assert not html_path.exists()
+
+    @patch("slidesonnet.parsers.marp._screenshot_presentation")
+    @patch("slidesonnet.parsers.marp.subprocess.run")
+    def test_html_cleanup_on_error(
+        self, mock_run: MagicMock, mock_screenshot: MagicMock, tmp_path: Path
+    ) -> None:
+        """Temp HTML file is cleaned up even when screenshot fails."""
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+
+        html_path = output_dir / "_slides_presentation.html"
+
+        def run_side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
+            html_path.write_text("<html></html>")
+            return MagicMock()
+
+        mock_run.side_effect = run_side_effect
+        mock_screenshot.side_effect = RuntimeError("browser crash")
+
+        with pytest.raises(RuntimeError, match="browser crash"):
+            extract_images(source, output_dir)
+
+        assert not html_path.exists()
 
     @patch("slidesonnet.parsers.marp.subprocess.run", side_effect=FileNotFoundError)
     def test_marp_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
@@ -583,75 +514,50 @@ class TestExtractImages:
         with pytest.raises(ParserError):
             extract_images(source, tmp_path / "out")
 
-    @patch("slidesonnet.parsers.marp.subprocess.run")
-    def test_extensionless_glob_pattern(self, mock_run: MagicMock, tmp_path: Path) -> None:
-        """When .png pattern finds nothing, falls back to extensionless numbered files."""
-        source = tmp_path / "slides.md"
-        source.write_text("dummy")
-        output_dir = tmp_path / "out"
 
-        def side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            # Newer marp produces extensionless numbered files
-            (output_dir / "slides.001").touch()
-            (output_dir / "slides.002").touch()
-            return MagicMock()
-
-        mock_run.side_effect = side_effect
-
-        result = extract_images(source, output_dir)
-        assert len(result) == 2
+class TestEnsureChromium:
+    """Tests for the auto-install logic."""
 
     @patch("slidesonnet.parsers.marp.subprocess.run")
-    def test_expanded_source_used_for_fragments(self, mock_run: MagicMock, tmp_path: Path) -> None:
-        """When source has fragmented slides, marp is called on the expanded file."""
-        source = tmp_path / "slides.md"
-        source.write_text(
-            textwrap.dedent("""\
-            ---
-            marp: true
-            ---
+    def test_installs_chromium_on_launch_failure(self, mock_run: MagicMock) -> None:
+        """When Chromium launch fails, playwright install chromium is called."""
+        from slidesonnet.parsers.marp import _ensure_chromium
 
-            # Slide 1
+        mock_pw_instance = MagicMock()
+        mock_pw_instance.chromium.launch.side_effect = Exception("not installed")
 
-            * A
-            <!-- say: First -->
-            * B
-            <!-- say: Second -->
-        """)
-        )
-        output_dir = tmp_path / "out"
+        mock_cm = MagicMock()
+        mock_cm.__enter__ = MagicMock(return_value=mock_pw_instance)
+        mock_cm.__exit__ = MagicMock(return_value=False)
 
-        def side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "slides.001.png").touch()
-            (output_dir / "slides.002.png").touch()
-            # Verify marp was called on the expanded file
-            assert any("_expanded" in arg for arg in cmd)
-            return MagicMock()
+        mock_sync_pw = MagicMock(return_value=mock_cm)
 
-        mock_run.side_effect = side_effect
+        with patch("slidesonnet.parsers.marp._import_sync_playwright", return_value=mock_sync_pw):
+            _ensure_chromium()
 
-        result = extract_images(source, output_dir)
-        assert len(result) == 2
-        # Expanded temp file should be cleaned up
-        assert not list(output_dir.glob("*_expanded*"))
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["playwright", "install", "--with-deps", "chromium"]
 
-    @patch("slidesonnet.parsers.marp.subprocess.run")
-    def test_no_expansion_for_single_say(self, mock_run: MagicMock, tmp_path: Path) -> None:
-        """When source has no fragmented slides, marp is called on the original file."""
-        source = tmp_path / "slides.md"
-        source.write_text("---\nmarp: true\n---\n# Hi\n\n<!-- say: Hello. -->")
-        output_dir = tmp_path / "out"
+    def test_skips_install_when_chromium_present(self) -> None:
+        """When Chromium launches successfully, no install is triggered."""
+        from slidesonnet.parsers.marp import _ensure_chromium
 
-        def side_effect(cmd: list[str], **kwargs: object) -> MagicMock:
-            output_dir.mkdir(parents=True, exist_ok=True)
-            (output_dir / "slides.001.png").touch()
-            # Verify marp was called on the original file
-            input_file = cmd[2]
-            assert "_expanded" not in input_file
-            return MagicMock()
+        mock_browser = MagicMock()
+        mock_pw_instance = MagicMock()
+        mock_pw_instance.chromium.launch.return_value = mock_browser
 
-        mock_run.side_effect = side_effect
+        mock_cm = MagicMock()
+        mock_cm.__enter__ = MagicMock(return_value=mock_pw_instance)
+        mock_cm.__exit__ = MagicMock(return_value=False)
 
-        extract_images(source, output_dir)
+        mock_sync_pw = MagicMock(return_value=mock_cm)
+
+        with (
+            patch("slidesonnet.parsers.marp._import_sync_playwright", return_value=mock_sync_pw),
+            patch("slidesonnet.parsers.marp.subprocess.run") as mock_run,
+        ):
+            _ensure_chromium()
+
+        mock_run.assert_not_called()
+        mock_browser.close.assert_called_once()

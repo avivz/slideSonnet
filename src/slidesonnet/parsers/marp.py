@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from slidesonnet.exceptions import ParserError
 from slidesonnet.models import SlideAnnotation, SlideNarration
@@ -41,10 +43,6 @@ _FENCE_RE = re.compile(
 # Parse key=value pairs from say(...) params
 _PARAM_RE = re.compile(r"(\w+)\s*=\s*(\w+)")
 
-# Fragment list markers (Marp animated items)
-_FRAGMENT_UL_RE = re.compile(r"^\s*\*\s", re.MULTILINE)
-_FRAGMENT_OL_RE = re.compile(r"^\s*\d+\)\s", re.MULTILINE)
-
 
 @dataclass
 class _SayCommand:
@@ -72,40 +70,26 @@ class MarpParser(SlideParser):
 
 
 def extract_images(source: Path, output_dir: Path) -> list[Path]:
-    """Run marp CLI to extract slide images as PNGs.
-
-    Expands fragmented slides (those with multiple say directives) into
-    separate sub-slides before rendering, so each sub-slide gets its own image.
+    """Run marp CLI to export HTML, then screenshot each slide state with Playwright.
 
     Returns list of generated image paths in slide order.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    return _extract_images_via_playwright(source, output_dir)
 
-    # Expand fragmented slides for image extraction
-    text = source.read_text(encoding="utf-8")
-    expanded = _expand_for_images(text)
 
-    # Use expanded file if expansion changed anything
-    if expanded != text:
-        expanded_source = output_dir / f"_{source.stem}_expanded.md"
-        expanded_source.write_text(expanded, encoding="utf-8")
-        effective_source = expanded_source
-    else:
-        effective_source = source
+def _extract_images_via_playwright(source: Path, output_dir: Path) -> list[Path]:
+    """Export HTML via marp-cli, then screenshot each slide state with Playwright."""
+    html_path = output_dir / f"_{source.stem}_presentation.html"
 
-    # marp --output treats the path as a file prefix, so we use
-    # output_dir/source_stem to get files like output_dir/slides.001, etc.
-    output_prefix = output_dir / source.stem
-
+    # Export HTML
     cmd = [
         "marp",
         "--no-stdin",
         "--html",
-        str(effective_source),
-        "--images",
-        "png",
+        str(source),
         "--output",
-        str(output_prefix),
+        str(html_path),
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -114,16 +98,81 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     except subprocess.CalledProcessError as e:
         raise ParserError(f"marp failed:\n{e.stderr}")
 
-    # Clean up temp file
-    if expanded != text and expanded_source.exists():
-        expanded_source.unlink()
+    try:
+        images = _screenshot_presentation(html_path, output_dir, source.stem)
+    finally:
+        if html_path.exists():
+            html_path.unlink()
 
-    # marp --images png produces files like: slides.001.png, slides.002.png
-    # or extensionless: slides.001, slides.002 (newer marp versions)
-    stem = source.stem
-    images = sorted(output_dir.glob(f"{stem}.[0-9][0-9][0-9].png"))
-    if not images:
-        images = sorted(output_dir.glob(f"{stem}.[0-9][0-9][0-9]"))
+    return images
+
+
+def _import_sync_playwright() -> Callable[[], Any]:
+    """Import and return ``sync_playwright`` from the Playwright package."""
+    from playwright.sync_api import sync_playwright
+
+    func: Callable[[], Any] = sync_playwright
+    return func
+
+
+def _ensure_chromium() -> None:
+    """Install Chromium browser for Playwright if not already present."""
+    sync_playwright = _import_sync_playwright()
+
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            browser.close()
+    except Exception:
+        logger.info("Installing Chromium for Playwright (first-time setup)...")
+        subprocess.run(
+            ["playwright", "install", "--with-deps", "chromium"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+
+def _screenshot_presentation(html_path: Path, output_dir: Path, stem: str) -> list[Path]:
+    """Open the Marp HTML presentation in headless Chromium and screenshot each step.
+
+    Navigates through slides and fragment steps using ArrowRight key presses.
+    Automatically installs Chromium on first use if needed.
+    Returns list of PNG paths in presentation order.
+    """
+    _ensure_chromium()
+
+    sync_playwright = _import_sync_playwright()
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={"width": 1920, "height": 1080})
+        page.goto(html_path.as_uri())
+        page.wait_for_load_state("networkidle")
+        page.wait_for_selector("section[id]")
+
+        # Count total steps: each section is a slide, fragments add extra steps
+        total_steps: int = page.evaluate("""() => {
+            const sections = document.querySelectorAll('section[id]');
+            let steps = 0;
+            for (const section of sections) {
+                const fragments = parseInt(section.dataset.marpitFragments || '0', 10);
+                steps += 1 + fragments;
+            }
+            return steps;
+        }""")
+
+        images: list[Path] = []
+        for i in range(total_steps):
+            img_path = output_dir / f"{stem}.{i + 1:03d}.png"
+            page.screenshot(path=str(img_path))
+            images.append(img_path)
+            if i < total_steps - 1:
+                page.keyboard.press("ArrowRight")
+                page.wait_for_timeout(150)
+
+        browser.close()
+
     return images
 
 
@@ -231,18 +280,6 @@ def _parse_say_params(params_str: str) -> tuple[int, str | None, str | None]:
     return sub_slide, voice, pace
 
 
-def _count_says(text: str) -> int:
-    """Count ``<!-- say -->`` directives outside fenced code blocks."""
-    clean = _FENCE_RE.sub("", text)
-    return len(_SAY_RE.findall(clean))
-
-
-def _count_fragments(text: str) -> int:
-    """Count fragment list items (``*`` and ``N)``) outside fenced code blocks."""
-    clean = _FENCE_RE.sub("", text)
-    return len(_FRAGMENT_UL_RE.findall(clean)) + len(_FRAGMENT_OL_RE.findall(clean))
-
-
 def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarration]:
     """Parse annotations from a single slide's text.
 
@@ -341,151 +378,3 @@ def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarrati
         )
 
     return results
-
-
-# ---- Image expansion for fragment animation ----
-
-
-def _split_with_frontmatter(text: str) -> tuple[str, list[str]]:
-    """Split MARP markdown into front matter string and list of slide texts.
-
-    Returns (front_matter_text, [slide_text, ...]).
-    """
-    lines = text.split("\n")
-    separator_indices = _find_separator_indices(lines)
-
-    if len(separator_indices) < 2:
-        return text, []
-
-    fm_close = separator_indices[1]
-    front_matter = "\n".join(lines[: fm_close + 1])
-    slide_separators = separator_indices[2:]
-    slides: list[str] = []
-
-    if not slide_separators:
-        content = "\n".join(lines[fm_close + 1 :])
-        if content.strip():
-            slides.append(content)
-        return front_matter, slides
-
-    # First slide
-    slides.append("\n".join(lines[fm_close + 1 : slide_separators[0]]))
-
-    # Middle slides
-    for j in range(len(slide_separators) - 1):
-        start = slide_separators[j] + 1
-        end = slide_separators[j + 1]
-        slides.append("\n".join(lines[start:end]))
-
-    # Last slide
-    last_content = "\n".join(lines[slide_separators[-1] + 1 :])
-    if last_content.strip():
-        slides.append(last_content)
-
-    return front_matter, slides
-
-
-_GRAY_COLOR = "#aaa"
-
-
-def _convert_fragment_marker(line: str, *, grayed: bool = False) -> str:
-    """Convert a fragment list marker to a regular marker.
-
-    ``* item`` → ``- item``, ``N) item`` → ``N. item``
-
-    When *grayed* is True the item text is wrapped in a colored ``<span>``
-    so it appears dimmed, indicating it has not been revealed yet.
-    """
-    converted = re.sub(r"^(\s*)\*(\s)", r"\1-\2", line)
-    converted = re.sub(r"^(\s*)(\d+)\)(\s)", r"\1\2.\3", converted)
-    if grayed:
-        converted = re.sub(
-            r"^(\s*(?:-|\d+\.)\s+)(.*)",
-            rf'\1<span style="color:{_GRAY_COLOR}">\2</span>',
-            converted,
-        )
-    return converted
-
-
-def _expand_slide(raw_text: str, n_sub: int) -> list[str]:
-    """Produce *n_sub* copies of a slide with progressive fragment reveal.
-
-    Fragment items (``*`` / ``N)``) are revealed incrementally: sub-slide k
-    shows items 1..min(k, total_fragments) with markers converted to ``-``/``N.``.
-    Items beyond the current reveal step are shown grayed out.
-    ``<!-- say -->`` directives are stripped.
-    Non-fragment content appears on every sub-slide.
-    """
-    # Remove say directives (they span the full match, possibly multi-line)
-    clean_text = _SAY_RE.sub("", raw_text)
-
-    lines = clean_text.split("\n")
-    in_fence = False
-    fragment_line_map: dict[int, int] = {}  # line_index -> fragment_number
-    frag_count = 0
-
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            fence_char = stripped[:3]
-            if in_fence:
-                if stripped.rstrip(fence_char[0]) == "":
-                    in_fence = False
-            else:
-                in_fence = True
-            continue
-        if in_fence:
-            continue
-        if re.match(r"\s*\*\s", line) or re.match(r"\s*\d+\)\s", line):
-            frag_count += 1
-            fragment_line_map[i] = frag_count
-
-    n_fragments = frag_count
-
-    sub_slides: list[str] = []
-    for k in range(1, n_sub + 1):
-        visible_up_to = min(k, n_fragments)
-        sub_lines: list[str] = []
-        for i, line in enumerate(lines):
-            if i in fragment_line_map:
-                is_revealed = fragment_line_map[i] <= visible_up_to
-                sub_lines.append(_convert_fragment_marker(line, grayed=not is_revealed))
-            else:
-                sub_lines.append(line)
-        sub_slides.append("\n".join(sub_lines))
-
-    return sub_slides
-
-
-def _expand_for_images(text: str) -> str:
-    """Expand fragmented slides (multiple says) into separate sub-slides.
-
-    Returns the full markdown with front matter preserved and fragmented
-    slides replaced by their expanded sub-slide copies.
-    """
-    front_matter, slide_texts = _split_with_frontmatter(text)
-
-    if not slide_texts:
-        return text
-
-    expanded_slides: list[str] = []
-    any_expanded = False
-    for slide_text in slide_texts:
-        n_says = _count_says(slide_text)
-        if n_says > 1:
-            sub_slides = _expand_slide(slide_text, n_says)
-            expanded_slides.extend(sub_slides)
-            any_expanded = True
-        else:
-            expanded_slides.append(slide_text)
-
-    if not any_expanded:
-        return text
-
-    # Reassemble: front matter + first slide, then remaining slides with --- separators
-    # Slide texts already start with their original leading whitespace (e.g. "\n# Title")
-    parts = [front_matter, expanded_slides[0]]
-    for slide in expanded_slides[1:]:
-        parts.append("\n---" + slide)
-
-    return "".join(parts)

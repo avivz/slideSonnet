@@ -210,10 +210,18 @@ Only the second `<!-- say -->` is parsed. The same applies to `<!-- silent -->`,
 
 ## Image extraction
 
-slideSonnet renders slides to PNG images using [marp-cli](https://github.com/marp-team/marp-cli):
+slideSonnet renders slides to PNG images using [marp-cli](https://github.com/marp-team/marp-cli) and [Playwright](https://playwright.dev/python/) (headless Chromium):
 
 ```bash
 npm install -g @marp-team/marp-cli
 ```
 
-For slides with fragment animation, slideSonnet writes an expanded Markdown file (with one sub-slide per `---`-separated section) to a temporary file and runs marp-cli on it. The temporary file is cleaned up after image extraction.
+Playwright is installed automatically as a dependency. On first use, slideSonnet will auto-install the Chromium browser binary if it's not already present.
+
+The extraction pipeline:
+
+1. **marp-cli** exports the presentation to a single HTML file (`marp --output <file>.html`)
+2. **Playwright** opens the HTML in headless Chromium, navigates through each slide and fragment step using keyboard events, and takes a screenshot at each state
+3. The temporary HTML file is cleaned up after extraction
+
+Marp's HTML output natively handles fragment reveals via `data-marpit-fragments` attributes, so each fragment step is captured accurately including CSS animations and transitions.
