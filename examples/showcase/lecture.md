@@ -1,20 +1,18 @@
 ---
 title: slideSonnet Feature Showcase
 tts:
-  backend: piper
-  piper:
-    model: en_US-lessac-medium
-  // To use ElevenLabs instead, set backend to elevenlabs and uncomment:
-  // elevenlabs:
-  //   api_key_env: ELEVENLABS_API_KEY
-  //   voice_id: your_voice_id_here
-  //   model_id: eleven_multilingual_v2
-  //   stability: 0.5
-  //   similarity_boost: 0.75
+  backend: elevenlabs
+  elevenlabs:
+    voice_id: nPczCjzI2devNBz1zQrb
+    model_id: eleven_v3
+    stability: 0.5
+    similarity_boost: 0.75
+  # piper:
+  #   model: en_US-lessac-medium
 voices:
-  default: en_US-lessac-medium
-  narrator: en_US-amy-medium
-  expert: en_US-joe-medium
+  default: nPczCjzI2devNBz1zQrb
+  narrator: 21m00Tcm4TlvDq8ikWAM
+  expert: pNInz6obpgDQGcFmaJgB
 pronunciation:
   - pronunciation/general.md
   - pronunciation/names.md

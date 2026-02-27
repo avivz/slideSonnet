@@ -10,10 +10,12 @@ from slidesonnet.exceptions import ParserError
 from slidesonnet.models import SlideAnnotation
 from slidesonnet.parsers.beamer import (
     BeamerParser,
+    _count_pauses,
     _extract_braced,
     _extract_frames,
     _find_say_commands,
     _parse_frame,
+    _parse_say_params,
     _strip_latex,
     extract_images,
 )
@@ -27,7 +29,7 @@ def simple_tex():
 def test_extract_frames(simple_tex):
     text = simple_tex.read_text()
     frames = _extract_frames(text)
-    assert len(frames) == 6
+    assert len(frames) == 11
 
 
 def test_parse_basic_say(simple_tex):
@@ -141,8 +143,9 @@ def test_strip_latex_deeply_nested():
 
 
 def test_empty_say_warns(caplog):
-    slide = _parse_frame(1, r"\say{}", Path("test.tex"))
-    assert slide.annotation == SlideAnnotation.SILENT
+    slides = _parse_frame(1, r"\say{}", Path("test.tex"))
+    assert len(slides) == 1
+    assert slides[0].annotation == SlideAnnotation.SILENT
     assert "did you mean" in caplog.text
 
 
@@ -291,3 +294,288 @@ class TestExtractBracedEdgeCases:
         content, pos = _extract_braced(text, 0)
         assert content == r"Open bracket: \{"
         assert pos == len(text)
+
+
+# ---- Tests for overlay / sub-slide parsing ----
+
+
+class TestParseSayParams:
+    """Tests for _parse_say_params()."""
+
+    def test_empty_params(self) -> None:
+        sub, voice, pace = _parse_say_params("")
+        assert sub == 1
+        assert voice is None
+        assert pace is None
+
+    def test_bare_number(self) -> None:
+        sub, voice, pace = _parse_say_params("2")
+        assert sub == 2
+        assert voice is None
+        assert pace is None
+
+    def test_explicit_slide_key(self) -> None:
+        sub, voice, pace = _parse_say_params("slide=2")
+        assert sub == 2
+
+    def test_bare_number_with_voice(self) -> None:
+        sub, voice, pace = _parse_say_params("2, voice=alice")
+        assert sub == 2
+        assert voice == "alice"
+        assert pace is None
+
+    def test_slide_key_with_pace(self) -> None:
+        sub, voice, pace = _parse_say_params("slide=3, pace=slow")
+        assert sub == 3
+        assert pace == "slow"
+
+    def test_voice_only(self) -> None:
+        sub, voice, pace = _parse_say_params("voice=bob")
+        assert sub == 1
+        assert voice == "bob"
+
+    def test_voice_and_pace(self) -> None:
+        sub, voice, pace = _parse_say_params("voice=alice, pace=slow")
+        assert sub == 1
+        assert voice == "alice"
+        assert pace == "slow"
+
+
+class TestCountPauses:
+    """Tests for _count_pauses()."""
+
+    def test_no_pauses(self) -> None:
+        assert _count_pauses(r"\say{Hello}") == 0
+
+    def test_one_pause(self) -> None:
+        assert _count_pauses(r"First \pause Second") == 1
+
+    def test_multiple_pauses(self) -> None:
+        assert _count_pauses(r"A \pause B \pause C") == 2
+
+
+class TestOverlayParsing:
+    """Tests for per-slide narration in overlay frames."""
+
+    def test_pause_with_per_slide_say(self) -> None:
+        """Frame with \\pause and \\say targeting each sub-slide."""
+        text = r"""
+        First point.
+        \say{First sub-slide narration.}
+        \pause
+        Second point.
+        \say[2]{Second sub-slide narration.}
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 2
+        assert slides[0].index == 1
+        assert slides[0].annotation == SlideAnnotation.SAY
+        assert "First sub-slide" in slides[0].narration_raw
+        assert slides[1].index == 2
+        assert slides[1].annotation == SlideAnnotation.SAY
+        assert "Second sub-slide" in slides[1].narration_raw
+
+    def test_bare_number_syntax(self) -> None:
+        """\\say[2]{text} bare number targets sub-slide 2."""
+        text = r"""
+        \say{First.}
+        \pause
+        \say[2]{Second.}
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 2
+        assert slides[1].narration_raw == "Second."
+
+    def test_explicit_slide_key_syntax(self) -> None:
+        """\\say[slide=2]{text} explicit key targets sub-slide 2."""
+        text = r"""
+        \say{First.}
+        \pause
+        \say[slide=2]{Second.}
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 2
+        assert slides[1].narration_raw == "Second."
+
+    def test_combined_syntax_with_voice(self) -> None:
+        """\\say[2, voice=alice]{text} targets sub-slide 2 with voice."""
+        text = r"""
+        \say{Intro.}
+        \pause
+        \say[2, voice=alice]{Alice speaks.}
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 2
+        assert slides[1].voice == "alice"
+        assert slides[1].narration_raw == "Alice speaks."
+
+    def test_missing_sub_slide_narration_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Sub-slide with no \\say → SILENT + warning."""
+        text = r"""
+        \say{Only first sub-slide.}
+        \pause
+        Nothing for second.
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 2
+        assert slides[0].annotation == SlideAnnotation.SAY
+        assert slides[1].annotation == SlideAnnotation.SILENT
+        assert "no narration" in caplog.text
+
+    def test_say_target_beyond_pause_count_extends(self, caplog: pytest.LogCaptureFixture) -> None:
+        """\\say targeting beyond \\pause count extends sub-slide count + warns."""
+        text = r"""
+        \say{First.}
+        \say[3]{Third.}
+        """
+        # No \pause → n_sub would be 1, but \say[3] extends to 3
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 3
+        assert slides[0].annotation == SlideAnnotation.SAY
+        assert slides[1].annotation == SlideAnnotation.SILENT
+        assert slides[2].annotation == SlideAnnotation.SAY
+        assert "extending" in caplog.text
+
+    def test_backward_compat_no_pause_multiple_say_concatenate(self) -> None:
+        """Without \\pause, multiple \\say still concatenate on sub-slide 1."""
+        text = r"""
+        \say{First sentence.}
+        \say{Second sentence.}
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 1
+        assert slides[0].annotation == SlideAnnotation.SAY
+        assert "First sentence." in slides[0].narration_raw
+        assert "Second sentence." in slides[0].narration_raw
+
+    def test_skip_on_overlay_frame(self) -> None:
+        """\\skip on a frame with \\pause → all sub-slides are SKIP."""
+        text = r"""
+        \skip
+        \pause
+        Content.
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 2
+        assert all(s.annotation == SlideAnnotation.SKIP for s in slides)
+
+    def test_silent_on_overlay_frame(self) -> None:
+        """\\silent (without \\say) on a frame with \\pause → all sub-slides SILENT."""
+        text = r"""
+        \silent
+        \pause
+        Content.
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 2
+        assert all(s.annotation == SlideAnnotation.SILENT for s in slides)
+
+    def test_sequential_indices_across_frames(self) -> None:
+        """Indices are sequential across frames, including overlay frames."""
+        parser = BeamerParser()
+        # Build a small document: frame1 (1 sub), frame2 (2 subs), frame3 (1 sub)
+        tex = r"""
+        \begin{frame}
+          \say{Frame one.}
+        \end{frame}
+        \begin{frame}
+          \say{Frame two, slide one.}
+          \pause
+          \say[2]{Frame two, slide two.}
+        \end{frame}
+        \begin{frame}
+          \say{Frame three.}
+        \end{frame}
+        """
+        from unittest.mock import patch
+
+        tmp = Path("/tmp/test_seq.tex")
+        with patch.object(Path, "read_text", return_value=tex):
+            slides = parser.parse(tmp, Path("/tmp/build"))
+
+        assert len(slides) == 4
+        assert [s.index for s in slides] == [1, 2, 3, 4]
+
+    def test_three_pauses_three_say(self) -> None:
+        """Frame with two \\pause producing three sub-slides, all narrated."""
+        text = r"""
+        \say{First.}
+        \pause
+        \say[2]{Second.}
+        \pause
+        \say[slide=3]{Third.}
+        """
+        slides = _parse_frame(1, text, Path("test.tex"))
+        assert len(slides) == 3
+        assert all(s.annotation == SlideAnnotation.SAY for s in slides)
+        assert slides[0].narration_raw == "First."
+        assert slides[1].narration_raw == "Second."
+        assert slides[2].narration_raw == "Third."
+
+    def test_fixture_overlay_frame(self, simple_tex: Path) -> None:
+        """Test the overlay frame from simple.tex fixture (frame 7)."""
+        parser = BeamerParser()
+        slides = parser.parse(simple_tex, Path("/tmp/build"))
+
+        # Frames 1-6: original frames (6 narrations, one each)
+        # Frame 7: "Overlay Frame" with 2 pauses → 3 sub-slides (indices 7, 8, 9)
+        assert slides[6].annotation == SlideAnnotation.SAY
+        assert "first sub-slide" in slides[6].narration_raw
+        assert slides[6].index == 7
+
+        assert slides[7].annotation == SlideAnnotation.SAY
+        assert "second sub-slide" in slides[7].narration_raw
+        assert slides[7].index == 8
+
+        assert slides[8].annotation == SlideAnnotation.SAY
+        assert "third sub-slide" in slides[8].narration_raw
+        assert slides[8].index == 9
+
+    def test_fixture_overlay_with_voice(self, simple_tex: Path) -> None:
+        """Frame 8: overlay with voice=alice on sub-slide 2."""
+        parser = BeamerParser()
+        slides = parser.parse(simple_tex, Path("/tmp/build"))
+
+        # Frame 8: "Overlay Bare Number with Voice" → indices 10, 11
+        assert slides[9].annotation == SlideAnnotation.SAY
+        assert "Introduction to overlays" in slides[9].narration_raw
+        assert slides[9].index == 10
+
+        assert slides[10].annotation == SlideAnnotation.SAY
+        assert slides[10].voice == "alice"
+        assert slides[10].index == 11
+
+    def test_fixture_overlay_silent_sub_slide(
+        self, simple_tex: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Frame 9: only sub-slide 1 narrated, sub-slide 2 silent."""
+        parser = BeamerParser()
+        slides = parser.parse(simple_tex, Path("/tmp/build"))
+
+        # Frame 9: "Overlay Silent Sub-slide" → indices 12, 13
+        assert slides[11].annotation == SlideAnnotation.SAY
+        assert slides[11].index == 12
+        assert slides[12].annotation == SlideAnnotation.SILENT
+        assert slides[12].index == 13
+
+    def test_fixture_overlay_skip(self, simple_tex: Path) -> None:
+        """Frame 10: \\skip with \\pause → both sub-slides are SKIP."""
+        parser = BeamerParser()
+        slides = parser.parse(simple_tex, Path("/tmp/build"))
+
+        # Frame 10: "Overlay Skip" → indices 14, 15
+        assert slides[13].annotation == SlideAnnotation.SKIP
+        assert slides[13].index == 14
+        assert slides[14].annotation == SlideAnnotation.SKIP
+        assert slides[14].index == 15
+
+    def test_fixture_overlay_silent(self, simple_tex: Path) -> None:
+        """Frame 11: \\silent with \\pause → both sub-slides are SILENT."""
+        parser = BeamerParser()
+        slides = parser.parse(simple_tex, Path("/tmp/build"))
+
+        # Frame 11: "Overlay Silent" → indices 16, 17
+        assert slides[15].annotation == SlideAnnotation.SILENT
+        assert slides[15].index == 16
+        assert slides[16].annotation == SlideAnnotation.SILENT
+        assert slides[16].index == 17

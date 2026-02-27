@@ -132,7 +132,7 @@ Use the `\say` command (defined as a no-op by `slidesonnet.sty` so LaTeX compile
 \end{frame}
 ```
 
-Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\silent`, `\skip`.
+Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\silent`, `\skip`. Frames with `\pause` produce multiple sub-slides that can be narrated independently — see [Beamer documentation](docs/beamer.md) for details.
 
 ## Playlist format
 

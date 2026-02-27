@@ -150,7 +150,7 @@ def generate_tasks(
                             )
                         ],
                         "targets": [str(cached_audio)],
-                        "uptodate": [config_changed(hash_input)],
+                        "uptodate": [lambda task, values: Path(task.targets[0]).exists()],
                         "verbosity": 2,
                     }
                 )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from slidesonnet.exceptions import ParserError
@@ -27,6 +28,9 @@ _SKIP_RE = re.compile(r"\\(?:slidesonnetskip|skip)\b")
 _FRAME_BEGIN_RE = re.compile(r"\\begin\{frame\}")
 _FRAME_END_RE = re.compile(r"\\end\{frame\}")
 
+# Match \pause command
+_PAUSE_RE = re.compile(r"\\pause\b")
+
 # Parse key=value from optional args
 _PARAM_RE = re.compile(r"(\w+)\s*=\s*(\w+)")
 
@@ -39,11 +43,13 @@ class BeamerParser(SlideParser):
     def parse(self, source: Path, build_dir: Path) -> list[SlideNarration]:
         text = source.read_text(encoding="utf-8")
         frames = _extract_frames(text)
-        slides = []
+        slides: list[SlideNarration] = []
+        next_index = 1
 
-        for i, frame_text in enumerate(frames, start=1):
-            slide = _parse_frame(i, frame_text, source)
-            slides.append(slide)
+        for frame_text in frames:
+            frame_slides = _parse_frame(next_index, frame_text, source)
+            slides.extend(frame_slides)
+            next_index += len(frame_slides)
 
         return slides
 
@@ -103,53 +109,169 @@ def _extract_frames(text: str) -> list[str]:
     return frames
 
 
-def _parse_frame(index: int, text: str, source: Path) -> SlideNarration:
-    """Parse narration annotations from a single frame."""
+@dataclass
+class _SayCommand:
+    """Parsed data from a single \\say command."""
 
-    # Check for \skip
+    sub_slide: int  # 1-based sub-slide target
+    text: str
+    voice: str | None
+    pace: str | None
+
+
+def _parse_say_params(params_str: str) -> tuple[int, str | None, str | None]:
+    """Parse the optional bracket params of a \\say command.
+
+    Supports:
+      - ``\\say{text}``          → sub_slide=1
+      - ``\\say[2]{text}``       → sub_slide=2 (bare number)
+      - ``\\say[slide=2]{text}`` → sub_slide=2 (explicit key)
+      - ``\\say[2, voice=alice]{text}`` → sub_slide=2, voice=alice
+
+    Returns (sub_slide, voice, pace).
+    """
+    sub_slide = 1
+    voice: str | None = None
+    pace: str | None = None
+
+    if not params_str:
+        return sub_slide, voice, pace
+
+    kv_params = dict(_PARAM_RE.findall(params_str))
+
+    # Check for bare number: strip key=value pairs to see if a standalone number remains
+    stripped = _PARAM_RE.sub("", params_str)
+    # Remove commas and whitespace
+    stripped = stripped.replace(",", "").strip()
+    if stripped.isdigit():
+        sub_slide = int(stripped)
+
+    if "slide" in kv_params:
+        sub_slide = int(kv_params["slide"])
+    if "voice" in kv_params:
+        voice = kv_params["voice"]
+    if "pace" in kv_params:
+        pace = kv_params["pace"]
+
+    return sub_slide, voice, pace
+
+
+def _count_pauses(text: str) -> int:
+    """Count \\pause commands in frame text."""
+    return len(_PAUSE_RE.findall(text))
+
+
+def _parse_frame(start_index: int, text: str, source: Path) -> list[SlideNarration]:
+    """Parse narration annotations from a single frame.
+
+    Returns one SlideNarration per sub-slide (PDF page) the frame produces.
+    Frames with ``\\pause`` produce multiple sub-slides.
+    """
+    n_pauses = _count_pauses(text)
+    n_sub = n_pauses + 1
+
+    # Check for \skip — applies to all sub-slides
     if _SKIP_RE.search(text):
-        return SlideNarration(index=index, annotation=SlideAnnotation.SKIP)
+        return [
+            SlideNarration(index=start_index + i, annotation=SlideAnnotation.SKIP)
+            for i in range(n_sub)
+        ]
 
-    # Check for \silent
-    if _SILENT_RE.search(text):
-        return SlideNarration(index=index, annotation=SlideAnnotation.SILENT)
-
-    # Check for \say{...}
+    # Check for \silent (without any \say) — applies to all sub-slides
     say_matches = _find_say_commands(text)
-    if say_matches:
-        narration_parts = []
-        voice = None
-        pace = None
+    if _SILENT_RE.search(text) and not say_matches:
+        return [
+            SlideNarration(index=start_index + i, annotation=SlideAnnotation.SILENT)
+            for i in range(n_sub)
+        ]
 
-        for params_str, body_text in say_matches:
-            clean_text = _strip_latex(body_text).strip()
-            clean_text = re.sub(r"\s+", " ", clean_text)
-            narration_parts.append(clean_text)
+    if not say_matches:
+        # No annotation at all
+        logger.warning(
+            "%s frame %d: no annotation (use \\say{}, \\silent, or \\skip)",
+            source,
+            start_index,
+        )
+        return [
+            SlideNarration(index=start_index + i, annotation=SlideAnnotation.NONE)
+            for i in range(n_sub)
+        ]
 
-            if params_str:
-                params = dict(_PARAM_RE.findall(params_str))
-                if "voice" in params:
-                    voice = params["voice"]
-                if "pace" in params:
-                    pace = params["pace"]
-
-        full_narration = " ".join(narration_parts)
-
-        if not full_narration:
-            logger.warning("%s frame %d: empty \\say{} — did you mean \\silent?", source, index)
-            return SlideNarration(index=index, annotation=SlideAnnotation.SILENT)
-
-        return SlideNarration(
-            index=index,
-            annotation=SlideAnnotation.SAY,
-            narration_raw=full_narration,
-            voice=voice,
-            pace=pace,
+    # Parse all \say commands with their sub-slide targets
+    say_commands: list[_SayCommand] = []
+    for params_str, body_text in say_matches:
+        clean_text = _strip_latex(body_text).strip()
+        clean_text = re.sub(r"\s+", " ", clean_text)
+        sub_slide, voice, pace = _parse_say_params(params_str)
+        say_commands.append(
+            _SayCommand(sub_slide=sub_slide, text=clean_text, voice=voice, pace=pace)
         )
 
-    # No annotation
-    logger.warning("%s frame %d: no annotation (use \\say{}, \\silent, or \\skip)", source, index)
-    return SlideNarration(index=index, annotation=SlideAnnotation.NONE)
+    # Extend n_sub if any \say targets beyond pause count
+    max_target = max(cmd.sub_slide for cmd in say_commands)
+    if max_target > n_sub:
+        logger.warning(
+            "%s frame %d: \\say targets sub-slide %d but frame has only %d sub-slides "
+            "(%d \\pause commands); extending to %d",
+            source,
+            start_index,
+            max_target,
+            n_sub,
+            n_pauses,
+            max_target,
+        )
+        n_sub = max_target
+
+    # Group \say commands by target sub-slide
+    results: list[SlideNarration] = []
+    for sub_idx in range(1, n_sub + 1):
+        group = [cmd for cmd in say_commands if cmd.sub_slide == sub_idx]
+        slide_index = start_index + sub_idx - 1
+
+        if not group:
+            # No narration for this sub-slide
+            if n_sub > 1:
+                logger.warning(
+                    "%s frame %d, sub-slide %d: no narration — treating as silent",
+                    source,
+                    start_index,
+                    sub_idx,
+                )
+            results.append(SlideNarration(index=slide_index, annotation=SlideAnnotation.SILENT))
+            continue
+
+        narration_parts = [cmd.text for cmd in group]
+        full_narration = " ".join(narration_parts)
+
+        # Use the last specified voice/pace (matching original behavior for multiple \say)
+        group_voice: str | None = None
+        group_pace: str | None = None
+        for cmd in group:
+            if cmd.voice is not None:
+                group_voice = cmd.voice
+            if cmd.pace is not None:
+                group_pace = cmd.pace
+
+        if not full_narration:
+            logger.warning(
+                "%s frame %d: empty \\say{} — did you mean \\silent?",
+                source,
+                start_index,
+            )
+            results.append(SlideNarration(index=slide_index, annotation=SlideAnnotation.SILENT))
+            continue
+
+        results.append(
+            SlideNarration(
+                index=slide_index,
+                annotation=SlideAnnotation.SAY,
+                narration_raw=full_narration,
+                voice=group_voice,
+                pace=group_pace,
+            )
+        )
+
+    return results
 
 
 def _find_say_commands(text: str) -> list[tuple[str, str]]:

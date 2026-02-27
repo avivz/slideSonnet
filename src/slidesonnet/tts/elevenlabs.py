@@ -27,11 +27,22 @@ ElevenLabs: type[_ElevenLabsType] | None = _ElevenLabs
 
 class ElevenLabsTTS(TTSEngine):
     def __init__(self, config: TTSConfig) -> None:
-        api_key = os.environ.get(config.elevenlabs_api_key_env, "")
+        self._api_key_env: str = config.elevenlabs_api_key_env
+        self._client: _ElevenLabsType | None = None
+        self.voice_id: str = config.elevenlabs_voice_id
+        self.model_id: str = config.elevenlabs_model_id
+        self.stability: float = config.elevenlabs_stability
+        self.similarity_boost: float = config.elevenlabs_similarity_boost
+
+    def _ensure_client(self) -> _ElevenLabsType:
+        """Validate dependencies and create the client on first call."""
+        if self._client is not None:
+            return self._client
+
+        api_key = os.environ.get(self._api_key_env, "")
         if not api_key:
             raise TTSError(
-                f"Environment variable '{config.elevenlabs_api_key_env}' not set. "
-                f"Add it to your .env file."
+                f"Environment variable '{self._api_key_env}' not set. Add it to your .env file."
             )
 
         if ElevenLabs is None:
@@ -40,17 +51,15 @@ class ElevenLabsTTS(TTSEngine):
                 "Install with: pip install slidesonnet[elevenlabs]"
             )
 
-        self.client: _ElevenLabsType = ElevenLabs(api_key=api_key)
-        self.voice_id: str = config.elevenlabs_voice_id
-        self.model_id: str = config.elevenlabs_model_id
-        self.stability: float = config.elevenlabs_stability
-        self.similarity_boost: float = config.elevenlabs_similarity_boost
+        self._client = ElevenLabs(api_key=api_key)
+        return self._client
 
     def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         voice_id = voice if voice else self.voice_id
+        client = self._ensure_client()
 
-        audio_generator = self.client.text_to_speech.convert(
+        audio_generator = client.text_to_speech.convert(
             text=text,
             voice_id=voice_id,
             model_id=self.model_id,

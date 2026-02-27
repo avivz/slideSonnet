@@ -39,4 +39,47 @@
   No annotation here.
 \end{frame}
 
+\begin{frame}
+  \frametitle{Overlay Frame}
+  First point.
+  \say{This is the first sub-slide.}
+  \pause
+  Second point.
+  \say[2]{This is the second sub-slide.}
+  \pause
+  Third point.
+  \say[slide=3]{This is the third sub-slide.}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Overlay Bare Number with Voice}
+  First.
+  \say{Introduction to overlays.}
+  \pause
+  Second.
+  \say[2, voice=alice]{Alice narrates the second part.}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Overlay Silent Sub-slide}
+  Step one.
+  \say{Only the first sub-slide is narrated.}
+  \pause
+  Step two is silent.
+\end{frame}
+
+\begin{frame}
+  \frametitle{Overlay Skip}
+  \skip
+  \pause
+  This frame is skipped entirely.
+\end{frame}
+
+\begin{frame}
+  \frametitle{Overlay Silent}
+  \silent
+  \pause
+  All sub-slides are silent.
+\end{frame}
+
 \end{document}
