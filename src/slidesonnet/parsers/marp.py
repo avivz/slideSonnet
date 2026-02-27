@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,7 +127,7 @@ def _ensure_chromium() -> None:
     except Exception:
         logger.info("Installing Chromium for Playwright (first-time setup)...")
         subprocess.run(
-            ["playwright", "install", "--with-deps", "chromium"],
+            [sys.executable, "-m", "playwright", "install", "chromium"],
             check=True,
             capture_output=True,
             text=True,

@@ -537,7 +537,7 @@ class TestEnsureChromium:
 
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        assert cmd == ["playwright", "install", "--with-deps", "chromium"]
+        assert cmd[1:] == ["-m", "playwright", "install", "chromium"]
 
     def test_skips_install_when_chromium_present(self) -> None:
         """When Chromium launches successfully, no install is triggered."""
