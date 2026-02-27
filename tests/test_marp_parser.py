@@ -311,18 +311,24 @@ def test_expand_slide() -> None:
     )
     result = _expand_slide(text, 3)
     assert len(result) == 3
-    # Sub-slide 1: only A visible, converted to -
+    hidden = 'visibility:hidden'
+    # Sub-slide 1: only A visible, B and C hidden placeholders
     assert "- A" in result[0]
-    assert "B" not in result[0]
-    assert "C" not in result[0]
-    # Sub-slide 2: A and B visible
+    assert hidden not in result[0].split("A")[0]  # A itself is visible
+    assert hidden in result[0]  # but B/C are hidden
+    # Sub-slide 2: A and B visible, C hidden
     assert "- A" in result[1]
     assert "- B" in result[1]
-    assert "C" not in result[1]
+    lines_2 = result[1].split("\n")
+    b_line = [ln for ln in lines_2 if "B" in ln][0]
+    assert hidden not in b_line
+    c_line = [ln for ln in lines_2 if "C" in ln][0]
+    assert hidden in c_line
     # Sub-slide 3: all visible
     assert "- A" in result[2]
     assert "- B" in result[2]
     assert "- C" in result[2]
+    assert hidden not in result[2]
     # Say directives stripped
     assert "say" not in result[0]
     # Title present on all sub-slides
@@ -335,11 +341,15 @@ def test_expand_slide_ordered_fragments() -> None:
     """Ordered fragment markers N) are converted to N. on reveal."""
     text = "# Title\n\n1) Step one\n2) Step two\n\n<!-- say: A -->\n<!-- say: B -->"
     result = _expand_slide(text, 2)
+    hidden = 'visibility:hidden'
     assert len(result) == 2
     assert "1. Step one" in result[0]
-    assert "Step two" not in result[0]
+    # Step two is present but hidden
+    assert "Step two" in result[0]
+    assert hidden in result[0]
     assert "1. Step one" in result[1]
     assert "2. Step two" in result[1]
+    assert hidden not in result[1]
 
 
 def test_expand_slide_no_fragments() -> None:
@@ -363,29 +373,38 @@ def test_expand_slide_multiple_lists() -> None:
         "<!-- say: s1 -->\n<!-- say: s2 -->\n<!-- say: s3 -->\n<!-- say: s4 -->"
     )
     result = _expand_slide(text, 4)
+    hidden = 'visibility:hidden'
     assert len(result) == 4
-    # Sub-slide 1: A visible, B/C/D hidden
+
+    def _line_for(sub: str, text: str) -> str:
+        return [ln for ln in sub.split("\n") if text in ln][0]
+
+    # Sub-slide 1: A visible, B/C/D hidden placeholders
     assert "- A" in result[0]
-    assert "B" not in result[0]
+    assert hidden not in _line_for(result[0], "A")
+    assert hidden in _line_for(result[0], "B")
     assert "Middle content" in result[0]
-    assert "C" not in result[0]
+    assert hidden in _line_for(result[0], "C")
     # Sub-slide 2: A,B visible, C/D hidden
     assert "- A" in result[1]
     assert "- B" in result[1]
+    assert hidden not in _line_for(result[1], "B")
     assert "Middle content" in result[1]
-    assert "C" not in result[1]
+    assert hidden in _line_for(result[1], "C")
     # Sub-slide 3: A,B,C visible, D hidden
     assert "- A" in result[2]
     assert "- B" in result[2]
     assert "Middle content" in result[2]
     assert "- C" in result[2]
-    assert "D" not in result[2]
+    assert hidden not in _line_for(result[2], "C")
+    assert hidden in _line_for(result[2], "D")
     # Sub-slide 4: all visible
     assert "- A" in result[3]
     assert "- B" in result[3]
     assert "Middle content" in result[3]
     assert "- C" in result[3]
     assert "- D" in result[3]
+    assert hidden not in result[3]
 
 
 def test_parse_slide_positional_says() -> None:
