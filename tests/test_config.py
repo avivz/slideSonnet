@@ -57,7 +57,8 @@ def test_load_full_config():
     assert config.video.silence_duration == 5.0
 
     assert "default" in config.voices
-    assert config.voices["alice"].backend_voice == "en_US-amy-medium"
+    assert config.voices["alice"].resolve("piper") == "en_US-amy-medium"
+    assert config.voices["alice"].resolve("elevenlabs") == "en_US-amy-medium"
 
     assert len(config.pronunciation_files) == 2
     assert config.pronunciation_files[0] == Path("/project/pron/cs.md")
@@ -66,14 +67,31 @@ def test_load_full_config():
 def test_voices_string_format():
     raw = {"voices": {"default": "model-a", "bob": "model-b"}}
     config = load_config(raw, Path("."))
-    assert config.voices["default"].backend_voice == "model-a"
-    assert config.voices["bob"].backend_voice == "model-b"
+    assert config.voices["default"].resolve("piper") == "model-a"
+    assert config.voices["default"].resolve("elevenlabs") == "model-a"
+    assert config.voices["bob"].resolve("piper") == "model-b"
 
 
 def test_voices_dict_format():
     raw = {"voices": {"default": {"backend_voice": "model-a"}}}
     config = load_config(raw, Path("."))
-    assert config.voices["default"].backend_voice == "model-a"
+    assert config.voices["default"].resolve("piper") == "model-a"
+    assert config.voices["default"].resolve("elevenlabs") == "model-a"
+
+
+def test_voices_per_backend_format():
+    raw = {
+        "voices": {
+            "narrator": {
+                "piper": "en_US-amy-medium",
+                "elevenlabs": "21m00Tcm4TlvDq8ikWAM",
+            }
+        }
+    }
+    config = load_config(raw, Path("."))
+    assert config.voices["narrator"].resolve("piper") == "en_US-amy-medium"
+    assert config.voices["narrator"].resolve("elevenlabs") == "21m00Tcm4TlvDq8ikWAM"
+    assert config.voices["narrator"].resolve("unknown") is None
 
 
 def test_crossfade_default():

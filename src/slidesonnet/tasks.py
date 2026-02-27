@@ -93,7 +93,18 @@ def generate_tasks(
                 if slide.voice:
                     voice_cfg = config.voices.get(slide.voice)
                     if voice_cfg:
-                        slide.voice = voice_cfg.backend_voice
+                        resolved = voice_cfg.resolve(config.tts.backend)
+                        if resolved:
+                            slide.voice = resolved
+                        else:
+                            logger.warning(
+                                "%s slide %d: voice '%s' has no mapping for backend '%s'",
+                                source_path,
+                                slide.index,
+                                slide.voice,
+                                config.tts.backend,
+                            )
+                            slide.voice = None
                     else:
                         logger.warning(
                             "%s slide %d: unknown voice '%s'",
@@ -126,8 +137,10 @@ def generate_tasks(
 
             # TTS task for narrated slides
             if slide.has_narration:
-                # Include voice in hash so different voices produce different cache entries
+                # Include TTS config and voice in hash so switching backends,
+                # models, or voice presets invalidates cached audio
                 hash_input = slide.narration_processed
+                hash_input += f"\0tts={tts.cache_key()}"
                 if slide.voice:
                     hash_input += f"\0voice={slide.voice}"
                 text_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:16]

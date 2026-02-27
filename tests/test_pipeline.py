@@ -32,6 +32,9 @@ class MockTTS:
     def name(self) -> str:
         return "mock"
 
+    def cache_key(self) -> str:
+        return "mock:default"
+
 
 def _setup_project(tmp_path: Path) -> Path:
     """Create a minimal project with playlist + slides."""

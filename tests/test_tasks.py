@@ -32,6 +32,9 @@ class MockTTS(TTSEngine):
     def name(self):
         return "mock"
 
+    def cache_key(self):
+        return "mock:default"
+
 
 def _setup_project(tmp_path):
     """Create a minimal project with playlist + slides."""
@@ -266,9 +269,13 @@ def test_voice_preset_changes_cache_key(tmp_path):
         textwrap.dedent("""\
         ---
         title: Test
+        tts:
+          backend: piper
         voices:
-          alice: en_US-amy-medium
-          bob: en_US-joe-medium
+          alice:
+            piper: en_US-amy-medium
+          bob:
+            piper: en_US-joe-medium
         ---
 
         1. [Intro](01-intro/slides.md)
@@ -336,6 +343,49 @@ def test_unknown_voice_warns(tmp_path, caplog):
     # Task still generated
     tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
     assert len(tts_tasks) == 1
+
+
+def test_missing_backend_mapping_warns(tmp_path, caplog):
+    """Voice preset without mapping for active backend warns and falls back to default."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        tts:
+          backend: piper
+        voices:
+          alice:
+            elevenlabs: 21m00Tcm4TlvDq8ikWAM
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say(voice=alice): Hello world. -->
+    """)
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    assert "no mapping for backend 'piper'" in caplog.text
+
+    # TTS task still generated (with default voice = None)
+    tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
+    assert len(tts_tasks) == 1
+    # The voice arg in the action should be None (fallback to default)
+    action_args = tts_tasks[0]["actions"][0][1]
+    assert action_args[4] is None  # voice parameter
 
 
 # ---- Mocked unit tests for action functions and helpers ----

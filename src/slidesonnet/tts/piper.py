@@ -76,6 +76,9 @@ class PiperTTS(TTSEngine):
     def name(self) -> str:
         return "piper"
 
+    def cache_key(self) -> str:
+        return f"piper:{self.model}:{self.speaker}"
+
 
 def _wav_duration(path: Path) -> float:
     """Get duration of a WAV file in seconds."""

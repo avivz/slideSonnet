@@ -80,10 +80,14 @@ class PlaylistEntry:
 
 @dataclass
 class VoiceConfig:
-    """A named voice preset."""
+    """A named voice preset with per-backend voice mappings."""
 
     name: str
-    backend_voice: str  # piper model name or elevenlabs voice_id
+    backend_voices: dict[str, str] = field(default_factory=dict)
+
+    def resolve(self, backend: str) -> str | None:
+        """Return the voice ID for the given backend, or None if unmapped."""
+        return self.backend_voices.get(backend)
 
 
 @dataclass

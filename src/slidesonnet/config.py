@@ -71,17 +71,32 @@ def _parse_video(raw: dict[str, Any]) -> VideoConfig:
     return VideoConfig(**kwargs)
 
 
+_KNOWN_BACKENDS = {"piper", "elevenlabs"}
+
+
 def _parse_voices(raw: dict[str, Any]) -> dict[str, VoiceConfig]:
-    voices = {}
+    voices: dict[str, VoiceConfig] = {}
     for name, value in raw.items():
         if isinstance(value, str):
-            voices[name] = VoiceConfig(name=name, backend_voice=value)
-        elif isinstance(value, dict):
-            backend_voice = str(value.get("backend_voice", value.get("model", "")))
+            # Flat string → use for all backends
             voices[name] = VoiceConfig(
                 name=name,
-                backend_voice=backend_voice,
+                backend_voices={b: value for b in _KNOWN_BACKENDS},
             )
+        elif isinstance(value, dict):
+            if set(value.keys()) & _KNOWN_BACKENDS:
+                # Per-backend mapping: {piper: ..., elevenlabs: ...}
+                voices[name] = VoiceConfig(
+                    name=name,
+                    backend_voices={k: str(v) for k, v in value.items() if k in _KNOWN_BACKENDS},
+                )
+            else:
+                # Legacy dict format: {backend_voice: ..., model: ...}
+                backend_voice = str(value.get("backend_voice", value.get("model", "")))
+                voices[name] = VoiceConfig(
+                    name=name,
+                    backend_voices={b: backend_voice for b in _KNOWN_BACKENDS},
+                )
     return voices
 
 

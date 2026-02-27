@@ -10,9 +10,15 @@ tts:
   # piper:
   #   model: en_US-lessac-medium
 voices:
-  default: nPczCjzI2devNBz1zQrb
-  narrator: 21m00Tcm4TlvDq8ikWAM
-  expert: pNInz6obpgDQGcFmaJgB
+  default:
+    piper: en_US-lessac-medium
+    elevenlabs: nPczCjzI2devNBz1zQrb
+  narrator:
+    piper: en_US-amy-medium
+    elevenlabs: 21m00Tcm4TlvDq8ikWAM
+  expert:
+    piper: en_US-joe-medium
+    elevenlabs: pNInz6obpgDQGcFmaJgB
 pronunciation:
   - pronunciation/general.md
   - pronunciation/names.md

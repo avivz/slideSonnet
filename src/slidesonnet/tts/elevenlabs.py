@@ -76,6 +76,12 @@ class ElevenLabsTTS(TTSEngine):
     def name(self) -> str:
         return "elevenlabs"
 
+    def cache_key(self) -> str:
+        return (
+            f"elevenlabs:{self.voice_id}:{self.model_id}"
+            f":{self.stability}:{self.similarity_boost}"
+        )
+
 
 def _get_audio_duration(path: Path) -> float:
     """Get audio duration using ffprobe."""

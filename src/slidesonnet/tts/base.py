@@ -26,3 +26,12 @@ class TTSEngine(ABC):
     def name(self) -> str:
         """Return backend name for logging."""
         ...
+
+    @abstractmethod
+    def cache_key(self) -> str:
+        """Return a string that uniquely identifies the TTS configuration.
+
+        Included in the audio cache hash so that switching backends or
+        changing backend parameters invalidates cached audio files.
+        """
+        ...
