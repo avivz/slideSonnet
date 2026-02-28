@@ -1,26 +1,26 @@
 ---
 title: "The Basel Problem: Euler's Proof that 1 + 1/4 + 1/9 + ... = pi^2/6"
 tts:
-  backend: piper
+  backend: elevenlabs
   piper:
     model: en_US-lessac-medium
   elevenlabs:
-    voice_id: nPczCjzI2devNBz1zQrb
+    voice_id: aMSt68OGf4xUZAnLpTU8
     model_id: eleven_v3
 voices:
   default:
     piper: en_US-lessac-medium
-    elevenlabs: nPczCjzI2devNBz1zQrb
-  narrator:
+    elevenlabs: aMSt68OGf4xUZAnLpTU8
+  bernoulli:
     piper: en_US-amy-medium
-    elevenlabs: 21m00Tcm4TlvDq8ikWAM
+    elevenlabs: zlatCM6nK59gyedHFFxn
 pronunciation:
   - pronunciation/names.md
 video:
   resolution: 1920x1080
   fps: 24
   crf: 23
-  pad_seconds: 1.5
+  pad_seconds: 1.0
   silence_duration: 3.0
   crossfade: 0.5
 ---
