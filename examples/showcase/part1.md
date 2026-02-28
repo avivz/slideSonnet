@@ -46,18 +46,10 @@ Compile slide decks into narrated videos
 - Standard Markdown: headings, bullets, code, images, math
 
 ```markdown
----
-marp: true
----
-
 # First Slide
-
 Content here.
-
 ---
-
 # Second Slide
-
 More content.
 ```
 
@@ -76,15 +68,12 @@ tts:
 voices:
   default: en_US-lessac-medium
   narrator: en_US-amy-medium
-pronunciation:
-  - pronunciation/general.md
 video:
   resolution: 1920x1080
 ---
-
 1. [Introduction](part1.md)
 2. [Deep Dive](part2.tex)
-3. [Transition](animations/clip.mp4)
+3. [Transition](clip.mp4)
 ```
 
 <!-- say: The playlist file is the entry point for a build. It contains YAML front matter with TTS, voice, pronunciation, and video settings. Below that, a numbered list references each module. Modules can be MARP markdown, Beamer LaTeX, or MP4 video files. -->
