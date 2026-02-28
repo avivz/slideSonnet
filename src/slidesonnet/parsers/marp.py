@@ -85,6 +85,23 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
     return _extract_images_via_playwright(source, output_dir)
 
 
+def export_pdf(source: Path, output_path: Path) -> None:
+    """Run marp CLI to export a PDF of the presentation."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = ["marp", "--no-stdin", "--html", "--pdf"]
+    css_files = sorted(source.parent.glob("*.css"))
+    if css_files:
+        cmd.extend(["--theme-set"] + [str(f) for f in css_files])
+    cmd.extend([str(source), "--output", str(output_path)])
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except FileNotFoundError:
+        raise ParserError("'marp' not found. Install with: npm install -g @marp-team/marp-cli")
+    except subprocess.CalledProcessError as e:
+        raise ParserError(f"marp --pdf failed:\n{e.stderr}")
+
+
 def _extract_images_via_playwright(source: Path, output_dir: Path) -> list[Path]:
     """Export HTML via marp-cli, then screenshot each slide state with Playwright."""
     html_path = output_dir / f"_{source.stem}_presentation.html"

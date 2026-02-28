@@ -124,6 +124,54 @@ def _merge_videos(inputs: list[Path], output: Path, config: ProjectConfig) -> No
             composer.concatenate_segments(inputs, output)
 
 
+def action_compile_beamer(
+    source: Path,
+    slides_dir: Path,
+    pdf_path: Path,
+) -> None:
+    """Compile Beamer source to PDF."""
+    from slidesonnet.parsers.beamer import compile_pdf
+
+    compile_pdf(source, slides_dir)
+    if not pdf_path.exists():
+        raise RuntimeError(f"Expected PDF not produced: {pdf_path}")
+
+
+def action_extract_images_beamer(
+    pdf_path: Path,
+    slides_dir: Path,
+    manifest_path: Path,
+) -> None:
+    """Extract images from a compiled Beamer PDF."""
+    from slidesonnet.parsers.beamer import extract_images_from_pdf
+
+    images = extract_images_from_pdf(pdf_path, slides_dir)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps([str(p) for p in images]),
+        encoding="utf-8",
+    )
+
+
+def action_export_pdf_marp(
+    source: Path,
+    output_path: Path,
+) -> None:
+    """Export a MARP presentation to PDF."""
+    from slidesonnet.parsers.marp import export_pdf
+
+    export_pdf(source, output_path)
+
+
+def action_export_pdf_beamer(
+    cache_pdf: Path,
+    output_path: Path,
+) -> None:
+    """Copy compiled Beamer PDF to the output directory."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(cache_pdf, output_path)
+
+
 def get_parser_and_extractor(
     module_type: ModuleType,
 ) -> tuple[type[SlideParser], Callable[[Path, Path], list[Path]]]:

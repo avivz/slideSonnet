@@ -58,14 +58,13 @@ class BeamerParser(SlideParser):
         return slides
 
 
-def extract_images(source: Path, output_dir: Path) -> list[Path]:
-    """Compile Beamer to PDF, then extract slide images with pdftoppm.
+def compile_pdf(source: Path, output_dir: Path) -> Path:
+    """Compile Beamer source to PDF with pdflatex.
 
-    Returns list of PNG paths in slide order.
+    Returns the path to the compiled PDF.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Compile with pdflatex
     pdf_path = output_dir / f"{source.stem}.pdf"
     cmd_latex = [
         "pdflatex",
@@ -83,7 +82,16 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
             raise ParserError(f"pdflatex failed and no PDF was produced.\n{e.stderr}")
         logger.warning("pdflatex exited with errors (continuing with PDF):\n%s", e.stderr)
 
-    # Extract images with pdftoppm
+    return pdf_path
+
+
+def extract_images_from_pdf(pdf_path: Path, output_dir: Path) -> list[Path]:
+    """Extract slide images from a PDF with pdftoppm.
+
+    Returns list of PNG paths in slide order.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     prefix = str(output_dir / "slide")
     cmd_ppm = ["pdftoppm", "-png", "-r", "300", str(pdf_path), prefix]
     try:
@@ -95,6 +103,15 @@ def extract_images(source: Path, output_dir: Path) -> list[Path]:
 
     images = sorted(output_dir.glob("slide-*.png"))
     return images
+
+
+def extract_images(source: Path, output_dir: Path) -> list[Path]:
+    """Compile Beamer to PDF, then extract slide images with pdftoppm.
+
+    Returns list of PNG paths in slide order.
+    """
+    pdf_path = compile_pdf(source, output_dir)
+    return extract_images_from_pdf(pdf_path, output_dir)
 
 
 def _extract_frames(text: str) -> list[str]:

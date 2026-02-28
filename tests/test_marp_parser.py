@@ -14,6 +14,7 @@ from slidesonnet.parsers.marp import (
     MarpParser,
     _parse_slide,
     _split_slides,
+    export_pdf,
     extract_images,
 )
 
@@ -684,3 +685,69 @@ class TestEnsureChromium:
 
         mock_run.assert_not_called()
         mock_browser.close.assert_called_once()
+
+
+class TestExportPdf:
+    """Tests for export_pdf()."""
+
+    @patch("slidesonnet.parsers.marp.subprocess.run")
+    def test_calls_marp_pdf(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("---\nmarp: true\n---\n# Hi")
+        output_path = tmp_path / "output" / "slides.pdf"
+
+        export_pdf(source, output_path)
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "marp"
+        assert "--pdf" in cmd
+        assert "--html" in cmd
+        assert "--no-stdin" in cmd
+        assert "--output" in cmd
+        output_idx = cmd.index("--output")
+        assert cmd[output_idx + 1] == str(output_path)
+
+    @patch("slidesonnet.parsers.marp.subprocess.run")
+    def test_includes_css_theme_set(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        (tmp_path / "custom.css").write_text("/* theme */")
+        output_path = tmp_path / "out" / "slides.pdf"
+
+        export_pdf(source, output_path)
+
+        cmd = mock_run.call_args[0][0]
+        assert "--theme-set" in cmd
+        theme_idx = cmd.index("--theme-set")
+        assert str(tmp_path / "custom.css") in cmd[theme_idx + 1 :]
+
+    @patch("slidesonnet.parsers.marp.subprocess.run")
+    def test_creates_output_dir(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        output_path = tmp_path / "deep" / "nested" / "slides.pdf"
+
+        export_pdf(source, output_path)
+
+        assert output_path.parent.exists()
+
+    @patch(
+        "slidesonnet.parsers.marp.subprocess.run",
+        side_effect=FileNotFoundError,
+    )
+    def test_marp_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        with pytest.raises(ParserError, match="marp"):
+            export_pdf(source, tmp_path / "out.pdf")
+
+    @patch(
+        "slidesonnet.parsers.marp.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "marp", stderr="pdf error"),
+    )
+    def test_marp_pdf_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        with pytest.raises(ParserError, match="pdf error"):
+            export_pdf(source, tmp_path / "out.pdf")

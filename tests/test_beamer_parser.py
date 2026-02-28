@@ -17,7 +17,9 @@ from slidesonnet.parsers.beamer import (
     _parse_frame,
     _parse_say_params,
     _strip_latex,
+    compile_pdf,
     extract_images,
+    extract_images_from_pdf,
 )
 
 
@@ -256,6 +258,126 @@ class TestExtractImages:
 
         with pytest.raises(ParserError):
             extract_images(source, tmp_path / "out")
+
+
+class TestCompilePdf:
+    """Mocked tests for compile_pdf()."""
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_success(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text(r"\documentclass{beamer}")
+        output_dir = tmp_path / "out"
+
+        result = compile_pdf(source, output_dir)
+
+        assert result == output_dir / "slides.pdf"
+        mock_run.assert_called_once()
+        assert mock_run.call_args[0][0][0] == "pdflatex"
+
+    @patch(
+        "slidesonnet.parsers.beamer.subprocess.run",
+        side_effect=FileNotFoundError,
+    )
+    def test_pdflatex_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        with pytest.raises(ParserError, match="pdflatex"):
+            compile_pdf(source, tmp_path / "out")
+
+    @patch(
+        "slidesonnet.parsers.beamer.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "pdflatex", stderr="latex error"),
+    )
+    def test_pdflatex_error_no_pdf(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        with pytest.raises(ParserError, match="latex error"):
+            compile_pdf(source, tmp_path / "out")
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_pdflatex_error_with_pdf_warns(
+        self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        output_dir = tmp_path / "out"
+
+        def side_effect(cmd, **kwargs):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "slides.pdf").touch()
+            raise subprocess.CalledProcessError(1, "pdflatex", stderr="Overfull hbox")
+
+        mock_run.side_effect = side_effect
+
+        result = compile_pdf(source, output_dir)
+
+        assert result == output_dir / "slides.pdf"
+        assert "Overfull hbox" in caplog.text
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_creates_output_dir(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        output_dir = tmp_path / "deep" / "nested" / "out"
+
+        compile_pdf(source, output_dir)
+
+        assert output_dir.exists()
+
+
+class TestExtractImagesFromPdf:
+    """Mocked tests for extract_images_from_pdf()."""
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_success(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        pdf_path = tmp_path / "slides.pdf"
+        pdf_path.touch()
+        output_dir = tmp_path / "out"
+
+        def side_effect(cmd, **kwargs):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "slide-1.png").touch()
+            (output_dir / "slide-2.png").touch()
+            return MagicMock()
+
+        mock_run.side_effect = side_effect
+
+        result = extract_images_from_pdf(pdf_path, output_dir)
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args[0][0][0] == "pdftoppm"
+        assert len(result) == 2
+
+    @patch(
+        "slidesonnet.parsers.beamer.subprocess.run",
+        side_effect=FileNotFoundError,
+    )
+    def test_pdftoppm_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        pdf_path = tmp_path / "slides.pdf"
+        pdf_path.touch()
+        with pytest.raises(ParserError, match="pdftoppm"):
+            extract_images_from_pdf(pdf_path, tmp_path / "out")
+
+    @patch(
+        "slidesonnet.parsers.beamer.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "pdftoppm", stderr="convert failed"),
+    )
+    def test_pdftoppm_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        pdf_path = tmp_path / "slides.pdf"
+        pdf_path.touch()
+        with pytest.raises(ParserError, match="convert failed"):
+            extract_images_from_pdf(pdf_path, tmp_path / "out")
+
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_creates_output_dir(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        pdf_path = tmp_path / "slides.pdf"
+        pdf_path.touch()
+        output_dir = tmp_path / "deep" / "nested" / "out"
+
+        extract_images_from_pdf(pdf_path, output_dir)
+
+        assert output_dir.exists()
 
 
 class TestExtractBracedEdgeCases:

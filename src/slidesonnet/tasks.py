@@ -21,9 +21,13 @@ from doit.tools import config_changed
 
 from slidesonnet.actions import (
     action_assemble,
+    action_compile_beamer,
     action_compose_narrated,
     action_compose_silent,
+    action_export_pdf_beamer,
+    action_export_pdf_marp,
     action_extract_images,
+    action_extract_images_beamer,
     action_tts,
     get_parser_and_extractor,
 )
@@ -105,19 +109,79 @@ def generate_tasks(
         segments_dir = module_dir / "segments"
         manifest_path = slides_dir / "manifest.json"
 
-        # Task: extract images
+        # Task: extract images (+ compile step for Beamer)
         css_deps = sorted(str(p) for p in source_path.parent.glob("*.css"))
-        all_tasks.append(
-            {
-                "name": f"extract_images:{module_name}",
-                "actions": [
-                    (action_extract_images, [source_path, slides_dir, extract_fn, manifest_path])
-                ],
-                "file_dep": [str(source_path)] + css_deps,
-                "targets": [str(manifest_path)],
-                "verbosity": 2,
-            }
-        )
+        pdf_output_path = playlist_dir / f"{entry.path.stem}.pdf"
+
+        if entry.module_type == ModuleType.BEAMER:
+            cache_pdf = slides_dir / f"{source_path.stem}.pdf"
+
+            # compile_beamer: pdflatex → PDF in cache
+            all_tasks.append(
+                {
+                    "name": f"compile_beamer:{module_name}",
+                    "actions": [(action_compile_beamer, [source_path, slides_dir, cache_pdf])],
+                    "file_dep": [str(source_path)],
+                    "targets": [str(cache_pdf)],
+                    "verbosity": 2,
+                }
+            )
+
+            # extract_images: pdftoppm on compiled PDF → PNGs
+            all_tasks.append(
+                {
+                    "name": f"extract_images:{module_name}",
+                    "actions": [
+                        (
+                            action_extract_images_beamer,
+                            [cache_pdf, slides_dir, manifest_path],
+                        )
+                    ],
+                    "file_dep": [str(cache_pdf)],
+                    "task_dep": [f"compile_beamer:{module_name}"],
+                    "targets": [str(manifest_path)],
+                    "verbosity": 2,
+                }
+            )
+
+            # export_pdf: copy compiled PDF to playlist directory
+            all_tasks.append(
+                {
+                    "name": f"export_pdf:{module_name}",
+                    "actions": [(action_export_pdf_beamer, [cache_pdf, pdf_output_path])],
+                    "file_dep": [str(cache_pdf)],
+                    "task_dep": [f"compile_beamer:{module_name}"],
+                    "targets": [str(pdf_output_path)],
+                    "verbosity": 2,
+                }
+            )
+        else:
+            # MARP: extract_images unchanged
+            all_tasks.append(
+                {
+                    "name": f"extract_images:{module_name}",
+                    "actions": [
+                        (
+                            action_extract_images,
+                            [source_path, slides_dir, extract_fn, manifest_path],
+                        )
+                    ],
+                    "file_dep": [str(source_path)] + css_deps,
+                    "targets": [str(manifest_path)],
+                    "verbosity": 2,
+                }
+            )
+
+            # export_pdf: marp --pdf
+            all_tasks.append(
+                {
+                    "name": f"export_pdf:{module_name}",
+                    "actions": [(action_export_pdf_marp, [source_path, pdf_output_path])],
+                    "file_dep": [str(source_path)] + css_deps,
+                    "targets": [str(pdf_output_path)],
+                    "verbosity": 2,
+                }
+            )
 
         # Per-slide tasks
         segment_paths: list[Path] = []

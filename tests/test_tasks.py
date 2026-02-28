@@ -11,9 +11,13 @@ from slidesonnet.models import ModuleType, ProjectConfig, VideoConfig
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.actions import (
     action_assemble,
+    action_compile_beamer,
     action_compose_narrated,
     action_compose_silent,
+    action_export_pdf_beamer,
+    action_export_pdf_marp,
     action_extract_images,
+    action_extract_images_beamer,
     action_tts,
     get_parser_and_extractor,
 )
@@ -112,6 +116,7 @@ def test_generates_correct_task_types(tmp_path):
     assert "extract_images" in basenames
     assert "tts" in basenames
     assert "compose" in basenames
+    assert "export_pdf" in basenames
     assert "concat" not in basenames
     assert "assemble" in basenames
 
@@ -734,8 +739,9 @@ def test_mixed_type_playlist(tmp_path):
     #   02-theory/slides.tex → "03_slides"
     # Use the sequence prefix to distinguish modules with the same stem.
 
-    # -- Module 1 (MARP): extract_images, tts, compose --
+    # -- Module 1 (MARP): extract_images, export_pdf, tts, compose --
     assert "extract_images:01_slides" in task_names
+    assert "export_pdf:01_slides" in task_names
     marp_tts = [n for n in task_names if n.startswith("tts:01_slides")]
     assert len(marp_tts) == 1  # only slide 1 is narrated
     marp_compose = [n for n in task_names if n.startswith("compose:01_slides")]
@@ -747,8 +753,10 @@ def test_mixed_type_playlist(tmp_path):
         for n in task_names
     )
 
-    # -- Module 3 (Beamer): extract_images, tts, compose --
+    # -- Module 3 (Beamer): compile_beamer, extract_images, export_pdf, tts, compose --
+    assert "compile_beamer:03_slides" in task_names
     assert "extract_images:03_slides" in task_names
+    assert "export_pdf:03_slides" in task_names
     beamer_tts = [n for n in task_names if n.startswith("tts:03_slides")]
     assert len(beamer_tts) == 1  # only frame 1 is narrated
     beamer_compose = [n for n in task_names if n.startswith("compose:03_slides")]
@@ -785,3 +793,222 @@ class TestGetParserAndExtractor:
     def test_video_raises(self) -> None:
         with pytest.raises(ValueError, match="No parser"):
             get_parser_and_extractor(ModuleType.VIDEO)
+
+
+# ---- Tests for new PDF export action functions ----
+
+
+class TestActionCompileBeamer:
+    """Tests for action_compile_beamer()."""
+
+    @patch("slidesonnet.parsers.beamer.compile_pdf")
+    def test_calls_compile_pdf(self, mock_compile: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        slides_dir = tmp_path / "slides"
+        slides_dir.mkdir()
+        pdf_path = slides_dir / "slides.pdf"
+        pdf_path.touch()  # simulate compile_pdf creating the file
+
+        action_compile_beamer(source, slides_dir, pdf_path)
+
+        mock_compile.assert_called_once_with(source, slides_dir)
+
+    @patch("slidesonnet.parsers.beamer.compile_pdf")
+    def test_raises_if_pdf_not_produced(self, mock_compile: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.tex"
+        source.write_text("dummy")
+        slides_dir = tmp_path / "slides"
+        slides_dir.mkdir()
+        pdf_path = slides_dir / "slides.pdf"
+        # Don't create pdf_path — simulate compile failure
+
+        with pytest.raises(RuntimeError, match="Expected PDF not produced"):
+            action_compile_beamer(source, slides_dir, pdf_path)
+
+
+class TestActionExtractImagesBeamer:
+    """Tests for action_extract_images_beamer()."""
+
+    @patch("slidesonnet.parsers.beamer.extract_images_from_pdf")
+    def test_calls_extract_and_writes_manifest(
+        self, mock_extract: MagicMock, tmp_path: Path
+    ) -> None:
+        import json
+
+        slides_dir = tmp_path / "slides"
+        slides_dir.mkdir()
+        pdf_path = slides_dir / "slides.pdf"
+        pdf_path.touch()
+        manifest_path = slides_dir / "manifest.json"
+
+        fake_images = [slides_dir / "slide-1.png", slides_dir / "slide-2.png"]
+        mock_extract.return_value = fake_images
+
+        action_extract_images_beamer(pdf_path, slides_dir, manifest_path)
+
+        mock_extract.assert_called_once_with(pdf_path, slides_dir)
+        assert manifest_path.exists()
+        paths = json.loads(manifest_path.read_text())
+        assert len(paths) == 2
+
+
+class TestActionExportPdfMarp:
+    """Tests for action_export_pdf_marp()."""
+
+    @patch("slidesonnet.parsers.marp.export_pdf")
+    def test_calls_marp_export_pdf(self, mock_export: MagicMock, tmp_path: Path) -> None:
+        source = tmp_path / "slides.md"
+        source.write_text("dummy")
+        output_path = tmp_path / "output" / "slides.pdf"
+
+        action_export_pdf_marp(source, output_path)
+
+        mock_export.assert_called_once_with(source, output_path)
+
+
+class TestActionExportPdfBeamer:
+    """Tests for action_export_pdf_beamer()."""
+
+    def test_copies_pdf(self, tmp_path: Path) -> None:
+        cache_pdf = tmp_path / "cache" / "slides.pdf"
+        cache_pdf.parent.mkdir()
+        cache_pdf.write_bytes(b"fake-pdf-content")
+        output_path = tmp_path / "output" / "slides.pdf"
+
+        action_export_pdf_beamer(cache_pdf, output_path)
+
+        assert output_path.exists()
+        assert output_path.read_bytes() == b"fake-pdf-content"
+
+    def test_creates_output_dir(self, tmp_path: Path) -> None:
+        cache_pdf = tmp_path / "cache" / "slides.pdf"
+        cache_pdf.parent.mkdir()
+        cache_pdf.write_bytes(b"data")
+        output_path = tmp_path / "deep" / "nested" / "slides.pdf"
+
+        action_export_pdf_beamer(cache_pdf, output_path)
+
+        assert output_path.parent.exists()
+        assert output_path.exists()
+
+
+# ---- Tests for PDF export task generation ----
+
+
+def test_marp_export_pdf_task(tmp_path: Path) -> None:
+    """MARP modules generate an export_pdf task."""
+    playlist = _setup_project(tmp_path)
+    tasks = _generate(tmp_path, playlist)
+
+    export_tasks = [t for t in tasks if t["name"].split(":")[0] == "export_pdf"]
+    assert len(export_tasks) == 1
+
+    et = export_tasks[0]
+    # Target should be in the playlist directory with .pdf extension
+    assert et["targets"][0].endswith(".pdf")
+    assert str(tmp_path) in et["targets"][0]
+    # Should depend on the source .md file
+    assert any(dep.endswith(".md") for dep in et["file_dep"])
+
+
+def test_beamer_compile_and_export_pdf_tasks(tmp_path: Path) -> None:
+    """Beamer modules generate compile_beamer and export_pdf tasks."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Theory](01-theory/slides.tex)
+    """)
+    )
+
+    beamer_dir = tmp_path / "01-theory"
+    beamer_dir.mkdir()
+    (beamer_dir / "slides.tex").write_text(
+        textwrap.dedent(r"""
+        \documentclass{beamer}
+        \begin{document}
+        \begin{frame}
+        \say{Hello world.}
+        \end{frame}
+        \end{document}
+    """).lstrip()
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    task_names = [t["name"] for t in tasks]
+
+    # Should have compile_beamer, extract_images, and export_pdf
+    assert "compile_beamer:01_slides" in task_names
+    assert "extract_images:01_slides" in task_names
+    assert "export_pdf:01_slides" in task_names
+
+    # extract_images depends on compile_beamer
+    extract_task = next(t for t in tasks if t["name"] == "extract_images:01_slides")
+    assert "compile_beamer:01_slides" in extract_task.get("task_dep", [])
+
+    # export_pdf depends on compile_beamer
+    export_task = next(t for t in tasks if t["name"] == "export_pdf:01_slides")
+    assert "compile_beamer:01_slides" in export_task.get("task_dep", [])
+
+    # export_pdf target is in the playlist directory
+    assert export_task["targets"][0] == str(tmp_path / "slides.pdf")
+
+
+def test_video_module_no_export_pdf(tmp_path: Path) -> None:
+    """Video passthrough modules do not generate export_pdf tasks."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Clip](animations/clip.mp4)
+    """)
+    )
+
+    anim_dir = tmp_path / "animations"
+    anim_dir.mkdir()
+    (anim_dir / "clip.mp4").write_bytes(b"fake-video")
+
+    tasks = _generate(tmp_path, playlist)
+    export_tasks = [t for t in tasks if t["name"].split(":")[0] == "export_pdf"]
+    assert len(export_tasks) == 0
+
+
+def test_beamer_extract_images_depends_on_cache_pdf(tmp_path: Path) -> None:
+    """Beamer extract_images file_dep references the cache PDF, not the source .tex."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Theory](01-theory/slides.tex)
+    """)
+    )
+
+    beamer_dir = tmp_path / "01-theory"
+    beamer_dir.mkdir()
+    (beamer_dir / "slides.tex").write_text(
+        textwrap.dedent(r"""
+        \documentclass{beamer}
+        \begin{document}
+        \begin{frame}
+        \say{Test.}
+        \end{frame}
+        \end{document}
+    """).lstrip()
+    )
+
+    tasks = _generate(tmp_path, playlist)
+
+    extract_task = next(t for t in tasks if t["name"].startswith("extract_images:"))
+    # file_dep should reference the cache PDF, not the .tex source
+    assert any(dep.endswith(".pdf") for dep in extract_task["file_dep"])
+    assert not any(dep.endswith(".tex") for dep in extract_task["file_dep"])
