@@ -1,8 +1,8 @@
 # People Names
 
-**Dijkstra**: DYKE-struh
-**Euler**: OY-ler
-**Knuth**: kuh-NOOTH
-**Torvalds**: TOR-valds
-**Turing**: TOOR-ing
-**Ritchie**: RICH-ee
+**Dijkstra**: dyke-struh
+**Euler**: oy-ler
+**Knuth**: kuh-nooth
+**Torvalds**: tor-valds
+**Turing**: toor-ing
+**Ritchie**: rich-ee

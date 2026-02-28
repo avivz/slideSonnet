@@ -74,33 +74,38 @@ Even Jakob Bernoulli, one of the greatest mathematicians of his era, publicly ad
 <!-- say: Even Jakob Bernoulli, one of the greatest mathematicians of
      his era, publicly admitted defeat in 1689, writing: -->
 
-<!-- say(voice=narrator): "If anyone finds and communicates to us that
+<!-- say(voice=bernoulli): "If anyone finds and communicates to us that
      which thusfar has eluded our efforts, great will be our
      gratitude." -->
 
 ---
 
-# Enter Leonhard Euler (1735)
+# Enter Leonhard Euler
 
 The problem remained open for **85 years**.
 
-Then, in Saint Petersburg, a young mathematician from Basel named **Leonhard Euler** found the answer:
+Then, in Saint Petersburg, a young mathematician from Basel named **Leonhard Euler** found the answer.
+
+<!-- say: For eighty-five years, the problem remained open. Then in 1734,
+     a twenty-seven year old named Leonhard Euler, working at the
+     Academy of Sciences in Saint Petersburg, found the answer. He
+     presented his proof the following year. -->
+
+---
+
+# Enter Leonhard Euler
 
 $$\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}$$
 
 $\pi$? In a sum that has nothing to do with circles?
 
-<!-- say: For eighty-five years, the problem remained open. Then in 1734,
-     a twenty-seven year old named Leonhard Euler, working at the
-     Academy of Sciences in Saint Petersburg, found the answer. He
-     presented his proof the following year. The sum equals pi squared
-     over six. This was shocking. Pi is the ratio of a circle's
-     circumference to its diameter. Why would it appear in a sum of
-     reciprocal squares? There is no circle anywhere in sight. Let me
-     show you Euler's original argument. It is not fully rigorous by
-     modern standards, but the intuition is so compelling that the result
-     was immediately accepted, and the gaps were filled in over the
-     following century. -->
+<!-- say: The sum equals pi squared over six. This was shocking. Pi is
+     the ratio of a circle's circumference to its diameter. Why would
+     it appear in a sum of reciprocal squares? There is no circle
+     anywhere in sight. Let me show you Euler's original argument.
+     It is not fully rigorous by modern standards, but the intuition
+     is so compelling that the result was immediately accepted, and
+     the gaps were filled in over the following century. -->
 
 ---
 
@@ -127,15 +132,22 @@ Divide both sides by $x$ (for $x \neq 0$, this is dividing a limit by a constant
 
 $$\frac{\sin(x)}{x} = 1 - \frac{x^2}{6} + \frac{x^4}{120} - \cdots$$
 
-Note the coefficient of $x^2$ on the right: it is $-\frac{1}{6}$.
-
 <!-- say: Now, remember that an infinite series is defined as a limit of
      partial sums. For any fixed nonzero x, we can divide that limit by
      x, because dividing a limit by a nonzero constant is justified by
      the algebraic limit theorem. So we get sine of x over x equals one
-     minus x squared over six, plus higher-order terms. Hold onto that
-     coefficient of x squared. It is negative one-sixth. That number is
-     going to come back. -->
+     minus x squared over six, plus higher-order terms. -->
+
+---
+
+# Step 1: Start with $\sin(x)$
+
+$$\frac{\sin(x)}{x} = 1 - \frac{x^2}{6} + \frac{x^4}{120} - \cdots$$
+
+Note the coefficient of $x^2$ on the right: it is $-\frac{1}{6}$.
+
+<!-- say: Now hold onto that coefficient of x squared. It is negative
+     one-sixth. That number is going to come back. -->
 
 ---
 
@@ -196,15 +208,13 @@ So the $x^2$ coefficient is just $-(a_1 + a_2 + a_3)$.
 
 # Step 3b: Apply to the infinite product
 
-The same logic applies to the full product (assuming it converges absolutely and can be expanded as a power series):
-
 $$\prod_{n=1}^{\infty}\left(1 - \frac{x^2}{n^2\pi^2}\right) = 1 - \left(\sum_{n=1}^{\infty}\frac{1}{n^2\pi^2}\right)x^2 + \cdots$$
 
 The $x^2$ coefficient is:
 
 $$-\left(\frac{1}{\pi^2} + \frac{1}{4\pi^2} + \frac{1}{9\pi^2} + \cdots\right) = -\frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}$$
 
-> **Assumes:** The infinite product converges absolutely and can be expanded as a power series, with coefficients computed term-by-term as for finite products.
+> **Assumes:** Absolute convergence and term-by-term expansion, as for finite products.
 
 <!-- say: Now extend this to the infinite product. By exactly the same
      reasoning, the x-squared coefficient is the sum of all the a-k's
@@ -224,7 +234,7 @@ $$-\left(\frac{1}{\pi^2} + \frac{1}{4\pi^2} + \frac{1}{9\pi^2} + \cdots\right) =
 
 From the Taylor series:
 
-$$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{6}}} \, x^2 + \cdots$$
+$$\frac{\sin(x)}{x} = 1 \mathbin{\color{#e94560}{- \frac{1}{6}}} \, x^2 + \cdots$$
 
 <!-- say: Now we compare. The Taylor series told us the x squared
      coefficient is negative one-sixth. -->
@@ -235,11 +245,11 @@ $$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{6}}} \, x^2 + \cdots$
 
 From the Taylor series:
 
-$$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{6}}} \, x^2 + \cdots$$
+$$\frac{\sin(x)}{x} = 1 \mathbin{\color{#e94560}{- \frac{1}{6}}} \, x^2 + \cdots$$
 
 From the product:
 
-$$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}}} \, x^2 + \cdots$$
+$$\frac{\sin(x)}{x} = 1 \mathbin{\color{#e94560}{- \frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}}} \, x^2 + \cdots$$
 
 <!-- say: The infinite product told us the x squared coefficient is
      negative one over pi squared times our sum. -->
@@ -250,15 +260,13 @@ $$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{\pi^2}\sum_{n=1}^{\in
 
 From the Taylor series:
 
-$$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{6}}} \, x^2 + \cdots$$
+$$\frac{\sin(x)}{x} = 1 \mathbin{\color{#e94560}{- \frac{1}{6}}} \, x^2 + \cdots$$
 
 From the product:
 
-$$\frac{\sin(x)}{x} = 1 \mathbin{\color{e94560}{- \frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}}} \, x^2 + \cdots$$
+$$\frac{\sin(x)}{x} = 1 \mathbin{\color{#e94560}{- \frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}}} \, x^2 + \cdots$$
 
-These are two power series for the same function, so their coefficients must agree (by uniqueness of power series):
-
-$$\frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2} = \frac{1}{6}$$
+Coefficients must agree: $\quad\dfrac{1}{\pi^2}\displaystyle\sum_{n=1}^{\infty}\frac{1}{n^2} = \frac{1}{6}$
 
 <!-- say: Both are power series representations of the same analytic
      function, and a power series representation is unique. So the
@@ -287,11 +295,12 @@ Euler's proof was **not rigorous** by modern standards — the factoring step ne
 
 But the result itself was correct, and it opened the door to a vast landscape.
 
-<!-- say: Now, Euler's original proof was not rigorous by modern
-     standards. That bold factoring step required the theory of infinite
-     products, which Karl Weierstrass would not develop until 1876,
-     over 140 years later. But the result itself was correct, and it
-     cracked open an entire field of mathematics. -->
+<!-- say: So should we worry that Euler's proof cut corners?
+     Mathematicians certainly did. It took over a century before
+     Weierstrass provided the tools to make that factoring step
+     rigorous. But the answer was never in doubt. Sometimes intuition
+     runs ahead of proof, and that gap is where new mathematics
+     is born. -->
 
 ---
 

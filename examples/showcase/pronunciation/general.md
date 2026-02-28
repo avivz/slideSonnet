@@ -6,11 +6,11 @@
 **SQL**: sequel
 **CLI**: C-L-I
 **GUI**: gooey
-**regex**: REJ-ex
-**async**: AY-sink
+**regex**: rej-ex
+**async**: ay-sink
 **OAuth**: oh-auth
-**YAML**: YAM-ul
-**JSON**: JAY-son
+**YAML**: yam-ul
+**JSON**: jay-son
 **REST**: rest
 
 ## Project Terms
@@ -20,6 +20,6 @@
 **MP4**: M-P-4
 **KaTeX**: ka-tech
 **TikZ**: tickz
-**FFmpeg**: F-F-mpeg
+**FFmpeg**: eff-eff-em-peg
 **MARP**: marp
-**LaTeX**: LAH-tech
+**LaTeX**: lah-tech
