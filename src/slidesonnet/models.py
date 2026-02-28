@@ -42,6 +42,8 @@ class SlideNarration:
     annotation: SlideAnnotation = SlideAnnotation.NONE
     narration_raw: str = ""
     narration_processed: str = ""
+    narration_parts: list[str] = field(default_factory=list)
+    narration_parts_processed: list[str] = field(default_factory=list)
     audio_path: Path | None = None
     segment_path: Path | None = None
     duration_seconds: float = 0.0

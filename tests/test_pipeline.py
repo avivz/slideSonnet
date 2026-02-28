@@ -270,6 +270,94 @@ def test_utterance_files_created(
     assert "Welcome to the first slide" in files[0].read_text()
 
 
+def _fake_concat_audio(audio_paths: list[Path], output: Path) -> None:
+    """Mock concatenate_audio that creates a dummy output file."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(b"fake-concat-audio")
+
+
+@patch("slidesonnet.pipeline._create_tts")
+@patch("slidesonnet.parsers.marp.export_pdf")
+@patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+@patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
+@patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
+@patch("slidesonnet.video.composer.concatenate_audio", side_effect=_fake_concat_audio)
+@patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
+@patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
+@patch("slidesonnet.video.composer.get_duration", return_value=1.0)
+def test_multi_part_per_say_caching(
+    mock_duration: MagicMock,
+    mock_compose: MagicMock,
+    mock_silent: MagicMock,
+    mock_concat_audio: MagicMock,
+    mock_concat: MagicMock,
+    mock_concat_xfade: MagicMock,
+    mock_extract: MagicMock,
+    mock_export_pdf: MagicMock,
+    mock_create_tts: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Editing one say in a multi-say slide only re-synthesizes that part."""
+    # Setup project with multi-say slide
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test Lecture
+        tts:
+          backend: piper
+        video:
+          resolution: 640x480
+          pad_seconds: 0.2
+          silence_duration: 1.0
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say(1): First part of the narration. -->
+        <!-- say(1): Second part of the narration. -->
+    """)
+    )
+
+    mock_tts = MockTTS()
+    mock_create_tts.return_value = mock_tts
+
+    # First build
+    build(playlist)
+    first_call_count = len(mock_tts.calls)
+    assert first_call_count == 2  # two parts synthesized
+
+    # Second build — should hit cache for both parts
+    build(playlist)
+    assert len(mock_tts.calls) == 2  # no new calls
+
+    # Edit only the second say
+    slides_path = slides_dir / "slides.md"
+    text = slides_path.read_text()
+    text = text.replace(
+        "Second part of the narration.",
+        "Edited second part of the narration.",
+    )
+    slides_path.write_text(text)
+
+    # Third build — only the edited part should be re-synthesized
+    build(playlist)
+    assert len(mock_tts.calls) == 3  # only 1 new call
+    assert "Edited second part" in mock_tts.calls[2][0]
+
+
 def _create_dummy_png(path: Path) -> None:
     """Create a minimal valid PNG."""
     import struct

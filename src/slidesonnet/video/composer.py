@@ -292,6 +292,41 @@ def concatenate_segments_xfade(
     _run_ffmpeg(cmd)
 
 
+def concatenate_audio(audio_paths: list[Path], output: Path) -> None:
+    """Concatenate multiple audio files into one using ffmpeg concat filter.
+
+    Handles any format (WAV/MP3) since it decodes and re-encodes.
+    Single-file input just copies.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    if len(audio_paths) == 1:
+        import shutil as _shutil
+
+        _shutil.copy2(audio_paths[0], output)
+        return
+
+    inputs: list[str] = []
+    filter_labels: list[str] = []
+    for i, path in enumerate(audio_paths):
+        inputs.extend(["-i", str(path)])
+        filter_labels.append(f"[{i}:a]")
+
+    concat_filter = f"{''.join(filter_labels)}concat=n={len(audio_paths)}:v=0:a=1[outa]"
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        *inputs,
+        "-filter_complex",
+        concat_filter,
+        "-map",
+        "[outa]",
+        str(output),
+    ]
+    _run_ffmpeg(cmd)
+
+
 def get_duration(media_path: Path, *, stream: str | None = None) -> float:
     """Get duration of a media file in seconds using ffprobe.
 

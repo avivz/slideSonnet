@@ -141,6 +141,31 @@ def test_multiple_say_blocks() -> None:
     assert result[1].image_index == 1  # same image — no fragments
 
 
+def test_narration_parts_single_say() -> None:
+    """Single say populates narration_parts with one element."""
+    text = "# Slide\n\n<!-- say: Just one say. -->"
+    [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+    assert slide.narration_parts == ["Just one say."]
+
+
+def test_narration_parts_multiple_says_same_sub_slide() -> None:
+    """Multiple says targeting the same sub-slide produce multiple parts."""
+    text = "# Slide\n\n<!-- say(1): First part. -->\n<!-- say(1): Second part. -->"
+    result, _ = _parse_slide(1, text, Path("test.md"), 1)
+    assert len(result) == 1
+    assert result[0].narration_parts == ["First part.", "Second part."]
+    assert result[0].narration_raw == "First part. Second part."
+
+
+def test_narration_parts_multi_sub_slides() -> None:
+    """Each sub-slide has its own narration_parts."""
+    text = "<!-- say: First. -->\n<!-- say: Second. -->"
+    result, _ = _parse_slide(1, text, Path("test.md"), 1)
+    assert len(result) == 2
+    assert result[0].narration_parts == ["First."]
+    assert result[1].narration_parts == ["Second."]
+
+
 def test_triple_dash_inside_code_fence_not_a_separator() -> None:
     """D4: --- inside a fenced code block should not split slides."""
     text = textwrap.dedent("""\

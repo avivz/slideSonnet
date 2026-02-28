@@ -14,6 +14,7 @@ from slidesonnet.actions import (
     action_compile_beamer,
     action_compose_narrated,
     action_compose_silent,
+    action_concat_audio,
     action_export_pdf_beamer,
     action_export_pdf_marp,
     action_extract_images,
@@ -435,6 +436,172 @@ def test_compose_uses_image_index_for_multi_say(tmp_path: Path) -> None:
 
     # Both multi-say sub-slides should reference image 1, then slide 2 → image 2
     assert compose_image_indices == [1, 1, 2]
+
+
+def test_multi_part_tts_generates_per_part_tasks(tmp_path: Path) -> None:
+    """Multi-say same sub-slide generates per-part TTS tasks + concat_audio."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    # Two says targeting same sub-slide (explicit slide=1)
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say(1): First part of narration. -->
+        <!-- say(1): Second part of narration. -->
+    """)
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    task_names = [t["name"] for t in tasks]
+
+    # Should have per-part TTS tasks
+    assert "tts:01_slides_slide_001_part_000" in task_names
+    assert "tts:01_slides_slide_001_part_001" in task_names
+
+    # Should have concat_audio task
+    assert "concat_audio:01_slides_slide_001" in task_names
+
+    # Should NOT have bare tts:01_slides_slide_001
+    assert "tts:01_slides_slide_001" not in task_names
+
+    # concat_audio depends on both part TTS tasks
+    concat_task = next(t for t in tasks if t["name"] == "concat_audio:01_slides_slide_001")
+    assert "tts:01_slides_slide_001_part_000" in concat_task["task_dep"]
+    assert "tts:01_slides_slide_001_part_001" in concat_task["task_dep"]
+
+    # Compose depends on concat_audio, not individual TTS tasks
+    compose_task = next(t for t in tasks if t["name"].startswith("compose:01_slides_slide_001"))
+    assert any("concat_audio" in dep for dep in compose_task["task_dep"])
+    assert not any(dep.startswith("tts:") for dep in compose_task["task_dep"])
+
+
+def test_single_say_no_concat_audio(tmp_path: Path) -> None:
+    """Single say per sub-slide does NOT generate concat_audio tasks."""
+    playlist = _setup_project(tmp_path)
+    tasks = _generate(tmp_path, playlist)
+    task_names = [t["name"] for t in tasks]
+
+    # No concat_audio tasks for single-say slides
+    assert not any(n.startswith("concat_audio:") for n in task_names)
+
+    # Regular tts tasks exist
+    tts_tasks = [n for n in task_names if n.startswith("tts:")]
+    assert len(tts_tasks) == 2
+    # No "_part_" suffix
+    assert all("_part_" not in n for n in tts_tasks)
+
+
+def test_multi_part_tts_content_addressed(tmp_path: Path) -> None:
+    """Each part gets its own content-addressed audio file."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say(1): First part. -->
+        <!-- say(1): Second part. -->
+    """)
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    part_tts = [t for t in tasks if t["name"].startswith("tts:") and "_part_" in t["name"]]
+    assert len(part_tts) == 2
+
+    # Different text → different targets
+    assert part_tts[0]["targets"] != part_tts[1]["targets"]
+
+    # Both targets are in audio/ dir
+    for t in part_tts:
+        assert "audio" in t["targets"][0]
+        assert t["targets"][0].endswith(".wav")
+
+
+def test_multi_part_concat_target_is_content_addressed(tmp_path: Path) -> None:
+    """concat_audio target uses hash-based filename ending in _concat.wav."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say(1): First. -->
+        <!-- say(1): Second. -->
+    """)
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    concat_task = next(t for t in tasks if t["name"].startswith("concat_audio:"))
+    assert concat_task["targets"][0].endswith("_concat.wav")
+    assert "audio" in concat_task["targets"][0]
+
+
+class TestActionConcatAudio:
+    """Tests for action_concat_audio()."""
+
+    @patch("slidesonnet.actions.composer.concatenate_audio")
+    def test_calls_concatenate_audio(self, mock_concat: MagicMock, tmp_path: Path) -> None:
+        paths = [tmp_path / "a.wav", tmp_path / "b.wav"]
+        output = tmp_path / "out.wav"
+
+        action_concat_audio(paths, output)
+
+        mock_concat.assert_called_once_with(paths, output)
+
+    @patch("slidesonnet.actions.composer.concatenate_audio")
+    def test_creates_output_dir(self, mock_concat: MagicMock, tmp_path: Path) -> None:
+        paths = [tmp_path / "a.wav"]
+        output = tmp_path / "deep" / "nested" / "out.wav"
+
+        action_concat_audio(paths, output)
+
+        assert output.parent.exists()
 
 
 # ---- Mocked unit tests for action functions and helpers ----

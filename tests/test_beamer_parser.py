@@ -640,6 +640,29 @@ class TestOverlayParsing:
         assert slides[1].narration_raw == "Second."
         assert slides[2].narration_raw == "Third."
 
+    def test_narration_parts_single_say(self) -> None:
+        """Single \\say populates narration_parts with one element."""
+        text = r"\say{Just one say.}"
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].narration_parts == ["Just one say."]
+
+    def test_narration_parts_multiple_says_same_sub_slide(self) -> None:
+        """Multiple \\say on same sub-slide produce multiple parts."""
+        text = r"\say{First part.}" + "\n" + r"\say{Second part.}"
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].narration_parts == ["First part.", "Second part."]
+        assert slides[0].narration_raw == "First part. Second part."
+
+    def test_narration_parts_per_sub_slide(self) -> None:
+        """Each sub-slide has its own narration_parts."""
+        text = r"\say{First.}" + "\n" + r"\pause" + "\n" + r"\say[2]{Second.}"
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 2
+        assert slides[0].narration_parts == ["First."]
+        assert slides[1].narration_parts == ["Second."]
+
     def test_fixture_overlay_frame(self, simple_tex: Path) -> None:
         """Test the overlay frame from simple.tex fixture (frame 7)."""
         parser = BeamerParser()

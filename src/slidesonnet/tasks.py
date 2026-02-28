@@ -24,6 +24,7 @@ from slidesonnet.actions import (
     action_compile_beamer,
     action_compose_narrated,
     action_compose_silent,
+    action_concat_audio,
     action_export_pdf_beamer,
     action_export_pdf_marp,
     action_extract_images,
@@ -82,6 +83,10 @@ def generate_tasks(
                 slide.narration_processed = apply_pronunciation(
                     slide.narration_raw, config.pronunciation
                 )
+                slide.narration_parts_processed = [
+                    apply_pronunciation(part, config.pronunciation)
+                    for part in slide.narration_parts
+                ]
                 if slide.voice:
                     voice_cfg = config.voices.get(slide.voice)
                     if voice_cfg:
@@ -190,36 +195,88 @@ def generate_tasks(
 
             # TTS task for narrated slides
             if slide.has_narration:
-                # Include TTS config and voice in hash so switching backends,
-                # models, or voice presets invalidates cached audio
-                hash_input = slide.narration_processed
-                hash_input += f"\0tts={tts.cache_key()}"
-                if slide.voice:
-                    hash_input += f"\0voice={slide.voice}"
-                text_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:16]
-                cached_audio = audio_cache_dir / f"{text_hash}.wav"
-                slide.audio_path = cached_audio
+                parts = slide.narration_parts_processed
 
-                all_tasks.append(
-                    {
-                        "name": f"tts:{slide_id}",
-                        "actions": [
-                            (
-                                action_tts,
-                                [
-                                    slide.narration_processed,
-                                    cached_audio,
-                                    tts,
-                                    utterances_dir / f"slide_{slide.index:03d}.txt",
-                                    slide.voice,
+                if len(parts) > 1:
+                    # Multi-part: generate per-part TTS tasks + concat
+                    part_audio_paths: list[Path] = []
+                    for j, part_text in enumerate(parts):
+                        hash_input = part_text
+                        hash_input += f"\0tts={tts.cache_key()}"
+                        if slide.voice:
+                            hash_input += f"\0voice={slide.voice}"
+                        text_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:16]
+                        cached_part = audio_cache_dir / f"{text_hash}.wav"
+                        part_audio_paths.append(cached_part)
+
+                        all_tasks.append(
+                            {
+                                "name": f"tts:{slide_id}_part_{j:03d}",
+                                "actions": [
+                                    (
+                                        action_tts,
+                                        [
+                                            part_text,
+                                            cached_part,
+                                            tts,
+                                            utterances_dir
+                                            / f"slide_{slide.index:03d}_part_{j:03d}.txt",
+                                            slide.voice,
+                                        ],
+                                    )
                                 ],
-                            )
-                        ],
-                        "targets": [str(cached_audio)],
-                        "uptodate": [lambda task, values: Path(task.targets[0]).exists()],
-                        "verbosity": 2,
-                    }
-                )
+                                "targets": [str(cached_part)],
+                                "uptodate": [lambda task, values: Path(task.targets[0]).exists()],
+                                "verbosity": 2,
+                            }
+                        )
+
+                    # Content-address the concat output by hashing all part paths
+                    concat_hash_input = "\0".join(str(p) for p in part_audio_paths)
+                    concat_hash = hashlib.sha256(concat_hash_input.encode("utf-8")).hexdigest()[:16]
+                    concat_audio = audio_cache_dir / f"{concat_hash}_concat.wav"
+                    slide.audio_path = concat_audio
+
+                    all_tasks.append(
+                        {
+                            "name": f"concat_audio:{slide_id}",
+                            "actions": [(action_concat_audio, [part_audio_paths, concat_audio])],
+                            "file_dep": [str(p) for p in part_audio_paths],
+                            "task_dep": [f"tts:{slide_id}_part_{j:03d}" for j in range(len(parts))],
+                            "targets": [str(concat_audio)],
+                            "verbosity": 2,
+                        }
+                    )
+                else:
+                    # Single part (or no parts): identical to previous behavior
+                    hash_input = slide.narration_processed
+                    hash_input += f"\0tts={tts.cache_key()}"
+                    if slide.voice:
+                        hash_input += f"\0voice={slide.voice}"
+                    text_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:16]
+                    cached_audio = audio_cache_dir / f"{text_hash}.wav"
+                    slide.audio_path = cached_audio
+
+                    all_tasks.append(
+                        {
+                            "name": f"tts:{slide_id}",
+                            "actions": [
+                                (
+                                    action_tts,
+                                    [
+                                        slide.narration_processed,
+                                        cached_audio,
+                                        tts,
+                                        utterances_dir / f"slide_{slide.index:03d}.txt",
+                                        slide.voice,
+                                    ],
+                                )
+                            ],
+                            "targets": [str(cached_audio)],
+                            "uptodate": [lambda task, values: Path(task.targets[0]).exists()],
+                            "verbosity": 2,
+                        }
+                    )
 
             # Skip slides don't get composed
             if slide.is_skip:
@@ -233,7 +290,11 @@ def generate_tasks(
             file_deps = [str(manifest_path)]
 
             if slide.has_narration and slide.audio_path:
-                task_deps.append(f"tts:{slide_id}")
+                # For multi-part, depend on concat_audio; for single-part, depend on tts
+                if len(slide.narration_parts_processed) > 1:
+                    task_deps.append(f"concat_audio:{slide_id}")
+                else:
+                    task_deps.append(f"tts:{slide_id}")
                 file_deps.append(str(slide.audio_path))
 
                 all_tasks.append(

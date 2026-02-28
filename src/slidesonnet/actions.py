@@ -56,6 +56,12 @@ def action_tts(
     tts.synthesize(text, output_path, voice=voice)
 
 
+def action_concat_audio(audio_paths: list[Path], output_path: Path) -> None:
+    """Concatenate multiple audio files into a single file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    composer.concatenate_audio(audio_paths, output_path)
+
+
 def action_compose_narrated(
     manifest_path: Path,
     slide_index: int,

@@ -13,6 +13,7 @@ from slidesonnet.video.composer import (
     _run_ffmpeg,
     compose_segment,
     compose_silent_segment,
+    concatenate_audio,
     concatenate_segments,
     concatenate_segments_xfade,
     get_duration,
@@ -678,6 +679,59 @@ class TestConcatenateSegmentsXfadeMocked:
         assert len(map_indices) == 2
         assert cmd[map_indices[0] + 1] == "[v1]"
         assert cmd[map_indices[1] + 1] == "[a1]"
+
+
+class TestConcatenateAudioMocked:
+    """Mocked tests for concatenate_audio()."""
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_multiple_files_concat_filter(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        a = tmp_path / "a.wav"
+        b = tmp_path / "b.wav"
+        output = tmp_path / "out.wav"
+
+        concatenate_audio([a, b], output)
+
+        mock_ffmpeg.assert_called_once()
+        cmd = mock_ffmpeg.call_args[0][0]
+        assert cmd[0] == "ffmpeg"
+        assert "-y" in cmd
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+        assert "[0:a][1:a]concat=n=2:v=0:a=1[outa]" == fc
+        assert "-map" in cmd
+        assert "[outa]" in cmd
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_three_files(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        paths = [tmp_path / f"{i}.wav" for i in range(3)]
+        output = tmp_path / "out.wav"
+
+        concatenate_audio(paths, output)
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+        assert "[0:a][1:a][2:a]concat=n=3:v=0:a=1[outa]" == fc
+
+    def test_single_file_copies(self, tmp_path: Path) -> None:
+        src = tmp_path / "only.wav"
+        src.write_bytes(b"audio-data")
+        output = tmp_path / "out.wav"
+
+        concatenate_audio([src], output)
+
+        assert output.read_bytes() == b"audio-data"
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_creates_output_dir(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        a = tmp_path / "a.wav"
+        b = tmp_path / "b.wav"
+        output = tmp_path / "deep" / "dir" / "out.wav"
+
+        concatenate_audio([a, b], output)
+
+        assert output.parent.exists()
 
 
 class TestRunFfmpeg:

@@ -486,6 +486,7 @@ def _parse_slide(
                 image_index=img_idx,
                 annotation=SlideAnnotation.SAY,
                 narration_raw=full_narration,
+                narration_parts=narration_parts,
                 voice=group_voice,
                 pace=group_pace,
             )
