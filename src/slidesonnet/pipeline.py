@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,11 +19,17 @@ from slidesonnet.tts.pronunciation import load_pronunciation_files
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_JOBS = 3
+# ElevenLabs concurrent request limits by plan:
+# Free=2, Starter=3, Creator=5, Pro=10, Scale/Business=15
+_ELEVENLABS_MAX_JOBS = 2
+
 
 def build(
     playlist_path: Path,
     tts_override: Literal["piper", "elevenlabs"] | None = None,
     force: bool = False,
+    jobs: int | None = None,
 ) -> Path:
     """Execute the full build pipeline for a playlist.
 
@@ -68,28 +75,75 @@ def build(
     )
 
     # Run doit
-    _run_doit(task_list, build_dir, force)
+    _run_doit(task_list, build_dir, force, jobs=jobs, tts_backend=config.tts.backend)
 
     logger.info("Done: %s", output_path)
     return output_path
 
 
-def _run_doit(task_list: list[dict[str, Any]], build_dir: Path, force: bool) -> None:
+def _run_doit(
+    task_list: list[dict[str, Any]],
+    build_dir: Path,
+    force: bool,
+    jobs: int | None = None,
+    tts_backend: str = "piper",
+) -> None:
     """Run doit programmatically with the given tasks."""
     from doit.cmd_base import TaskLoader2
     from doit.doit_cmd import DoitMain
+    from doit.reporter import ConsoleReporter
     from doit.task import dict_to_task
+
+    # Resolve effective job count
+    effective_jobs = _DEFAULT_JOBS if jobs is None else jobs
+    if tts_backend == "elevenlabs" and effective_jobs > _ELEVENLABS_MAX_JOBS:
+        effective_jobs = _ELEVENLABS_MAX_JOBS
 
     db_file = str(build_dir / ".doit.db")
     tasks = [dict_to_task(t) for t in task_list]
 
+    class _ProgressReporter(ConsoleReporter):  # type: ignore[misc]
+        """Reporter that shows [done/total] progress."""
+
+        def initialize(self, tasks: Any, selected_tasks: Any) -> None:
+            super().initialize(tasks, selected_tasks)
+            self._total = len(selected_tasks)
+            self._done = 0
+            self._start_time = time.monotonic()
+
+        def execute_task(self, task: Any) -> None:
+            if task.name[0] != "_":
+                self._done += 1
+                self.write(f"[{self._done}/{self._total}] {task.title()} ...\n")
+
+        def add_success(self, task: Any) -> None:
+            pass
+
+        def skip_uptodate(self, task: Any) -> None:
+            if task.name[0] != "_":
+                self._done += 1
+                self.write(f"[{self._done}/{self._total}] {task.title()} (up-to-date)\n")
+
+        def complete_run(self) -> None:
+            elapsed = time.monotonic() - self._start_time
+            self.write(f"Build complete ({elapsed:.1f}s)\n")
+            # Still show failures via parent
+            if self.failures or self.runtime_errors:
+                super().complete_run()
+
+    doit_config: dict[str, Any] = {
+        "backend": "sqlite3",
+        "dep_file": db_file,
+        "verbosity": 0,
+        "reporter": _ProgressReporter,
+    }
+    if effective_jobs > 0:
+        doit_config["num_process"] = effective_jobs
+        doit_config["par_type"] = "thread"
+
     class _Loader(TaskLoader2):  # type: ignore[misc]
         def load_doit_config(self) -> dict[str, Any]:
-            return {
-                "backend": "json",
-                "dep_file": db_file,
-                "verbosity": 2,
-            }
+            return doit_config
 
         def load_tasks(self, cmd: Any, pos_args: Any) -> list[Any]:
             return tasks

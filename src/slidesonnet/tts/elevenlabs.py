@@ -62,11 +62,14 @@ class ElevenLabsTTS(TTSEngine):
         voice_id = voice if voice else self.voice_id
         client = self._ensure_client()
 
+        # Retry on HTTP 429 (rate limit / concurrent limit exceeded) with exponential
+        # backoff — parallel builds may exceed the plan's concurrent request limit.
         audio_generator = client.text_to_speech.convert(
             text=text,
             voice_id=voice_id,
             model_id=self.model_id,
             output_format="mp3_44100_128",
+            request_options={"max_retries": 5},
         )
 
         # Write the audio stream to file

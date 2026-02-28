@@ -149,8 +149,9 @@ def test_pipeline_parses_and_synthesizes(
 
     # Should have synthesized 2 slides (slide 1 and 2 have <!-- say: -->)
     assert len(mock_tts.calls) == 2
-    assert "Welcome to the first slide" in mock_tts.calls[0][0]
-    assert "second slide" in mock_tts.calls[1][0]
+    texts = {call[0] for call in mock_tts.calls}
+    assert any("Welcome to the first slide" in t for t in texts)
+    assert any("second slide" in t for t in texts)
 
 
 @patch("slidesonnet.pipeline._create_tts")
@@ -321,7 +322,7 @@ class TestRunDoit:
         mock_main.run.return_value = 0
         mock_doit.return_value = mock_main
 
-        _run_doit([{"name": "test"}], tmp_path, force=False)
+        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=0)
 
         mock_main.run.assert_called_once()
         args = mock_main.run.call_args[0][0]
@@ -335,7 +336,7 @@ class TestRunDoit:
         mock_main.run.return_value = 0
         mock_doit.return_value = mock_main
 
-        _run_doit([{"name": "test"}], tmp_path, force=True)
+        _run_doit([{"name": "test"}], tmp_path, force=True, jobs=0)
 
         args = mock_main.run.call_args[0][0]
         assert "--always-execute" in args
@@ -351,7 +352,7 @@ class TestRunDoit:
         mock_doit.return_value = mock_main
 
         with pytest.raises(SlideSonnetError, match="doit exit code"):
-            _run_doit([{"name": "test"}], tmp_path, force=False)
+            _run_doit([{"name": "test"}], tmp_path, force=False, jobs=0)
 
     @patch("doit.doit_cmd.DoitMain")
     @patch("doit.task.dict_to_task")
@@ -362,4 +363,73 @@ class TestRunDoit:
         mock_doit.return_value = mock_main
 
         # Should not raise
-        _run_doit([{"name": "test"}], tmp_path, force=False)
+        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=0)
+
+    @patch("doit.doit_cmd.DoitMain")
+    @patch("doit.task.dict_to_task")
+    def test_sequential_no_parallel_flags(
+        self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path
+    ) -> None:
+        """jobs=0 means sequential — no num_process/par_type in doit config."""
+        mock_d2t.side_effect = lambda t: t
+        mock_main = MagicMock()
+        mock_main.run.return_value = 0
+        mock_doit.return_value = mock_main
+
+        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=0)
+
+        # Inspect the loader config
+        loader = mock_doit.call_args[0][0]
+        config = loader.load_doit_config()
+        assert "num_process" not in config
+        assert "par_type" not in config
+
+    @patch("doit.doit_cmd.DoitMain")
+    @patch("doit.task.dict_to_task")
+    def test_parallel_flags(
+        self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path
+    ) -> None:
+        """jobs=4 sets num_process=4 and par_type=thread in doit config."""
+        mock_d2t.side_effect = lambda t: t
+        mock_main = MagicMock()
+        mock_main.run.return_value = 0
+        mock_doit.return_value = mock_main
+
+        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=4)
+
+        loader = mock_doit.call_args[0][0]
+        config = loader.load_doit_config()
+        assert config["num_process"] == 4
+        assert config["par_type"] == "thread"
+
+    @patch("doit.doit_cmd.DoitMain")
+    @patch("doit.task.dict_to_task")
+    def test_elevenlabs_caps_jobs(
+        self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path
+    ) -> None:
+        """ElevenLabs backend caps jobs to _ELEVENLABS_MAX_JOBS."""
+        mock_d2t.side_effect = lambda t: t
+        mock_main = MagicMock()
+        mock_main.run.return_value = 0
+        mock_doit.return_value = mock_main
+
+        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=8, tts_backend="elevenlabs")
+
+        loader = mock_doit.call_args[0][0]
+        config = loader.load_doit_config()
+        assert config["num_process"] == 2
+
+    @patch("doit.doit_cmd.DoitMain")
+    @patch("doit.task.dict_to_task")
+    def test_default_jobs(self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path) -> None:
+        """jobs=None defaults to _DEFAULT_JOBS."""
+        mock_d2t.side_effect = lambda t: t
+        mock_main = MagicMock()
+        mock_main.run.return_value = 0
+        mock_doit.return_value = mock_main
+
+        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=None)
+
+        loader = mock_doit.call_args[0][0]
+        config = loader.load_doit_config()
+        assert config["num_process"] == 3

@@ -46,11 +46,21 @@ def main() -> None:
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
 @click.option("--tts", type=click.Choice(["piper", "elevenlabs"]), help="Override TTS backend")
 @click.option("--force", "-f", is_flag=True, help="Force rebuild all stages")
-def build(playlist: Path, tts: str | None, force: bool) -> None:
+@click.option(
+    "--jobs",
+    "-j",
+    type=int,
+    default=None,
+    help="Parallel jobs (default: 3, capped at 2 for ElevenLabs)",
+)
+def build(playlist: Path, tts: str | None, force: bool, jobs: int | None) -> None:
     """Build a presentation video from a playlist file."""
     try:
         run_build(
-            playlist, tts_override=cast(Literal["piper", "elevenlabs"] | None, tts), force=force
+            playlist,
+            tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+            force=force,
+            jobs=jobs,
         )
     except SlideSonnetError as e:
         logger.error("%s", e)
@@ -59,10 +69,17 @@ def build(playlist: Path, tts: str | None, force: bool) -> None:
 
 @main.command()
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
-def preview(playlist: Path) -> None:
+@click.option(
+    "--jobs",
+    "-j",
+    type=int,
+    default=None,
+    help="Parallel jobs (default: 3, capped at 2 for ElevenLabs)",
+)
+def preview(playlist: Path, jobs: int | None) -> None:
     """Quick preview build using local Piper TTS."""
     try:
-        run_build(playlist, tts_override="piper")
+        run_build(playlist, tts_override="piper", jobs=jobs)
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)

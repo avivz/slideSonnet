@@ -84,6 +84,7 @@ def test_synthesize_calls_api(mock_elevenlabs_cls, tmp_path):
         voice_id="voice-abc",
         model_id="eleven_v2",
         output_format="mp3_44100_128",
+        request_options={"max_retries": 5},
     )
 
 

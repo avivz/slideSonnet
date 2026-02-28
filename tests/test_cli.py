@@ -74,7 +74,7 @@ def test_build_calls_pipeline(runner, tmp_path):
         mock_build.return_value = tmp_path / ".build" / "lecture.mp4"
         result = runner.invoke(main, ["build", str(playlist)])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override=None, force=False)
+        mock_build.assert_called_once_with(playlist, tts_override=None, force=False, jobs=None)
 
 
 def test_build_with_tts_override(runner, tmp_path):
@@ -85,7 +85,9 @@ def test_build_with_tts_override(runner, tmp_path):
         mock_build.return_value = tmp_path / ".build" / "lecture.mp4"
         result = runner.invoke(main, ["build", str(playlist), "--tts", "elevenlabs"])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override="elevenlabs", force=False)
+        mock_build.assert_called_once_with(
+            playlist, tts_override="elevenlabs", force=False, jobs=None
+        )
 
 
 def test_build_with_force(runner, tmp_path):
@@ -96,7 +98,18 @@ def test_build_with_force(runner, tmp_path):
         mock_build.return_value = tmp_path / ".build" / "lecture.mp4"
         result = runner.invoke(main, ["build", str(playlist), "--force"])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override=None, force=True)
+        mock_build.assert_called_once_with(playlist, tts_override=None, force=True, jobs=None)
+
+
+def test_build_with_jobs(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.return_value = tmp_path / ".build" / "lecture.mp4"
+        result = runner.invoke(main, ["build", str(playlist), "--jobs", "4"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(playlist, tts_override=None, force=False, jobs=4)
 
 
 def test_preview_calls_build_with_piper(runner, tmp_path):
@@ -107,7 +120,18 @@ def test_preview_calls_build_with_piper(runner, tmp_path):
         mock_build.return_value = tmp_path / ".build" / "lecture.mp4"
         result = runner.invoke(main, ["preview", str(playlist)])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override="piper")
+        mock_build.assert_called_once_with(playlist, tts_override="piper", jobs=None)
+
+
+def test_preview_with_jobs(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.return_value = tmp_path / ".build" / "lecture.mp4"
+        result = runner.invoke(main, ["preview", str(playlist), "-j", "2"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(playlist, tts_override="piper", jobs=2)
 
 
 def test_init_blank(runner, tmp_path):
