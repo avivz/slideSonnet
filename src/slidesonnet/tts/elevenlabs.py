@@ -16,8 +16,11 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from elevenlabs import ElevenLabs as _ElevenLabsType
 
+_ElevenLabs: type[_ElevenLabsType] | None
 try:
-    from elevenlabs import ElevenLabs as _ElevenLabs
+    from elevenlabs import ElevenLabs as _ElevenLabsImport
+
+    _ElevenLabs = _ElevenLabsImport
 except ImportError:
     _ElevenLabs = None
 
@@ -78,8 +81,7 @@ class ElevenLabsTTS(TTSEngine):
 
     def cache_key(self) -> str:
         return (
-            f"elevenlabs:{self.voice_id}:{self.model_id}"
-            f":{self.stability}:{self.similarity_boost}"
+            f"elevenlabs:{self.voice_id}:{self.model_id}:{self.stability}:{self.similarity_boost}"
         )
 
 
