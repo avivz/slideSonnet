@@ -164,6 +164,32 @@ def _screenshot_presentation(html_path: Path, output_dir: Path, stem: str) -> li
             document.head.appendChild(style);
         }""")
 
+        # Detect slides whose content overflows the viewport (clipped in PNG).
+        overflow_info: list[dict[str, int]] = page.evaluate("""() => {
+            const sections = document.querySelectorAll('section[id]');
+            const results = [];
+            for (let i = 0; i < sections.length; i++) {
+                const s = sections[i];
+                if (s.scrollHeight > s.clientHeight) {
+                    results.push({
+                        slide: i + 1,
+                        content: s.scrollHeight,
+                        viewport: s.clientHeight
+                    });
+                }
+            }
+            return results;
+        }""")
+        for info in overflow_info:
+            logger.warning(
+                "%s slide %d: content overflows by %dpx (%dpx > %dpx viewport)",
+                stem,
+                info["slide"],
+                info["content"] - info["viewport"],
+                info["content"],
+                info["viewport"],
+            )
+
         # Count total steps: each section is a slide, fragments add extra steps.
         # A section with N fragments produces N+1 visual states (bare + N reveals).
         total_steps: int = page.evaluate("""() => {

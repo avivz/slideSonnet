@@ -1,5 +1,6 @@
 """Tests for MARP parser."""
 
+import logging
 import subprocess
 import textwrap
 from pathlib import Path
@@ -533,6 +534,92 @@ class TestExtractImages:
         source.write_text("dummy")
         with pytest.raises(ParserError):
             extract_images(source, tmp_path / "out")
+
+
+class TestOverflowDetection:
+    """Tests for content overflow warning in _screenshot_presentation."""
+
+    @patch("slidesonnet.parsers.marp._ensure_chromium")
+    @patch("slidesonnet.parsers.marp._import_sync_playwright")
+    def test_overflow_warning_logged(
+        self,
+        mock_import_pw: MagicMock,
+        mock_ensure: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Slides with scrollHeight > clientHeight produce overflow warnings."""
+        from slidesonnet.parsers.marp import _screenshot_presentation
+
+        html_path = tmp_path / "test.html"
+        html_path.write_text("<html></html>")
+
+        mock_page = MagicMock()
+
+        # First evaluate: toolbar hide (no return value needed)
+        # Second evaluate: overflow detection → return overflow data
+        # Third evaluate: step count → return 2
+        mock_page.evaluate.side_effect = [
+            None,  # toolbar hide
+            [
+                {"slide": 2, "content": 1200, "viewport": 1080},
+                {"slide": 5, "content": 1350, "viewport": 1080},
+            ],  # overflow detection
+            2,  # total steps
+        ]
+
+        mock_browser = MagicMock()
+        mock_browser.new_page.return_value = mock_page
+        mock_pw_instance = MagicMock()
+        mock_pw_instance.chromium.launch.return_value = mock_browser
+
+        mock_cm = MagicMock()
+        mock_cm.__enter__ = MagicMock(return_value=mock_pw_instance)
+        mock_cm.__exit__ = MagicMock(return_value=False)
+        mock_import_pw.return_value = MagicMock(return_value=mock_cm)
+
+        with caplog.at_level(logging.WARNING):
+            _screenshot_presentation(html_path, tmp_path, "lecture")
+
+        assert "lecture slide 2: content overflows by 120px (1200px > 1080px viewport)" in caplog.text
+        assert "lecture slide 5: content overflows by 270px (1350px > 1080px viewport)" in caplog.text
+
+    @patch("slidesonnet.parsers.marp._ensure_chromium")
+    @patch("slidesonnet.parsers.marp._import_sync_playwright")
+    def test_no_overflow_no_warning(
+        self,
+        mock_import_pw: MagicMock,
+        mock_ensure: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """No warnings when all slides fit within the viewport."""
+        from slidesonnet.parsers.marp import _screenshot_presentation
+
+        html_path = tmp_path / "test.html"
+        html_path.write_text("<html></html>")
+
+        mock_page = MagicMock()
+        mock_page.evaluate.side_effect = [
+            None,  # toolbar hide
+            [],  # no overflow
+            1,  # total steps
+        ]
+
+        mock_browser = MagicMock()
+        mock_browser.new_page.return_value = mock_page
+        mock_pw_instance = MagicMock()
+        mock_pw_instance.chromium.launch.return_value = mock_browser
+
+        mock_cm = MagicMock()
+        mock_cm.__enter__ = MagicMock(return_value=mock_pw_instance)
+        mock_cm.__exit__ = MagicMock(return_value=False)
+        mock_import_pw.return_value = MagicMock(return_value=mock_cm)
+
+        with caplog.at_level(logging.WARNING):
+            _screenshot_presentation(html_path, tmp_path, "lecture")
+
+        assert "overflow" not in caplog.text
 
 
 class TestEnsureChromium:
