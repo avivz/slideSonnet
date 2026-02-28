@@ -177,17 +177,21 @@ def test_compose_tasks_skip_skipped_slides(tmp_path):
 
 
 def test_content_addressed_audio_targets(tmp_path):
-    """TTS targets use content-addressed filenames."""
+    """TTS targets use content-addressed filenames in new format."""
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
     tts_tasks = [t for t in tasks if t["name"].split(":")[0] == "tts"]
     targets = [t["targets"][0] for t in tts_tasks]
 
-    # Targets should be in audio/ dir with hash-based names
+    # Targets should be in audio/ dir with new-format names: {text_hash}.{backend}.{config_hash}.wav
     for target in targets:
         assert "audio" in target
         assert target.endswith(".wav")
+        filename = Path(target).name
+        parts = filename[:-4].split(".")  # strip .wav, split on dots
+        assert len(parts) == 3, f"Expected 3-part filename, got: {filename}"
+        assert parts[1] == "mock"  # MockTTS.name() returns "mock"
 
     # Different text → different targets
     assert targets[0] != targets[1]

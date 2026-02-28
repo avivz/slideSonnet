@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-import shutil
 from pathlib import Path
 from typing import Literal, cast
 
 import click
 
 from slidesonnet import __version__
+from slidesonnet.clean import KeepLevel
+from slidesonnet.clean import clean as run_clean
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.init import init_blank, init_example, init_from
 from slidesonnet.pipeline import build as run_build
@@ -132,11 +133,28 @@ def init(target: Path, mode: str | None, from_path: Path | None) -> None:
 
 @main.command()
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
-def clean(playlist: Path) -> None:
-    """Remove all build artifacts."""
+@click.option(
+    "--keep",
+    type=click.Choice(["nothing", "api", "utterances", "exact"]),
+    default="api",
+    help="What to preserve: nothing (nuke), api (default), utterances, or exact",
+)
+def clean(playlist: Path, keep: str) -> None:
+    """Remove build artifacts with graduated preservation.
+
+    \b
+    --keep nothing     Nuke entire cache directory
+    --keep api         Keep API-generated audio (default)
+    --keep utterances  Keep audio for current utterances (any engine)
+    --keep exact       Keep only audio matching current text + config
+    """
     build_dir = playlist.resolve().parent / "cache"
-    if build_dir.exists():
-        shutil.rmtree(build_dir)
+    if not build_dir.exists():
+        click.echo("Nothing to clean.")
+        return
+
+    run_clean(playlist, keep=cast(KeepLevel, keep))
+    if keep == "nothing":
         click.echo(f"Removed {build_dir}")
     else:
-        click.echo("Nothing to clean.")
+        click.echo(f"Cleaned {build_dir} (kept {keep})")

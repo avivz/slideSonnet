@@ -4,7 +4,8 @@ SLIDESONNET := $(VENV)/slidesonnet
 .PHONY: install test test-unit lint typecheck clean \
 	showcase showcase-piper \
 	basel basel-piper \
-	clean-showcase clean-basel clean-examples
+	clean-showcase clean-basel clean-examples \
+	purge-showcase purge-basel purge-examples
 
 install:
 	$(VENV)/pip install -e ".[piper,dev]"
@@ -42,8 +43,16 @@ basel-piper:
 clean-basel:
 	cd examples/basel-problem && ../../$(SLIDESONNET) clean lecture.md
 
+purge-showcase:
+	cd examples/showcase && ../../$(SLIDESONNET) clean lecture.md --keep nothing
+
+purge-basel:
+	cd examples/basel-problem && ../../$(SLIDESONNET) clean lecture.md --keep nothing
+
 # --- Aggregate ---
 clean-examples: clean-showcase clean-basel
+
+purge-examples: purge-showcase purge-basel
 
 clean:
 	rm -rf cache/ dist/ *.egg-info/

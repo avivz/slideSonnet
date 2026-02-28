@@ -12,7 +12,6 @@ Task graph:
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from pathlib import Path
 from typing import Any
@@ -32,6 +31,8 @@ from slidesonnet.actions import (
     action_tts,
     get_parser_and_extractor,
 )
+from slidesonnet.hashing import audio_path as _audio_path
+from slidesonnet.hashing import concat_filename as _concat_filename
 from slidesonnet.models import (
     ModuleType,
     PlaylistEntry,
@@ -201,12 +202,9 @@ def generate_tasks(
                     # Multi-part: generate per-part TTS tasks + concat
                     part_audio_paths: list[Path] = []
                     for j, part_text in enumerate(parts):
-                        hash_input = part_text
-                        hash_input += f"\0tts={tts.cache_key()}"
-                        if slide.voice:
-                            hash_input += f"\0voice={slide.voice}"
-                        text_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:16]
-                        cached_part = audio_cache_dir / f"{text_hash}.wav"
+                        cached_part = _audio_path(
+                            audio_cache_dir, part_text, tts.name(), tts.cache_key(), slide.voice
+                        )
                         part_audio_paths.append(cached_part)
 
                         all_tasks.append(
@@ -232,9 +230,7 @@ def generate_tasks(
                         )
 
                     # Content-address the concat output by hashing all part paths
-                    concat_hash_input = "\0".join(str(p) for p in part_audio_paths)
-                    concat_hash = hashlib.sha256(concat_hash_input.encode("utf-8")).hexdigest()[:16]
-                    concat_audio = audio_cache_dir / f"{concat_hash}_concat.wav"
+                    concat_audio = audio_cache_dir / _concat_filename(part_audio_paths)
                     slide.audio_path = concat_audio
 
                     all_tasks.append(
@@ -249,12 +245,13 @@ def generate_tasks(
                     )
                 else:
                     # Single part (or no parts): identical to previous behavior
-                    hash_input = slide.narration_processed
-                    hash_input += f"\0tts={tts.cache_key()}"
-                    if slide.voice:
-                        hash_input += f"\0voice={slide.voice}"
-                    text_hash = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:16]
-                    cached_audio = audio_cache_dir / f"{text_hash}.wav"
+                    cached_audio = _audio_path(
+                        audio_cache_dir,
+                        slide.narration_processed,
+                        tts.name(),
+                        tts.cache_key(),
+                        slide.voice,
+                    )
                     slide.audio_path = cached_audio
 
                     all_tasks.append(

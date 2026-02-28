@@ -60,10 +60,50 @@ def test_clean_removes_build_dir(runner, tmp_path):
     build_dir.mkdir()
     (build_dir / "artifact.mp4").touch()
 
-    result = runner.invoke(main, ["clean", str(playlist)])
+    result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing"])
     assert result.exit_code == 0
     assert "Removed" in result.output
     assert not build_dir.exists()
+
+
+def test_clean_default_keep_api(runner, tmp_path):
+    playlist = tmp_path / "test.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+    (build_dir / ".doit.db").touch()
+
+    with patch("slidesonnet.cli.run_clean") as mock_clean:
+        result = runner.invoke(main, ["clean", str(playlist)])
+        assert result.exit_code == 0
+        mock_clean.assert_called_once_with(playlist, keep="api")
+        assert "Cleaned" in result.output
+
+
+def test_clean_keep_nothing(runner, tmp_path):
+    playlist = tmp_path / "test.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+
+    with patch("slidesonnet.cli.run_clean") as mock_clean:
+        result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing"])
+        assert result.exit_code == 0
+        mock_clean.assert_called_once_with(playlist, keep="nothing")
+        assert "Removed" in result.output
+
+
+def test_clean_keep_choices(runner, tmp_path):
+    """All keep levels are accepted."""
+    playlist = tmp_path / "test.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+
+    for level in ("nothing", "api", "utterances", "exact"):
+        with patch("slidesonnet.cli.run_clean"):
+            result = runner.invoke(main, ["clean", str(playlist), "--keep", level])
+            assert result.exit_code == 0, f"--keep {level} failed"
 
 
 def test_build_calls_pipeline(runner, tmp_path):
