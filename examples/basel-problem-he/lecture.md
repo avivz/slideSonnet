@@ -5,15 +5,15 @@ tts:
   piper:
     model: en_US-lessac-medium
   elevenlabs:
-    voice_id: aMSt68OGf4xUZAnLpTU8
+    voice_id: buAxaX0MqDQX4fGIDtw0
     model_id: eleven_v3
 voices:
   default:
     piper: en_US-lessac-medium
-    elevenlabs: aMSt68OGf4xUZAnLpTU8
+    elevenlabs: buAxaX0MqDQX4fGIDtw0
   bernoulli:
     piper: en_US-amy-medium
-    elevenlabs: zlatCM6nK59gyedHFFxn
+    elevenlabs: jhYRUrjaLTqNSQTIDKZw
 pronunciation:
   - pronunciation/names.md
 video:

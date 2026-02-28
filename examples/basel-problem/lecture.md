@@ -13,7 +13,7 @@ voices:
     elevenlabs: aMSt68OGf4xUZAnLpTU8
   bernoulli:
     piper: en_US-amy-medium
-    elevenlabs: zlatCM6nK59gyedHFFxn
+    elevenlabs: jhYRUrjaLTqNSQTIDKZw
 pronunciation:
   - pronunciation/names.md
 video:
