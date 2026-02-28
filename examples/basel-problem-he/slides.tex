@@ -1,0 +1,389 @@
+\documentclass[aspectratio=169]{beamer}
+
+% --- Theme & Colors ---
+\usetheme{Madrid}
+\usefonttheme{serif}
+
+\definecolor{baselBg}{HTML}{fafaf8}
+\definecolor{baselText}{HTML}{1a1a2e}
+\definecolor{baselAccent}{HTML}{e94560}
+
+\setbeamercolor{structure}{fg=baselAccent}
+\setbeamercolor{normal text}{fg=baselText, bg=baselBg}
+\setbeamercolor{frametitle}{fg=baselText, bg=baselBg}
+\setbeamercolor{title}{fg=baselText, bg=}
+\setbeamercolor{subtitle}{fg=baselText!70}
+\setbeamercolor{titlelike}{fg=baselText, bg=}
+\setbeamercolor{block title}{fg=white, bg=baselAccent}
+\setbeamercolor{block body}{fg=baselText, bg=baselAccent!8}
+\setbeamercolor{item}{fg=baselAccent}
+\setbeamercolor{footline}{fg=baselText!50, bg=baselBg}
+
+% --- Navigation & Footline ---
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}{%
+  \hfill\insertframenumber\kern1em\vskip4pt%
+}
+
+% --- Red underline on frame titles, with top padding ---
+\addtobeamertemplate{frametitle}{\vskip0.4em}{%
+  \vskip-0.3em%
+  {\color{baselAccent}\rule{\textwidth}{0.8pt}}%
+  \vskip0.3em%
+}
+
+% --- Packages ---
+\usepackage{slidesonnet}
+\usepackage{amsmath,amssymb}
+
+% --- Bernoulli quote environment ---
+\newenvironment{bquote}{%
+  \begin{center}%
+  \begin{minipage}{0.85\textwidth}%
+  \color{baselText}\itshape%
+  \setlength{\fboxsep}{12pt}%
+  \colorbox{baselAccent!8}\bgroup%
+}{%
+  \egroup%
+  \end{minipage}%
+  \end{center}%
+}
+
+% --- Title info ---
+\title{The Basel Problem}
+\subtitle{A story of an impossible sum, a young genius,\\and a surprise visit from $\pi$}
+\author{}
+\date{}
+
+\begin{document}
+
+% ============================================================
+% Frame 1: Title (1 visual state, 1 sub-slide)
+% ============================================================
+\begin{frame}[plain]
+  \titlepage
+  \say{היום אני רוצה לספר לכם את אחד הסיפורים האהובים עליי במתמטיקה: בעיית Basel --- סכום שהתנגד לפתרון במשך שמונים וחמש שנה, עד שמתמטיקאי צעיר פיצח אותו עם רעיון פשוט ויפה.}
+\end{frame}
+
+% ============================================================
+% Frame 2: A Simple Question (1 visual state, 1 sub-slide)
+% ============================================================
+\begin{frame}{A Simple Question}
+  What happens when you add up the reciprocals of the perfect squares?
+
+  \[
+    \frac{1}{1} + \frac{1}{4} + \frac{1}{9} + \frac{1}{16}
+    + \frac{1}{25} + \cdots
+  \]
+
+  In modern notation:
+
+  \[
+    \sum_{n=1}^{\infty} \frac{1}{n^2} = \ ?
+  \]
+
+  \say{הנה השאלה. קחו כל ריבוע שלם --- אחד, ארבע, תשע, שש עשרה, עשרים וחמש, וכן הלאה --- הפכו כל אחד מהם, וחברו את כולם. האם הסכום האינסופי הזה מתכנס? ואם כן --- לאיזה ערך?}
+\end{frame}
+
+% ============================================================
+% Frame 3: The Challenge (1650) (2 visual states, 3 sub-slides)
+% ============================================================
+\begin{frame}{The Challenge (1650)}
+  \textbf{Pietro Mengoli}, a mathematician in Bologna, posed this problem in 1650.
+
+  \medskip
+  The sum converges (by comparison with $\int_1^\infty x^{-2}\,dx = 1$).
+  The partial sums creep toward something near \textbf{1.6449}\ldots
+
+  \medskip
+  But \emph{what} is this number, exactly?
+
+  \say{הבעיה הוצגה לראשונה על ידי Pietro Mengoli בשנת 1650. הסכום אכן מתכנס --- אפשר לבדוק את זה בהשוואה לאינטגרל של אחד חלקי x בריבוע. חברו את מאה האיברים הראשונים, תקבלו בערך 1.6349. אלף איברים? 1.6439. זה בבירור מתקרב למשהו ליד 1.6449. אבל מהו המספר הזה? שורש של פולינום כלשהו? לוגריתם של משהו? אף אחד לא הצליח לפענח את זה.}
+
+  \pause
+
+  \bigskip
+  Even Jakob Bernoulli, one of the greatest mathematicians of his era,
+  publicly admitted defeat in 1689:
+
+  \begin{bquote}
+    ``If anyone finds and communicates to us that which thusfar
+    has eluded our efforts, great will be our gratitude.''
+
+    \upshape\raggedleft--- Jakob Bernoulli, 1689
+  \end{bquote}
+
+  \say[2]{אפילו Jakob Bernoulli, אחד המתמטיקאים הגדולים של תקופתו, הרים ידיים ברבים בשנת 1689. הוא כתב:}
+  \say[3, voice=bernoulli]{"If anyone finds and communicates to us that which thusfar has eluded our efforts, great will be our gratitude."}
+\end{frame}
+
+% ============================================================
+% Frame 4: Enter Leonhard Euler (2 visual states, 2 sub-slides)
+% ============================================================
+\begin{frame}{Enter Leonhard Euler}
+  The problem remained open for \textbf{85 years}.
+
+  \medskip
+  Then, in 1734 in Saint Petersburg, a young mathematician from Basel
+  named \textbf{Leonhard Euler} found the answer.
+
+  \say{במשך שמונים וחמש שנה, אף אחד לא הצליח לפתור את הבעיה. ואז בשנת 1734, בן עשרים ושבע בשם Leonhard Euler, שעבד באקדמיה למדעים בסנט פטרסבורג, מצא את התשובה. הוא הציג את ההוכחה שלו בשנה שלאחר מכן.}
+
+  \pause
+
+  \bigskip
+  \[
+    \sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}
+  \]
+
+  \medskip
+  $\pi$? In a sum that has nothing to do with circles?
+
+  \say[2]{הסכום שווה ל-pi בריבוע חלקי שש. וזה היה מזעזע. pi הוא היחס בין היקף המעגל לקוטרו --- למה לעזאזל הוא מופיע בסכום של הופכי ריבועים? אין כאן מעגל בשום מקום. בואו אראה לכם את הטיעון המקורי של Euler. הוא לא לגמרי מדויק לפי הסטנדרטים המודרניים, אבל האינטואיציה כל כך משכנעת שכולם קיבלו אותה מיד, ואת הפערים סגרו במהלך המאה שלאחר מכן.}
+\end{frame}
+
+% ============================================================
+% Frame 5: Step 1 — sin(x) (3 visual states, 3 sub-slides)
+% ============================================================
+\begin{frame}{Step 1: Start with $\sin(x)$}
+  We know the Taylor series for sine:
+
+  \[
+    \sin(x) = x - \frac{x^3}{3!} + \frac{x^5}{5!} - \frac{x^7}{7!} + \cdots
+  \]
+
+  \say{ההוכחה של Euler מתחילה עם משהו שאולי לא ציפיתם לו --- הפונקציה sine. אנחנו יודעים את טור ה-Taylor של sine של x: זה x פחות x בשלישית חלקי שלוש עצרת, ועוד x בחמישית חלקי חמש עצרת, וכן הלאה.}
+
+  \pause
+
+  \medskip
+  Divide both sides by $x$:
+
+  \[
+    \frac{\sin(x)}{x} = 1 \alt<3>{{\color{baselAccent}- \frac{x^2}{6}}}{- \frac{x^2}{6}} + \frac{x^4}{120} - \cdots
+  \]
+
+  \say[2]{עכשיו זכרו, טור אינסופי הוא פשוט גבול של סכומים חלקיים. לכל x קבוע ששונה מאפס, אפשר לחלק את הגבול ב-x --- זה מוצדק על ידי משפט הגבול האלגברי. אז מקבלים sine של x חלקי x שווה אחד פחות x בריבוע חלקי שש, ועוד איברים מסדר גבוה יותר.}
+
+  \pause
+
+  \bigskip
+  Note the coefficient of $x^2$ on the right: it is ${\color{baselAccent}-\frac{1}{6}}$.
+
+  \say[3]{שימו לב למקדם של x בריבוע --- מינוס שישית. המספר הזה עוד יחזור.}
+\end{frame}
+
+% ============================================================
+% Frame 6: Step 2 — Factor by roots (2 visual states, 2 sub-slides)
+% ============================================================
+\begin{frame}{Step 2: Factor by the Roots}
+  Euler's bold move: $\dfrac{\sin(x)}{x}$ has zeros at
+  $x = \pm\pi,\; \pm 2\pi,\; \pm 3\pi,\; \ldots$
+
+  \say{ועכשיו הצעד הנועז של Euler --- הצעד שהפך את ההוכחה הזו למפורסמת. הפונקציה sine של x חלקי x מתאפסת כאשר x שווה פלוס מינוס pi, פלוס מינוס שתיים pi, פלוס מינוס שלוש pi, וכן הלאה.}
+
+  \pause
+
+  \bigskip
+  Euler treated it like a polynomial and factored it by its roots:
+
+  \[
+    \frac{\sin(x)}{x}
+    = \left(1 - \frac{x^2}{\pi^2}\right)\!
+      \left(1 - \frac{x^2}{4\pi^2}\right)\!
+      \left(1 - \frac{x^2}{9\pi^2}\right)\cdots
+  \]
+
+  \medskip
+  \small
+  \textbf{Assumes:} An entire function is determined by its zeros
+  (up to normalization). Justified by the Weierstrass factorization
+  theorem (1876).
+
+  \say[2]{Euler חשב באנלוגיה. אם לפולינום יש שורשים מסוימים, אפשר לפרק אותו כמכפלה של גורמים, אחד לכל שורש. הוא החיל את אותו היגיון על sine של x חלקי x --- למרות שזה לא פולינום, אלא טור אינסופי. הוא כתב את זה כמכפלה אינסופית, כאשר כל גורם מתאים לזוג שורשים. עכשיו, זו הייתה הנחה, לא הוכחה. ההצדקה הפורמלית הגיעה הרבה יותר מאוחר, עם משפט הפירוק של Weierstrass מ-1876. אז מה מקבלים?}
+\end{frame}
+
+% ============================================================
+% Frame 7: Step 3a — x^2 from a product (1 visual state, 1 sub-slide)
+% ============================================================
+\begin{frame}{Step 3a: How to Read the $x^2$ Coefficient from a Product}
+  Consider just \textbf{three} factors --- write $a_k = \frac{1}{k^2\pi^2}$
+  for short:
+
+  \begin{gather*}
+    (1 - a_1 x^2)(1 - a_2 x^2)(1 - a_3 x^2) \\[4pt]
+    = 1 - (a_1 + a_2 + a_3)\,x^2 + (\text{terms in } x^4, x^6)
+  \end{gather*}
+
+  \medskip
+  Each $x^2$ contribution comes from picking $-a_k x^2$ from \textbf{one}
+  factor and~$1$ from the rest. Cross-terms yield $x^4$ or higher.
+
+  \medskip
+  So the $x^2$ coefficient is just $-(a_1 + a_2 + a_3)$.
+
+  \say{לפני שניגש למכפלה האינסופית, בואו נראה למה זה עובד למכפלה סופית. קחו רק שלושה גורמים. כל גורם נראה כמו אחד פחות a-k כפול x בריבוע. כשמכפילים, איבר x בריבוע מופיע רק כשבוחרים את החלק מינוס a-k כפול x בריבוע מגורם אחד בדיוק, ואת האחד מכל שאר הגורמים. בחרו את x בריבוע משני גורמים או יותר, ותקבלו x בחזקת ארבע ומעלה. אז המקדם של x בריבוע הוא פשוט הסכום, a-one ועוד a-two ועוד a-three, עם סימן מינוס.}
+\end{frame}
+
+% ============================================================
+% Frame 8: Step 3b — Infinite product (1 visual state, 1 sub-slide)
+% ============================================================
+\begin{frame}{Step 3b: Apply to the Infinite Product}
+  \[
+    \prod_{n=1}^{\infty}\!\left(1 - \frac{x^2}{n^2\pi^2}\right)
+    = 1 - \left(\sum_{n=1}^{\infty}\frac{1}{n^2\pi^2}\right)x^2 + \cdots
+  \]
+
+  \bigskip
+  The $x^2$ coefficient is:
+
+  \[
+    -\left(\frac{1}{\pi^2} + \frac{1}{4\pi^2}
+    + \frac{1}{9\pi^2} + \cdots\right)
+    = -\frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}
+  \]
+
+  \medskip
+  \small
+  \textbf{Assumes:} Absolute convergence and term-by-term expansion,
+  as for finite products.
+
+  \say{עכשיו נרחיב את זה למכפלה האינסופית. בדיוק באותו היגיון, המקדם של x בריבוע הוא סכום כל ה-a-k עם סימן מינוס. זה נותן לנו מינוס אחד חלקי pi בריבוע, ועוד אחד חלקי ארבע pi בריבוע, ועוד אחד חלקי תשע pi בריבוע, וכן הלאה. הוציאו את אחד חלקי pi בריבוע כגורם משותף, ומה נשאר? בדיוק הסכום המסתורי שלנו. עכשיו, להרחיב את הטיעון ממכפלה סופית לאינסופית, צריך התכנסות מוחלטת ופיתוח תקין לטור חזקות. זה נכון כאן, אבל לא הוכח בתקופתו של Euler. אם מקבלים את ההנחה הזו, החילוץ עובד בדיוק כמו למכפלה סופית.}
+\end{frame}
+
+% ============================================================
+% Frame 9: Step 4 — The Punchline (3 visual states, 3 sub-slides)
+% ============================================================
+\begin{frame}{Step 4: The Punchline}
+  From the Taylor series:
+
+  \[
+    \frac{\sin(x)}{x}
+    = 1 \mathbin{{\color{baselAccent}- \frac{1}{6}}}\, x^2 + \cdots
+  \]
+
+  \say{עכשיו נשווה. טור ה-Taylor אמר לנו שהמקדם של x בריבוע הוא מינוס שישית.}
+
+  \pause
+
+  \medskip
+  From the product:
+
+  \[
+    \frac{\sin(x)}{x}
+    = 1 \mathbin{{\color{baselAccent}
+      - \frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}}}\, x^2 + \cdots
+  \]
+
+  \say[2]{והמכפלה האינסופית אמרה לנו שזה מינוס אחד חלקי pi בריבוע כפול הסכום שלנו.}
+
+  \pause
+
+  \bigskip
+  Coefficients must agree:
+  $\quad\dfrac{1}{\pi^2}\displaystyle\sum_{n=1}^{\infty}\frac{1}{n^2}
+  = \frac{1}{6}$
+
+  \say[3]{שני הביטויים הם טורי חזקות של אותה פונקציה, ולפונקציה יש רק ייצוג אחד כטור חזקות. אז המקדמים חייבים להיות שווים. השוו אותם, ומקבלים: אחד חלקי pi בריבוע כפול הסכום שווה שישית.}
+\end{frame}
+
+% ============================================================
+% Frame 10: Result (1 visual state, 1 sub-slide)
+% ============================================================
+\begin{frame}{$\displaystyle\sum_{n=1}^{\infty}\frac{1}{n^2}
+              = \frac{\pi^2}{6}$}
+  Multiply both sides by $\pi^2$:
+
+  \[
+    1 + \frac{1}{4} + \frac{1}{9} + \frac{1}{16}
+    + \frac{1}{25} + \cdots = \frac{\pi^2}{6} \approx 1.6449\ldots
+  \]
+
+  \say{הכפילו את שני הצדדים ב-pi בריבוע, והנה זה. אחד ועוד רבע ועוד תשיעית ועוד אחד חלקי שש עשרה, וכן הלאה עד אינסוף --- שווה pi בריבוע חלקי שש. אותו 1.6449 מסתורי שאף אחד לא הצליח לזהות במשך שמונים וחמש שנה? pi בריבוע חלקי שש. קבוע המעגל הסתתר בתוך הסכום כל הזמן.}
+\end{frame}
+
+% ============================================================
+% Frame 11: Why It Matters (2 visual states, 2 sub-slides)
+% ============================================================
+\begin{frame}{Why It Matters}
+  Euler's proof was \textbf{not rigorous} by modern standards --- the
+  factoring step needed Weierstrass's theory of infinite products to
+  justify, over 140 years later (1876).
+
+  \medskip
+  But the result itself was correct, and it opened the door to a vast
+  landscape.
+
+  \say{אז האם צריך לדאוג שההוכחה של Euler דילגה על שלבים? מתמטיקאים בהחלט דאגו. עברו יותר ממאה שנה עד ש-Weierstrass סיפק את הכלים שהפכו את שלב הפירוק למוצדק לחלוטין. אבל התשובה מעולם לא הייתה מוטלת בספק. לפעמים האינטואיציה רצה לפני ההוכחה --- ובפער הזה נולדת מתמטיקה חדשה.}
+
+  \pause
+
+  \bigskip
+  The sum we computed is $\zeta(2)$, a special value of the
+  \textbf{Riemann zeta function}:
+
+  \[
+    \zeta(s) = \sum_{n=1}^{\infty} \frac{1}{n^s}
+  \]
+
+  \begin{itemize}
+    \item Euler showed all \textbf{even} values
+      $\zeta(2), \zeta(4), \zeta(6), \ldots$ are rational multiples
+      of powers of $\pi$
+
+    \say[2]{מה שחישבנו הוא למעשה ערך מיוחד של מה שנקרא היום פונקציית ה-Riemann zeta --- ב-s שווה שתיים. Euler עצמו המשיך והראה שכל הערכים הזוגיים, zeta של שתיים, zeta של ארבע, zeta של שש, וכן הלאה, הם כפולות רציונליות של חזקות pi.}
+
+    \pause
+
+    \item But the \textbf{odd} values
+      $\zeta(3), \zeta(5), \zeta(7), \ldots$ remain mysterious ---
+      no closed forms are known
+  \end{itemize}
+
+  \say[3]{אבל הערכים האי-זוגיים? zeta של שלוש, zeta של חמש, zeta של שבע? עדיין מסתוריים. עד היום, אף אחד לא מצא ביטויים סגורים לאף אחד מהם. כמה מהבעיות הפתוחות הגדולות ביותר במתמטיקה חוזרות בדיוק אל הסכום היפה הזה.}
+\end{frame}
+
+% ============================================================
+% Frame 12: What We Learned (1 visual state, 1 sub-slide)
+% ============================================================
+\begin{frame}{What We Learned}
+  \[
+    1 + \frac{1}{4} + \frac{1}{9} + \frac{1}{16} + \cdots
+    = \frac{\pi^2}{6}
+  \]
+
+  \begin{itemize}
+    \item A simple question can hide a profound answer
+    \item The boldness to treat $\sin(x)/x$ as a polynomial was the
+      key insight
+    \item $\pi$ connects geometry and number theory in ways we are
+      still discovering
+  \end{itemize}
+
+  \say{אז מה למדנו? לפעמים שאלה פשוטה --- כזו שאפשר להסביר לילד --- מסתירה תשובה עמוקה להפליא. הגאונות של Euler לא הייתה רק טכנית. זו הייתה העזות לנסות משהו שלא היה אמור לעבוד, והחוש לזהות יופי בתוצאה. ובלב של הכל נמצא pi, בשקט מחבר את הגאומטריה של מעגלים לאריתמטיקה של מספרים שלמים בדרכים שאנחנו עדיין מגלים היום. תודה שהצטרפתם אליי למסע הזה דרך אחת ההוכחות היפות ביותר במתמטיקה.}
+\end{frame}
+
+% ============================================================
+% Frame 13: Sources (1 visual state, silent)
+% ============================================================
+\begin{frame}{Sources}
+  \small
+  \begin{itemize}
+    \item P.\ Mengoli, \emph{Novae quadraturae arithmeticae, seu de
+      additione fractionum} (Bologna, 1650)
+    \item J.\ Bernoulli, \emph{Tractatus de seriebus infinitis}
+      (Basel, 1689) --- quote per W.\ Dunham,
+      \emph{Euler: The Master of Us All} (1999)
+    \item L.\ Euler, ``De summis serierum reciprocarum'' (E41),
+      presented Dec.\ 5, 1735,
+      \emph{Commentarii academiae scientiarum Petropolitanae} 7 (1740)
+    \item K.\ Weierstrass, ``Zur Theorie der eindeutigen analytischen
+      Funktionen,'' \emph{Abhandlungen der K\"oniglichen Akademie der
+      Wissenschaften zu Berlin} (1876)
+    \item R.\ Ap\'ery, ``Irrationalit\'e de $\zeta(2)$ et $\zeta(3)$,''
+      \emph{Ast\'erisque} 61 (1979)
+  \end{itemize}
+  \silent
+\end{frame}
+
+\end{document}
