@@ -4,7 +4,7 @@ slideSonnet parses Beamer LaTeX frames and generates narrated video from them. T
 
 ## Setup
 
-Your Beamer document should include the `slidesonnet` package, which defines `\say`, `\silent`, and `\skip` as no-ops so LaTeX compiles normally:
+Your Beamer document should include the `slidesonnet` package, which defines `\say`, `\silent`, `\skip`, and `\slidesonnetskip` as no-ops so LaTeX compiles normally:
 
 ```latex
 \documentclass{beamer}
@@ -15,7 +15,7 @@ Your Beamer document should include the `slidesonnet` package, which defines `\s
 \end{document}
 ```
 
-The `slidesonnet.sty` file is included in the repository root.
+The `slidesonnet.sty` file is included in the repository root. Place it where pdflatex can find it — either in the same directory as your `.tex` file or in your local `texmf` tree.
 
 ## Narration commands
 
@@ -40,6 +40,8 @@ Multiple `\say` commands in the same frame are concatenated:
 \end{frame}
 ```
 
+An empty `\say{}` triggers a warning ("did you mean `\silent`?") and is treated as silent.
+
 ### `\say[params]{text}`
 
 Optional bracket parameters control voice and pace:
@@ -49,11 +51,11 @@ Optional bracket parameters control voice and pace:
 \say[voice=bob, pace=slow]{Bob speaks slowly here.}
 ```
 
-Voice names reference presets defined in the playlist YAML front matter.
+Voice names reference presets defined in the playlist YAML front matter. When multiple `\say` commands in the same frame (or sub-slide) specify conflicting voice or pace, the last one wins.
 
 ### `\silent`
 
-Show the slide with silence (no narration):
+Show the slide with silence (no narration). The slide appears for the configured `video.silence_duration` (default: 3 seconds):
 
 ```latex
 \begin{frame}
@@ -73,7 +75,7 @@ Omit the slide from the video entirely:
 \end{frame}
 ```
 
-`\slidesonnetskip` is an alias for `\skip` in case `\skip` conflicts with other packages.
+`\slidesonnetskip` is an alias for `\skip`. Use it when `\skip` conflicts with other LaTeX packages — `\skip` is a TeX primitive (a length register), so packages that rely on its original meaning may break if you redefine it. `\slidesonnetskip` avoids this conflict entirely.
 
 ## Overlay frames (`\pause`)
 
@@ -113,12 +115,37 @@ This frame produces 3 PDF pages and 3 video segments, each with its own narratio
 - **Default target** is sub-slide 1 — `\say{text}` without a number always targets the first sub-slide
 - **Multiple `\say` for the same sub-slide** are concatenated in file order
 - **Missing narration** — sub-slides with no `\say` targeting them become silent (with a warning)
-- **Target beyond pause count** — if `\say[5]{text}` appears in a frame with only 2 pauses, the sub-slide count is extended to 5 (with a warning)
+- **Target beyond pause count** — if `\say[5]{text}` appears in a frame with only 2 pauses, the sub-slide count is extended to 5 (with a warning); the image index clamps to the last available PDF page
 - **`\skip` / `\silent` on overlay frames** — applies to all sub-slides in the frame
+- **Unannotated frames** — frames with no `\say`, `\silent`, or `\skip` produce a warning and are treated as having no annotation
 
 ### Backward compatibility
 
 Frames without `\pause` behave exactly as before: multiple `\say` commands concatenate onto a single slide. Frames with `\pause` but only unnumbered `\say` commands put all narration on sub-slide 1; remaining sub-slides are silent.
+
+## Braces and special characters
+
+### Nested braces
+
+slideSonnet uses brace-counting (not a flat regex) to extract `\say` body text, so nested braces work correctly:
+
+```latex
+\say{This has {nested braces} in the text.}
+% TTS receives: "This has {nested braces} in the text."
+```
+
+### Escaped braces
+
+Escaped braces (`\{` and `\}`) are treated as literal characters and do not affect brace matching:
+
+```latex
+\say{The set \{1, 2, 3\} is finite.}
+```
+
+### Special characters
+
+- **Tildes** (`~`) are converted to spaces (LaTeX uses `~` as a non-breaking space)
+- **Double backslashes** (`\\`) are converted to spaces (LaTeX line breaks)
 
 ## LaTeX markup in narration
 
@@ -129,7 +156,14 @@ Common LaTeX formatting commands are stripped from narration text before TTS:
 % TTS receives: "This is important and emphasized."
 ```
 
-Supported: `\textbf`, `\textit`, `\emph`, `\underline`, `\text`. Nested markup is handled correctly. Other commands (e.g., `\item`, `\newline`) are removed as well.
+Supported: `\textbf`, `\textit`, `\emph`, `\underline`, `\text`. Nested markup is handled correctly via brace-counting:
+
+```latex
+\say{A \textbf{bold \emph{and italic}} phrase.}
+% TTS receives: "A bold and italic phrase."
+```
+
+Other LaTeX commands (e.g., `\item`, `\newline`) are removed as well. Whitespace is normalized to single spaces.
 
 ## Image extraction
 
@@ -139,3 +173,5 @@ slideSonnet compiles Beamer documents with `pdflatex` and extracts slide images 
 - **pdftoppm** — from poppler-utils (`sudo apt install poppler-utils`)
 
 Images are extracted at 300 DPI as PNG files.
+
+pdflatex runs in the source file's parent directory, so relative paths in `\input`, `\includegraphics`, and `TEXINPUTS` resolve naturally. If pdflatex exits with errors but still produces a PDF, slideSonnet logs a warning and continues.
