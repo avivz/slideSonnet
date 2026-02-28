@@ -236,7 +236,7 @@ slidesonnet preview-slide slides.md 3 -p lecture01.md  # with playlist config
 slidesonnet init myproject                  # create blank project
 slidesonnet init myproject --example        # create full working demo
 slidesonnet init myproject --from other.md  # copy config from existing project
-slidesonnet clean lecture01.md              # remove .build/ directory
+slidesonnet clean lecture01.md              # remove cache/ directory
 ```
 
 ## Incremental builds
@@ -248,7 +248,7 @@ TTS audio is cached by content hash of the narration text, not by slide number. 
 - **Insert a slide** → existing slides hit the cache, only the new slide triggers TTS
 - **Change voice preset** → affected slides rebuild (voice is part of the hash)
 
-Build artifacts live in `.build/` next to the playlist file. Add it to `.gitignore`.
+Build artifacts live in `cache/` next to the playlist file. Add it to `.gitignore`.
 
 ## Project layout
 
@@ -261,7 +261,7 @@ my-course/
 ├── 02-proofs/slides.tex      # Beamer module
 ├── animations/euler.mp4      # video module
 ├── .env                      # API keys (gitignored)
-├── .build/                   # build artifacts (gitignored)
+├── cache/                    # build artifacts (gitignored)
 │   ├── audio/                # TTS cache (content-addressed)
 │   ├── 01-intro/
 │   │   ├── slides/           # extracted PNGs + manifest

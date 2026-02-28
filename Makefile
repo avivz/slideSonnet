@@ -57,5 +57,5 @@ clean-basel-he:
 clean-examples: clean-showcase clean-basel clean-basel-he
 
 clean:
-	rm -rf .build/ dist/ *.egg-info/
+	rm -rf cache/ dist/ *.egg-info/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

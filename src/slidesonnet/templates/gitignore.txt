@@ -1,5 +1,5 @@
 # slideSonnet build artifacts
-.build/
+cache/
 
 # API keys and secrets
 .env

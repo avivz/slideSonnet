@@ -95,7 +95,7 @@ def test_showcase_builds(tmp_path: Path) -> None:
     assert duration > 10, f"output too short ({duration:.1f}s) — likely incomplete"
 
     # --- Per-module segment counts (narrated + silent slides, excluding skip) ---
-    build_dir = project / ".build"
+    build_dir = project / "cache"
     # 01_part1 (MARP): 8 narrated (1 skip excluded) = 8 segments
     # 02_part2 (Beamer): 3 narrated + 1 silent = 4 segments
     # 03_transition (video passthrough, no segments)

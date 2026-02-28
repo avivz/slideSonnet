@@ -88,7 +88,7 @@ def _generate(tmp_path, playlist):
     config = load_config(raw_config, tmp_path)
     config.pronunciation = {}
     tts = MockTTS()
-    build_dir = tmp_path / ".build"
+    build_dir = tmp_path / "cache"
     build_dir.mkdir()
     output_path = build_dir / "lecture.mp4"
 

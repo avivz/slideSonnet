@@ -134,7 +134,7 @@ def init(target: Path, mode: str | None, from_path: Path | None) -> None:
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
 def clean(playlist: Path) -> None:
     """Remove all build artifacts."""
-    build_dir = playlist.resolve().parent / ".build"
+    build_dir = playlist.resolve().parent / "cache"
     if build_dir.exists():
         shutil.rmtree(build_dir)
         click.echo(f"Removed {build_dir}")

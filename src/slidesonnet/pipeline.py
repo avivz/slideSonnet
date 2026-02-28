@@ -37,7 +37,7 @@ def build(
     """
     playlist_path = playlist_path.resolve()
     playlist_dir = playlist_path.parent
-    build_dir = playlist_dir / ".build"
+    build_dir = playlist_dir / "cache"
     build_dir.mkdir(parents=True, exist_ok=True)
 
     # Load .env from project root

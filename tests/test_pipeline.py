@@ -255,7 +255,7 @@ def test_utterance_files_created(
 
     build(playlist)
 
-    utterances_dir = tmp_path / ".build" / "01-intro" / "slides" / "utterances"
+    utterances_dir = tmp_path / "cache" / "01-intro" / "slides" / "utterances"
     assert utterances_dir.exists()
     files = sorted(utterances_dir.glob("*.txt"))
     assert len(files) == 2  # 2 narrated slides

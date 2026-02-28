@@ -20,7 +20,7 @@ def test_blank_gitignore_protects_env(tmp_path):
 
     gitignore = (target / ".gitignore").read_text()
     assert ".env" in gitignore
-    assert ".build/" in gitignore
+    assert "cache/" in gitignore
 
 
 def test_blank_env_has_placeholder(tmp_path):
