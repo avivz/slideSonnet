@@ -82,7 +82,8 @@ def test_compose_segment(work_dir):
 
     assert output.exists()
     dur = get_duration(output)
-    assert 2.0 <= dur <= 3.0  # 2s audio + 0.5s pad, with tolerance
+    # expected: 1.0 (pre) + 2.0 (audio) + 0.5 (pad) = 3.5s
+    assert 3.35 <= dur <= 3.65
 
 
 @pytest.mark.integration
@@ -103,7 +104,8 @@ def test_compose_silent_segment(work_dir):
 
     assert output.exists()
     dur = get_duration(output)
-    assert 2.5 <= dur <= 3.5
+    # expected: 3.0s
+    assert 2.9 <= dur <= 3.1
 
 
 @pytest.mark.integration
@@ -133,7 +135,8 @@ def test_concatenate_segments(work_dir):
 
     assert output.exists()
     dur = get_duration(output)
-    assert 2.5 <= dur <= 4.0  # ~3s total with tolerance
+    # expected: 3 × 1.0s = 3.0s
+    assert 2.85 <= dur <= 3.15
 
 
 @pytest.mark.integration
@@ -245,6 +248,99 @@ def test_get_duration_stream_video(work_dir):
     assert fmt_dur > 0
     # Video duration should not exceed format duration
     assert vid_dur <= fmt_dur + 0.1
+
+
+@pytest.mark.integration
+def test_compose_segment_streams_match(work_dir):
+    """Video and audio stream durations should match within 50ms after apad fix."""
+    image = work_dir / "slide.png"
+    audio = work_dir / "audio.wav"
+    output = work_dir / "segment.mp4"
+
+    _make_png(image)
+    _make_wav(audio, duration_seconds=2.0)
+
+    compose_segment(
+        image=image,
+        audio=audio,
+        output=output,
+        duration=2.0,
+        pad_seconds=0.5,
+        pre_silence=1.0,
+        resolution="640x480",
+        fps=24,
+        crf=28,
+    )
+
+    vid_dur = get_duration(output, stream="video")
+    aud_dur = get_duration(output, stream="audio")
+    assert abs(vid_dur - aud_dur) <= 0.05, (
+        f"Stream mismatch: video={vid_dur:.3f}s audio={aud_dur:.3f}s"
+    )
+
+
+@pytest.mark.integration
+def test_multi_segment_concat_no_drift(work_dir):
+    """10 concatenated segments should have no accumulated drift."""
+    segments = []
+    for i in range(10):
+        image = work_dir / f"slide_{i}.png"
+        audio = work_dir / f"audio_{i}.wav"
+        seg = work_dir / f"seg_{i}.mp4"
+        _make_png(image)
+        _make_wav(audio, duration_seconds=1.5)
+        compose_segment(
+            image=image,
+            audio=audio,
+            output=seg,
+            duration=1.5,
+            pad_seconds=0.3,
+            pre_silence=0.5,
+            resolution="640x480",
+            fps=24,
+            crf=28,
+        )
+        segments.append(seg)
+
+    output = work_dir / "concat.mp4"
+    concatenate_segments(segments, output)
+
+    dur = get_duration(output)
+    # expected: 10 × (0.5 + 1.5 + 0.3) = 23.0s
+    # AAC frame quantization (~23ms/frame) can add up to ~50ms per segment
+    assert 22.85 <= dur <= 23.5, f"Expected ~23.0s, got {dur:.3f}s"
+
+
+@pytest.mark.integration
+def test_multi_segment_xfade_no_drift(work_dir):
+    """10 segments with xfade should have correct total duration."""
+    segments = []
+    for i in range(10):
+        image = work_dir / f"slide_{i}.png"
+        audio = work_dir / f"audio_{i}.wav"
+        seg = work_dir / f"seg_{i}.mp4"
+        _make_png(image)
+        _make_wav(audio, duration_seconds=1.5)
+        compose_segment(
+            image=image,
+            audio=audio,
+            output=seg,
+            duration=1.5,
+            pad_seconds=0.3,
+            pre_silence=0.5,
+            resolution="640x480",
+            fps=24,
+            crf=28,
+        )
+        segments.append(seg)
+
+    output = work_dir / "xfade.mp4"
+    crossfade = 0.2
+    concatenate_segments_xfade(segments, output, crossfade=crossfade, crf=28)
+
+    dur = get_duration(output)
+    # expected: 10 × 2.3 - 9 × 0.2 = 21.2s (minus offset margins)
+    assert 20.8 <= dur <= 21.6, f"Expected ~21.2s, got {dur:.3f}s"
 
 
 # ---- Mocked unit tests (no ffmpeg required) ----

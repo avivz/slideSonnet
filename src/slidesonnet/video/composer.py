@@ -30,6 +30,14 @@ def compose_segment(
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     total_duration = pre_silence + duration + pad_seconds
+    logger.debug(
+        "compose: %s audio=%.3fs pre=%.3fs pad=%.3fs → total=%.3fs",
+        output.name,
+        duration,
+        pre_silence,
+        pad_seconds,
+        total_duration,
+    )
 
     # Scale filter: fit to resolution, pad to exact size with black bars
     w, h = resolution.split("x")
@@ -41,7 +49,7 @@ def compose_segment(
 
     # Delay audio by pre_silence (adelay takes milliseconds, all channels)
     delay_ms = int(pre_silence * 1000)
-    audio_filter = f"adelay={delay_ms}|{delay_ms}"
+    audio_filter = f"adelay={delay_ms}|{delay_ms},apad"
 
     cmd = [
         "ffmpeg",
@@ -70,10 +78,25 @@ def compose_segment(
         str(crf),
         "-t",
         str(total_duration),
-        "-shortest",
         str(output),
     ]
     _run_ffmpeg(cmd)
+
+    # Check for stream duration mismatch
+    try:
+        vid_dur = get_duration(output, stream="video")
+        aud_dur = get_duration(output, stream="audio")
+        delta = vid_dur - aud_dur
+        if abs(delta) > 0.05:
+            logger.warning(
+                "compose: %s stream mismatch video=%.3fs audio=%.3fs (Δ=%.3fs)",
+                output.name,
+                vid_dur,
+                aud_dur,
+                delta,
+            )
+    except RuntimeError:
+        pass  # probing may fail in mocked tests
 
 
 def compose_silent_segment(
@@ -86,6 +109,7 @@ def compose_silent_segment(
 ) -> None:
     """Create a silent video segment from a static slide image."""
     output.parent.mkdir(parents=True, exist_ok=True)
+    logger.debug("compose_silent: %s duration=%.3fs", output.name, duration)
 
     w, h = resolution.split("x")
     scale_filter = (
@@ -128,6 +152,7 @@ def compose_silent_segment(
 
 def concatenate_segments(segments: list[Path], output: Path) -> None:
     """Concatenate video segments into a single video using ffmpeg concat demuxer."""
+    logger.debug("concatenate: %d segments → %s", len(segments), output.name)
     output.parent.mkdir(parents=True, exist_ok=True)
     concat_file = output.parent / "concat_list.txt"
 
@@ -231,9 +256,7 @@ def concatenate_segments_xfade(
         )
         # Normalize this input's audio before crossfading
         filter_parts.append(f"[{i}:a]{_AUDIO_FMT}{norm_a}")
-        filter_parts.append(
-            f"{audio_label}{norm_a}acrossfade=d={crossfade}:c1=tri:c2=tri{out_a}"
-        )
+        filter_parts.append(f"{audio_label}{norm_a}acrossfade=d={crossfade}:c1=tri:c2=tri{out_a}")
 
         video_label = out_v
         audio_label = out_a

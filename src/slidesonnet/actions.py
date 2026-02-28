@@ -73,6 +73,7 @@ def action_compose_narrated(
     images = json.loads(manifest_path.read_text(encoding="utf-8"))
     image = Path(images[slide_index - 1])
     duration = composer.get_duration(audio_path)
+    logger.debug("slide %d: audio=%.3fs image=%s", slide_index, duration, image.name)
     composer.compose_segment(
         image=image,
         audio=audio_path,
