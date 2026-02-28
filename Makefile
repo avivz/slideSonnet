@@ -1,20 +1,28 @@
-.PHONY: install test test-unit lint typecheck clean
+VENV := .venv/bin
+
+.PHONY: install test test-unit lint typecheck clean showcase showcase-piper
 
 install:
-	pip install -e ".[piper,dev]"
+	$(VENV)/pip install -e ".[piper,dev]"
 
 test:
-	pytest tests/
+	$(VENV)/pytest tests/
 
 test-unit:
-	pytest tests/ -m "not integration"
+	$(VENV)/pytest tests/ -m "not integration"
 
 lint:
-	ruff check src/ tests/
-	ruff format --check src/ tests/
+	$(VENV)/ruff check src/ tests/
+	$(VENV)/ruff format --check src/ tests/
 
 typecheck:
-	mypy src/slidesonnet/
+	$(VENV)/mypy src/slidesonnet/
+
+showcase:
+	cd examples/showcase && ../../$(VENV)/slidesonnet build lecture.md
+
+showcase-piper:
+	cd examples/showcase && ../../$(VENV)/slidesonnet build lecture.md --tts piper
 
 clean:
 	rm -rf .build/ dist/ *.egg-info/
