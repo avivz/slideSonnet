@@ -8,32 +8,40 @@
 
 \begin{frame}{The slideSonnet Pipeline}
   \begin{center}
-  \begin{tikzpicture}[
-    node distance=1.4cm,
-    box/.style={rectangle, draw, rounded corners, minimum height=1cm,
-                minimum width=2cm, fill=blue!10, font=\small},
-    arr/.style={-{Stealth[length=3mm]}, thick}
+  \begin{tikzpicture}[scale=0.7, every node/.style={scale=0.7},
+    node distance=1.0cm and 1.3cm,
+    box/.style={rectangle, draw, rounded corners, minimum height=0.8cm,
+                minimum width=1.6cm, align=center, font=\small},
+    src/.style={box, fill=teal!12},
+    proc/.style={box, fill=blue!10},
+    result/.style={box, fill=orange!15},
+    arr/.style={-{Stealth[length=3mm]}, thick},
+    note/.style={font=\scriptsize\itshape, text=gray}
   ]
-    \node[box] (src)    {Source};
-    \node[box, right=of src] (parse)  {Parse};
-    \node[box, right=of parse] (tts)   {TTS};
-    \node[box, right=of tts] (comp)  {Compose};
-    \node[box, right=of comp] (asm)   {Assemble};
-    \node[box, right=of asm] (mp4)   {MP4};
+    \node[src] (play) {Playlist};
+    \node[proc, right=of play] (parse) {Parse};
+    \node[proc, above right=0.7cm and 1.2cm of parse] (img) {Extract\\[-2pt]Images};
+    \node[proc, below right=0.7cm and 1.2cm of parse] (tts) {TTS};
+    \node[proc, right=3cm of parse] (comp) {Compose};
+    \node[proc, right=of comp] (cat) {Concat};
+    \node[result, right=of cat] (mp4) {\textbf{MP4}};
 
-    \draw[arr] (src) -- (parse);
+    \draw[arr] (play) -- (parse);
+    \draw[arr] (parse) -- (img);
     \draw[arr] (parse) -- (tts);
+    \draw[arr] (img) -- (comp);
     \draw[arr] (tts) -- (comp);
-    \draw[arr] (comp) -- (asm);
-    \draw[arr] (asm) -- (mp4);
+    \draw[arr] (comp) -- (cat);
+    \draw[arr] (cat) -- (mp4);
+
+    \node[note, above=2pt of img] {.md / .tex $\to$ PNGs};
+    \node[note, below=2pt of tts] {narration $\to$ audio};
+    \node[note, below=2pt of comp] {per slide};
+    \node[note, below=2pt of cat] {per module};
   \end{tikzpicture}
   \end{center}
 
-  \vspace{0.5cm}
-  Each module is parsed, narrated, and composed independently.\\
-  The final step assembles all modules into one video.
-
-  \say{This diagram shows the slideSonnet pipeline. Source files are parsed to extract slides and annotations. Each slide is sent to the TTS engine, then composed into a video segment. Finally, all segments are assembled into the output MP4.}
+  \say{This diagram shows the slideSonnet pipeline. The playlist is parsed to extract slides and narration. These fan out into two parallel paths: image extraction and speech synthesis. The compose step merges each slide image with its audio, then concat joins the segments per module into the final MP4.}
 \end{frame}
 
 \begin{frame}{LaTeX Math}
