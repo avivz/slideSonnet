@@ -10,11 +10,7 @@ theme: basel
 
 ### A story of an impossible sum, a young genius, and a surprise visit from $\pi$
 
-<!-- say: Today, I want to tell you one of my favorite stories in
-     mathematics. It's about a sum that stumped the greatest minds in
-     Europe for eighty-five years — until a young mathematician cracked
-     it with an argument so elegant, it still takes your breath away.
-     This is the Basel Problem. -->
+<!-- say: Today, I want to tell you about one of my favorite stories in mathematics: the Basel Problem — a sum that resisted solution for eighty-five years before a young mathematician finally cracked it with a beautifully simple idea. -->
 
 ---
 
