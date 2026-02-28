@@ -79,13 +79,14 @@ Omit the slide from the video entirely:
 
 ## Fragment animation
 
-MARP uses `*` (unordered) and `N)` (ordered) as fragment list markers — items that reveal incrementally in HTML presentations. slideSonnet supports this for video: a slide with **multiple `<!-- say -->` directives** is expanded into sub-slides, each showing one more fragment item than the last.
+MARP uses `*` (unordered) and `N)` (ordered) as fragment list markers — items that reveal incrementally in HTML presentations. slideSonnet supports this for video: a slide with N fragment items produces **1 + N sub-slides** — a bare state (no bullets visible) followed by progressive reveals.
 
 ### Basic example
 
 ```markdown
 # Key Concepts
 
+<!-- say: Let me walk you through some key concepts. -->
 * First concept
 <!-- say: Let's start with the first concept. -->
 * Second concept
@@ -94,28 +95,41 @@ MARP uses `*` (unordered) and `N)` (ordered) as fragment list markers — items 
 <!-- say: And finally the third. -->
 ```
 
-This produces 3 sub-slides in the video:
+This produces 4 sub-slides in the video:
 
 | Sub-slide | Visible items | Narration |
 |---|---|---|
-| 1 | First concept | "Let's start with the first concept." |
-| 2 | First concept, Second concept | "Now here's the second concept." |
-| 3 | First concept, Second concept, Third concept | "And finally the third." |
+| 1 | *(none — bare state)* | "Let me walk you through some key concepts." |
+| 2 | First concept | "Let's start with the first concept." |
+| 3 | First concept, Second concept | "Now here's the second concept." |
+| 4 | First concept, Second concept, Third concept | "And finally the third." |
 
-Fragment markers (`*` / `N)`) are converted to regular markers (`-` / `N.`) in the rendered images.
+Sub-slide 1 is the **bare state** — the slide heading and non-fragment content are visible, but no fragment items have appeared yet. This lets you introduce the slide before the first bullet reveals.
 
 ### Positional vs explicit targeting
 
-By default, says are **positional** — the first say targets sub-slide 1, the second targets sub-slide 2, and so on:
+By default, says are **positional** — the first say targets sub-slide 1 (bare state), the second targets sub-slide 2 (first reveal), and so on:
 
 ```markdown
+<!-- say: Here are two points. -->
 * Point A
-* Point B
 <!-- say: First point. -->
+* Point B
 <!-- say: Both points. -->
 ```
 
-Sub-slide 1 shows only Point A with "First point." Sub-slide 2 shows both points with "Both points."
+Sub-slide 1 is bare with "Here are two points." Sub-slide 2 shows Point A with "First point." Sub-slide 3 shows both with "Both points."
+
+If you don't need narration on the bare state, you can leave it unaddressed — any sub-slide without a matching say becomes silent:
+
+```markdown
+* Point A
+<!-- say: First point. -->
+* Point B
+<!-- say: Both points. -->
+```
+
+Here there are 2 fragments → 3 sub-slides, but only 2 says. Sub-slide 1 (bare) is silent, sub-slide 2 gets "First point.", sub-slide 3 gets "Both points."
 
 You can also **explicitly target** sub-slides using `slide=N` or a bare number:
 
@@ -123,11 +137,11 @@ You can also **explicitly target** sub-slides using `slide=N` or a bare number:
 * Point A
 * Point B
 * Point C
-<!-- say(slide=1): Here's point A. -->
-<!-- say(slide=3): Now all three points are visible. -->
+<!-- say(slide=1): Before any bullets appear. -->
+<!-- say(slide=4): Now all three points are visible. -->
 ```
 
-This creates 3 sub-slides. Sub-slide 2 has no say targeting it, so it becomes silent (with a warning).
+This creates 4 sub-slides (1 bare + 3 reveals). Sub-slides 2 and 3 have no say targeting them, so they become silent (with a warning).
 
 ### Syntax
 
@@ -144,13 +158,14 @@ This creates 3 sub-slides. Sub-slide 2 has no say targeting it, so it becomes si
 Ordered fragment lists use `N)` syntax:
 
 ```markdown
+<!-- say: Two steps to follow. -->
 1) First step
 <!-- say: Start here. -->
 2) Second step
 <!-- say: Then do this. -->
 ```
 
-These are rendered as `1.`, `2.` in the video images.
+These produce 3 sub-slides (1 bare + 2 reveals). Rendered items use `1.`, `2.` notation in the video images.
 
 ### Multiple fragment lists
 
@@ -158,6 +173,8 @@ A slide can have multiple fragment lists separated by non-fragment content. All 
 
 ```markdown
 # Two Lists
+
+<!-- say: Here are two groups of items. -->
 
 * A
 * B
@@ -175,22 +192,24 @@ This text is always visible.
 
 | Sub-slide | First list | Middle text | Second list |
 |---|---|---|---|
-| 1 | A | always visible | *(empty)* |
-| 2 | A, B | always visible | *(empty)* |
-| 3 | A, B | always visible | C |
-| 4 | A, B | always visible | C, D |
+| 1 | *(empty)* | always visible | *(empty)* |
+| 2 | A | always visible | *(empty)* |
+| 3 | A, B | always visible | *(empty)* |
+| 4 | A, B | always visible | C |
+| 5 | A, B | always visible | C, D |
 
 ### Rules
 
-- **Trigger**: a slide with multiple `<!-- say -->` directives expands into sub-slides
+- **Sub-slide count**: a fragment slide with N fragment items produces 1 + N sub-slides (1 bare + N reveals)
+- **Bare state**: sub-slide 1 shows all non-fragment content but no fragment items
 - **Fragment count**: `*` and `N)` items outside code blocks, numbered top-to-bottom
-- **Progressive reveal**: sub-slide k shows fragment items 1 through min(k, total fragments)
-- **Hidden items**: fragment items not yet revealed are removed entirely from the sub-slide
+- **Progressive reveal**: sub-slide k (for k ≥ 2) shows fragment items 1 through k−1
 - **Non-fragment content**: always visible on every sub-slide
 - **No fragments**: if a multi-say slide has no `*` / `N)` items, each sub-slide gets an identical image (useful for slides where the visual doesn't change but narration is split)
 - **Single say**: slides with one or zero says are never expanded (backward compatible)
 - **`<!-- skip -->` takes priority**: a skipped slide is never expanded, regardless of say count
 - **Multiple says targeting the same sub-slide**: narration text is concatenated
+- **Unaddressed sub-slides**: any sub-slide without a matching say becomes silent (with a warning)
 
 ## Code blocks
 

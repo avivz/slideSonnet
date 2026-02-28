@@ -44,6 +44,10 @@ _FENCE_RE = re.compile(
 # Parse key=value pairs from say(...) params
 _PARAM_RE = re.compile(r"(\w+)\s*=\s*(\w+)")
 
+# Fragment list markers (Marp animated items)
+_FRAGMENT_UL_RE = re.compile(r"^\s*\*\s", re.MULTILINE)
+_FRAGMENT_OL_RE = re.compile(r"^\s*\d+\)\s", re.MULTILINE)
+
 
 @dataclass
 class _SayCommand:
@@ -152,7 +156,16 @@ def _screenshot_presentation(html_path: Path, output_dir: Path, stem: str) -> li
         page.wait_for_load_state("networkidle")
         page.wait_for_selector("section[id]")
 
-        # Count total steps: each section is a slide, fragments add extra steps
+        # Hide Marp's bespoke.js navigation toolbar (osc) so it doesn't appear in screenshots.
+        page.evaluate("""() => {
+            const style = document.createElement('style');
+            style.textContent = 'bespoke-marp-osc, [data-bespoke-marp-osc],'
+                + ' .bespoke-marp-osc { display: none !important; }';
+            document.head.appendChild(style);
+        }""")
+
+        # Count total steps: each section is a slide, fragments add extra steps.
+        # A section with N fragments produces N+1 visual states (bare + N reveals).
         total_steps: int = page.evaluate("""() => {
             const sections = document.querySelectorAll('section[id]');
             let steps = 0;
@@ -281,12 +294,22 @@ def _parse_say_params(params_str: str) -> tuple[int, str | None, str | None]:
     return sub_slide, voice, pace
 
 
+def _count_fragments(text: str) -> int:
+    """Count fragment list items (``*`` and ``N)``) outside fenced code blocks."""
+    clean = _FENCE_RE.sub("", text)
+    return len(_FRAGMENT_UL_RE.findall(clean)) + len(_FRAGMENT_OL_RE.findall(clean))
+
+
 def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarration]:
     """Parse annotations from a single slide's text.
 
     Returns one ``SlideNarration`` per sub-slide.  Slides with multiple
     ``<!-- say -->`` directives are expanded into sub-slides; slides with
     zero or one say return a single-element list.
+
+    For slides with fragment items (``*`` / ``N)``), the sub-slide count is
+    at least ``1 + n_fragments`` to match the visual states produced by
+    Playwright (bare slide + each fragment reveal).
     """
     # Strip fenced code blocks so directives inside them are ignored
     clean_text = _FENCE_RE.sub("", text)
@@ -328,8 +351,11 @@ def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarrati
             _SayCommand(sub_slide=sub_slide, text=clean_narration, voice=voice, pace=pace)
         )
 
-    # Determine number of sub-slides
-    n_sub = max(cmd.sub_slide for cmd in say_commands)
+    # Determine number of sub-slides.
+    # For fragment slides, the visual state count is 1 (bare) + n_fragments.
+    n_say_sub = max(cmd.sub_slide for cmd in say_commands)
+    n_fragments = _count_fragments(text)
+    n_sub = max(n_say_sub, 1 + n_fragments) if n_fragments > 0 else n_say_sub
 
     # Build results — one SlideNarration per sub-slide
     results: list[SlideNarration] = []

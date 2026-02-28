@@ -72,18 +72,21 @@ def test_parse_unannotated(simple_md: Path, caplog: pytest.LogCaptureFixture) ->
 
 
 def test_parse_fragment_slide(simple_md: Path) -> None:
-    """Fragmented slide in fixture expands into 2 sub-slides."""
+    """Fragmented slide in fixture expands into 3 sub-slides (bare + 2 reveals)."""
     parser = MarpParser()
     slides = parser.parse(simple_md, Path("/tmp/build"))
 
-    # Slides 7-8: fragment slide expands to 2 sub-slides (indices 7, 8)
-    assert len(slides) == 8  # 6 single + 2 from fragment
+    # Fragment slide: 2 bullets → 3 sub-slides (bare, A revealed, A+B revealed)
+    # 2 says are positional: say 1 → bare, say 2 → A revealed; B revealed is silent
+    assert len(slides) == 9  # 6 single + 3 from fragment
     assert slides[6].annotation == SlideAnnotation.SAY
     assert slides[6].narration_raw == "Here is point A."
     assert slides[6].index == 7
     assert slides[7].annotation == SlideAnnotation.SAY
     assert slides[7].narration_raw == "And now point B."
     assert slides[7].index == 8
+    assert slides[8].annotation == SlideAnnotation.SILENT
+    assert slides[8].index == 9
 
 
 def test_multiline_say() -> None:
@@ -286,39 +289,55 @@ def test_has_narration_property() -> None:
 
 
 def test_parse_slide_positional_says() -> None:
-    """Multiple says without explicit targeting get positional indices."""
+    """Multiple says without explicit targeting get positional indices.
+
+    3 fragment items → 4 sub-slides (bare + 3 reveals).
+    3 positional says fill sub-slides 1–3; sub-slide 4 is silent.
+    """
     text = (
         "# Slide\n\n* A\n<!-- say: First -->\n* B\n<!-- say: Second -->\n* C\n<!-- say: Third -->"
     )
     result = _parse_slide(1, text, Path("test.md"))
-    assert len(result) == 3
+    assert len(result) == 4
     assert result[0].index == 1
     assert result[0].narration_raw == "First"
     assert result[1].index == 2
     assert result[1].narration_raw == "Second"
     assert result[2].index == 3
     assert result[2].narration_raw == "Third"
+    assert result[3].index == 4
+    assert result[3].annotation == SlideAnnotation.SILENT
 
 
 def test_parse_slide_explicit_targeting() -> None:
-    """Says with explicit slide= targeting."""
+    """Says with explicit slide= targeting.
+
+    2 fragment items → 3 sub-slides (bare + 2 reveals).
+    Only sub-slide 2 has a say; 1 and 3 are silent.
+    """
     text = "# Slide\n\n* A\n* B\n<!-- say(slide=2): Both points -->"
     result = _parse_slide(1, text, Path("test.md"))
-    assert len(result) == 2
-    assert result[0].annotation == SlideAnnotation.SILENT  # no say targets sub-slide 1
+    assert len(result) == 3
+    assert result[0].annotation == SlideAnnotation.SILENT  # bare state
     assert result[1].annotation == SlideAnnotation.SAY
     assert result[1].narration_raw == "Both points"
     assert result[1].index == 2
+    assert result[2].annotation == SlideAnnotation.SILENT  # both revealed, no say
 
 
 def test_parse_slide_explicit_bare_number() -> None:
-    """Say with bare number targeting: <!-- say(2): text -->."""
+    """Say with bare number targeting: <!-- say(2): text -->.
+
+    3 fragment items → 4 sub-slides (bare + 3 reveals).
+    Explicit says target sub-slides 1 and 3; sub-slides 2 and 4 are silent.
+    """
     text = "# Slide\n\n* A\n* B\n* C\n<!-- say(1): First -->\n<!-- say(3): All three -->"
     result = _parse_slide(1, text, Path("test.md"))
-    assert len(result) == 3
+    assert len(result) == 4
     assert result[0].narration_raw == "First"
     assert result[1].annotation == SlideAnnotation.SILENT
     assert result[2].narration_raw == "All three"
+    assert result[3].annotation == SlideAnnotation.SILENT
 
 
 def test_parse_slide_single_say_no_expansion() -> None:
@@ -361,11 +380,12 @@ def test_sequential_indices_across_slides(tmp_path: Path) -> None:
     )
     parser = MarpParser()
     slides = parser.parse(source, Path("/tmp/build"))
-    assert len(slides) == 4  # 1 + 2 (expanded) + 1
+    assert len(slides) == 5  # 1 + 3 (bare + 2 reveals) + 1
     assert slides[0].index == 1
     assert slides[1].index == 2
     assert slides[2].index == 3
     assert slides[3].index == 4
+    assert slides[4].index == 5
 
 
 def test_skip_overrides_multiple_says() -> None:
