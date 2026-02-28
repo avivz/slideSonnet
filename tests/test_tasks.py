@@ -13,9 +13,7 @@ from slidesonnet.actions import (
     action_assemble,
     action_compose_narrated,
     action_compose_silent,
-    action_concat,
     action_extract_images,
-    action_passthrough,
     action_tts,
     get_parser_and_extractor,
 )
@@ -114,7 +112,7 @@ def test_generates_correct_task_types(tmp_path):
     assert "extract_images" in basenames
     assert "tts" in basenames
     assert "compose" in basenames
-    assert "concat" in basenames
+    assert "concat" not in basenames
     assert "assemble" in basenames
 
 
@@ -204,8 +202,8 @@ def test_task_dependencies(tmp_path):
     assert len(narrated) == 2  # 2 narrated slides
 
 
-def test_video_passthrough_task(tmp_path):
-    """Video modules create passthrough tasks."""
+def test_video_passthrough_in_assemble(tmp_path):
+    """Video modules are referenced directly in assemble file_dep."""
     playlist = tmp_path / "lecture.md"
     playlist.write_text(
         textwrap.dedent("""\
@@ -223,9 +221,14 @@ def test_video_passthrough_task(tmp_path):
 
     tasks = _generate(tmp_path, playlist)
 
+    # No passthrough task
     passthrough = [t for t in tasks if t["name"].split(":")[0] == "passthrough"]
-    assert len(passthrough) == 1
-    assert str(anim_dir / "clip.mp4") in passthrough[0]["file_dep"]
+    assert len(passthrough) == 0
+
+    # Assemble depends directly on the source video
+    assemble = [t for t in tasks if t["name"] == "assemble"]
+    assert len(assemble) == 1
+    assert str(anim_dir / "clip.mp4") in assemble[0]["file_dep"]
 
 
 def test_uptodate_uses_text_content(tmp_path):
@@ -239,27 +242,15 @@ def test_uptodate_uses_text_content(tmp_path):
         assert len(t["uptodate"]) > 0
 
 
-def test_concat_depends_on_segments(tmp_path):
-    """Module concat task depends on all segment files."""
+def test_assemble_depends_on_segments(tmp_path):
+    """Final assembly depends on all segment files directly."""
     playlist = _setup_project(tmp_path)
     tasks = _generate(tmp_path, playlist)
 
-    concat_tasks = [t for t in tasks if t["name"].split(":")[0] == "concat"]
-    assert len(concat_tasks) == 1
-
-    # Should depend on segment files (3 slides - 0 skips = 3 segments)
-    # Slides: say, say, silent → 3 compose tasks → 3 segments
-    assert len(concat_tasks[0]["file_dep"]) == 3
-
-
-def test_assemble_depends_on_modules(tmp_path):
-    """Final assembly depends on module videos."""
-    playlist = _setup_project(tmp_path)
-    tasks = _generate(tmp_path, playlist)
-
-    assemble = [t for t in tasks if t["name"].split(":")[0] == "assemble"]
+    assemble = [t for t in tasks if t["name"] == "assemble"]
     assert len(assemble) == 1
-    assert len(assemble[0]["file_dep"]) == 1  # 1 module
+    # 3 slides (say, say, silent) → 3 segments
+    assert len(assemble[0]["file_dep"]) == 3
 
 
 def test_voice_preset_changes_cache_key(tmp_path):
@@ -389,30 +380,6 @@ def test_missing_backend_mapping_warns(tmp_path, caplog):
 
 
 # ---- Mocked unit tests for action functions and helpers ----
-
-
-class TestActionPassthrough:
-    """Tests for action_passthrough()."""
-
-    def test_copies_file(self, tmp_path: Path) -> None:
-        src = tmp_path / "input.mp4"
-        src.write_bytes(b"video-data")
-        out = tmp_path / "build" / "module.mp4"
-
-        action_passthrough(src, out)
-
-        assert out.exists()
-        assert out.read_bytes() == b"video-data"
-
-    def test_creates_output_dir(self, tmp_path: Path) -> None:
-        src = tmp_path / "input.mp4"
-        src.write_bytes(b"data")
-        out = tmp_path / "deep" / "nested" / "out.mp4"
-
-        action_passthrough(src, out)
-
-        assert out.parent.exists()
-        assert out.exists()
 
 
 class TestActionTTS:
@@ -599,56 +566,6 @@ class TestActionComposeSilent:
         assert called_image == Path(tmp_path / "slides" / "slide.002.png")
 
 
-class TestActionConcat:
-    """Tests for action_concat()."""
-
-    def _config(self, crossfade: float = 0.0) -> ProjectConfig:
-        return ProjectConfig(video=VideoConfig(crossfade=crossfade))
-
-    def test_single_segment_copies(self, tmp_path: Path) -> None:
-        seg = tmp_path / "seg.mp4"
-        seg.write_bytes(b"segment-data")
-        out = tmp_path / "out" / "module.mp4"
-
-        action_concat([seg], out, self._config())
-
-        assert out.read_bytes() == b"segment-data"
-
-    @patch("slidesonnet.actions.composer.concatenate_segments")
-    def test_multiple_segments_concatenates(self, mock_concat: MagicMock, tmp_path: Path) -> None:
-        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
-        out = tmp_path / "module.mp4"
-
-        action_concat(segs, out, self._config(crossfade=0.0))
-
-        mock_concat.assert_called_once_with(segs, out)
-
-    def test_empty_segments_raises(self, tmp_path: Path) -> None:
-        out = tmp_path / "module.mp4"
-
-        with pytest.raises(RuntimeError, match="No segments"):
-            action_concat([], out, self._config())
-
-    @patch("slidesonnet.actions.composer.concatenate_segments_xfade")
-    def test_crossfade_dispatches_xfade(self, mock_xfade: MagicMock, tmp_path: Path) -> None:
-        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
-        out = tmp_path / "module.mp4"
-        cfg = self._config(crossfade=0.5)
-
-        action_concat(segs, out, cfg)
-
-        mock_xfade.assert_called_once_with(segs, out, crossfade=0.5, crf=23)
-
-    @patch("slidesonnet.actions.composer.concatenate_segments")
-    def test_zero_crossfade_uses_concat(self, mock_concat: MagicMock, tmp_path: Path) -> None:
-        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
-        out = tmp_path / "module.mp4"
-
-        action_concat(segs, out, self._config(crossfade=0.0))
-
-        mock_concat.assert_called_once_with(segs, out)
-
-
 class TestActionAssemble:
     """Tests for action_assemble()."""
 
@@ -683,10 +600,10 @@ class TestActionAssemble:
 
         mock_xfade.assert_called_once_with(mods, out, crossfade=0.8, crf=23)
 
-    def test_empty_modules_raises(self, tmp_path: Path) -> None:
+    def test_empty_segments_raises(self, tmp_path: Path) -> None:
         out = tmp_path / "final.mp4"
 
-        with pytest.raises(RuntimeError, match="No module videos"):
+        with pytest.raises(RuntimeError, match="No segments"):
             action_assemble([], out, self._config())
 
 
@@ -764,34 +681,33 @@ def test_mixed_type_playlist(tmp_path):
     #   02-theory/slides.tex → "03_slides"
     # Use the sequence prefix to distinguish modules with the same stem.
 
-    # -- Module 1 (MARP): extract_images, tts, compose, concat --
+    # -- Module 1 (MARP): extract_images, tts, compose --
     assert "extract_images:01_slides" in task_names
     marp_tts = [n for n in task_names if n.startswith("tts:01_slides")]
     assert len(marp_tts) == 1  # only slide 1 is narrated
     marp_compose = [n for n in task_names if n.startswith("compose:01_slides")]
     assert len(marp_compose) == 2  # narrated + silent (not skipped)
-    assert "concat:01_slides" in task_names
 
-    # -- Module 2 (video): passthrough only, no parse/tts/compose --
-    passthrough = [n for n in task_names if n.startswith("passthrough:")]
-    assert len(passthrough) == 1
-    assert passthrough[0] == "passthrough:02_clip"
+    # -- Module 2 (video): no tasks, referenced directly in assemble --
     assert not any(
-        n.startswith(("extract_images:02_", "tts:02_", "compose:02_")) for n in task_names
+        n.startswith(("passthrough:", "extract_images:02_", "tts:02_", "compose:02_"))
+        for n in task_names
     )
 
-    # -- Module 3 (Beamer): extract_images, tts, compose, concat --
+    # -- Module 3 (Beamer): extract_images, tts, compose --
     assert "extract_images:03_slides" in task_names
     beamer_tts = [n for n in task_names if n.startswith("tts:03_slides")]
     assert len(beamer_tts) == 1  # only frame 1 is narrated
     beamer_compose = [n for n in task_names if n.startswith("compose:03_slides")]
     assert len(beamer_compose) == 2  # narrated + silent
-    assert "concat:03_slides" in task_names
 
-    # -- Final assemble depends on all 3 module videos --
+    # -- Final assemble depends on all segments + passthrough source --
+    # 2 (MARP) + 1 (video passthrough) + 2 (Beamer) = 5
     assemble = [t for t in tasks if t["name"] == "assemble"]
     assert len(assemble) == 1
-    assert len(assemble[0]["file_dep"]) == 3
+    assert len(assemble[0]["file_dep"]) == 5
+    # Passthrough video source is included directly
+    assert str(tmp_path / "animations" / "clip.mp4") in assemble[0]["file_dep"]
 
 
 class TestGetParserAndExtractor:

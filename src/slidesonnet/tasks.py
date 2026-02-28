@@ -4,10 +4,10 @@ Text parsing is done eagerly (fast). Image extraction, TTS synthesis,
 video composition, and assembly are generated as doit tasks for
 incremental builds and parallel execution.
 
-Task graph per module:
+Task graph:
     extract_images → compose (per slide)
     tts (per slide) → compose (per slide)
-    compose (all) → concat → assemble
+    compose (all slides, all modules) → assemble
 """
 
 from __future__ import annotations
@@ -23,9 +23,7 @@ from slidesonnet.actions import (
     action_assemble,
     action_compose_narrated,
     action_compose_silent,
-    action_concat,
     action_extract_images,
-    action_passthrough,
     action_tts,
     get_parser_and_extractor,
 )
@@ -54,26 +52,16 @@ def generate_tasks(
     the "group:subtask" format for subtasks.
     """
     audio_cache_dir = build_dir / "audio"
-    module_videos: list[Path] = []
+    all_segments: list[Path] = []
     all_tasks: list[dict[str, Any]] = []
 
     for i, entry in enumerate(entries, start=1):
         source_path = playlist_dir / entry.path
         module_dir = build_dir / entry.path.parent / entry.path.stem
-        module_output = module_dir / "module.mp4"
-        module_videos.append(module_output)
         module_name = f"{i:02d}_{entry.path.stem}"
 
         if entry.module_type == ModuleType.VIDEO:
-            all_tasks.append(
-                {
-                    "name": f"passthrough:{module_name}",
-                    "actions": [(action_passthrough, [source_path, module_output])],
-                    "file_dep": [str(source_path)],
-                    "targets": [str(module_output)],
-                    "verbosity": 2,
-                }
-            )
+            all_segments.append(source_path)
             continue
 
         # Get parser and extract function
@@ -226,24 +214,14 @@ def generate_tasks(
                     }
                 )
 
-        # Task: module concat
-        all_tasks.append(
-            {
-                "name": f"concat:{module_name}",
-                "actions": [(action_concat, [segment_paths, module_output, config])],
-                "file_dep": [str(p) for p in segment_paths],
-                "targets": [str(module_output)],
-                "uptodate": [config_changed({"crossfade": config.video.crossfade})],
-                "verbosity": 2,
-            }
-        )
+        all_segments.extend(segment_paths)
 
-    # Task: final assembly
+    # Task: final assembly (directly from all per-slide segments)
     all_tasks.append(
         {
             "name": "assemble",
-            "actions": [(action_assemble, [module_videos, output_path, config])],
-            "file_dep": [str(p) for p in module_videos],
+            "actions": [(action_assemble, [all_segments, output_path, config])],
+            "file_dep": [str(p) for p in all_segments],
             "targets": [str(output_path)],
             "uptodate": [config_changed({"crossfade": config.video.crossfade})],
             "verbosity": 2,

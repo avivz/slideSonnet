@@ -94,14 +94,8 @@ def test_showcase_builds(tmp_path: Path) -> None:
     duration = float(info["format"]["duration"])  # type: ignore[index]
     assert duration > 10, f"output too short ({duration:.1f}s) — likely incomplete"
 
-    # --- All four modules produced videos ---
-    build_dir = project / ".build"
-    module_videos = sorted(build_dir.rglob("module.mp4"))
-    assert len(module_videos) == 4, (
-        f"expected 4 module videos, got {len(module_videos)}: {module_videos}"
-    )
-
     # --- Per-module segment counts (narrated + silent slides, excluding skip) ---
+    build_dir = project / ".build"
     # 01_part1 (MARP): 8 narrated (1 skip excluded) = 8 segments
     # 02_part2 (Beamer): 3 narrated + 1 silent = 4 segments
     # 03_transition (video passthrough, no segments)

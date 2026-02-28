@@ -20,12 +20,6 @@ from slidesonnet.video import composer
 logger = logging.getLogger(__name__)
 
 
-def action_passthrough(source: Path, output: Path) -> None:
-    """Copy a video file as-is."""
-    output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, output)
-
-
 def action_extract_images(
     source: Path,
     slides_dir: Path,
@@ -106,18 +100,11 @@ def action_compose_silent(
     )
 
 
-def action_concat(segments: list[Path], output: Path, config: ProjectConfig) -> None:
-    """Concatenate segments into a module video."""
+def action_assemble(segments: list[Path], output: Path, config: ProjectConfig) -> None:
+    """Assemble all segments into final output."""
     if not segments:
-        raise RuntimeError("No segments to concatenate — all slides may have been skipped.")
+        raise RuntimeError("No segments to assemble — the playlist may be empty.")
     _merge_videos(segments, output, config)
-
-
-def action_assemble(module_videos: list[Path], output: Path, config: ProjectConfig) -> None:
-    """Assemble module videos into final output."""
-    if not module_videos:
-        raise RuntimeError("No module videos to assemble — the playlist may be empty.")
-    _merge_videos(module_videos, output, config)
 
 
 def _merge_videos(inputs: list[Path], output: Path, config: ProjectConfig) -> None:
