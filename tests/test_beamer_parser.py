@@ -143,7 +143,7 @@ def test_strip_latex_deeply_nested():
 
 
 def test_empty_say_warns(caplog):
-    slides = _parse_frame(1, r"\say{}", Path("test.tex"))
+    slides, _ = _parse_frame(1, r"\say{}", Path("test.tex"), 1)
     assert len(slides) == 1
     assert slides[0].annotation == SlideAnnotation.SILENT
     assert "did you mean" in caplog.text
@@ -366,12 +366,15 @@ class TestOverlayParsing:
         Second point.
         \say[2]{Second sub-slide narration.}
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, n_vis = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
+        assert n_vis == 2  # 1 pause → 2 PDF pages
         assert slides[0].index == 1
+        assert slides[0].image_index == 1
         assert slides[0].annotation == SlideAnnotation.SAY
         assert "First sub-slide" in slides[0].narration_raw
         assert slides[1].index == 2
+        assert slides[1].image_index == 2
         assert slides[1].annotation == SlideAnnotation.SAY
         assert "Second sub-slide" in slides[1].narration_raw
 
@@ -382,7 +385,7 @@ class TestOverlayParsing:
         \pause
         \say[2]{Second.}
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
         assert slides[1].narration_raw == "Second."
 
@@ -393,7 +396,7 @@ class TestOverlayParsing:
         \pause
         \say[slide=2]{Second.}
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
         assert slides[1].narration_raw == "Second."
 
@@ -404,7 +407,7 @@ class TestOverlayParsing:
         \pause
         \say[2, voice=alice]{Alice speaks.}
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
         assert slides[1].voice == "alice"
         assert slides[1].narration_raw == "Alice speaks."
@@ -416,7 +419,7 @@ class TestOverlayParsing:
         \pause
         Nothing for second.
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
         assert slides[0].annotation == SlideAnnotation.SAY
         assert slides[1].annotation == SlideAnnotation.SILENT
@@ -429,11 +432,14 @@ class TestOverlayParsing:
         \say[3]{Third.}
         """
         # No \pause → n_sub would be 1, but \say[3] extends to 3
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, n_vis = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 3
+        assert n_vis == 1  # actual PDF pages: 0 pauses → 1 page
         assert slides[0].annotation == SlideAnnotation.SAY
         assert slides[1].annotation == SlideAnnotation.SILENT
         assert slides[2].annotation == SlideAnnotation.SAY
+        # Extended sub-slides clamp to last available image
+        assert slides[2].image_index == 1
         assert "extending" in caplog.text
 
     def test_backward_compat_no_pause_multiple_say_concatenate(self) -> None:
@@ -442,7 +448,7 @@ class TestOverlayParsing:
         \say{First sentence.}
         \say{Second sentence.}
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
         assert slides[0].annotation == SlideAnnotation.SAY
         assert "First sentence." in slides[0].narration_raw
@@ -455,7 +461,7 @@ class TestOverlayParsing:
         \pause
         Content.
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
         assert all(s.annotation == SlideAnnotation.SKIP for s in slides)
 
@@ -466,7 +472,7 @@ class TestOverlayParsing:
         \pause
         Content.
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
         assert all(s.annotation == SlideAnnotation.SILENT for s in slides)
 
@@ -505,7 +511,7 @@ class TestOverlayParsing:
         \pause
         \say[slide=3]{Third.}
         """
-        slides = _parse_frame(1, text, Path("test.tex"))
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 3
         assert all(s.annotation == SlideAnnotation.SAY for s in slides)
         assert slides[0].narration_raw == "First."

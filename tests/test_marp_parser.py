@@ -103,7 +103,7 @@ def test_multiline_say() -> None:
              in the source file. -->
     """)
     slides = _split_slides(text)
-    [slide] = _parse_slide(1, slides[0], Path("test.md"))
+    [slide], _ = _parse_slide(1, slides[0], Path("test.md"), 1)
     assert slide.annotation == SlideAnnotation.SAY
     assert "long narration" in slide.narration_raw
     assert "multiple lines" in slide.narration_raw
@@ -112,7 +112,7 @@ def test_multiline_say() -> None:
 
 
 def test_multiple_say_blocks() -> None:
-    """Two says produce two sub-slides with sequential indices."""
+    """Two says produce two sub-slides with sequential indices but same image_index."""
     text = textwrap.dedent("""\
         ---
         marp: true
@@ -127,14 +127,17 @@ def test_multiple_say_blocks() -> None:
         <!-- say: Second paragraph. -->
     """)
     slides = _split_slides(text)
-    result = _parse_slide(1, slides[0], Path("test.md"))
+    result, n_vis = _parse_slide(1, slides[0], Path("test.md"), 1)
     assert len(result) == 2
+    assert n_vis == 1  # no fragments → 1 visual state
     assert result[0].annotation == SlideAnnotation.SAY
     assert result[0].narration_raw == "First paragraph."
     assert result[0].index == 1
+    assert result[0].image_index == 1
     assert result[1].annotation == SlideAnnotation.SAY
     assert result[1].narration_raw == "Second paragraph."
     assert result[1].index == 2
+    assert result[1].image_index == 1  # same image — no fragments
 
 
 def test_triple_dash_inside_code_fence_not_a_separator() -> None:
@@ -199,7 +202,7 @@ def test_say_inside_code_fence_ignored() -> None:
 
         <!-- say: Real narration outside the fence. -->
     """)
-    [slide] = _parse_slide(1, slide_text, Path("test.md"))
+    [slide], _ = _parse_slide(1, slide_text, Path("test.md"), 1)
     assert slide.annotation == SlideAnnotation.SAY
     assert "Real narration" in slide.narration_raw
     assert "example code" not in slide.narration_raw
@@ -216,7 +219,7 @@ def test_silent_inside_code_fence_ignored() -> None:
 
         <!-- say: This slide is narrated. -->
     """)
-    [slide] = _parse_slide(1, slide_text, Path("test.md"))
+    [slide], _ = _parse_slide(1, slide_text, Path("test.md"), 1)
     assert slide.annotation == SlideAnnotation.SAY
     assert "narrated" in slide.narration_raw
 
@@ -232,7 +235,7 @@ def test_skip_inside_code_fence_ignored() -> None:
 
         <!-- say: Not skipped. -->
     """)
-    [slide] = _parse_slide(1, slide_text, Path("test.md"))
+    [slide], _ = _parse_slide(1, slide_text, Path("test.md"), 1)
     assert slide.annotation == SlideAnnotation.SAY
     assert "Not skipped" in slide.narration_raw
 
@@ -246,7 +249,7 @@ def test_only_say_inside_code_fence_no_annotation(caplog: pytest.LogCaptureFixtu
         <!-- say: This is inside a code block. -->
         ```
     """)
-    [slide] = _parse_slide(1, slide_text, Path("test.md"))
+    [slide], _ = _parse_slide(1, slide_text, Path("test.md"), 1)
     assert slide.annotation == SlideAnnotation.NONE
     assert "no annotation" in caplog.text
 
@@ -264,14 +267,14 @@ def test_regular_comment_ignored() -> None:
         <!-- say: Actual narration. -->
     """)
     slides = _split_slides(text)
-    [slide] = _parse_slide(1, slides[0], Path("test.md"))
+    [slide], _ = _parse_slide(1, slides[0], Path("test.md"), 1)
     assert slide.annotation == SlideAnnotation.SAY
     assert "Actual narration." in slide.narration_raw
     assert "regular comment" not in slide.narration_raw
 
 
 def test_empty_say_warns(caplog: pytest.LogCaptureFixture) -> None:
-    [slide] = _parse_slide(1, "<!-- say: -->", Path("test.md"))
+    [slide], _ = _parse_slide(1, "<!-- say: -->", Path("test.md"), 1)
     assert slide.annotation == SlideAnnotation.SILENT
     assert "did you mean <!-- silent -->" in caplog.text
 
@@ -298,16 +301,21 @@ def test_parse_slide_positional_says() -> None:
     text = (
         "# Slide\n\n* A\n<!-- say: First -->\n* B\n<!-- say: Second -->\n* C\n<!-- say: Third -->"
     )
-    result = _parse_slide(1, text, Path("test.md"))
+    result, n_vis = _parse_slide(1, text, Path("test.md"), 1)
     assert len(result) == 4
+    assert n_vis == 4  # 1 + 3 fragments
     assert result[0].index == 1
     assert result[0].narration_raw == "First"
+    assert result[0].image_index == 1
     assert result[1].index == 2
     assert result[1].narration_raw == "Second"
+    assert result[1].image_index == 2
     assert result[2].index == 3
     assert result[2].narration_raw == "Third"
+    assert result[2].image_index == 3
     assert result[3].index == 4
     assert result[3].annotation == SlideAnnotation.SILENT
+    assert result[3].image_index == 4
 
 
 def test_parse_slide_explicit_targeting() -> None:
@@ -317,8 +325,9 @@ def test_parse_slide_explicit_targeting() -> None:
     Only sub-slide 2 has a say; 1 and 3 are silent.
     """
     text = "# Slide\n\n* A\n* B\n<!-- say(slide=2): Both points -->"
-    result = _parse_slide(1, text, Path("test.md"))
+    result, n_vis = _parse_slide(1, text, Path("test.md"), 1)
     assert len(result) == 3
+    assert n_vis == 3  # 1 + 2 fragments
     assert result[0].annotation == SlideAnnotation.SILENT  # bare state
     assert result[1].annotation == SlideAnnotation.SAY
     assert result[1].narration_raw == "Both points"
@@ -333,7 +342,7 @@ def test_parse_slide_explicit_bare_number() -> None:
     Explicit says target sub-slides 1 and 3; sub-slides 2 and 4 are silent.
     """
     text = "# Slide\n\n* A\n* B\n* C\n<!-- say(1): First -->\n<!-- say(3): All three -->"
-    result = _parse_slide(1, text, Path("test.md"))
+    result, _ = _parse_slide(1, text, Path("test.md"), 1)
     assert len(result) == 4
     assert result[0].narration_raw == "First"
     assert result[1].annotation == SlideAnnotation.SILENT
@@ -344,7 +353,7 @@ def test_parse_slide_explicit_bare_number() -> None:
 def test_parse_slide_single_say_no_expansion() -> None:
     """Single say returns single-element list (backward compat)."""
     text = "# Slide\n\n- Regular bullet\n\n<!-- say: Just one say. -->"
-    result = _parse_slide(1, text, Path("test.md"))
+    result, _ = _parse_slide(1, text, Path("test.md"), 1)
     assert len(result) == 1
     assert result[0].narration_raw == "Just one say."
     assert result[0].index == 1
@@ -392,7 +401,7 @@ def test_sequential_indices_across_slides(tmp_path: Path) -> None:
 def test_skip_overrides_multiple_says() -> None:
     """Skip annotation takes priority over multiple says."""
     text = "<!-- skip -->\n<!-- say: First -->\n<!-- say: Second -->"
-    result = _parse_slide(1, text, Path("test.md"))
+    result, _ = _parse_slide(1, text, Path("test.md"), 1)
     assert len(result) == 1
     assert result[0].annotation == SlideAnnotation.SKIP
 
@@ -400,12 +409,15 @@ def test_skip_overrides_multiple_says() -> None:
 def test_parse_slide_voice_pace_in_multi_say() -> None:
     """Voice and pace from says are preserved in multi-say expansion."""
     text = "<!-- say(voice=alice): First -->\n<!-- say(voice=bob, pace=slow): Second -->"
-    result = _parse_slide(1, text, Path("test.md"))
+    result, n_vis = _parse_slide(1, text, Path("test.md"), 1)
     assert len(result) == 2
+    assert n_vis == 1  # no fragments → both says share same image
     assert result[0].voice == "alice"
     assert result[0].pace is None
+    assert result[0].image_index == 1
     assert result[1].voice == "bob"
     assert result[1].pace == "slow"
+    assert result[1].image_index == 1  # same image — no fragments
 
 
 # ---- Mocked tests for extract_images ----
@@ -581,8 +593,12 @@ class TestOverflowDetection:
         with caplog.at_level(logging.WARNING):
             _screenshot_presentation(html_path, tmp_path, "lecture")
 
-        assert "lecture slide 2: content overflows by 120px (1200px > 1080px viewport)" in caplog.text
-        assert "lecture slide 5: content overflows by 270px (1350px > 1080px viewport)" in caplog.text
+        assert (
+            "lecture slide 2: content overflows by 120px (1200px > 1080px viewport)" in caplog.text
+        )
+        assert (
+            "lecture slide 5: content overflows by 270px (1350px > 1080px viewport)" in caplog.text
+        )
 
     @patch("slidesonnet.parsers.marp._ensure_chromium")
     @patch("slidesonnet.parsers.marp._import_sync_playwright")

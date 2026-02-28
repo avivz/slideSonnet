@@ -37,6 +37,7 @@ class SlideNarration:
     """Parsed data for a single slide."""
 
     index: int  # 1-based slide number within the module
+    image_index: int = 0  # 1-based index into image manifest (0 = default to index)
     image_path: Path | None = None
     annotation: SlideAnnotation = SlideAnnotation.NONE
     narration_raw: str = ""
@@ -46,6 +47,10 @@ class SlideNarration:
     duration_seconds: float = 0.0
     voice: str | None = None  # named voice preset, None = default
     pace: str | None = None  # slow / normal / fast
+
+    def __post_init__(self) -> None:
+        if self.image_index == 0:
+            self.image_index = self.index
 
     @property
     def has_narration(self) -> bool:

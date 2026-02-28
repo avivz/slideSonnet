@@ -45,11 +45,15 @@ class BeamerParser(SlideParser):
         frames = _extract_frames(text)
         slides: list[SlideNarration] = []
         next_index = 1
+        next_image_index = 1
 
         for frame_text in frames:
-            frame_slides = _parse_frame(next_index, frame_text, source)
+            frame_slides, n_visual_states = _parse_frame(
+                next_index, frame_text, source, next_image_index
+            )
             slides.extend(frame_slides)
             next_index += len(frame_slides)
+            next_image_index += n_visual_states
 
         return slides
 
@@ -161,29 +165,49 @@ def _count_pauses(text: str) -> int:
     return len(_PAUSE_RE.findall(text))
 
 
-def _parse_frame(start_index: int, text: str, source: Path) -> list[SlideNarration]:
+def _parse_frame(
+    start_index: int, text: str, source: Path, start_image_index: int = 1
+) -> tuple[list[SlideNarration], int]:
     """Parse narration annotations from a single frame.
 
-    Returns one SlideNarration per sub-slide (PDF page) the frame produces.
+    Returns a tuple of (slides, n_visual_states).  ``n_visual_states`` is
+    the number of PDF pages this frame produces (``1 + n_pauses``), used
+    to advance the image index counter.
+
     Frames with ``\\pause`` produce multiple sub-slides.
     """
     n_pauses = _count_pauses(text)
-    n_sub = n_pauses + 1
+    n_visual_states = n_pauses + 1
+    n_sub = n_visual_states
 
     # Check for \skip — applies to all sub-slides
     if _SKIP_RE.search(text):
-        return [
-            SlideNarration(index=start_index + i, annotation=SlideAnnotation.SKIP)
-            for i in range(n_sub)
-        ]
+        return (
+            [
+                SlideNarration(
+                    index=start_index + i,
+                    image_index=start_image_index + i,
+                    annotation=SlideAnnotation.SKIP,
+                )
+                for i in range(n_sub)
+            ],
+            n_visual_states,
+        )
 
     # Check for \silent (without any \say) — applies to all sub-slides
     say_matches = _find_say_commands(text)
     if _SILENT_RE.search(text) and not say_matches:
-        return [
-            SlideNarration(index=start_index + i, annotation=SlideAnnotation.SILENT)
-            for i in range(n_sub)
-        ]
+        return (
+            [
+                SlideNarration(
+                    index=start_index + i,
+                    image_index=start_image_index + i,
+                    annotation=SlideAnnotation.SILENT,
+                )
+                for i in range(n_sub)
+            ],
+            n_visual_states,
+        )
 
     if not say_matches:
         # No annotation at all
@@ -192,10 +216,17 @@ def _parse_frame(start_index: int, text: str, source: Path) -> list[SlideNarrati
             source,
             start_index,
         )
-        return [
-            SlideNarration(index=start_index + i, annotation=SlideAnnotation.NONE)
-            for i in range(n_sub)
-        ]
+        return (
+            [
+                SlideNarration(
+                    index=start_index + i,
+                    image_index=start_image_index + i,
+                    annotation=SlideAnnotation.NONE,
+                )
+                for i in range(n_sub)
+            ],
+            n_visual_states,
+        )
 
     # Parse all \say commands with their sub-slide targets
     say_commands: list[_SayCommand] = []
@@ -227,6 +258,7 @@ def _parse_frame(start_index: int, text: str, source: Path) -> list[SlideNarrati
     for sub_idx in range(1, n_sub + 1):
         group = [cmd for cmd in say_commands if cmd.sub_slide == sub_idx]
         slide_index = start_index + sub_idx - 1
+        img_idx = start_image_index + min(sub_idx - 1, n_visual_states - 1)
 
         if not group:
             # No narration for this sub-slide
@@ -237,7 +269,11 @@ def _parse_frame(start_index: int, text: str, source: Path) -> list[SlideNarrati
                     start_index,
                     sub_idx,
                 )
-            results.append(SlideNarration(index=slide_index, annotation=SlideAnnotation.SILENT))
+            results.append(
+                SlideNarration(
+                    index=slide_index, image_index=img_idx, annotation=SlideAnnotation.SILENT
+                )
+            )
             continue
 
         narration_parts = [cmd.text for cmd in group]
@@ -258,12 +294,17 @@ def _parse_frame(start_index: int, text: str, source: Path) -> list[SlideNarrati
                 source,
                 start_index,
             )
-            results.append(SlideNarration(index=slide_index, annotation=SlideAnnotation.SILENT))
+            results.append(
+                SlideNarration(
+                    index=slide_index, image_index=img_idx, annotation=SlideAnnotation.SILENT
+                )
+            )
             continue
 
         results.append(
             SlideNarration(
                 index=slide_index,
+                image_index=img_idx,
                 annotation=SlideAnnotation.SAY,
                 narration_raw=full_narration,
                 voice=group_voice,
@@ -271,7 +312,7 @@ def _parse_frame(start_index: int, text: str, source: Path) -> list[SlideNarrati
             )
         )
 
-    return results
+    return results, n_visual_states
 
 
 def _find_say_commands(text: str) -> list[tuple[str, str]]:

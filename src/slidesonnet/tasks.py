@@ -179,7 +179,7 @@ def generate_tasks(
                                 action_compose_narrated,
                                 [
                                     manifest_path,
-                                    slide.index,
+                                    slide.image_index,
                                     slide.audio_path,
                                     seg_path,
                                     config,
@@ -201,7 +201,7 @@ def generate_tasks(
                                 action_compose_silent,
                                 [
                                     manifest_path,
-                                    slide.index,
+                                    slide.image_index,
                                     seg_path,
                                     config,
                                 ],

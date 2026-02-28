@@ -65,11 +65,13 @@ class MarpParser(SlideParser):
         raw_slides = _split_slides(text)
         slides: list[SlideNarration] = []
         next_index = 1
+        next_image_index = 1
 
         for slide_text in raw_slides:
-            parsed = _parse_slide(next_index, slide_text, source)
+            parsed, n_visual_states = _parse_slide(next_index, slide_text, source, next_image_index)
             slides.extend(parsed)
             next_index += len(parsed)
+            next_image_index += n_visual_states
 
         return slides
 
@@ -326,12 +328,17 @@ def _count_fragments(text: str) -> int:
     return len(_FRAGMENT_UL_RE.findall(clean)) + len(_FRAGMENT_OL_RE.findall(clean))
 
 
-def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarration]:
+def _parse_slide(
+    start_index: int, text: str, source: Path, start_image_index: int = 1
+) -> tuple[list[SlideNarration], int]:
     """Parse annotations from a single slide's text.
 
-    Returns one ``SlideNarration`` per sub-slide.  Slides with multiple
-    ``<!-- say -->`` directives are expanded into sub-slides; slides with
-    zero or one say return a single-element list.
+    Returns a tuple of (slides, n_visual_states).  ``n_visual_states`` is
+    the number of images the extractor produces for this visual slide
+    (``1 + n_fragments``), used to advance the image index counter.
+
+    Slides with multiple ``<!-- say -->`` directives are expanded into
+    sub-slides; slides with zero or one say return a single-element list.
 
     For slides with fragment items (``*`` / ``N)``), the sub-slide count is
     at least ``1 + n_fragments`` to match the visual states produced by
@@ -340,14 +347,36 @@ def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarrati
     # Strip fenced code blocks so directives inside them are ignored
     clean_text = _FENCE_RE.sub("", text)
 
+    # Compute visual states early — needed for image_index on all paths
+    n_fragments = _count_fragments(text)
+    n_visual_states = 1 + n_fragments
+
     # Check for <!-- skip --> — takes priority over everything
     if _SKIP_RE.search(clean_text):
-        return [SlideNarration(index=start_index, annotation=SlideAnnotation.SKIP)]
+        return (
+            [
+                SlideNarration(
+                    index=start_index,
+                    image_index=start_image_index,
+                    annotation=SlideAnnotation.SKIP,
+                )
+            ],
+            n_visual_states,
+        )
 
     # Check for <!-- silent --> (without any say)
     say_matches = _SAY_RE.findall(clean_text)
     if _SILENT_RE.search(clean_text) and not say_matches:
-        return [SlideNarration(index=start_index, annotation=SlideAnnotation.SILENT)]
+        return (
+            [
+                SlideNarration(
+                    index=start_index,
+                    image_index=start_image_index,
+                    annotation=SlideAnnotation.SILENT,
+                )
+            ],
+            n_visual_states,
+        )
 
     if not say_matches:
         # No annotation at all — warn
@@ -356,7 +385,16 @@ def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarrati
             source,
             start_index,
         )
-        return [SlideNarration(index=start_index, annotation=SlideAnnotation.NONE)]
+        return (
+            [
+                SlideNarration(
+                    index=start_index,
+                    image_index=start_image_index,
+                    annotation=SlideAnnotation.NONE,
+                )
+            ],
+            n_visual_states,
+        )
 
     # --- Expand says into sub-slides ---
     # Check if any say has an explicit slide target
@@ -380,14 +418,14 @@ def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarrati
     # Determine number of sub-slides.
     # For fragment slides, the visual state count is 1 (bare) + n_fragments.
     n_say_sub = max(cmd.sub_slide for cmd in say_commands)
-    n_fragments = _count_fragments(text)
-    n_sub = max(n_say_sub, 1 + n_fragments) if n_fragments > 0 else n_say_sub
+    n_sub = max(n_say_sub, n_visual_states) if n_fragments > 0 else n_say_sub
 
     # Build results — one SlideNarration per sub-slide
     results: list[SlideNarration] = []
     for sub_idx in range(1, n_sub + 1):
         group = [cmd for cmd in say_commands if cmd.sub_slide == sub_idx]
         slide_index = start_index + sub_idx - 1
+        img_idx = start_image_index + min(sub_idx - 1, n_visual_states - 1)
 
         if not group:
             logger.warning(
@@ -396,7 +434,11 @@ def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarrati
                 start_index,
                 sub_idx,
             )
-            results.append(SlideNarration(index=slide_index, annotation=SlideAnnotation.SILENT))
+            results.append(
+                SlideNarration(
+                    index=slide_index, image_index=img_idx, annotation=SlideAnnotation.SILENT
+                )
+            )
             continue
 
         narration_parts = [cmd.text for cmd in group]
@@ -417,12 +459,17 @@ def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarrati
                 source,
                 start_index,
             )
-            results.append(SlideNarration(index=slide_index, annotation=SlideAnnotation.SILENT))
+            results.append(
+                SlideNarration(
+                    index=slide_index, image_index=img_idx, annotation=SlideAnnotation.SILENT
+                )
+            )
             continue
 
         results.append(
             SlideNarration(
                 index=slide_index,
+                image_index=img_idx,
                 annotation=SlideAnnotation.SAY,
                 narration_raw=full_narration,
                 voice=group_voice,
@@ -430,4 +477,4 @@ def _parse_slide(start_index: int, text: str, source: Path) -> list[SlideNarrati
             )
         )
 
-    return results
+    return results, n_visual_states

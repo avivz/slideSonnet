@@ -379,6 +379,59 @@ def test_missing_backend_mapping_warns(tmp_path, caplog):
     assert action_args[4] is None  # voice parameter
 
 
+def test_compose_uses_image_index_for_multi_say(tmp_path: Path) -> None:
+    """Compose tasks use image_index (not index) for multi-say slides."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    # Slide 1: two says, no fragments → both narration entries share image 1
+    # Slide 2: single say → uses image 2
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide One
+
+        <!-- say(voice=alice): First voice. -->
+
+        <!-- say(voice=bob): Second voice. -->
+
+        ---
+
+        # Slide Two
+
+        <!-- say: Third. -->
+    """)
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    compose_tasks = [t for t in tasks if t["name"].split(":")[0] == "compose"]
+    assert len(compose_tasks) == 3  # 2 narrated + 0 silent (from multi-say) + 1 narrated
+
+    # Extract the slide_index arg passed to compose actions
+    compose_image_indices = []
+    for ct in compose_tasks:
+        action_tuple = ct["actions"][0]
+        # action_tuple is (fn, [manifest, slide_index, ...])
+        args = action_tuple[1]
+        compose_image_indices.append(args[1])  # slide_index arg
+
+    # Both multi-say sub-slides should reference image 1, then slide 2 → image 2
+    assert compose_image_indices == [1, 1, 2]
+
+
 # ---- Mocked unit tests for action functions and helpers ----
 
 
