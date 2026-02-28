@@ -106,13 +106,14 @@ def generate_tasks(
         manifest_path = slides_dir / "manifest.json"
 
         # Task: extract images
+        css_deps = sorted(str(p) for p in source_path.parent.glob("*.css"))
         all_tasks.append(
             {
                 "name": f"extract_images:{module_name}",
                 "actions": [
                     (action_extract_images, [source_path, slides_dir, extract_fn, manifest_path])
                 ],
-                "file_dep": [str(source_path)],
+                "file_dep": [str(source_path)] + css_deps,
                 "targets": [str(manifest_path)],
                 "verbosity": 2,
             }

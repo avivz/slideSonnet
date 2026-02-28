@@ -90,14 +90,11 @@ def _extract_images_via_playwright(source: Path, output_dir: Path) -> list[Path]
     html_path = output_dir / f"_{source.stem}_presentation.html"
 
     # Export HTML
-    cmd = [
-        "marp",
-        "--no-stdin",
-        "--html",
-        str(source),
-        "--output",
-        str(html_path),
-    ]
+    cmd = ["marp", "--no-stdin", "--html"]
+    css_files = sorted(source.parent.glob("*.css"))
+    if css_files:
+        cmd.extend(["--theme-set"] + [str(f) for f in css_files])
+    cmd.extend([str(source), "--output", str(html_path)])
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except FileNotFoundError:

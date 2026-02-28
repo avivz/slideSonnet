@@ -1,0 +1,48 @@
+/* @theme basel */
+@import 'default';
+
+section {
+  font-family: 'Georgia', serif;
+  background: #fafaf8;
+  color: #1a1a2e;
+  line-height: 1.6;
+  place-content: flex-start !important;
+  padding-top: 80px;
+}
+
+h1 {
+  color: #1a1a2e;
+  border-bottom: 3px solid #e94560;
+  padding-bottom: 0.15em;
+  width: 100%;
+}
+
+section.title {
+  place-content: center !important;
+  text-align: center;
+  padding-top: 0;
+}
+
+section.title h1 {
+  border-bottom: none;
+}
+
+h3 {
+  font-style: italic;
+  font-weight: normal;
+  color: #444;
+}
+
+blockquote {
+  border-left: 4px solid #e94560;
+  padding: 0.6em 1em;
+  font-style: italic;
+  color: #555;
+  background: rgba(233, 69, 96, 0.04);
+  border-radius: 0 6px 6px 0;
+}
+
+ul, ol {
+  line-height: 1.8;
+}
+
