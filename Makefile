@@ -1,6 +1,11 @@
 VENV := .venv/bin
+SLIDESONNET := $(VENV)/slidesonnet
 
-.PHONY: install test test-unit lint typecheck clean showcase showcase-piper
+.PHONY: install test test-unit lint typecheck clean \
+	showcase showcase-piper \
+	basel basel-piper \
+	basel-he basel-he-piper \
+	clean-showcase clean-basel clean-basel-he clean-examples
 
 install:
 	$(VENV)/pip install -e ".[piper,dev]"
@@ -18,11 +23,38 @@ lint:
 typecheck:
 	$(VENV)/mypy src/slidesonnet/
 
+# --- Examples: showcase ---
 showcase:
-	cd examples/showcase && ../../$(VENV)/slidesonnet build lecture.md
+	cd examples/showcase && ../../$(SLIDESONNET) build lecture.md
 
 showcase-piper:
-	cd examples/showcase && ../../$(VENV)/slidesonnet build lecture.md --tts piper
+	cd examples/showcase && ../../$(SLIDESONNET) build lecture.md --tts piper
+
+clean-showcase:
+	cd examples/showcase && ../../$(SLIDESONNET) clean lecture.md
+
+# --- Examples: basel-problem ---
+basel:
+	cd examples/basel-problem && ../../$(SLIDESONNET) build lecture.md
+
+basel-piper:
+	cd examples/basel-problem && ../../$(SLIDESONNET) build lecture.md --tts piper
+
+clean-basel:
+	cd examples/basel-problem && ../../$(SLIDESONNET) clean lecture.md
+
+# --- Examples: basel-problem-he ---
+basel-he:
+	cd examples/basel-problem-he && ../../$(SLIDESONNET) build lecture.md
+
+basel-he-piper:
+	cd examples/basel-problem-he && ../../$(SLIDESONNET) build lecture.md --tts piper
+
+clean-basel-he:
+	cd examples/basel-problem-he && ../../$(SLIDESONNET) clean lecture.md
+
+# --- Aggregate ---
+clean-examples: clean-showcase clean-basel clean-basel-he
 
 clean:
 	rm -rf .build/ dist/ *.egg-info/
