@@ -67,8 +67,9 @@ Dijkstra's algorithm and Knuth's contributions are foundational to computer scie
 
 In this showcase you have seen:
 
+<!-- say: That wraps up the slideSonnet showcase. Let's recap what we covered. -->
 * **MARP** and **Beamer** slide formats
-<!-- say: That wraps up the slideSonnet showcase. You have seen how it supports both MARP Markdown and Beamer LaTeX slide formats. -->
+<!-- say: You have seen how slideSonnet supports both MARP Markdown and Beamer LaTeX slide formats. -->
 * Narration via `say` annotations in both formats
 <!-- say: You learned to add narration using say comments in MARP and say commands in Beamer. -->
 * Voice overrides, silent slides, and skip

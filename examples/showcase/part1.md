@@ -13,8 +13,9 @@ Compile slide decks into narrated videos
 
 # The Problem
 
+<!-- say: Let's look at some common problems with recording narrated lectures. -->
 * Recording narrated lectures is tedious
-<!-- say: Recording narrated lectures is tedious. You need a quiet room, a microphone, and the patience to talk through every single slide. -->
+<!-- say: First, recording is tedious. You need a quiet room, a microphone, and the patience to talk through every single slide. -->
 * A single edit means re-recording the whole thing
 <!-- say: And when you change even one slide, you often have to re-record the entire section to keep everything in sync. -->
 * Keeping slides and audio in sync is error-prone
@@ -26,6 +27,7 @@ Compile slide decks into narrated videos
 
 # How slideSonnet Works
 
+<!-- say: Here's how slideSonnet works, in three simple steps. -->
 1) Write slides in **Markdown** (MARP) or **LaTeX** (Beamer)
 <!-- say: First, you write your slides in Markdown using MARP, or in LaTeX using Beamer. Both formats are fully supported. -->
 2) Add narration annotations to each slide
@@ -146,10 +148,11 @@ A skipped slide is excluded from the video entirely. Useful for backup or draft 
 
 Bullet points can reveal incrementally, each with its own narration:
 
+<!-- say: You have already seen fragment animation in action on earlier slides. It reveals bullet points one at a time, each with its own narration. -->
 * First, we introduce the concept
-<!-- say: You have already seen fragment animation in action on earlier slides. It reveals bullet points one at a time, each with its own narration, just like in a live presentation. -->
-* Then, we add supporting detail
 <!-- say: Each fragment gets its own narration, so the viewer hears an explanation timed to each point as it appears. -->
+* Then, we add supporting detail
+<!-- say: Adding more detail with each new bullet keeps the presentation flowing naturally, just like a live talk. -->
 * Finally, we wrap up
 <!-- say: In MARP, just use star bullets instead of dashes to create fragments. slideSonnet expands each step into a separate sub-slide with progressive reveal. -->
 
