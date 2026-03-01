@@ -44,6 +44,12 @@ from slidesonnet.tts.pronunciation import apply_pronunciation
 logger = logging.getLogger(__name__)
 
 
+def _audio_cache_valid(task: Any, values: Any) -> bool:  # noqa: ANN401
+    """Check that target audio file exists and is non-empty."""
+    p = Path(task.targets[0])
+    return p.exists() and p.stat().st_size > 0
+
+
 def generate_tasks(
     entries: list[PlaylistEntry],
     config: ProjectConfig,
@@ -224,7 +230,7 @@ def generate_tasks(
                                     )
                                 ],
                                 "targets": [str(cached_part)],
-                                "uptodate": [lambda task, values: Path(task.targets[0]).exists()],
+                                "uptodate": [_audio_cache_valid],
                                 "verbosity": 2,
                             }
                         )
@@ -270,7 +276,7 @@ def generate_tasks(
                                 )
                             ],
                             "targets": [str(cached_audio)],
-                            "uptodate": [lambda task, values: Path(task.targets[0]).exists()],
+                            "uptodate": [_audio_cache_valid],
                             "verbosity": 2,
                         }
                     )
