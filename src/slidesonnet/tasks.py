@@ -341,6 +341,17 @@ def generate_tasks(
                         "file_dep": file_deps,
                         "task_dep": task_deps,
                         "targets": [str(seg_path)],
+                        "uptodate": [
+                            config_changed(
+                                {
+                                    "pad_seconds": config.video.pad_seconds,
+                                    "pre_silence": config.video.pre_silence,
+                                    "resolution": config.video.resolution,
+                                    "fps": config.video.fps,
+                                    "crf": config.video.crf,
+                                }
+                            )
+                        ],
                         "verbosity": 2,
                     }
                 )
@@ -362,6 +373,16 @@ def generate_tasks(
                         "file_dep": file_deps,
                         "task_dep": task_deps,
                         "targets": [str(seg_path)],
+                        "uptodate": [
+                            config_changed(
+                                {
+                                    "silence_duration": config.video.silence_duration,
+                                    "resolution": config.video.resolution,
+                                    "fps": config.video.fps,
+                                    "crf": config.video.crf,
+                                }
+                            )
+                        ],
                         "verbosity": 2,
                     }
                 )
@@ -375,7 +396,9 @@ def generate_tasks(
             "actions": [(action_assemble, [all_segments, output_path, config])],
             "file_dep": [str(p) for p in all_segments],
             "targets": [str(output_path)],
-            "uptodate": [config_changed({"crossfade": config.video.crossfade})],
+            "uptodate": [
+                config_changed({"crossfade": config.video.crossfade, "crf": config.video.crf})
+            ],
             "verbosity": 2,
         }
     )
