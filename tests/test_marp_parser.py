@@ -280,6 +280,111 @@ def test_only_say_inside_code_fence_no_annotation(caplog: pytest.LogCaptureFixtu
     assert "no annotation" in caplog.text
 
 
+def test_mixed_fence_types_backtick_open_tilde_close() -> None:
+    """Tilde fence cannot close a backtick fence — --- inside stays hidden."""
+    text = textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide 1
+
+        ```markdown
+        ---
+        ~~~
+
+        <!-- say: Should be one slide. -->
+    """)
+    slides = _split_slides(text)
+    assert len(slides) == 1
+    assert "Should be one slide" in slides[0]
+
+
+def test_mixed_fence_types_tilde_open_backtick_close() -> None:
+    """Backtick fence cannot close a tilde fence — --- inside stays hidden."""
+    text = textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide 1
+
+        ~~~markdown
+        ---
+        ```
+
+        <!-- say: Should be one slide. -->
+    """)
+    slides = _split_slides(text)
+    assert len(slides) == 1
+    assert "Should be one slide" in slides[0]
+
+
+def test_fence_length_mismatch_shorter_cannot_close() -> None:
+    """A 3-backtick line cannot close a 4-backtick fence."""
+    text = textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide 1
+
+        ````markdown
+        ---
+        ```
+
+        <!-- say: Should be one slide. -->
+    """)
+    slides = _split_slides(text)
+    assert len(slides) == 1
+    assert "Should be one slide" in slides[0]
+
+
+def test_fence_length_match_longer_can_close() -> None:
+    """A 5-backtick line can close a 3-backtick fence (CommonMark rule)."""
+    text = textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Slide 1
+
+        ```markdown
+        ---
+        `````
+
+        <!-- say: Should be two slides. -->
+
+        ---
+
+        # Slide 2
+
+        <!-- say: Second slide. -->
+    """)
+    slides = _split_slides(text)
+    assert len(slides) == 2
+    assert "Should be two slides" in slides[0]
+    assert "Second slide" in slides[1]
+
+
+def test_say_inside_cross_type_fence_ignored() -> None:
+    """<!-- say --> inside a backtick fence is not parsed even if ~~~ appears."""
+    slide_text = textwrap.dedent("""\
+        # Example Slide
+
+        ```html
+        <!-- say: This is inside the fence. -->
+        ~~~
+        ```
+
+        <!-- say: Real narration outside. -->
+    """)
+    [slide], _ = _parse_slide(1, slide_text, Path("test.md"), 1)
+    assert slide.annotation == SlideAnnotation.SAY
+    assert "Real narration" in slide.narration_raw
+    assert "inside the fence" not in slide.narration_raw
+
+
 def test_regular_comment_ignored() -> None:
     text = textwrap.dedent("""\
         ---

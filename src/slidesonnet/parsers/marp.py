@@ -33,13 +33,6 @@ _SILENT_RE = re.compile(r"<!--\s*nonarration\s*(?:\(([^)]*)\))?\s*-->", re.IGNOR
 # Match <!-- skip -->
 _SKIP_RE = re.compile(r"<!--\s*skip\s*-->", re.IGNORECASE)
 
-# Match fenced code blocks (``` or ~~~, with optional info string)
-_FENCE_RE = re.compile(
-    r"^(?P<fence>`{3,}|~{3,})[^\n]*\n"  # opening fence + info string
-    r".*?"  # content (non-greedy)
-    r"^(?P=fence)\s*$",  # matching closing fence
-    re.MULTILINE | re.DOTALL,
-)
 
 # Parse key=value pairs from say(...) params
 _PARAM_RE = re.compile(r"(\w+)\s*=\s*([\w.\-]+)")
@@ -281,21 +274,23 @@ def _split_slides(text: str) -> list[str]:
 def _find_separator_indices(lines: list[str]) -> list[int]:
     """Find line indices of ``---`` separators, ignoring those inside code fences."""
     separator_indices: list[int] = []
-    in_fence = False
+    fence_char: str | None = None
+    fence_len: int = 0
 
     for i, line in enumerate(lines):
         stripped = line.strip()
-        # Detect fenced code block boundaries (``` or ~~~, with optional info string)
         if stripped.startswith("```") or stripped.startswith("~~~"):
-            fence_char = stripped[:3]
-            if in_fence:
-                # Closing fence: must be only fence chars (no info string)
-                if stripped.rstrip(fence_char[0]) == "":
-                    in_fence = False
+            char = stripped[0]
+            length = len(stripped) - len(stripped.lstrip(char))
+            if fence_char is not None:
+                # Inside fence: close only with same char, >= length, no trailing content
+                if char == fence_char and length >= fence_len and stripped.rstrip(char) == "":
+                    fence_char = None
             else:
-                in_fence = True
+                fence_char = char
+                fence_len = length
             continue
-        if not in_fence and stripped == "---":
+        if fence_char is None and stripped == "---":
             separator_indices.append(i)
 
     return separator_indices
@@ -336,9 +331,35 @@ def _parse_say_params(params_str: str) -> tuple[int, str | None, str | None]:
     return sub_slide, voice, pace
 
 
+def _strip_fences(text: str) -> str:
+    """Remove fenced code blocks from text, respecting CommonMark rules."""
+    lines = text.split("\n")
+    result: list[str] = []
+    fence_char: str | None = None
+    fence_len: int = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            char = stripped[0]
+            length = len(stripped) - len(stripped.lstrip(char))
+            if fence_char is not None:
+                if char == fence_char and length >= fence_len and stripped.rstrip(char) == "":
+                    fence_char = None
+                continue
+            else:
+                fence_char = char
+                fence_len = length
+                continue
+        if fence_char is None:
+            result.append(line)
+
+    return "\n".join(result)
+
+
 def _count_fragments(text: str) -> int:
     """Count fragment list items (``*`` and ``N)``) outside fenced code blocks."""
-    clean = _FENCE_RE.sub("", text)
+    clean = _strip_fences(text)
     return len(_FRAGMENT_UL_RE.findall(clean)) + len(_FRAGMENT_OL_RE.findall(clean))
 
 
@@ -382,7 +403,7 @@ def _parse_slide(
     Playwright (bare slide + each fragment reveal).
     """
     # Strip fenced code blocks so directives inside them are ignored
-    clean_text = _FENCE_RE.sub("", text)
+    clean_text = _strip_fences(text)
 
     # Compute visual states early — needed for image_index on all paths
     n_fragments = _count_fragments(text)
