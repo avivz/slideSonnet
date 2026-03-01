@@ -74,7 +74,7 @@ The problem remained open for **85 years**.
 Then, in 1734 in Saint Petersburg, a young mathematician from Basel named **Leonhard Euler** found the answer.
 
 <!-- say: For eighty-five years, nobody could solve it. Then in 1734,
-     a twenty-seven year old named Leonhard Euler, working at the
+     a twenty-seven year old named Leonard Euler, working at the
      Academy of Sciences in Saint Petersburg, found the answer. He
      presented his proof the following year. -->
 
