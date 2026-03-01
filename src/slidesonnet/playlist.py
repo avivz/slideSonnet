@@ -55,6 +55,10 @@ def split_front_matter(text: str) -> tuple[dict[str, Any], str]:
     body = "\n".join(lines[end_idx + 1 :])
 
     config_dict = yaml.safe_load(yaml_text) or {}
+    if not isinstance(config_dict, dict):
+        from slidesonnet.exceptions import ConfigError
+
+        raise ConfigError(f"Front matter must be a YAML mapping, got {type(config_dict).__name__}")
     return config_dict, body
 
 

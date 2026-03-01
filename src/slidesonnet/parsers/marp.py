@@ -42,7 +42,7 @@ _FENCE_RE = re.compile(
 )
 
 # Parse key=value pairs from say(...) params
-_PARAM_RE = re.compile(r"(\w+)\s*=\s*(\w+)")
+_PARAM_RE = re.compile(r"(\w+)\s*=\s*([\w.\-]+)")
 
 # Fragment list markers (Marp animated items)
 _FRAGMENT_UL_RE = re.compile(r"^\s*\*\s", re.MULTILINE)
@@ -166,67 +166,68 @@ def _screenshot_presentation(html_path: Path, output_dir: Path, stem: str) -> li
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page(viewport={"width": 1920, "height": 1080})
-        page.goto(html_path.as_uri())
-        page.wait_for_load_state("networkidle")
-        page.wait_for_selector("section[id]")
+        try:
+            page = browser.new_page(viewport={"width": 1920, "height": 1080})
+            page.goto(html_path.as_uri())
+            page.wait_for_load_state("networkidle")
+            page.wait_for_selector("section[id]")
 
-        # Hide Marp's bespoke.js navigation toolbar (osc) so it doesn't appear in screenshots.
-        page.evaluate("""() => {
-            const style = document.createElement('style');
-            style.textContent = 'bespoke-marp-osc, [data-bespoke-marp-osc],'
-                + ' .bespoke-marp-osc { display: none !important; }';
-            document.head.appendChild(style);
-        }""")
+            # Hide Marp's bespoke.js navigation toolbar (osc) so it doesn't appear in screenshots.
+            page.evaluate("""() => {
+                const style = document.createElement('style');
+                style.textContent = 'bespoke-marp-osc, [data-bespoke-marp-osc],'
+                    + ' .bespoke-marp-osc { display: none !important; }';
+                document.head.appendChild(style);
+            }""")
 
-        # Detect slides whose content overflows the viewport (clipped in PNG).
-        overflow_info: list[dict[str, int]] = page.evaluate("""() => {
-            const sections = document.querySelectorAll('section[id]');
-            const results = [];
-            for (let i = 0; i < sections.length; i++) {
-                const s = sections[i];
-                if (s.scrollHeight > s.clientHeight) {
-                    results.push({
-                        slide: i + 1,
-                        content: s.scrollHeight,
-                        viewport: s.clientHeight
-                    });
+            # Detect slides whose content overflows the viewport (clipped in PNG).
+            overflow_info: list[dict[str, int]] = page.evaluate("""() => {
+                const sections = document.querySelectorAll('section[id]');
+                const results = [];
+                for (let i = 0; i < sections.length; i++) {
+                    const s = sections[i];
+                    if (s.scrollHeight > s.clientHeight) {
+                        results.push({
+                            slide: i + 1,
+                            content: s.scrollHeight,
+                            viewport: s.clientHeight
+                        });
+                    }
                 }
-            }
-            return results;
-        }""")
-        for info in overflow_info:
-            logger.warning(
-                "%s slide %d: content overflows by %dpx (%dpx > %dpx viewport)",
-                stem,
-                info["slide"],
-                info["content"] - info["viewport"],
-                info["content"],
-                info["viewport"],
-            )
+                return results;
+            }""")
+            for info in overflow_info:
+                logger.warning(
+                    "%s slide %d: content overflows by %dpx (%dpx > %dpx viewport)",
+                    stem,
+                    info["slide"],
+                    info["content"] - info["viewport"],
+                    info["content"],
+                    info["viewport"],
+                )
 
-        # Count total steps: each section is a slide, fragments add extra steps.
-        # A section with N fragments produces N+1 visual states (bare + N reveals).
-        total_steps: int = page.evaluate("""() => {
-            const sections = document.querySelectorAll('section[id]');
-            let steps = 0;
-            for (const section of sections) {
-                const fragments = parseInt(section.dataset.marpitFragments || '0', 10);
-                steps += 1 + fragments;
-            }
-            return steps;
-        }""")
+            # Count total steps: each section is a slide, fragments add extra steps.
+            # A section with N fragments produces N+1 visual states (bare + N reveals).
+            total_steps: int = page.evaluate("""() => {
+                const sections = document.querySelectorAll('section[id]');
+                let steps = 0;
+                for (const section of sections) {
+                    const fragments = parseInt(section.dataset.marpitFragments || '0', 10);
+                    steps += 1 + fragments;
+                }
+                return steps;
+            }""")
 
-        images: list[Path] = []
-        for i in range(total_steps):
-            img_path = output_dir / f"{stem}.{i + 1:03d}.png"
-            page.screenshot(path=str(img_path))
-            images.append(img_path)
-            if i < total_steps - 1:
-                page.keyboard.press("ArrowRight")
-                page.wait_for_timeout(150)
-
-        browser.close()
+            images: list[Path] = []
+            for i in range(total_steps):
+                img_path = output_dir / f"{stem}.{i + 1:03d}.png"
+                page.screenshot(path=str(img_path))
+                images.append(img_path)
+                if i < total_steps - 1:
+                    page.keyboard.press("ArrowRight")
+                    page.wait_for_timeout(150)
+        finally:
+            browser.close()
 
     return images
 

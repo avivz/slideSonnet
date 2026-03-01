@@ -52,7 +52,7 @@ def _ensure_voice(voice_name: str) -> None:
 
 
 class PiperTTS(TTSEngine):
-    def __init__(self, model: str = "en_US-lessac-medium", speaker: int = 0):
+    def __init__(self, model: str = "en_US-lessac-medium", speaker: int | None = None):
         self.model = model
         self.speaker = speaker
 
@@ -70,7 +70,7 @@ class PiperTTS(TTSEngine):
             "--output_file",
             str(output_path),
         ]
-        if self.speaker:
+        if self.speaker is not None:
             cmd.extend(["--speaker", str(self.speaker)])
 
         try:

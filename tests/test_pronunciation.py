@@ -1,5 +1,7 @@
 """Tests for pronunciation loading and substitution."""
 
+import pytest
+
 from slidesonnet.tts.pronunciation import (
     apply_pronunciation,
     load_pronunciation_file,
@@ -16,10 +18,11 @@ def test_load_pronunciation_file(pronunciation_cs):
     assert entries["isomorphism"] == "eye-so-MOR-fizm"
 
 
-def test_missing_file_returns_empty(tmp_path, caplog):
-    entries = load_pronunciation_file(tmp_path / "nonexistent.md")
-    assert entries == {}
-    assert "not found" in caplog.text
+def test_missing_file_raises_error(tmp_path):
+    from slidesonnet.exceptions import ConfigError
+
+    with pytest.raises(ConfigError, match="not found"):
+        load_pronunciation_file(tmp_path / "nonexistent.md")
 
 
 def test_empty_file_returns_empty(tmp_path):

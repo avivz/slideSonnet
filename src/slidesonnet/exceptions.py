@@ -13,5 +13,9 @@ class TTSError(SlideSonnetError):
     """TTS synthesis failed or configuration is missing."""
 
 
+class ConfigError(SlideSonnetError):
+    """Configuration is invalid or malformed."""
+
+
 class FFmpegError(SlideSonnetError):
     """FFmpeg is missing or a command failed."""

@@ -69,10 +69,25 @@ class TestPiperSynthesize:
 
     @patch("slidesonnet.tts.piper._wav_duration", return_value=1.0)
     @patch("slidesonnet.tts.piper.subprocess.run")
-    def test_no_speaker_flag_when_zero(
+    def test_speaker_zero_passes_flag(
         self, mock_run: MagicMock, mock_dur: MagicMock, tmp_path: Path
     ) -> None:
         tts = PiperTTS(model="en_US-lessac-medium", speaker=0)
+        out = tmp_path / "out.wav"
+
+        tts.synthesize("Hi", out)
+
+        cmd = mock_run.call_args[0][0]
+        assert "--speaker" in cmd
+        idx = cmd.index("--speaker")
+        assert cmd[idx + 1] == "0"
+
+    @patch("slidesonnet.tts.piper._wav_duration", return_value=1.0)
+    @patch("slidesonnet.tts.piper.subprocess.run")
+    def test_no_speaker_flag_when_none(
+        self, mock_run: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        tts = PiperTTS(model="en_US-lessac-medium", speaker=None)
         out = tmp_path / "out.wav"
 
         tts.synthesize("Hi", out)

@@ -577,9 +577,9 @@ class TestOverlayParsing:
         assert "Second sentence." in slides[0].narration_raw
 
     def test_skip_on_overlay_frame(self) -> None:
-        """\\skip on a frame with \\pause → all sub-slides are SKIP."""
+        """\\slidesonnetskip on a frame with \\pause → all sub-slides are SKIP."""
         text = r"""
-        \skip
+        \slidesonnetskip
         \pause
         Content.
         """
@@ -710,7 +710,7 @@ class TestOverlayParsing:
         assert slides[12].index == 13
 
     def test_fixture_overlay_skip(self, simple_tex: Path) -> None:
-        """Frame 10: \\skip with \\pause → both sub-slides are SKIP."""
+        """Frame 10: \\slidesonnetskip with \\pause → both sub-slides are SKIP."""
         parser = BeamerParser()
         slides = parser.parse(simple_tex, Path("/tmp/build"))
 

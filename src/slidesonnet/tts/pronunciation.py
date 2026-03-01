@@ -23,8 +23,9 @@ def load_pronunciation_file(path: Path) -> dict[str, str]:
     Section headings (## ...) are ignored (for human readability only).
     """
     if not path.exists():
-        logger.warning("%s: pronunciation file not found", path)
-        return {}
+        from slidesonnet.exceptions import ConfigError
+
+        raise ConfigError(f"Pronunciation file not found: {path}")
 
     entries: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():

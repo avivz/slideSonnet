@@ -86,7 +86,7 @@ def _populate_cache(tmp_path: Path) -> dict[str, Path]:
     }
 
     # Piper audio (current utterances)
-    piper_key = "piper:en_US-lessac-medium:0"
+    piper_key = "piper:en_US-lessac-medium:None"
     for i, text in enumerate(["Welcome to the first slide.", "This is the second slide."]):
         name = audio_filename(text, "piper", piper_key)
         path = audio / name

@@ -21,8 +21,8 @@ _SAY_START_RE = re.compile(r"\\say\s*(?:\[([^\]]*)\])?\s*\{")
 # Match \silent
 _SILENT_RE = re.compile(r"\\silent\b")
 
-# Match \skip or \slidesonnetskip
-_SKIP_RE = re.compile(r"\\(?:slidesonnetskip|skip)\b")
+# Match \slidesonnetskip
+_SKIP_RE = re.compile(r"\\slidesonnetskip\b")
 
 # Match \begin{frame} ... \end{frame}
 _FRAME_BEGIN_RE = re.compile(r"\\begin\{frame\}")
@@ -32,7 +32,7 @@ _FRAME_END_RE = re.compile(r"\\end\{frame\}")
 _PAUSE_RE = re.compile(r"\\pause\b")
 
 # Parse key=value from optional args
-_PARAM_RE = re.compile(r"(\w+)\s*=\s*(\w+)")
+_PARAM_RE = re.compile(r"(\w+)\s*=\s*([\w.\-]+)")
 
 # Strip common LaTeX markup from narration text
 _LATEX_CMD_WITH_ARG_RE = re.compile(r"\\(?:textbf|textit|emph|underline|text)\s*\{")
@@ -197,7 +197,7 @@ def _parse_frame(
     n_visual_states = n_pauses + 1
     n_sub = n_visual_states
 
-    # Check for \skip — applies to all sub-slides
+    # Check for \slidesonnetskip — applies to all sub-slides
     if _SKIP_RE.search(text):
         return (
             [
@@ -229,7 +229,7 @@ def _parse_frame(
     if not say_matches:
         # No annotation at all
         logger.warning(
-            "%s frame %d: no annotation (use \\say{}, \\silent, or \\skip)",
+            "%s frame %d: no annotation (use \\say{}, \\silent, or \\slidesonnetskip)",
             source,
             start_index,
         )
