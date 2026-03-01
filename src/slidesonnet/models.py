@@ -74,6 +74,10 @@ class PlaylistEntry:
     @classmethod
     def from_link(cls, label: str, path_str: str) -> PlaylistEntry:
         path = Path(path_str)
+        if path.is_absolute():
+            raise ValueError(f"Module path must be relative, got absolute: '{path_str}'")
+        if ".." in path.parts:
+            raise ValueError(f"Module path must not contain '..': '{path_str}'")
         suffix = path.suffix.lower()
         module_type = EXTENSION_TO_TYPE.get(suffix)
         if module_type is None:
@@ -107,9 +111,13 @@ class TTSConfig:
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.elevenlabs_stability <= 1.0):
-            raise ValueError(f"elevenlabs_stability must be between 0 and 1, got {self.elevenlabs_stability}")
+            raise ValueError(
+                f"elevenlabs_stability must be between 0 and 1, got {self.elevenlabs_stability}"
+            )
         if not (0.0 <= self.elevenlabs_similarity_boost <= 1.0):
-            raise ValueError(f"elevenlabs_similarity_boost must be between 0 and 1, got {self.elevenlabs_similarity_boost}")
+            raise ValueError(
+                f"elevenlabs_similarity_boost must be between 0 and 1, got {self.elevenlabs_similarity_boost}"
+            )
 
 
 _RESOLUTION_RE = re.compile(r"^\d+x\d+$")

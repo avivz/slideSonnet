@@ -75,9 +75,7 @@ def compile_pdf(source: Path, output_dir: Path) -> Path:
     # Run pdflatex twice so cross-references, TOC, and bibliography resolve.
     for pass_num in range(1, 3):
         try:
-            subprocess.run(
-                cmd_latex, check=True, capture_output=True, text=True, cwd=source.parent
-            )
+            subprocess.run(cmd_latex, check=True, capture_output=True, text=True, cwd=source.parent)
         except FileNotFoundError:
             raise ParserError("'pdflatex' not found. Install TeX Live.")
         except subprocess.CalledProcessError as e:

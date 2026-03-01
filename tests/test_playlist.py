@@ -51,6 +51,20 @@ def test_unknown_extension():
         PlaylistEntry.from_link("x", "file.docx")
 
 
+def test_absolute_path_rejected():
+    from slidesonnet.models import PlaylistEntry
+
+    with pytest.raises(ValueError, match="must be relative"):
+        PlaylistEntry.from_link("x", "/etc/slides.md")
+
+
+def test_path_traversal_rejected():
+    from slidesonnet.models import PlaylistEntry
+
+    with pytest.raises(ValueError, match="must not contain"):
+        PlaylistEntry.from_link("x", "../secret/slides.md")
+
+
 def test_comment_lines_ignored(tmp_path):
     playlist = tmp_path / "test.md"
     playlist.write_text(

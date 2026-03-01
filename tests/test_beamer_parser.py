@@ -175,11 +175,12 @@ class TestExtractImages:
 
         result = extract_images(source, output_dir)
 
-        assert mock_run.call_count == 2
-        # First call: pdflatex
+        assert mock_run.call_count == 3
+        # First two calls: pdflatex (run twice for cross-references)
         assert mock_run.call_args_list[0][0][0][0] == "pdflatex"
-        # Second call: pdftoppm
-        assert mock_run.call_args_list[1][0][0][0] == "pdftoppm"
+        assert mock_run.call_args_list[1][0][0][0] == "pdflatex"
+        # Third call: pdftoppm
+        assert mock_run.call_args_list[2][0][0][0] == "pdftoppm"
         assert len(result) == 2
 
     @patch(
@@ -272,8 +273,9 @@ class TestCompilePdf:
         result = compile_pdf(source, output_dir)
 
         assert result == output_dir / "slides.pdf"
-        mock_run.assert_called_once()
-        assert mock_run.call_args[0][0][0] == "pdflatex"
+        assert mock_run.call_count == 2  # pdflatex runs twice for cross-references
+        assert mock_run.call_args_list[0][0][0][0] == "pdflatex"
+        assert mock_run.call_args_list[1][0][0][0] == "pdflatex"
 
     @patch(
         "slidesonnet.parsers.beamer.subprocess.run",
