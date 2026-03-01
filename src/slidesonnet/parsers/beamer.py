@@ -72,15 +72,21 @@ def compile_pdf(source: Path, output_dir: Path) -> Path:
         f"-output-directory={output_dir}",
         str(source),
     ]
-    try:
-        subprocess.run(cmd_latex, check=True, capture_output=True, text=True, cwd=source.parent)
-    except FileNotFoundError:
-        raise ParserError("'pdflatex' not found. Install TeX Live.")
-    except subprocess.CalledProcessError as e:
-        # pdflatex often returns non-zero for warnings; check if PDF was produced
-        if not pdf_path.exists():
-            raise ParserError(f"pdflatex failed and no PDF was produced.\n{e.stderr}")
-        logger.warning("pdflatex exited with errors (continuing with PDF):\n%s", e.stderr)
+    # Run pdflatex twice so cross-references, TOC, and bibliography resolve.
+    for pass_num in range(1, 3):
+        try:
+            subprocess.run(
+                cmd_latex, check=True, capture_output=True, text=True, cwd=source.parent
+            )
+        except FileNotFoundError:
+            raise ParserError("'pdflatex' not found. Install TeX Live.")
+        except subprocess.CalledProcessError as e:
+            # pdflatex often returns non-zero for warnings; check if PDF was produced
+            if not pdf_path.exists():
+                raise ParserError(f"pdflatex failed and no PDF was produced.\n{e.stderr}")
+            logger.warning(
+                "pdflatex pass %d exited with errors (continuing):\n%s", pass_num, e.stderr
+            )
 
     return pdf_path
 
