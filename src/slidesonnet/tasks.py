@@ -38,6 +38,7 @@ from slidesonnet.models import (
     ModuleType,
     PlaylistEntry,
     ProjectConfig,
+    resolve_voice,
 )
 from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.pronunciation import apply_pronunciation
@@ -115,27 +116,26 @@ def generate_tasks(
                     for part in slide.narration_parts
                 ]
                 if slide.voice:
-                    voice_cfg = config.voices.get(slide.voice)
-                    if voice_cfg:
-                        resolved = voice_cfg.resolve(config.tts.backend)
-                        if resolved:
-                            slide.voice = resolved
-                        else:
-                            logger.warning(
-                                "%s slide %d: voice '%s' has no mapping for backend '%s'",
-                                source_path,
-                                slide.index,
-                                slide.voice,
-                                config.tts.backend,
-                            )
-                            slide.voice = None
-                    else:
+                    preset = slide.voice
+                    resolved = resolve_voice(preset, config.voices, config.tts.backend)
+                    if resolved:
+                        slide.voice = resolved
+                    elif preset not in config.voices:
                         logger.warning(
                             "%s slide %d: unknown voice '%s'",
                             source_path,
                             slide.index,
-                            slide.voice,
+                            preset,
                         )
+                    else:
+                        logger.warning(
+                            "%s slide %d: voice '%s' has no mapping for backend '%s'",
+                            source_path,
+                            slide.index,
+                            preset,
+                            config.tts.backend,
+                        )
+                        slide.voice = None
 
         utterances_dir = module_dir / "utterances"
         segments_dir = module_dir / "segments"

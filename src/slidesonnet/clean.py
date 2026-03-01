@@ -17,7 +17,7 @@ from typing import Literal
 from slidesonnet.actions import get_parser_and_extractor
 from slidesonnet.config import load_config
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
-from slidesonnet.models import ModuleType
+from slidesonnet.models import ModuleType, resolve_voice
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
 
@@ -179,8 +179,7 @@ def _collect_current_text_hashes(playlist_path: Path) -> set[str]:
             if slide.voice:
                 voice_cfg = config.voices.get(slide.voice)
                 if voice_cfg:
-                    for voice_id in voice_cfg.backend_voices.values():
-                        voices.add(voice_id)
+                    voices |= voice_cfg.all_voice_ids()
 
             # Compute text_hashes for all parts and all voice resolutions
             parts = slide.narration_parts_processed
@@ -238,12 +237,7 @@ def _collect_current_audio_filenames(playlist_path: Path) -> set[str]:
                 apply_pronunciation(part, config.pronunciation) for part in slide.narration_parts
             ]
 
-            # Resolve voice for current backend only
-            voice: str | None = None
-            if slide.voice:
-                voice_cfg = config.voices.get(slide.voice)
-                if voice_cfg:
-                    voice = voice_cfg.resolve(config.tts.backend)
+            voice = resolve_voice(slide.voice, config.voices, config.tts.backend)
 
             parts = slide.narration_parts_processed
             texts = parts if len(parts) > 1 else [slide.narration_processed]

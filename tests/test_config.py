@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from slidesonnet.config import load_config
-from slidesonnet.models import VideoConfig
+from slidesonnet.models import VideoConfig, VoiceConfig, resolve_voice
 
 
 def test_load_defaults():
@@ -120,3 +120,51 @@ def test_resolution_valid():
 def test_resolution_invalid(bad: str) -> None:
     with pytest.raises(ValueError, match="Invalid resolution"):
         VideoConfig(resolution=bad)
+
+
+# -- resolve_voice ----------------------------------------------------------
+
+
+def _make_voices() -> dict[str, VoiceConfig]:
+    return {
+        "narrator": VoiceConfig(
+            name="narrator",
+            backend_voices={"piper": "en_US-amy-medium", "elevenlabs": "abc123"},
+        ),
+        "robot": VoiceConfig(
+            name="robot",
+            backend_voices={"piper": "en_US-lessac-medium"},
+        ),
+    }
+
+
+def test_resolve_voice_known_preset() -> None:
+    voices = _make_voices()
+    assert resolve_voice("narrator", voices, "piper") == "en_US-amy-medium"
+    assert resolve_voice("narrator", voices, "elevenlabs") == "abc123"
+
+
+def test_resolve_voice_unknown_preset() -> None:
+    voices = _make_voices()
+    assert resolve_voice("nonexistent", voices, "piper") is None
+
+
+def test_resolve_voice_unmapped_backend() -> None:
+    voices = _make_voices()
+    assert resolve_voice("robot", voices, "elevenlabs") is None
+
+
+def test_resolve_voice_none_preset() -> None:
+    voices = _make_voices()
+    assert resolve_voice(None, voices, "piper") is None
+
+
+# -- VoiceConfig.all_voice_ids ----------------------------------------------
+
+
+def test_all_voice_ids() -> None:
+    vc = VoiceConfig(
+        name="narrator",
+        backend_voices={"piper": "en_US-amy-medium", "elevenlabs": "abc123"},
+    )
+    assert vc.all_voice_ids() == {"en_US-amy-medium", "abc123"}

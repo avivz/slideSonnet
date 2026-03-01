@@ -99,6 +99,28 @@ class VoiceConfig:
         """Return the voice ID for the given backend, or None if unmapped."""
         return self.backend_voices.get(backend)
 
+    def all_voice_ids(self) -> set[str]:
+        """Return all backend voice IDs for this preset."""
+        return set(self.backend_voices.values())
+
+
+def resolve_voice(
+    voice_preset: str | None,
+    voices: dict[str, VoiceConfig],
+    backend: str,
+) -> str | None:
+    """Resolve a named voice preset to a backend-specific voice ID.
+
+    Returns None if *voice_preset* is None, unknown, or has no mapping
+    for *backend*.
+    """
+    if not voice_preset:
+        return None
+    voice_cfg = voices.get(voice_preset)
+    if voice_cfg is None:
+        return None
+    return voice_cfg.resolve(backend)
+
 
 @dataclass
 class TTSConfig:
