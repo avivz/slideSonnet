@@ -9,7 +9,8 @@ import pytest
 
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import ProjectConfig, TTSConfig
-from slidesonnet.pipeline import _create_tts, _run_doit, build
+from slidesonnet.pipeline import _run_doit, build
+from slidesonnet.tts import create_tts
 
 
 class MockTTS:
@@ -123,7 +124,7 @@ def _fake_concat_xfade(segments, output, **kwargs):
     output.write_bytes(b"fake-xfade-video")
 
 
-@patch("slidesonnet.pipeline._create_tts")
+@patch("slidesonnet.pipeline.create_tts")
 @patch("slidesonnet.parsers.marp.export_pdf")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
@@ -156,7 +157,7 @@ def test_pipeline_parses_and_synthesizes(
     assert any("second slide" in t for t in texts)
 
 
-@patch("slidesonnet.pipeline._create_tts")
+@patch("slidesonnet.pipeline.create_tts")
 @patch("slidesonnet.parsers.marp.export_pdf")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
@@ -192,7 +193,7 @@ def test_content_addressed_cache(
     assert second_call_count == 2  # no new calls — cache hit
 
 
-@patch("slidesonnet.pipeline._create_tts")
+@patch("slidesonnet.pipeline.create_tts")
 @patch("slidesonnet.parsers.marp.export_pdf")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
@@ -237,7 +238,7 @@ def test_edit_one_slide_rebuilds_only_that(
     assert "edited with new content" in mock_tts.calls[2][0]
 
 
-@patch("slidesonnet.pipeline._create_tts")
+@patch("slidesonnet.pipeline.create_tts")
 @patch("slidesonnet.parsers.marp.export_pdf")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
@@ -276,7 +277,7 @@ def _fake_concat_audio(audio_paths: list[Path], output: Path) -> None:
     output.write_bytes(b"fake-concat-audio")
 
 
-@patch("slidesonnet.pipeline._create_tts")
+@patch("slidesonnet.pipeline.create_tts")
 @patch("slidesonnet.parsers.marp.export_pdf")
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
@@ -385,11 +386,11 @@ def _create_dummy_png(path: Path) -> None:
 
 
 class TestCreateTTS:
-    """Tests for _create_tts()."""
+    """Tests for create_tts()."""
 
     def test_piper_backend(self) -> None:
         config = ProjectConfig(tts=TTSConfig(backend="piper", piper_model="en_US-lessac-medium"))
-        tts = _create_tts(config)
+        tts = create_tts(config)
         from slidesonnet.tts.piper import PiperTTS
 
         assert isinstance(tts, PiperTTS)
@@ -398,13 +399,13 @@ class TestCreateTTS:
     @patch("slidesonnet.tts.elevenlabs.ElevenLabsTTS")
     def test_elevenlabs_backend(self, mock_cls: MagicMock) -> None:
         config = ProjectConfig(tts=TTSConfig(backend="elevenlabs"))
-        _create_tts(config)
+        create_tts(config)
         mock_cls.assert_called_once_with(config.tts)
 
     def test_unknown_backend(self) -> None:
         config = ProjectConfig(tts=TTSConfig(backend="unknown_engine"))  # type: ignore[arg-type]
         with pytest.raises(ValueError, match="Unknown TTS backend"):
-            _create_tts(config)
+            create_tts(config)
 
 
 class TestRunDoit:

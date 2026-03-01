@@ -198,7 +198,7 @@ def _collect_current_audio_filenames(playlist_path: Path) -> set[str]:
     Only considers the currently configured backend, unlike _collect_current_text_hashes
     which considers all backends.
     """
-    from slidesonnet.pipeline import _create_tts
+    from slidesonnet.tts import create_tts
 
     from dotenv import load_dotenv
 
@@ -211,7 +211,7 @@ def _collect_current_audio_filenames(playlist_path: Path) -> set[str]:
     raw_config, entries = parse_playlist(playlist_path)
     config = load_config(raw_config, playlist_dir)
     config.pronunciation = load_pronunciation_files(config.pronunciation_files)
-    tts = _create_tts(config)
+    tts = create_tts(config)
 
     filenames: set[str] = set()
 

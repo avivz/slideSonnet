@@ -20,10 +20,9 @@ from dotenv import load_dotenv
 
 from slidesonnet.config import load_config
 from slidesonnet.exceptions import SlideSonnetError
-from slidesonnet.models import ProjectConfig
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tasks import generate_tasks
-from slidesonnet.tts.base import TTSEngine
+from slidesonnet.tts import create_tts
 from slidesonnet.tts.pronunciation import load_pronunciation_files
 
 logger = logging.getLogger(__name__)
@@ -64,7 +63,7 @@ def build(
     config.pronunciation = load_pronunciation_files(config.pronunciation_files)
 
     # Create TTS engine
-    tts = _create_tts(config)
+    tts = create_tts(config)
 
     # Ensure audio cache dir exists
     audio_cache_dir = build_dir / "audio"
@@ -206,17 +205,3 @@ def _run_doit(
     result = DoitMain(_Loader()).run(run_args)
     if result not in (0, None):
         raise SlideSonnetError(f"Build failed (doit exit code {result})")
-
-
-def _create_tts(config: ProjectConfig) -> TTSEngine:
-    """Create TTS engine from config."""
-    from slidesonnet.tts.piper import PiperTTS
-
-    if config.tts.backend == "piper":
-        return PiperTTS(model=config.tts.piper_model)
-    elif config.tts.backend == "elevenlabs":
-        from slidesonnet.tts.elevenlabs import ElevenLabsTTS
-
-        return ElevenLabsTTS(config.tts)
-    else:
-        raise ValueError(f"Unknown TTS backend: {config.tts.backend}")
