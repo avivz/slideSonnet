@@ -30,9 +30,10 @@ class _CliFormatter(logging.Formatter):
 
 def _configure_logging() -> None:
     """Set up logging for CLI use."""
-    handler = logging.StreamHandler()  # stderr by default
-    handler.setFormatter(_CliFormatter())
-    logging.root.addHandler(handler)
+    if not logging.root.handlers:
+        handler = logging.StreamHandler()  # stderr by default
+        handler.setFormatter(_CliFormatter())
+        logging.root.addHandler(handler)
     logging.root.setLevel(logging.INFO)
 
 
