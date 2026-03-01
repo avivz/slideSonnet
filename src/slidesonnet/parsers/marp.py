@@ -23,7 +23,7 @@ _SAY_RE = re.compile(
     r"(?:\(([^)]*)\))?"  # optional (params)
     r"\s*:\s*"
     r"(.*?)"  # narration text (non-greedy)
-    r"\s*-->",
+    r"-->",
     re.DOTALL,
 )
 
