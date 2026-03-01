@@ -59,10 +59,6 @@ class SlideNarration:
         return self.annotation == SlideAnnotation.SAY and bool(self.narration_raw.strip())
 
     @property
-    def is_silent(self) -> bool:
-        return self.annotation in (SlideAnnotation.SILENT, SlideAnnotation.NONE)
-
-    @property
     def is_skip(self) -> bool:
         return self.annotation == SlideAnnotation.SKIP
 
