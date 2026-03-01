@@ -24,7 +24,7 @@ def _generate_placeholder_mp4(path: Path) -> None:
             "-f",
             "lavfi",
             "-i",
-            "color=c=black:s=1920x1080:d=1",
+            "color=c=black:s=1920x1080:r=24:d=1",
             "-f",
             "lavfi",
             "-i",
@@ -96,13 +96,13 @@ def test_showcase_builds(tmp_path: Path) -> None:
 
     # --- Per-module segment counts (narrated + silent slides, excluding skip) ---
     build_dir = project / "cache"
-    # 01_part1 (MARP): 8 narrated (1 skip excluded) = 8 segments
-    # 02_part2 (Beamer): 3 narrated + 1 silent = 4 segments
+    # 01_part1 (MARP): 19 sub-slides (1 skip excluded) = 19 segments
+    # 02_part2 (Beamer): 5 narrated + 1 silent = 6 segments
     # 03_transition (video passthrough, no segments)
-    # 04_part3 (MARP): 5 narrated = 5 segments
+    # 04_part3 (MARP): 9 narrated = 9 segments
     segments = sorted(build_dir.rglob("segments/*.mp4"))
-    assert len(segments) == 17, f"expected 17 segments, got {len(segments)}"
+    assert len(segments) == 34, f"expected 34 segments, got {len(segments)}"
 
     # --- TTS audio files were generated for narrated slides ---
     audio_files = sorted(build_dir.rglob("audio/*.wav"))
-    assert len(audio_files) >= 16, f"expected at least 16 audio files, got {len(audio_files)}"
+    assert len(audio_files) >= 33, f"expected at least 33 audio files, got {len(audio_files)}"
