@@ -1,7 +1,7 @@
 """Tests for ElevenLabs TTS backend (mocked API)."""
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -84,8 +84,12 @@ def test_synthesize_calls_api(mock_elevenlabs_cls, tmp_path):
         voice_id="voice-abc",
         model_id="eleven_v2",
         output_format="mp3_44100_128",
+        voice_settings=ANY,
         request_options={"max_retries": 5},
     )
+    voice_settings = mock_client.text_to_speech.convert.call_args.kwargs["voice_settings"]
+    assert voice_settings.stability == 0.5
+    assert voice_settings.similarity_boost == 0.75
 
 
 def test_name():

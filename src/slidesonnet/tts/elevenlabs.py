@@ -17,12 +17,16 @@ if TYPE_CHECKING:
     from elevenlabs import ElevenLabs as _ElevenLabsType
 
 _ElevenLabs: type[_ElevenLabsType] | None
+_VoiceSettings: type | None
 try:
     from elevenlabs import ElevenLabs as _ElevenLabsImport
+    from elevenlabs.types.voice_settings import VoiceSettings as _VoiceSettingsImport
 
     _ElevenLabs = _ElevenLabsImport
+    _VoiceSettings = _VoiceSettingsImport
 except ImportError:
     _ElevenLabs = None
+    _VoiceSettings = None
 
 # Module-level alias for test mocking via @patch("slidesonnet.tts.elevenlabs.ElevenLabs")
 ElevenLabs: type[_ElevenLabsType] | None = _ElevenLabs
@@ -64,11 +68,16 @@ class ElevenLabsTTS(TTSEngine):
 
         # Retry on HTTP 429 (rate limit / concurrent limit exceeded) with exponential
         # backoff — parallel builds may exceed the plan's concurrent request limit.
+        assert _VoiceSettings is not None  # guaranteed by _ensure_client()
         audio_generator = client.text_to_speech.convert(
             text=text,
             voice_id=voice_id,
             model_id=self.model_id,
             output_format="mp3_44100_128",
+            voice_settings=_VoiceSettings(
+                stability=self.stability,
+                similarity_boost=self.similarity_boost,
+            ),
             request_options={"max_retries": 5},
         )
 
