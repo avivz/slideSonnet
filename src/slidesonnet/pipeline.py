@@ -7,6 +7,15 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+
 from dotenv import load_dotenv
 
 from slidesonnet.config import load_config
@@ -102,29 +111,71 @@ def _run_doit(
     db_file = str(build_dir / ".doit.db")
     tasks = [dict_to_task(t) for t in task_list]
 
+    _SLIDE_PREFIXES = ("compile_beamer:", "extract_images:", "export_pdf:")
+    _AUDIO_PREFIXES = ("tts:", "concat_audio:")
+    _VIDEO_PREFIXES = ("compose:",)
+    _VIDEO_EXACT = ("assemble",)
+
+    def _categorize_task(name: str) -> str | None:
+        if name.startswith(_SLIDE_PREFIXES):
+            return "slides"
+        if name.startswith(_AUDIO_PREFIXES):
+            return "audio"
+        if name.startswith(_VIDEO_PREFIXES) or name in _VIDEO_EXACT:
+            return "video"
+        return None
+
     class _ProgressReporter(ConsoleReporter):  # type: ignore[misc]
-        """Reporter that shows [done/total] progress."""
+        """Reporter that shows grouped progress bars for slides/audio/video."""
 
         def initialize(self, tasks: Any, selected_tasks: Any) -> None:
             super().initialize(tasks, selected_tasks)
-            self._total = len(selected_tasks)
-            self._done = 0
             self._start_time = time.monotonic()
 
-        def execute_task(self, task: Any) -> None:
-            if task.name[0] != "_":
-                self._done += 1
-                self.write(f"[{self._done}/{self._total}] {task.title()} ...\n")
+            # Count tasks per category
+            counts: dict[str, int] = {"slides": 0, "audio": 0, "video": 0}
+            for name in selected_tasks:
+                cat = _categorize_task(name)
+                if cat:
+                    counts[cat] += 1
 
-        def add_success(self, task: Any) -> None:
+            # Suppress action logger to avoid visual interference
+            logging.getLogger("slidesonnet.actions").setLevel(logging.WARNING)
+
+            # Create rich progress display
+            self._progress = Progress(
+                SpinnerColumn(),
+                TextColumn("{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+            )
+            self._bar_ids: dict[str, Any] = {}
+            for cat, label in [
+                ("slides", "Slides"),
+                ("audio", "Audio"),
+                ("video", "Video"),
+            ]:
+                if counts[cat] > 0:
+                    tid = self._progress.add_task(label, total=counts[cat])
+                    self._bar_ids[cat] = tid
+            self._progress.start()
+
+        def execute_task(self, task: Any) -> None:
             pass
 
+        def add_success(self, task: Any) -> None:
+            cat = _categorize_task(task.name)
+            if cat and cat in self._bar_ids:
+                self._progress.advance(self._bar_ids[cat])
+
         def skip_uptodate(self, task: Any) -> None:
-            if task.name[0] != "_":
-                self._done += 1
-                self.write(f"[{self._done}/{self._total}] {task.title()} (up-to-date)\n")
+            cat = _categorize_task(task.name)
+            if cat and cat in self._bar_ids:
+                self._progress.advance(self._bar_ids[cat])
 
         def complete_run(self) -> None:
+            self._progress.stop()
             elapsed = time.monotonic() - self._start_time
             self.write(f"Build complete ({elapsed:.1f}s)\n")
             # Still show failures via parent
