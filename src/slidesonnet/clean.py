@@ -200,9 +200,13 @@ def _collect_current_audio_filenames(playlist_path: Path) -> set[str]:
     """
     from slidesonnet.pipeline import _create_tts
 
+    from dotenv import load_dotenv
+
     playlist_path = playlist_path.resolve()
     playlist_dir = playlist_path.parent
     build_dir = playlist_dir / "cache"
+
+    load_dotenv(playlist_dir / ".env")
 
     raw_config, entries = parse_playlist(playlist_path)
     config = load_config(raw_config, playlist_dir)
