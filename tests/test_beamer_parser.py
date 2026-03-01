@@ -114,6 +114,14 @@ def test_find_say_commands():
     assert matches[1] == ("voice=bob", "World")
 
 
+def test_find_say_commands_comment_with_brace():
+    r"""A \say{} whose body contains a % comment with } should not be truncated."""
+    text = "\\say{Hello % } comment\nworld}"
+    matches = _find_say_commands(text)
+    assert len(matches) == 1
+    assert matches[0] == ("", "Hello % } comment\nworld")
+
+
 def test_strip_latex():
     assert _strip_latex(r"\textbf{bold}") == "bold"
     assert "hello" in _strip_latex(r"\emph{hello}")
@@ -417,6 +425,36 @@ class TestExtractBracedEdgeCases:
         text = r"{Open bracket: \{}"
         content, pos = _extract_braced(text, 0)
         assert content == r"Open bracket: \{"
+        assert pos == len(text)
+
+    def test_comment_with_closing_brace(self) -> None:
+        """A } inside a % comment should not close the brace group."""
+        text = "{content % } comment\nmore}"
+        content, pos = _extract_braced(text, 0)
+        assert content == "content % } comment\nmore"
+        assert pos == len(text)
+
+    def test_comment_at_end_no_newline(self) -> None:
+        """Comment runs to end of string; real } comes after comment text."""
+        text = "{text % } comment}"
+        # The % starts a comment that runs to end-of-string (no newline),
+        # so the real } is consumed by the comment and braces are unmatched.
+        content, pos = _extract_braced(text, 0)
+        assert content is None
+        assert pos == 0
+
+    def test_escaped_percent_not_comment(self) -> None:
+        r"""An escaped \% should not start a comment."""
+        text = r"{100\% of }"
+        content, pos = _extract_braced(text, 0)
+        assert content == r"100\% of "
+        assert pos == len(text)
+
+    def test_comment_with_opening_brace(self) -> None:
+        """A { inside a % comment should not increase brace depth."""
+        text = "{start % { comment\nend}"
+        content, pos = _extract_braced(text, 0)
+        assert content == "start % { comment\nend"
         assert pos == len(text)
 
 

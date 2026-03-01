@@ -394,6 +394,8 @@ def _extract_braced(text: str, start: int) -> tuple[str | None, int]:
 
     Returns (content, position_after_closing_brace) or (None, start) on failure.
     Escaped braces (``\\{`` and ``\\}``) are ignored by the brace counter.
+    LaTeX ``%`` line comments are skipped so that braces inside comments
+    do not affect the depth count (``\\%`` is treated as a literal percent).
     """
     if start >= len(text) or text[start] != "{":
         return None, start
@@ -403,6 +405,10 @@ def _extract_braced(text: str, start: int) -> tuple[str | None, int]:
     while i < len(text):
         if text[i] == "\\" and i + 1 < len(text):
             i += 2  # skip escaped character
+            continue
+        if text[i] == "%":
+            newline = text.find("\n", i)
+            i = newline if newline != -1 else len(text)
             continue
         if text[i] == "{":
             depth += 1
