@@ -31,6 +31,7 @@ from slidesonnet.actions import (
     action_tts,
     get_parser_and_extractor,
 )
+from slidesonnet.hashing import _BACKEND_EXTENSIONS
 from slidesonnet.hashing import audio_path as _audio_path
 from slidesonnet.hashing import concat_filename as _concat_filename
 from slidesonnet.models import (
@@ -45,9 +46,28 @@ logger = logging.getLogger(__name__)
 
 
 def _audio_cache_valid(task: Any, values: Any) -> bool:  # noqa: ANN401
-    """Check that target audio file exists and is non-empty."""
+    """Check that target audio file exists and is non-empty.
+
+    If the target doesn't exist, check for a file with the old extension
+    (.wav ↔ .mp3) and rename it — transparently migrating existing
+    ElevenLabs caches from .wav to .mp3 without re-synthesizing.
+    """
     p = Path(task.targets[0])
-    return p.exists() and p.stat().st_size > 0
+    if p.exists() and p.stat().st_size > 0:
+        return True
+    # Try migrating from old extension
+    _swap = {v: k for k, v in _BACKEND_EXTENSIONS.items()}
+    _swap.update({k: v for v, k in _BACKEND_EXTENSIONS.items()})
+    # Build a simple extension swap: .wav ↔ .mp3
+    suffix = p.suffix
+    alt_suffixes = {ext for ext in _BACKEND_EXTENSIONS.values() if ext != suffix}
+    for alt in alt_suffixes:
+        alt_path = p.with_suffix(alt)
+        if alt_path.exists() and alt_path.stat().st_size > 0:
+            alt_path.rename(p)
+            logger.info("Migrated cache: %s → %s", alt_path.name, p.name)
+            return True
+    return False
 
 
 def generate_tasks(

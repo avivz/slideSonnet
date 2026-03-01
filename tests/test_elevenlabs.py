@@ -92,6 +92,39 @@ def test_synthesize_calls_api(mock_elevenlabs_cls, tmp_path):
     assert voice_settings.similarity_boost == 0.75
 
 
+@patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key-123"})
+@patch("slidesonnet.tts.elevenlabs.ElevenLabs")
+def test_atomic_write_on_failure(mock_elevenlabs_cls, tmp_path):
+    """Mid-stream failure leaves no file at output_path (atomic write)."""
+    mock_client = MagicMock()
+    mock_elevenlabs_cls.return_value = mock_client
+
+    def _failing_generator():
+        yield b"partial-data"
+        raise ConnectionError("stream interrupted")
+
+    mock_client.text_to_speech.convert.return_value = _failing_generator()
+
+    config = TTSConfig(
+        backend="elevenlabs",
+        elevenlabs_api_key_env="ELEVENLABS_API_KEY",
+        elevenlabs_voice_id="voice-abc",
+    )
+
+    from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+
+    tts = ElevenLabsTTS(config)
+    output = tmp_path / "speech.mp3"
+
+    with pytest.raises(ConnectionError, match="stream interrupted"):
+        tts.synthesize("Hello world", output)
+
+    # No file should exist at the output path
+    assert not output.exists()
+    # No temp files should remain
+    assert not list(tmp_path.glob("*.tmp"))
+
+
 def test_name():
     """name() works without API key or package."""
     config = TTSConfig(

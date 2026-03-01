@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -81,10 +83,17 @@ class ElevenLabsTTS(TTSEngine):
             request_options={"max_retries": 5},
         )
 
-        # Write the audio stream to file
-        with open(output_path, "wb") as f:
-            for chunk in audio_generator:
-                f.write(chunk)
+        # Write to temp file, atomically rename on success
+        fd, tmp = tempfile.mkstemp(dir=output_path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                for chunk in audio_generator:
+                    f.write(chunk)
+            os.replace(tmp, output_path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
 
         return _get_audio_duration(output_path)
 
