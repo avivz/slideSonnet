@@ -109,6 +109,12 @@ class TTSConfig:
     elevenlabs_stability: float = 0.5
     elevenlabs_similarity_boost: float = 0.75
 
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.elevenlabs_stability <= 1.0):
+            raise ValueError(f"elevenlabs_stability must be between 0 and 1, got {self.elevenlabs_stability}")
+        if not (0.0 <= self.elevenlabs_similarity_boost <= 1.0):
+            raise ValueError(f"elevenlabs_similarity_boost must be between 0 and 1, got {self.elevenlabs_similarity_boost}")
+
 
 _RESOLUTION_RE = re.compile(r"^\d+x\d+$")
 
@@ -130,6 +136,18 @@ class VideoConfig:
             raise ValueError(
                 f"Invalid resolution '{self.resolution}': expected 'WIDTHxHEIGHT' (e.g. '1920x1080')"
             )
+        if self.fps <= 0:
+            raise ValueError(f"fps must be positive, got {self.fps}")
+        if self.crf < 0:
+            raise ValueError(f"crf must be non-negative, got {self.crf}")
+        if self.pad_seconds < 0:
+            raise ValueError(f"pad_seconds must be non-negative, got {self.pad_seconds}")
+        if self.pre_silence < 0:
+            raise ValueError(f"pre_silence must be non-negative, got {self.pre_silence}")
+        if self.silence_duration < 0:
+            raise ValueError(f"silence_duration must be non-negative, got {self.silence_duration}")
+        if self.crossfade < 0:
+            raise ValueError(f"crossfade must be non-negative, got {self.crossfade}")
 
 
 @dataclass
