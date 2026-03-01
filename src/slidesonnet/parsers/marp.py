@@ -27,8 +27,8 @@ _SAY_RE = re.compile(
     re.DOTALL,
 )
 
-# Match <!-- nonarration -->
-_SILENT_RE = re.compile(r"<!--\s*nonarration\s*-->", re.IGNORECASE)
+# Match <!-- nonarration --> or <!-- nonarration(duration) -->
+_SILENT_RE = re.compile(r"<!--\s*nonarration\s*(?:\(([^)]*)\))?\s*-->", re.IGNORECASE)
 
 # Match <!-- skip -->
 _SKIP_RE = re.compile(r"<!--\s*skip\s*-->", re.IGNORECASE)
@@ -342,6 +342,29 @@ def _count_fragments(text: str) -> int:
     return len(_FRAGMENT_UL_RE.findall(clean)) + len(_FRAGMENT_OL_RE.findall(clean))
 
 
+def _parse_silence_duration(raw: str | None, source: Path, index: int) -> float | None:
+    """Parse an optional silence duration string into a float.
+
+    Returns None if *raw* is None or empty (no override).
+    Raises ParserError for invalid or negative values.
+    """
+    if raw is None or raw.strip() == "":
+        return None
+    raw = raw.strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ParserError(
+            f"{source} slide {index}: invalid nonarration duration '{raw}' "
+            f"(expected a non-negative number)"
+        )
+    if value < 0:
+        raise ParserError(
+            f"{source} slide {index}: nonarration duration must be non-negative, got {value}"
+        )
+    return value
+
+
 def _parse_slide(
     start_index: int, text: str, source: Path, start_image_index: int = 1
 ) -> tuple[list[SlideNarration], int]:
@@ -380,13 +403,16 @@ def _parse_slide(
 
     # Check for <!-- nonarration --> (without any say)
     say_matches = _SAY_RE.findall(clean_text)
-    if _SILENT_RE.search(clean_text) and not say_matches:
+    silent_match = _SILENT_RE.search(clean_text)
+    if silent_match and not say_matches:
+        silence_override = _parse_silence_duration(silent_match.group(1), source, start_index)
         return (
             [
                 SlideNarration(
                     index=start_index,
                     image_index=start_image_index,
                     annotation=SlideAnnotation.SILENT,
+                    silence_override=silence_override,
                 )
             ],
             n_visual_states,

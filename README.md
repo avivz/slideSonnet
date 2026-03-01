@@ -112,7 +112,8 @@ marp: true
 |---|---|
 | `<!-- say: text -->` | Narrate with default voice |
 | `<!-- say(voice=alice): text -->` | Narrate with a named voice preset |
-| `<!-- nonarration -->` | Show slide with silence (no narration) |
+| `<!-- nonarration -->` | Show slide with silence (uses global `silence_duration`) |
+| `<!-- nonarration(5) -->` | Show slide with silence for 5 seconds (per-slide override) |
 | `<!-- skip -->` | Omit slide from video entirely |
 | *(none)* | Treated as silent, emits a warning |
 
@@ -132,7 +133,7 @@ Use the `\say` command (defined as a no-op by `slidesonnet.sty` so LaTeX compile
 \end{frame}
 ```
 
-Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\nonarration`, `\skip`. Frames with `\pause` produce multiple sub-slides that can be narrated independently — see [Beamer documentation](docs/beamer.md) for details.
+Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\nonarration`, `\nonarration[5]` (per-slide duration override), `\skip`. Frames with `\pause` produce multiple sub-slides that can be narrated independently — see [Beamer documentation](docs/beamer.md) for details.
 
 ## Playlist format
 

@@ -49,10 +49,13 @@ class SlideNarration:
     duration_seconds: float = 0.0
     voice: str | None = None  # named voice preset, None = default
     pace: str | None = None  # slow / normal / fast
+    silence_override: float | None = None  # per-slide silence duration override (seconds)
 
     def __post_init__(self) -> None:
         if self.image_index == 0:
             self.image_index = self.index
+        if self.silence_override is not None and self.silence_override < 0:
+            raise ValueError(f"silence_override must be non-negative, got {self.silence_override}")
 
     @property
     def has_narration(self) -> bool:

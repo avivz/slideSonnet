@@ -776,3 +776,60 @@ class TestExportPdf:
         source.write_text("dummy")
         with pytest.raises(ParserError, match="pdf error"):
             export_pdf(source, tmp_path / "out.pdf")
+
+
+class TestNonarrationDuration:
+    """Tests for <!-- nonarration(duration) --> parsing."""
+
+    def test_nonarration_with_duration(self) -> None:
+        """<!-- nonarration(5) --> sets silence_override to 5.0."""
+        text = "# Slide\n\n<!-- nonarration(5) -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SILENT
+        assert slide.silence_override == 5.0
+
+    def test_nonarration_with_float_duration(self) -> None:
+        """<!-- nonarration(2.5) --> sets silence_override to 2.5."""
+        text = "# Slide\n\n<!-- nonarration(2.5) -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.silence_override == 2.5
+
+    def test_nonarration_without_duration_has_no_override(self) -> None:
+        """<!-- nonarration --> has silence_override None."""
+        text = "# Slide\n\n<!-- nonarration -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SILENT
+        assert slide.silence_override is None
+
+    def test_nonarration_with_empty_parens(self) -> None:
+        """<!-- nonarration() --> has silence_override None."""
+        text = "# Slide\n\n<!-- nonarration() -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.silence_override is None
+
+    def test_nonarration_with_invalid_duration_raises(self) -> None:
+        """<!-- nonarration(abc) --> raises ParserError."""
+        text = "# Slide\n\n<!-- nonarration(abc) -->"
+        with pytest.raises(ParserError, match="invalid nonarration duration"):
+            _parse_slide(1, text, Path("test.md"), 1)
+
+    def test_nonarration_with_negative_duration_raises(self) -> None:
+        """<!-- nonarration(-1) --> raises ParserError."""
+        text = "# Slide\n\n<!-- nonarration(-1) -->"
+        with pytest.raises(ParserError, match="non-negative"):
+            _parse_slide(1, text, Path("test.md"), 1)
+
+    def test_nonarration_with_duration_inside_code_fence_ignored(self) -> None:
+        """<!-- nonarration(5) --> inside a code fence is not parsed."""
+        text = textwrap.dedent("""\
+            # Example Slide
+
+            ```markdown
+            <!-- nonarration(5) -->
+            ```
+
+            <!-- say: This slide is narrated. -->
+        """)
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SAY
+        assert "narrated" in slide.narration_raw

@@ -794,6 +794,44 @@ class TestActionComposeSilent:
         called_image = mock_compose.call_args[1]["image"]
         assert called_image == Path(tmp_path / "slides" / "slide.002.png")
 
+    @patch("slidesonnet.actions.composer.compose_silent_segment")
+    def test_calls_compose_silent_with_override(
+        self, mock_compose: MagicMock, tmp_path: Path
+    ) -> None:
+        manifest = self._setup_manifest(tmp_path)
+        output = tmp_path / "seg.mp4"
+        config = ProjectConfig()
+
+        action_compose_silent(manifest, 1, output, config, silence_override=5.0)
+
+        mock_compose.assert_called_once_with(
+            image=Path(tmp_path / "slides" / "slide.001.png"),
+            output=output,
+            duration=5.0,
+            resolution=config.video.resolution,
+            fps=config.video.fps,
+            crf=config.video.crf,
+        )
+
+    @patch("slidesonnet.actions.composer.compose_silent_segment")
+    def test_calls_compose_silent_without_override(
+        self, mock_compose: MagicMock, tmp_path: Path
+    ) -> None:
+        manifest = self._setup_manifest(tmp_path)
+        output = tmp_path / "seg.mp4"
+        config = ProjectConfig(video=VideoConfig(silence_duration=7.0))
+
+        action_compose_silent(manifest, 1, output, config, silence_override=None)
+
+        mock_compose.assert_called_once_with(
+            image=Path(tmp_path / "slides" / "slide.001.png"),
+            output=output,
+            duration=7.0,
+            resolution=config.video.resolution,
+            fps=config.video.fps,
+            crf=config.video.crf,
+        )
+
 
 class TestActionAssemble:
     """Tests for action_assemble()."""
@@ -1149,6 +1187,63 @@ def test_video_module_no_export_pdf(tmp_path: Path) -> None:
     tasks = _generate(tmp_path, playlist)
     export_tasks = [t for t in tasks if t["name"].split(":")[0] == "export_pdf"]
     assert len(export_tasks) == 0
+
+
+def test_uptodate_includes_silence_override(tmp_path: Path) -> None:
+    """Silent slide compose tasks include silence_override in uptodate config."""
+    playlist = _setup_project(tmp_path)
+    tasks = _generate(tmp_path, playlist)
+
+    # Find the compose task for the silent slide (slide 3)
+    compose_tasks = [t for t in tasks if t["name"].split(":")[0] == "compose"]
+    # The silent slide's compose task uses action_compose_silent
+    silent_compose = [t for t in compose_tasks if t["actions"][0][0] is action_compose_silent]
+    assert len(silent_compose) == 1
+
+    # Check that uptodate config_changed dict has silence_override key
+    uptodate_entry = silent_compose[0]["uptodate"][0]
+    # config_changed returns a callable with a .config attribute
+    assert "silence_override" in uptodate_entry.config
+
+
+def test_silence_override_threaded_to_compose_action(tmp_path: Path) -> None:
+    """silence_override from parser is passed through to compose action args."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text(
+        textwrap.dedent("""\
+        ---
+        title: Test
+        ---
+
+        1. [Intro](01-intro/slides.md)
+    """)
+    )
+
+    slides_dir = tmp_path / "01-intro"
+    slides_dir.mkdir()
+    (slides_dir / "slides.md").write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Silent Slide
+
+        <!-- nonarration(5) -->
+    """)
+    )
+
+    tasks = _generate(tmp_path, playlist)
+    silent_compose = [
+        t
+        for t in tasks
+        if t["name"].split(":")[0] == "compose" and t["actions"][0][0] is action_compose_silent
+    ]
+    assert len(silent_compose) == 1
+
+    # The 5th arg (index 4) to action_compose_silent should be 5.0
+    action_args = silent_compose[0]["actions"][0][1]
+    assert action_args[4] == 5.0
 
 
 def test_beamer_extract_images_depends_on_cache_pdf(tmp_path: Path) -> None:

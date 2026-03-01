@@ -367,6 +367,7 @@ def generate_tasks(
                                     slide.image_index,
                                     seg_path,
                                     config,
+                                    slide.silence_override,
                                 ],
                             )
                         ],
@@ -377,6 +378,7 @@ def generate_tasks(
                             config_changed(
                                 {
                                     "silence_duration": config.video.silence_duration,
+                                    "silence_override": slide.silence_override,
                                     "resolution": config.video.resolution,
                                     "fps": config.video.fps,
                                     "crf": config.video.crf,

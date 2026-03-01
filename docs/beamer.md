@@ -53,16 +53,28 @@ Optional bracket parameters control voice and pace:
 
 Voice names reference presets defined in the playlist YAML front matter. When multiple `\say` commands in the same frame (or sub-slide) specify conflicting voice or pace, the last one wins.
 
-### `\nonarration`
+### `\nonarration` / `\nonarration[duration]`
 
-Show the slide with silence (no narration). The slide appears for the configured `video.silence_duration` (default: 3 seconds):
+Show the slide with silence (no narration). Without a duration argument, the slide appears for the configured `video.silence_duration` (default: 3 seconds). With an explicit duration (in seconds), the per-slide value overrides the global config:
 
 ```latex
 \begin{frame}
   \frametitle{Title Card}
-  \nonarration
+  \nonarration           % uses global silence_duration
+\end{frame}
+
+\begin{frame}
+  \frametitle{Complex Diagram}
+  \nonarration[10]       % hold for 10 seconds
+\end{frame}
+
+\begin{frame}
+  \frametitle{Quick Transition}
+  \nonarration[1.5]      % hold for 1.5 seconds
 \end{frame}
 ```
+
+> **Tip:** Always specify an explicit duration — e.g. `\nonarration[5]` — rather than relying on the global `silence_duration` default. Explicit durations make the pacing of your presentation self-documenting and independent of project-level configuration changes.
 
 ### `\skip`
 
@@ -116,7 +128,7 @@ This frame produces 3 PDF pages and 3 video segments, each with its own narratio
 - **Multiple `\say` for the same sub-slide** are concatenated in file order
 - **Missing narration** — sub-slides with no `\say` targeting them become silent (with a warning)
 - **Target beyond pause count** — if `\say[5]{text}` appears in a frame with only 2 pauses, the sub-slide count is extended to 5 (with a warning); the image index clamps to the last available PDF page
-- **`\skip` / `\nonarration` on overlay frames** — applies to all sub-slides in the frame
+- **`\skip` / `\nonarration` on overlay frames** — applies to all sub-slides in the frame (duration override, if given, applies to every sub-slide)
 - **Unannotated frames** — frames with no `\say`, `\nonarration`, or `\skip` produce a warning and are treated as having no annotation
 
 ### Backward compatibility

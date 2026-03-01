@@ -342,4 +342,4 @@ $$1 + \frac{1}{4} + \frac{1}{9} + \frac{1}{16} + \cdots = \frac{\pi^2}{6}$$
 - K. Weierstrass, "Zur Theorie der eindeutigen analytischen Funktionen," *Abhandlungen der Königlichen Akademie der Wissenschaften zu Berlin* (1876)
 - R. Apéry, "Irrationalité de $\zeta(2)$ et $\zeta(3)$," *Astérisque* 61 (1979)
 
-<!-- nonarration -->
+<!-- nonarration(3) -->

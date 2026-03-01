@@ -92,14 +92,16 @@ def action_compose_silent(
     slide_index: int,
     output: Path,
     config: ProjectConfig,
+    silence_override: float | None = None,
 ) -> None:
     """Compose a silent slide segment."""
     images = json.loads(manifest_path.read_text(encoding="utf-8"))
     image = Path(images[slide_index - 1])
+    duration = silence_override if silence_override is not None else config.video.silence_duration
     composer.compose_silent_segment(
         image=image,
         output=output,
-        duration=config.video.silence_duration,
+        duration=duration,
         resolution=config.video.resolution,
         fps=config.video.fps,
         crf=config.video.crf,

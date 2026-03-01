@@ -57,15 +57,29 @@ Say directives can span multiple lines. Whitespace is normalized to single space
      in the source file. -->
 ```
 
-### `<!-- nonarration -->`
+### `<!-- nonarration -->` / `<!-- nonarration(duration) -->`
 
-Show the slide with silence (no narration):
+Show the slide with silence (no narration). Without a duration, the slide appears for the configured `video.silence_duration` (default: 3 seconds). With an explicit duration (in seconds), the per-slide value overrides the global config:
 
 ```markdown
 # Title Card
 
 <!-- nonarration -->
+
+---
+
+# Complex Diagram
+
+<!-- nonarration(10) -->
+
+---
+
+# Quick Transition
+
+<!-- nonarration(1.5) -->
 ```
+
+> **Tip:** Always specify an explicit duration — e.g. `<!-- nonarration(5) -->` — rather than relying on the global `silence_duration` default. Explicit durations make the pacing of your presentation self-documenting and independent of project-level configuration changes.
 
 ### `<!-- skip -->`
 

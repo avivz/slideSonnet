@@ -19,8 +19,8 @@
 % \say[optional]{text} — narration directive (ignored by LaTeX)
 \newcommand{\say}[2][]{}
 
-% \nonarration — marks slide as intentionally silent
-\newcommand{\nonarration}{}
+% \nonarration[duration] — marks slide as intentionally silent (optional duration in seconds)
+\newcommand{\nonarration}[1][]{}
 
 % Note: \skip is already a TeX primitive, so we redefine it only inside frames.
 % Users should use \slidesonnetskip if \skip conflicts.

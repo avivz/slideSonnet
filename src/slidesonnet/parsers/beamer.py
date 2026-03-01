@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 # Handles nested braces via a non-regex approach for the body
 _SAY_START_RE = re.compile(r"\\say\s*(?:\[([^\]]*)\])?\s*\{")
 
-# Match \nonarration on its own line (with optional trailing % comment)
-_SILENT_RE = re.compile(r"^\s*\\nonarration\s*(?:%.*)?$", re.MULTILINE)
+# Match \nonarration or \nonarration[duration] on its own line (with optional trailing % comment)
+_SILENT_RE = re.compile(r"^\s*\\nonarration\s*(?:\[([^\]]*)\])?\s*(?:%.*)?$", re.MULTILINE)
 
 # Match \slidesonnetskip
 _SKIP_RE = re.compile(r"\\slidesonnetskip\b")
@@ -186,6 +186,29 @@ def _count_pauses(text: str) -> int:
     return len(_PAUSE_RE.findall(text))
 
 
+def _parse_silence_duration(raw: str | None, source: Path, index: int) -> float | None:
+    """Parse an optional silence duration string into a float.
+
+    Returns None if *raw* is None or empty (no override).
+    Raises ParserError for invalid or negative values.
+    """
+    if raw is None or raw.strip() == "":
+        return None
+    raw = raw.strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ParserError(
+            f"{source} frame {index}: invalid nonarration duration '{raw}' "
+            f"(expected a non-negative number)"
+        )
+    if value < 0:
+        raise ParserError(
+            f"{source} frame {index}: nonarration duration must be non-negative, got {value}"
+        )
+    return value
+
+
 def _parse_frame(
     start_index: int, text: str, source: Path, start_image_index: int = 1
 ) -> tuple[list[SlideNarration], int]:
@@ -217,13 +240,16 @@ def _parse_frame(
 
     # Check for \nonarration (without any \say) — applies to all sub-slides
     say_matches = _find_say_commands(text)
-    if _SILENT_RE.search(text) and not say_matches:
+    silent_match = _SILENT_RE.search(text)
+    if silent_match and not say_matches:
+        silence_override = _parse_silence_duration(silent_match.group(1), source, start_index)
         return (
             [
                 SlideNarration(
                     index=start_index + i,
                     image_index=start_image_index + i,
                     annotation=SlideAnnotation.SILENT,
+                    silence_override=silence_override,
                 )
                 for i in range(n_sub)
             ],

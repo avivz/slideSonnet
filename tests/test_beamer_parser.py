@@ -750,3 +750,69 @@ class TestOverlayParsing:
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
         assert slides[0].annotation == SlideAnnotation.SILENT
+
+
+class TestNonarrationDuration:
+    """Tests for \\nonarration[duration] parsing."""
+
+    def test_nonarration_with_duration(self) -> None:
+        r"""\\nonarration[5] sets silence_override to 5.0."""
+        text = r"\nonarration[5]"
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].annotation == SlideAnnotation.SILENT
+        assert slides[0].silence_override == 5.0
+
+    def test_nonarration_with_float_duration(self) -> None:
+        r"""\\nonarration[2.5] sets silence_override to 2.5."""
+        text = r"\nonarration[2.5]"
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].silence_override == 2.5
+
+    def test_nonarration_without_duration_has_no_override(self) -> None:
+        r"""\\nonarration without brackets has silence_override None."""
+        text = r"\nonarration"
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].silence_override is None
+
+    def test_nonarration_with_empty_brackets(self) -> None:
+        r"""\\nonarration[] has silence_override None."""
+        text = r"\nonarration[]"
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].silence_override is None
+
+    def test_nonarration_with_invalid_duration_raises(self) -> None:
+        r"""\\nonarration[abc] raises ParserError."""
+        text = r"\nonarration[abc]"
+        with pytest.raises(ParserError, match="invalid nonarration duration"):
+            _parse_frame(1, text, Path("test.tex"), 1)
+
+    def test_nonarration_with_negative_duration_raises(self) -> None:
+        r"""\\nonarration[-1] raises ParserError."""
+        text = r"\nonarration[-1]"
+        with pytest.raises(ParserError, match="non-negative"):
+            _parse_frame(1, text, Path("test.tex"), 1)
+
+    def test_nonarration_with_duration_on_overlay_frame(self) -> None:
+        r"""\\nonarration[5] + \\pause → all sub-slides get silence_override 5.0."""
+        text = r"""
+        \nonarration[5]
+        \pause
+        Content.
+        """
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 2
+        assert all(s.annotation == SlideAnnotation.SILENT for s in slides)
+        assert all(s.silence_override == 5.0 for s in slides)
+
+    def test_nonarration_with_duration_and_trailing_comment(self) -> None:
+        r"""\\nonarration[5]  % comment → works."""
+        text = r"""
+        \nonarration[5]  % hold for five seconds
+        """
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].silence_override == 5.0
