@@ -62,8 +62,8 @@ The `examples/showcase/` directory is a full-featured project that exercises eve
 
 | Module | Format | Features demonstrated |
 |---|---|---|
-| `01-intro/slides.md` | MARP | Basic say, multiline say, multiple say blocks, silent |
-| `02-deep-dive/slides.tex` | Beamer | `\say{}` with LaTeX, voice/pace overrides, `\silent`, `\slidesonnetskip` |
+| `01-intro/slides.md` | MARP | Basic say, multiline say, multiple say blocks, nonarration |
+| `02-deep-dive/slides.tex` | Beamer | `\say{}` with LaTeX, voice/pace overrides, `\nonarration`, `\slidesonnetskip` |
 | `03-examples/slides.md` | MARP | Voice presets, pace control, skip, pronunciation triggers |
 | `animations/transition.mp4` | Video | Passthrough (no parsing/TTS) |
 
@@ -99,7 +99,7 @@ marp: true
 
 # Diagram
 
-<!-- silent -->
+<!-- nonarration -->
 
 ---
 
@@ -112,7 +112,7 @@ marp: true
 |---|---|
 | `<!-- say: text -->` | Narrate with default voice |
 | `<!-- say(voice=alice): text -->` | Narrate with a named voice preset |
-| `<!-- silent -->` | Show slide with silence (no narration) |
+| `<!-- nonarration -->` | Show slide with silence (no narration) |
 | `<!-- skip -->` | Omit slide from video entirely |
 | *(none)* | Treated as silent, emits a warning |
 
@@ -132,7 +132,7 @@ Use the `\say` command (defined as a no-op by `slidesonnet.sty` so LaTeX compile
 \end{frame}
 ```
 
-Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\silent`, `\skip`. Frames with `\pause` produce multiple sub-slides that can be narrated independently — see [Beamer documentation](docs/beamer.md) for details.
+Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\nonarration`, `\skip`. Frames with `\pause` produce multiple sub-slides that can be narrated independently — see [Beamer documentation](docs/beamer.md) for details.
 
 ## Playlist format
 

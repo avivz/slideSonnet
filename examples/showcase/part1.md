@@ -115,21 +115,21 @@ Voices are defined in the playlist. Pace adjusts speech speed.
 
 ---
 
-# Silent and Skip
+# Nonarration and Skip
 
 Two special annotations control slide behavior:
 
 ```markdown
-<!-- silent -->
+<!-- nonarration -->
 ```
-A silent slide appears in the video with a configurable pause but no speech.
+A nonarration slide appears in the video with a configurable pause but no speech.
 
 ```markdown
 <!-- skip -->
 ```
 A skipped slide is excluded from the video entirely. Useful for backup or draft slides.
 
-<!-- say: There are two more annotations. Silent produces a slide with a pause but no speech. Skip excludes the slide from the video entirely, which is useful for backup or work-in-progress slides. -->
+<!-- say: There are two more annotations. Nonarration produces a slide with a pause but no speech. Skip excludes the slide from the video entirely, which is useful for backup or work-in-progress slides. -->
 
 ---
 

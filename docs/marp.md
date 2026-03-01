@@ -57,14 +57,14 @@ Say directives can span multiple lines. Whitespace is normalized to single space
      in the source file. -->
 ```
 
-### `<!-- silent -->`
+### `<!-- nonarration -->`
 
 Show the slide with silence (no narration):
 
 ```markdown
 # Title Card
 
-<!-- silent -->
+<!-- nonarration -->
 ```
 
 ### `<!-- skip -->`
@@ -225,7 +225,7 @@ Directives inside fenced code blocks are ignored:
 <!-- say: Real narration outside the fence. -->
 ````
 
-Only the second `<!-- say -->` is parsed. The same applies to `<!-- silent -->`, `<!-- skip -->`, and fragment markers (`*`, `N)`).
+Only the second `<!-- say -->` is parsed. The same applies to `<!-- nonarration -->`, `<!-- skip -->`, and fragment markers (`*`, `N)`).
 
 ## Image extraction
 

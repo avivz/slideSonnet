@@ -19,4 +19,4 @@ marp: true
 
 # Course Overview
 
-<!-- silent -->
+<!-- nonarration -->

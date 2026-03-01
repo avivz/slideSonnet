@@ -80,7 +80,7 @@ def _setup_project(tmp_path):
 
         # Silent Slide
 
-        <!-- silent -->
+        <!-- nonarration -->
     """)
     )
 
@@ -166,7 +166,7 @@ def test_compose_tasks_skip_skipped_slides(tmp_path):
 
         # Visible
 
-        <!-- silent -->
+        <!-- nonarration -->
     """)
     )
 
@@ -870,7 +870,7 @@ def test_mixed_type_playlist(tmp_path):
 
         # Slide Two
 
-        <!-- silent -->
+        <!-- nonarration -->
     """)
     )
 
@@ -894,7 +894,7 @@ def test_mixed_type_playlist(tmp_path):
 
         \begin{frame}
         \frametitle{Frame Two}
-        \silent
+        \nonarration
         \end{frame}
 
         \end{document}

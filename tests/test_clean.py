@@ -48,7 +48,7 @@ def _create_playlist(tmp_path: Path, slides_text: str | None = None) -> Path:
 
             # Silent
 
-            <!-- silent -->
+            <!-- nonarration -->
         """)
     (slides_dir / "slides.md").write_text(slides_text)
     return playlist

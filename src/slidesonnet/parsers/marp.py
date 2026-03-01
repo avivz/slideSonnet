@@ -27,8 +27,8 @@ _SAY_RE = re.compile(
     re.DOTALL,
 )
 
-# Match <!-- silent -->
-_SILENT_RE = re.compile(r"<!--\s*silent\s*-->", re.IGNORECASE)
+# Match <!-- nonarration -->
+_SILENT_RE = re.compile(r"<!--\s*nonarration\s*-->", re.IGNORECASE)
 
 # Match <!-- skip -->
 _SKIP_RE = re.compile(r"<!--\s*skip\s*-->", re.IGNORECASE)
@@ -378,7 +378,7 @@ def _parse_slide(
             n_visual_states,
         )
 
-    # Check for <!-- silent --> (without any say)
+    # Check for <!-- nonarration --> (without any say)
     say_matches = _SAY_RE.findall(clean_text)
     if _SILENT_RE.search(clean_text) and not say_matches:
         return (
@@ -395,7 +395,7 @@ def _parse_slide(
     if not say_matches:
         # No annotation at all — warn
         logger.warning(
-            "%s slide %d: no annotation (use <!-- say: -->, <!-- silent -->, or <!-- skip -->)",
+            "%s slide %d: no annotation (use <!-- say: -->, <!-- nonarration -->, or <!-- skip -->)",
             source,
             start_index,
         )
@@ -469,7 +469,7 @@ def _parse_slide(
 
         if not full_narration:
             logger.warning(
-                "%s slide %d: empty <!-- say: --> — did you mean <!-- silent -->?",
+                "%s slide %d: empty <!-- say: --> — did you mean <!-- nonarration -->?",
                 source,
                 start_index,
             )

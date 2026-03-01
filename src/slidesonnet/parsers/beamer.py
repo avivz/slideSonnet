@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 # Handles nested braces via a non-regex approach for the body
 _SAY_START_RE = re.compile(r"\\say\s*(?:\[([^\]]*)\])?\s*\{")
 
-# Match \silent
-_SILENT_RE = re.compile(r"\\silent\b")
+# Match \nonarration on its own line (with optional trailing % comment)
+_SILENT_RE = re.compile(r"^\s*\\nonarration\s*(?:%.*)?$", re.MULTILINE)
 
 # Match \slidesonnetskip
 _SKIP_RE = re.compile(r"\\slidesonnetskip\b")
@@ -215,7 +215,7 @@ def _parse_frame(
             n_visual_states,
         )
 
-    # Check for \silent (without any \say) — applies to all sub-slides
+    # Check for \nonarration (without any \say) — applies to all sub-slides
     say_matches = _find_say_commands(text)
     if _SILENT_RE.search(text) and not say_matches:
         return (
@@ -233,7 +233,7 @@ def _parse_frame(
     if not say_matches:
         # No annotation at all
         logger.warning(
-            "%s frame %d: no annotation (use \\say{}, \\silent, or \\slidesonnetskip)",
+            "%s frame %d: no annotation (use \\say{}, \\nonarration, or \\slidesonnetskip)",
             source,
             start_index,
         )
@@ -311,7 +311,7 @@ def _parse_frame(
 
         if not full_narration:
             logger.warning(
-                "%s frame %d: empty \\say{} — did you mean \\silent?",
+                "%s frame %d: empty \\say{} — did you mean \\nonarration?",
                 source,
                 start_index,
             )

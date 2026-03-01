@@ -47,7 +47,7 @@ def test_parse_say_with_params(simple_md: Path) -> None:
     assert slides[1].pace == "slow"
 
 
-def test_parse_silent(simple_md: Path) -> None:
+def test_parse_nonarration(simple_md: Path) -> None:
     parser = MarpParser()
     slides = parser.parse(simple_md, Path("/tmp/build"))
 
@@ -234,13 +234,13 @@ def test_say_inside_code_fence_ignored() -> None:
     assert "example code" not in slide.narration_raw
 
 
-def test_silent_inside_code_fence_ignored() -> None:
-    """<!-- silent --> inside a fenced code block should not mark the slide silent."""
+def test_nonarration_inside_code_fence_ignored() -> None:
+    """<!-- nonarration --> inside a fenced code block should not mark the slide silent."""
     slide_text = textwrap.dedent("""\
         # Example Slide
 
         ```markdown
-        <!-- silent -->
+        <!-- nonarration -->
         ```
 
         <!-- say: This slide is narrated. -->
@@ -302,7 +302,7 @@ def test_regular_comment_ignored() -> None:
 def test_empty_say_warns(caplog: pytest.LogCaptureFixture) -> None:
     [slide], _ = _parse_slide(1, "<!-- say: -->", Path("test.md"), 1)
     assert slide.annotation == SlideAnnotation.SILENT
-    assert "did you mean <!-- silent -->" in caplog.text
+    assert "did you mean <!-- nonarration -->" in caplog.text
 
 
 def test_has_narration_property() -> None:

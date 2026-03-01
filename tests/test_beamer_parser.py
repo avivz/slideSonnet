@@ -63,7 +63,7 @@ def test_nested_braces(simple_tex):
     assert "nested braces" in slides[2].narration_raw
 
 
-def test_parse_silent(simple_tex):
+def test_parse_nonarration(simple_tex):
     parser = BeamerParser()
     slides = parser.parse(simple_tex, Path("/tmp/build"))
 
@@ -589,10 +589,10 @@ class TestOverlayParsing:
         assert len(slides) == 2
         assert all(s.annotation == SlideAnnotation.SKIP for s in slides)
 
-    def test_silent_on_overlay_frame(self) -> None:
-        """\\silent (without \\say) on a frame with \\pause → all sub-slides SILENT."""
+    def test_nonarration_on_overlay_frame(self) -> None:
+        """\\nonarration (without \\say) on a frame with \\pause → all sub-slides SILENT."""
         text = r"""
-        \silent
+        \nonarration
         \pause
         Content.
         """
@@ -722,8 +722,8 @@ class TestOverlayParsing:
         assert slides[14].annotation == SlideAnnotation.SKIP
         assert slides[14].index == 15
 
-    def test_fixture_overlay_silent(self, simple_tex: Path) -> None:
-        """Frame 11: \\silent with \\pause → both sub-slides are SILENT."""
+    def test_fixture_overlay_nonarration(self, simple_tex: Path) -> None:
+        """Frame 11: \\nonarration with \\pause → both sub-slides are SILENT."""
         parser = BeamerParser()
         slides = parser.parse(simple_tex, Path("/tmp/build"))
 
@@ -732,3 +732,21 @@ class TestOverlayParsing:
         assert slides[15].index == 16
         assert slides[16].annotation == SlideAnnotation.SILENT
         assert slides[16].index == 17
+
+    def test_nonarration_must_be_own_line(self) -> None:
+        r"""\\nonarration embedded in \\say{} text does NOT trigger silent."""
+        text = r"""
+        \say{This text mentions \nonarration but should still be narrated.}
+        """
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].annotation == SlideAnnotation.SAY
+
+    def test_nonarration_with_trailing_comment(self) -> None:
+        r"""\\nonarration with trailing LaTeX comment is recognized."""
+        text = r"""
+        \nonarration  % no speech on this frame
+        """
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].annotation == SlideAnnotation.SILENT

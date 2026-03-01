@@ -81,7 +81,7 @@ def _setup_project(tmp_path: Path) -> Path:
 
         # Silent Slide
 
-        <!-- silent -->
+        <!-- nonarration -->
     """)
     )
 

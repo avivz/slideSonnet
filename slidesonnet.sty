@@ -1,6 +1,6 @@
 % slidesonnet.sty — LaTeX package for slideSonnet narration directives
 %
-% Defines \say, \silent, and \skip as no-ops so that Beamer presentations
+% Defines \say, \nonarration, and \skip as no-ops so that Beamer presentations
 % compile normally with pdflatex. The slideSonnet tool parses these commands
 % directly from the .tex source.
 %
@@ -10,7 +10,7 @@
 % Usage in frames:
 %   \say{Narration text for this slide.}
 %   \say[voice=alice, pace=slow]{Text with voice override.}
-%   \silent   % intentionally no narration
+%   \nonarration   % intentionally no narration
 %   \skip     % omit slide from video
 
 \NeedsTeXFormat{LaTeX2e}
@@ -19,8 +19,8 @@
 % \say[optional]{text} — narration directive (ignored by LaTeX)
 \newcommand{\say}[2][]{}
 
-% \silent — marks slide as intentionally silent
-\newcommand{\silent}{}
+% \nonarration — marks slide as intentionally silent
+\newcommand{\nonarration}{}
 
 % Note: \skip is already a TeX primitive, so we redefine it only inside frames.
 % Users should use \slidesonnetskip if \skip conflicts.

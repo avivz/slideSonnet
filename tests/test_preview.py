@@ -63,7 +63,7 @@ class TestPreviewSingleSlide:
 
             # Silent Slide
 
-            <!-- silent -->
+            <!-- nonarration -->
         """)
         )
         with caplog.at_level(logging.INFO):

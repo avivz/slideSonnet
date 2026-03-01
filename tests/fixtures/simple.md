@@ -27,7 +27,7 @@ $$\sum_{v \in V} \deg(v) = 2|E|$$
 
 # Title Card
 
-<!-- silent -->
+<!-- nonarration -->
 
 ---
 

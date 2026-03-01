@@ -4,7 +4,7 @@ slideSonnet parses Beamer LaTeX frames and generates narrated video from them. T
 
 ## Setup
 
-Your Beamer document should include the `slidesonnet` package, which defines `\say`, `\silent`, `\skip`, and `\slidesonnetskip` as no-ops so LaTeX compiles normally:
+Your Beamer document should include the `slidesonnet` package, which defines `\say`, `\nonarration`, `\skip`, and `\slidesonnetskip` as no-ops so LaTeX compiles normally:
 
 ```latex
 \documentclass{beamer}
@@ -40,7 +40,7 @@ Multiple `\say` commands in the same frame are concatenated:
 \end{frame}
 ```
 
-An empty `\say{}` triggers a warning ("did you mean `\silent`?") and is treated as silent.
+An empty `\say{}` triggers a warning ("did you mean `\nonarration`?") and is treated as silent.
 
 ### `\say[params]{text}`
 
@@ -53,14 +53,14 @@ Optional bracket parameters control voice and pace:
 
 Voice names reference presets defined in the playlist YAML front matter. When multiple `\say` commands in the same frame (or sub-slide) specify conflicting voice or pace, the last one wins.
 
-### `\silent`
+### `\nonarration`
 
 Show the slide with silence (no narration). The slide appears for the configured `video.silence_duration` (default: 3 seconds):
 
 ```latex
 \begin{frame}
   \frametitle{Title Card}
-  \silent
+  \nonarration
 \end{frame}
 ```
 
@@ -116,8 +116,8 @@ This frame produces 3 PDF pages and 3 video segments, each with its own narratio
 - **Multiple `\say` for the same sub-slide** are concatenated in file order
 - **Missing narration** — sub-slides with no `\say` targeting them become silent (with a warning)
 - **Target beyond pause count** — if `\say[5]{text}` appears in a frame with only 2 pauses, the sub-slide count is extended to 5 (with a warning); the image index clamps to the last available PDF page
-- **`\skip` / `\silent` on overlay frames** — applies to all sub-slides in the frame
-- **Unannotated frames** — frames with no `\say`, `\silent`, or `\skip` produce a warning and are treated as having no annotation
+- **`\skip` / `\nonarration` on overlay frames** — applies to all sub-slides in the frame
+- **Unannotated frames** — frames with no `\say`, `\nonarration`, or `\skip` produce a warning and are treated as having no annotation
 
 ### Backward compatibility
 
