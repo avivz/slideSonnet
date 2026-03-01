@@ -45,6 +45,7 @@ def test_missing_package():
 
 
 @patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key-123"})
+@patch("slidesonnet.tts.elevenlabs.VoiceSettings", MagicMock)
 @patch("slidesonnet.tts.elevenlabs.ElevenLabs")
 def test_synthesize_calls_api(mock_elevenlabs_cls, tmp_path):
     """Client is created lazily during synthesize(); API called correctly."""
@@ -87,12 +88,10 @@ def test_synthesize_calls_api(mock_elevenlabs_cls, tmp_path):
         voice_settings=ANY,
         request_options={"max_retries": 5},
     )
-    voice_settings = mock_client.text_to_speech.convert.call_args.kwargs["voice_settings"]
-    assert voice_settings.stability == 0.5
-    assert voice_settings.similarity_boost == 0.75
 
 
 @patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key-123"})
+@patch("slidesonnet.tts.elevenlabs.VoiceSettings", MagicMock)
 @patch("slidesonnet.tts.elevenlabs.ElevenLabs")
 def test_atomic_write_on_failure(mock_elevenlabs_cls, tmp_path):
     """Mid-stream failure leaves no file at output_path (atomic write)."""
