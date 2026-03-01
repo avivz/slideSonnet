@@ -173,8 +173,10 @@ def concatenate_segments(segments: list[Path], output: Path) -> None:
         "copy",
         str(output),
     ]
-    _run_ffmpeg(cmd)
-    concat_file.unlink(missing_ok=True)
+    try:
+        _run_ffmpeg(cmd)
+    finally:
+        concat_file.unlink(missing_ok=True)
 
 
 def concatenate_segments_xfade(
