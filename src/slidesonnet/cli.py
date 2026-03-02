@@ -13,7 +13,7 @@ from slidesonnet.clean import KeepLevel
 from slidesonnet.clean import clean as run_clean
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.init import init_blank, init_example, init_from
-from slidesonnet.pipeline import build as run_build
+from slidesonnet.pipeline import DryRunResult, build as run_build, dry_run as run_dry_run
 from slidesonnet.preview import preview_single_slide
 
 logger = logging.getLogger(__name__)
@@ -44,10 +44,26 @@ def main() -> None:
     _configure_logging()
 
 
+def _print_dry_run(result: DryRunResult) -> None:
+    """Format and print a dry-run summary."""
+    if result.total_narrated == 0:
+        click.echo("No narrated slides")
+        return
+    if result.needs_tts == 0:
+        click.echo(f"{result.total_narrated} narrated slides: all cached")
+        return
+    click.echo(
+        f"{result.total_narrated} narrated slides: "
+        f"{result.cached} cached, {result.needs_tts} need TTS "
+        f"(~{result.uncached_chars:,} characters via {result.tts_backend})"
+    )
+
+
 @main.command()
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
 @click.option("--tts", type=click.Choice(["piper", "elevenlabs"]), help="Override TTS backend")
 @click.option("--force", "-f", is_flag=True, help="Force rebuild all stages")
+@click.option("--dry-run", "-n", is_flag=True, help="Show what would be built without building")
 @click.option(
     "--jobs",
     "-j",
@@ -55,15 +71,22 @@ def main() -> None:
     default=None,
     help="Parallel jobs (default: 3, capped at 2 for ElevenLabs)",
 )
-def build(playlist: Path, tts: str | None, force: bool, jobs: int | None) -> None:
+def build(playlist: Path, tts: str | None, force: bool, dry_run: bool, jobs: int | None) -> None:
     """Build a presentation video from a playlist file."""
     try:
-        run_build(
-            playlist,
-            tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
-            force=force,
-            jobs=jobs,
-        )
+        if dry_run:
+            result = run_dry_run(
+                playlist,
+                tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+            )
+            _print_dry_run(result)
+        else:
+            run_build(
+                playlist,
+                tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+                force=force,
+                jobs=jobs,
+            )
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)

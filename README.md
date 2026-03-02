@@ -235,6 +235,7 @@ slidesonnet build lecture01.md              # build video (3 parallel jobs)
 slidesonnet build lecture01.md -j 8         # build with 8 parallel jobs
 slidesonnet build lecture01.md --tts piper  # override TTS backend
 slidesonnet build lecture01.md --force      # force full rebuild
+slidesonnet build lecture01.md --dry-run    # show what would be built (no TTS/FFmpeg)
 slidesonnet preview lecture01.md            # quick build with local Piper TTS
 slidesonnet preview-slide slides.md 3       # play one slide's audio
 slidesonnet preview-slide slides.md 3 -p lecture01.md  # with playlist config
@@ -252,6 +253,15 @@ TTS audio is cached by content hash of the narration text, not by slide number. 
 - **Edit one slide** → only that slide's audio is re-synthesized
 - **Insert a slide** → existing slides hit the cache, only the new slide triggers TTS
 - **Change voice preset** → affected slides rebuild (voice is part of the hash)
+
+Use `--dry-run` (or `-n`) to see what a build would do without making any API calls:
+
+```
+$ slidesonnet build lecture01.md --dry-run
+8 narrated slides: 5 cached, 3 need TTS (~1,200 characters via elevenlabs)
+```
+
+This is especially useful before ElevenLabs builds to estimate API usage and cost.
 
 Build artifacts live in `cache/` next to the playlist file. Add it to `.gitignore`.
 

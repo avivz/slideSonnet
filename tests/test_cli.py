@@ -7,6 +7,7 @@ from click.testing import CliRunner
 
 from slidesonnet import __version__
 from slidesonnet.cli import main
+from slidesonnet.pipeline import DryRunResult
 
 
 @pytest.fixture
@@ -239,3 +240,103 @@ def test_preview_slide_with_playlist(runner, tmp_path):
         result = runner.invoke(main, ["preview-slide", str(slides), "1", "-p", str(playlist)])
         assert result.exit_code == 0
         mock_preview.assert_called_once_with(slides, 1, playlist_path=playlist)
+
+
+# ---- Dry-run CLI tests ----
+
+
+def test_dry_run_calls_run_dry_run(runner, tmp_path):
+    """--dry-run should call run_dry_run, not run_build."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    mock_result = DryRunResult(
+        total_narrated=5, cached=3, needs_tts=2, uncached_chars=400, tts_backend="piper"
+    )
+
+    with (
+        patch("slidesonnet.cli.run_dry_run", return_value=mock_result) as mock_dry,
+        patch("slidesonnet.cli.run_build") as mock_build,
+    ):
+        result = runner.invoke(main, ["build", str(playlist), "--dry-run"])
+        assert result.exit_code == 0
+        mock_dry.assert_called_once_with(playlist, tts_override=None)
+        mock_build.assert_not_called()
+
+
+def test_dry_run_short_flag(runner, tmp_path):
+    """-n short flag should work."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    mock_result = DryRunResult(
+        total_narrated=2, cached=2, needs_tts=0, uncached_chars=0, tts_backend="piper"
+    )
+
+    with patch("slidesonnet.cli.run_dry_run", return_value=mock_result):
+        result = runner.invoke(main, ["build", str(playlist), "-n"])
+        assert result.exit_code == 0
+
+
+def test_dry_run_passes_tts_override(runner, tmp_path):
+    """--dry-run with --tts should pass override."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    mock_result = DryRunResult(
+        total_narrated=1, cached=0, needs_tts=1, uncached_chars=50, tts_backend="elevenlabs"
+    )
+
+    with patch("slidesonnet.cli.run_dry_run", return_value=mock_result) as mock_dry:
+        result = runner.invoke(main, ["build", str(playlist), "--dry-run", "--tts", "elevenlabs"])
+        assert result.exit_code == 0
+        mock_dry.assert_called_once_with(playlist, tts_override="elevenlabs")
+
+
+def test_dry_run_output_needs_tts(runner, tmp_path):
+    """Output format when some slides need TTS."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    mock_result = DryRunResult(
+        total_narrated=8, cached=5, needs_tts=3, uncached_chars=1200, tts_backend="elevenlabs"
+    )
+
+    with patch("slidesonnet.cli.run_dry_run", return_value=mock_result):
+        result = runner.invoke(main, ["build", str(playlist), "--dry-run"])
+        assert result.exit_code == 0
+        assert "8 narrated slides" in result.output
+        assert "5 cached" in result.output
+        assert "3 need TTS" in result.output
+        assert "1,200 characters" in result.output
+        assert "elevenlabs" in result.output
+
+
+def test_dry_run_output_all_cached(runner, tmp_path):
+    """Output format when all slides are cached."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    mock_result = DryRunResult(
+        total_narrated=8, cached=8, needs_tts=0, uncached_chars=0, tts_backend="piper"
+    )
+
+    with patch("slidesonnet.cli.run_dry_run", return_value=mock_result):
+        result = runner.invoke(main, ["build", str(playlist), "--dry-run"])
+        assert result.exit_code == 0
+        assert "8 narrated slides: all cached" in result.output
+
+
+def test_dry_run_output_no_narrated(runner, tmp_path):
+    """Output format when no narrated slides."""
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    mock_result = DryRunResult(
+        total_narrated=0, cached=0, needs_tts=0, uncached_chars=0, tts_backend="piper"
+    )
+
+    with patch("slidesonnet.cli.run_dry_run", return_value=mock_result):
+        result = runner.invoke(main, ["build", str(playlist), "--dry-run"])
+        assert result.exit_code == 0
+        assert "No narrated slides" in result.output
