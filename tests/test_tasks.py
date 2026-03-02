@@ -734,6 +734,7 @@ class TestActionComposeNarrated:
             resolution=config.video.resolution,
             fps=config.video.fps,
             crf=config.video.crf,
+            preset=config.video.preset,
         )
 
     @patch("slidesonnet.actions.composer.get_duration", return_value=3.0)
@@ -782,6 +783,7 @@ class TestActionComposeSilent:
             resolution=config.video.resolution,
             fps=config.video.fps,
             crf=config.video.crf,
+            preset=config.video.preset,
         )
 
     @patch("slidesonnet.actions.composer.compose_silent_segment")
@@ -811,6 +813,7 @@ class TestActionComposeSilent:
             resolution=config.video.resolution,
             fps=config.video.fps,
             crf=config.video.crf,
+            preset=config.video.preset,
         )
 
     @patch("slidesonnet.actions.composer.compose_silent_segment")
@@ -830,6 +833,7 @@ class TestActionComposeSilent:
             resolution=config.video.resolution,
             fps=config.video.fps,
             crf=config.video.crf,
+            preset=config.video.preset,
         )
 
 
@@ -865,7 +869,9 @@ class TestActionAssemble:
 
         action_assemble(mods, out, cfg)
 
-        mock_xfade.assert_called_once_with(mods, out, crossfade=0.8, crf=23)
+        mock_xfade.assert_called_once_with(
+            mods, out, crossfade=0.8, crf=23, preset="medium", resolution="1920x1080", fps=24
+        )
 
     def test_empty_segments_raises(self, tmp_path: Path) -> None:
         out = tmp_path / "final.mp4"

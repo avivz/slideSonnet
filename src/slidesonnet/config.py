@@ -67,6 +67,8 @@ def _parse_video(raw: dict[str, Any]) -> VideoConfig:
         kwargs["pre_silence"] = float(raw["pre_silence"])
     if "silence_duration" in raw:
         kwargs["silence_duration"] = float(raw["silence_duration"])
+    if "preset" in raw:
+        kwargs["preset"] = str(raw["preset"])
     if "crossfade" in raw:
         kwargs["crossfade"] = float(raw["crossfade"])
     return VideoConfig(**kwargs)

@@ -84,6 +84,7 @@ def action_compose_narrated(
         resolution=config.video.resolution,
         fps=config.video.fps,
         crf=config.video.crf,
+        preset=config.video.preset,
     )
 
 
@@ -105,6 +106,7 @@ def action_compose_silent(
         resolution=config.video.resolution,
         fps=config.video.fps,
         crf=config.video.crf,
+        preset=config.video.preset,
     )
 
 
@@ -127,6 +129,9 @@ def _merge_videos(inputs: list[Path], output: Path, config: ProjectConfig) -> No
                 output,
                 crossfade=config.video.crossfade,
                 crf=config.video.crf,
+                preset=config.video.preset,
+                resolution=config.video.resolution,
+                fps=config.video.fps,
             )
         else:
             composer.concatenate_segments(inputs, output)

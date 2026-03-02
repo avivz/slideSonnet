@@ -147,6 +147,21 @@ class TTSConfig:
 
 _RESOLUTION_RE = re.compile(r"^\d+x\d+$")
 
+_VALID_PRESETS = frozenset(
+    {
+        "ultrafast",
+        "superfast",
+        "veryfast",
+        "faster",
+        "fast",
+        "medium",
+        "slow",
+        "slower",
+        "veryslow",
+        "placebo",
+    }
+)
+
 
 @dataclass
 class VideoConfig:
@@ -155,6 +170,7 @@ class VideoConfig:
     resolution: str = "1920x1080"
     fps: int = 24
     crf: int = 23
+    preset: str = "medium"
     pad_seconds: float = 1.5
     pre_silence: float = 1.0
     silence_duration: float = 3.0
@@ -169,6 +185,10 @@ class VideoConfig:
             raise ValueError(f"fps must be positive, got {self.fps}")
         if self.crf < 0:
             raise ValueError(f"crf must be non-negative, got {self.crf}")
+        if self.preset not in _VALID_PRESETS:
+            raise ValueError(
+                f"Invalid preset '{self.preset}': must be one of {sorted(_VALID_PRESETS)}"
+            )
         if self.pad_seconds < 0:
             raise ValueError(f"pad_seconds must be non-negative, got {self.pad_seconds}")
         if self.pre_silence < 0:

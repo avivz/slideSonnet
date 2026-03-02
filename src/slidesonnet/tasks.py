@@ -347,6 +347,7 @@ def generate_tasks(
                                     "resolution": config.video.resolution,
                                     "fps": config.video.fps,
                                     "crf": config.video.crf,
+                                    "preset": config.video.preset,
                                 }
                             )
                         ],
@@ -380,6 +381,7 @@ def generate_tasks(
                                     "resolution": config.video.resolution,
                                     "fps": config.video.fps,
                                     "crf": config.video.crf,
+                                    "preset": config.video.preset,
                                 }
                             )
                         ],
@@ -397,7 +399,13 @@ def generate_tasks(
             "file_dep": [str(p) for p in all_segments],
             "targets": [str(output_path)],
             "uptodate": [
-                config_changed({"crossfade": config.video.crossfade, "crf": config.video.crf})
+                config_changed(
+                    {
+                        "crossfade": config.video.crossfade,
+                        "crf": config.video.crf,
+                        "preset": config.video.preset,
+                    }
+                )
             ],
             "verbosity": 2,
         }

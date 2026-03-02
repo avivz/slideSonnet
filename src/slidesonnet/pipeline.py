@@ -229,12 +229,22 @@ def build(
     tts_override: Literal["piper", "elevenlabs"] | None = None,
     force: bool = False,
     jobs: int | None = None,
+    preview: bool = False,
 ) -> Path:
     """Execute the full build pipeline for a playlist.
 
     Returns path to the final output video.
     """
     prep = _prepare(playlist_path, tts_override)
+
+    # Apply preview overrides: quarter resolution, half fps, ultrafast preset, high CRF
+    if preview:
+        w, h = prep.config.video.resolution.split("x")
+        prep.config.video.resolution = f"{int(w) // 4}x{int(h) // 4}"
+        prep.config.video.fps = prep.config.video.fps // 2
+        prep.config.video.preset = "ultrafast"
+        prep.config.video.crf = 32
+        prep.output_path = prep.playlist_dir / (playlist_path.stem + "_preview.mp4")
 
     # Create directories
     prep.build_dir.mkdir(parents=True, exist_ok=True)

@@ -71,7 +71,15 @@ def _print_dry_run(result: DryRunResult) -> None:
     default=None,
     help="Parallel jobs (default: 3, capped at 2 for ElevenLabs)",
 )
-def build(playlist: Path, tts: str | None, force: bool, dry_run: bool, jobs: int | None) -> None:
+@click.option("--preview", is_flag=True, help="Fast low-res build for review")
+def build(
+    playlist: Path,
+    tts: str | None,
+    force: bool,
+    dry_run: bool,
+    jobs: int | None,
+    preview: bool,
+) -> None:
     """Build a presentation video from a playlist file."""
     try:
         if dry_run:
@@ -86,6 +94,7 @@ def build(playlist: Path, tts: str | None, force: bool, dry_run: bool, jobs: int
                 tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
                 force=force,
                 jobs=jobs,
+                preview=preview,
             )
     except SlideSonnetError as e:
         logger.error("%s", e)

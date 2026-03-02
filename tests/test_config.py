@@ -123,6 +123,51 @@ def test_resolution_invalid(bad: str) -> None:
         VideoConfig(resolution=bad)
 
 
+# -- preset validation -------------------------------------------------------
+
+
+def test_preset_default():
+    vc = VideoConfig()
+    assert vc.preset == "medium"
+
+
+@pytest.mark.parametrize(
+    "preset",
+    [
+        "ultrafast",
+        "superfast",
+        "veryfast",
+        "faster",
+        "fast",
+        "medium",
+        "slow",
+        "slower",
+        "veryslow",
+        "placebo",
+    ],
+)
+def test_preset_valid(preset: str) -> None:
+    vc = VideoConfig(preset=preset)
+    assert vc.preset == preset
+
+
+@pytest.mark.parametrize("bad", ["invalid", "MEDIUM", "Ultra", "fastest", ""])
+def test_preset_invalid(bad: str) -> None:
+    with pytest.raises(ValueError, match="Invalid preset"):
+        VideoConfig(preset=bad)
+
+
+def test_preset_from_yaml():
+    raw = {"video": {"preset": "fast"}}
+    config = load_config(raw, Path("."))
+    assert config.video.preset == "fast"
+
+
+def test_preset_default_from_yaml():
+    config = load_config({}, Path("."))
+    assert config.video.preset == "medium"
+
+
 # -- resolve_voice ----------------------------------------------------------
 
 

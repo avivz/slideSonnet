@@ -344,6 +344,62 @@ def test_multi_segment_xfade_no_drift(work_dir):
     assert 20.8 <= dur <= 21.6, f"Expected ~21.2s, got {dur:.3f}s"
 
 
+def _ffprobe_json(path: Path) -> dict:
+    """Run ffprobe and return parsed JSON with stream/format info."""
+    import json
+    import subprocess
+
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
+@pytest.mark.integration
+def test_preview_vs_production_size(work_dir):
+    """Preview (ultrafast, half-res, high CRF) should produce smaller files than production."""
+    image = work_dir / "slide.png"
+    audio = work_dir / "audio.wav"
+    _make_png(image, width=1920, height=1080)
+    _make_wav(audio, duration_seconds=3.0)
+
+    prod = work_dir / "prod.mp4"
+    compose_segment(
+        image=image,
+        audio=audio,
+        output=prod,
+        duration=3.0,
+        resolution="1920x1080",
+        fps=24,
+        crf=23,
+        preset="medium",
+    )
+
+    prev = work_dir / "preview.mp4"
+    compose_segment(
+        image=image,
+        audio=audio,
+        output=prev,
+        duration=3.0,
+        resolution="960x540",
+        fps=24,
+        crf=32,
+        preset="ultrafast",
+    )
+
+    assert prod.exists() and prev.exists()
+    assert prev.stat().st_size < prod.stat().st_size
+
+    # Verify resolution via ffprobe
+    prev_info = _ffprobe_json(prev)
+    video_stream = [s for s in prev_info["streams"] if s["codec_type"] == "video"][0]
+    assert video_stream["width"] == 960
+    assert video_stream["height"] == 540
+
+
 # ---- Mocked unit tests (no ffmpeg required) ----
 
 
@@ -437,6 +493,31 @@ class TestComposeSegmentMocked:
         )
         assert output.parent.exists()
 
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_preset_in_command(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_segment(
+            image=tmp_path / "s.png",
+            audio=tmp_path / "a.wav",
+            output=tmp_path / "o.mp4",
+            duration=1.0,
+            preset="ultrafast",
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        preset_idx = cmd.index("-preset")
+        assert cmd[preset_idx + 1] == "ultrafast"
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_preset_default(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_segment(
+            image=tmp_path / "s.png",
+            audio=tmp_path / "a.wav",
+            output=tmp_path / "o.mp4",
+            duration=1.0,
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        preset_idx = cmd.index("-preset")
+        assert cmd[preset_idx + 1] == "medium"
+
 
 class TestComposeSilentSegmentMocked:
     """Mocked tests for compose_silent_segment()."""
@@ -463,6 +544,18 @@ class TestComposeSilentSegmentMocked:
         cmd = mock_ffmpeg.call_args[0][0]
         t_idx = cmd.index("-t")
         assert cmd[t_idx + 1] == "5.0"
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_preset_in_command(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        compose_silent_segment(
+            image=tmp_path / "s.png",
+            output=tmp_path / "o.mp4",
+            duration=3.0,
+            preset="fast",
+        )
+        cmd = mock_ffmpeg.call_args[0][0]
+        preset_idx = cmd.index("-preset")
+        assert cmd[preset_idx + 1] == "fast"
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
     def test_no_shortest_flag(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
@@ -621,6 +714,20 @@ class TestConcatenateSegmentsXfadeMocked:
         concatenate_segments_xfade(segs, output, crossfade=0.5)
 
         assert output.parent.exists()
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_preset_in_command(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5, preset="veryfast")
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        preset_idx = cmd.index("-preset")
+        assert cmd[preset_idx + 1] == "veryfast"
 
     @patch("slidesonnet.video.composer.get_duration", return_value=0.3)
     @patch("slidesonnet.video.composer._run_ffmpeg")

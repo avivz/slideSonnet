@@ -23,6 +23,7 @@ def compose_segment(
     resolution: str = "1920x1080",
     fps: int = 24,
     crf: int = 23,
+    preset: str = "medium",
 ) -> None:
     """Create a video segment from a static slide image + audio.
 
@@ -74,6 +75,8 @@ def compose_segment(
         audio_filter,
         "-r",
         str(fps),
+        "-preset",
+        preset,
         "-crf",
         str(crf),
         "-t",
@@ -82,12 +85,15 @@ def compose_segment(
     ]
     _run_ffmpeg(cmd)
 
-    # Check for stream duration mismatch
+    # Check for stream duration mismatch.
+    # Threshold accounts for codec frame quantization: one video frame
+    # (1/fps) plus one AAC frame (~23ms) plus a small margin.
+    _mismatch_threshold = 1.0 / fps + 0.03
     try:
         vid_dur = get_duration(output, stream="video")
         aud_dur = get_duration(output, stream="audio")
         delta = vid_dur - aud_dur
-        if abs(delta) > 0.05:
+        if abs(delta) > _mismatch_threshold:
             logger.warning(
                 "compose: %s stream mismatch video=%.3fs audio=%.3fs (Δ=%.3fs)",
                 output.name,
@@ -106,6 +112,7 @@ def compose_silent_segment(
     resolution: str = "1920x1080",
     fps: int = 24,
     crf: int = 23,
+    preset: str = "medium",
 ) -> None:
     """Create a silent video segment from a static slide image."""
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -141,6 +148,8 @@ def compose_silent_segment(
         scale_filter,
         "-r",
         str(fps),
+        "-preset",
+        preset,
         "-crf",
         str(crf),
         "-t",
@@ -184,8 +193,17 @@ def concatenate_segments_xfade(
     output: Path,
     crossfade: float = 0.5,
     crf: int = 23,
+    preset: str = "medium",
+    resolution: str | None = None,
+    fps: int | None = None,
 ) -> None:
-    """Concatenate video segments with crossfade transitions using xfade/acrossfade filters."""
+    """Concatenate video segments with crossfade transitions using xfade/acrossfade filters.
+
+    If *resolution* is given (e.g. ``"960x540"``), every input is scaled+padded
+    to that size before xfading.  If *fps* is given, inputs are also
+    frame-rate-normalized.  This ensures passthrough videos with different
+    native resolution or frame rate are compatible with composed segments.
+    """
     output.parent.mkdir(parents=True, exist_ok=True)
 
     if len(segments) < 2:
@@ -209,7 +227,7 @@ def concatenate_segments_xfade(
     # preceding and following transitions), so it needs at least
     # 2 * crossfade of content.  Clamp if necessary.
     min_dur = min(durations) if durations else 0.0
-    if min_dur > 0 and 2 * crossfade >= min_dur:
+    if min_dur > 0 and 2 * crossfade > min_dur:
         clamped = min_dur * 0.25
         logger.warning(
             "crossfade (%.2fs) too long for shortest segment (%.2fs); clamping to %.2fs",
@@ -240,9 +258,34 @@ def concatenate_segments_xfade(
     # (e.g. passthrough videos vs TTS-generated audio).
     _AUDIO_FMT = "aformat=sample_rates=44100:channel_layouts=stereo"
 
-    video_label = "[0:v]"
+    # Optional: scale+pad+fps-normalize each video input so xfade works
+    # even when inputs differ (e.g. passthrough videos at full res / different
+    # fps mixed with preview segments).
+    normalize_video: str = ""
+    if resolution:
+        w, h = resolution.split("x")
+        normalize_video = (
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,"
+            f"format=yuv420p,"
+            f"setsar=1"
+        )
+    if fps:
+        fps_filter = f"fps={fps}"
+        normalize_video = f"{normalize_video},{fps_filter}" if normalize_video else fps_filter
+
+    filter_parts: list[str] = []
+
+    # Normalize video inputs when resolution/fps normalization is needed
+    if normalize_video:
+        for i in range(len(segments)):
+            filter_parts.append(f"[{i}:v]{normalize_video}[v{i}s]")
+        video_label = "[v0s]"
+    else:
+        video_label = "[0:v]"
+
     # Normalize first audio stream
-    filter_parts: list[str] = [f"[0:a]{_AUDIO_FMT}[a0n]"]
+    filter_parts.append(f"[0:a]{_AUDIO_FMT}[a0n]")
     audio_label = "[a0n]"
     offset = durations[0] - crossfade - _OFFSET_MARGIN
 
@@ -251,9 +294,10 @@ def concatenate_segments_xfade(
         out_v = f"[v{i}]"
         out_a = f"[a{i}]"
         norm_a = f"[a{i}n]"
+        src_v = f"[v{i}s]" if normalize_video else f"[{i}:v]"
 
         filter_parts.append(
-            f"{video_label}[{i}:v]xfade=transition=fade:duration={crossfade}"
+            f"{video_label}{src_v}xfade=transition=fade:duration={crossfade}"
             f":offset={safe_offset:.6f}{out_v}"
         )
         # Normalize this input's audio before crossfading
@@ -283,6 +327,8 @@ def concatenate_segments_xfade(
         "libx264",
         "-pix_fmt",
         "yuv420p",
+        "-preset",
+        preset,
         "-crf",
         str(crf),
         "-c:a",
