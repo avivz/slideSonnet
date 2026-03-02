@@ -7,13 +7,18 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from slidesonnet.exceptions import ParserError
 from slidesonnet.models import SlideAnnotation, SlideNarration
 from slidesonnet.parsers.base import SlideParser
+from slidesonnet.parsers.expansion import (
+    SayCommand,
+    expand_sub_slides,
+    parse_say_params,
+    parse_silence_duration,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,22 +39,9 @@ _SILENT_RE = re.compile(r"<!--\s*nonarration\s*(?:\(([^)]*)\))?\s*-->", re.IGNOR
 _SKIP_RE = re.compile(r"<!--\s*skip\s*-->", re.IGNORECASE)
 
 
-# Parse key=value pairs from say(...) params
-_PARAM_RE = re.compile(r"(\w+)\s*=\s*([\w.\-]+)")
-
 # Fragment list markers (Marp animated items)
 _FRAGMENT_UL_RE = re.compile(r"^\s*\*\s", re.MULTILINE)
 _FRAGMENT_OL_RE = re.compile(r"^\s*\d+\)\s", re.MULTILINE)
-
-
-@dataclass
-class _SayCommand:
-    """Parsed data from a single <!-- say --> directive."""
-
-    sub_slide: int  # 1-based sub-slide target
-    text: str
-    voice: str | None
-    pace: str | None
 
 
 class MarpParser(SlideParser):
@@ -296,41 +288,6 @@ def _find_separator_indices(lines: list[str]) -> list[int]:
     return separator_indices
 
 
-def _parse_say_params(params_str: str) -> tuple[int, str | None, str | None]:
-    """Parse the optional parenthesized params of a ``<!-- say(...) -->`` directive.
-
-    Supports:
-      - ``<!-- say: text -->``                → sub_slide=0 (unset)
-      - ``<!-- say(2): text -->``             → sub_slide=2 (bare number)
-      - ``<!-- say(slide=2): text -->``       → sub_slide=2 (explicit key)
-      - ``<!-- say(2, voice=alice): text -->`` → sub_slide=2, voice=alice
-
-    Returns (sub_slide, voice, pace).  sub_slide=0 means no explicit target.
-    """
-    sub_slide = 0
-    voice: str | None = None
-    pace: str | None = None
-
-    if not params_str:
-        return sub_slide, voice, pace
-
-    kv_params = dict(_PARAM_RE.findall(params_str))
-
-    # Check for bare number: strip key=value pairs to see if a standalone number remains
-    stripped = _PARAM_RE.sub("", params_str).replace(",", "").strip()
-    if stripped.isdigit():
-        sub_slide = int(stripped)
-
-    if "slide" in kv_params:
-        sub_slide = int(kv_params["slide"])
-    if "voice" in kv_params:
-        voice = kv_params["voice"]
-    if "pace" in kv_params:
-        pace = kv_params["pace"]
-
-    return sub_slide, voice, pace
-
-
 def _strip_fences(text: str) -> str:
     """Remove fenced code blocks from text, respecting CommonMark rules."""
     lines = text.split("\n")
@@ -361,29 +318,6 @@ def _count_fragments(text: str) -> int:
     """Count fragment list items (``*`` and ``N)``) outside fenced code blocks."""
     clean = _strip_fences(text)
     return len(_FRAGMENT_UL_RE.findall(clean)) + len(_FRAGMENT_OL_RE.findall(clean))
-
-
-def _parse_silence_duration(raw: str | None, source: Path, index: int) -> float | None:
-    """Parse an optional silence duration string into a float.
-
-    Returns None if *raw* is None or empty (no override).
-    Raises ParserError for invalid or negative values.
-    """
-    if raw is None or raw.strip() == "":
-        return None
-    raw = raw.strip()
-    try:
-        value = float(raw)
-    except ValueError:
-        raise ParserError(
-            f"{source} slide {index}: invalid nonarration duration '{raw}' "
-            f"(expected a non-negative number)"
-        )
-    if value < 0:
-        raise ParserError(
-            f"{source} slide {index}: nonarration duration must be non-negative, got {value}"
-        )
-    return value
 
 
 def _parse_slide(
@@ -426,7 +360,9 @@ def _parse_slide(
     say_matches = _SAY_RE.findall(clean_text)
     silent_match = _SILENT_RE.search(clean_text)
     if silent_match and not say_matches:
-        silence_override = _parse_silence_duration(silent_match.group(1), source, start_index)
+        silence_override = parse_silence_duration(
+            silent_match.group(1), source, start_index, label="slide"
+        )
         return (
             [
                 SlideNarration(
@@ -459,13 +395,13 @@ def _parse_slide(
 
     # --- Expand says into sub-slides ---
     # Check if any say has an explicit slide target
-    has_explicit = any(_parse_say_params(p)[0] > 0 for p, _ in say_matches)
+    has_explicit = any(parse_say_params(p)[0] > 0 for p, _ in say_matches)
 
-    say_commands: list[_SayCommand] = []
+    say_commands: list[SayCommand] = []
     for i, (params_str, narration_text) in enumerate(say_matches, start=1):
         clean_narration = narration_text.strip()
         clean_narration = re.sub(r"\s+", " ", clean_narration)
-        sub_slide, voice, pace = _parse_say_params(params_str)
+        sub_slide, voice, pace = parse_say_params(params_str)
 
         if not has_explicit:
             sub_slide = i  # positional: 1, 2, 3, ...
@@ -473,70 +409,17 @@ def _parse_slide(
             sub_slide = 1  # explicit mode default
 
         say_commands.append(
-            _SayCommand(sub_slide=sub_slide, text=clean_narration, voice=voice, pace=pace)
+            SayCommand(sub_slide=sub_slide, text=clean_narration, voice=voice, pace=pace)
         )
 
-    # Determine number of sub-slides.
-    # For fragment slides, the visual state count is 1 (bare) + n_fragments.
-    n_say_sub = max(cmd.sub_slide for cmd in say_commands)
-    n_sub = max(n_say_sub, n_visual_states) if n_fragments > 0 else n_say_sub
-
-    # Build results — one SlideNarration per sub-slide
-    results: list[SlideNarration] = []
-    for sub_idx in range(1, n_sub + 1):
-        group = [cmd for cmd in say_commands if cmd.sub_slide == sub_idx]
-        slide_index = start_index + sub_idx - 1
-        img_idx = start_image_index + min(sub_idx - 1, n_visual_states - 1)
-
-        if not group:
-            logger.warning(
-                "%s slide %d, sub-slide %d: no narration — treating as silent",
-                source,
-                start_index,
-                sub_idx,
-            )
-            results.append(
-                SlideNarration(
-                    index=slide_index, image_index=img_idx, annotation=SlideAnnotation.SILENT
-                )
-            )
-            continue
-
-        narration_parts = [cmd.text for cmd in group]
-        full_narration = " ".join(narration_parts)
-
-        # Use the last specified voice/pace
-        group_voice: str | None = None
-        group_pace: str | None = None
-        for cmd in group:
-            if cmd.voice is not None:
-                group_voice = cmd.voice
-            if cmd.pace is not None:
-                group_pace = cmd.pace
-
-        if not full_narration:
-            logger.warning(
-                "%s slide %d: empty <!-- say: --> — did you mean <!-- nonarration -->?",
-                source,
-                start_index,
-            )
-            results.append(
-                SlideNarration(
-                    index=slide_index, image_index=img_idx, annotation=SlideAnnotation.SILENT
-                )
-            )
-            continue
-
-        results.append(
-            SlideNarration(
-                index=slide_index,
-                image_index=img_idx,
-                annotation=SlideAnnotation.SAY,
-                narration_raw=full_narration,
-                narration_parts=narration_parts,
-                voice=group_voice,
-                pace=group_pace,
-            )
-        )
-
+    results = expand_sub_slides(
+        say_commands,
+        n_visual_states,
+        start_index,
+        start_image_index,
+        source,
+        label="slide",
+        say_syntax="<!-- say: -->",
+        nonarration_syntax="<!-- nonarration -->",
+    )
     return results, n_visual_states

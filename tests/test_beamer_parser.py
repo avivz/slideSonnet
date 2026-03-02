@@ -15,12 +15,12 @@ from slidesonnet.parsers.beamer import (
     _extract_frames,
     _find_say_commands,
     _parse_frame,
-    _parse_say_params,
     _strip_latex,
     compile_pdf,
     extract_images,
     extract_images_from_pdf,
 )
+from slidesonnet.parsers.expansion import parse_say_params
 
 
 @pytest.fixture
@@ -465,39 +465,39 @@ class TestParseSayParams:
     """Tests for _parse_say_params()."""
 
     def test_empty_params(self) -> None:
-        sub, voice, pace = _parse_say_params("")
+        sub, voice, pace = parse_say_params("", default_sub_slide=1)
         assert sub == 1
         assert voice is None
         assert pace is None
 
     def test_bare_number(self) -> None:
-        sub, voice, pace = _parse_say_params("2")
+        sub, voice, pace = parse_say_params("2", default_sub_slide=1)
         assert sub == 2
         assert voice is None
         assert pace is None
 
     def test_explicit_slide_key(self) -> None:
-        sub, voice, pace = _parse_say_params("slide=2")
+        sub, voice, pace = parse_say_params("slide=2", default_sub_slide=1)
         assert sub == 2
 
     def test_bare_number_with_voice(self) -> None:
-        sub, voice, pace = _parse_say_params("2, voice=alice")
+        sub, voice, pace = parse_say_params("2, voice=alice", default_sub_slide=1)
         assert sub == 2
         assert voice == "alice"
         assert pace is None
 
     def test_slide_key_with_pace(self) -> None:
-        sub, voice, pace = _parse_say_params("slide=3, pace=slow")
+        sub, voice, pace = parse_say_params("slide=3, pace=slow", default_sub_slide=1)
         assert sub == 3
         assert pace == "slow"
 
     def test_voice_only(self) -> None:
-        sub, voice, pace = _parse_say_params("voice=bob")
+        sub, voice, pace = parse_say_params("voice=bob", default_sub_slide=1)
         assert sub == 1
         assert voice == "bob"
 
     def test_voice_and_pace(self) -> None:
-        sub, voice, pace = _parse_say_params("voice=alice, pace=slow")
+        sub, voice, pace = parse_say_params("voice=alice, pace=slow", default_sub_slide=1)
         assert sub == 1
         assert voice == "alice"
         assert pace == "slow"
