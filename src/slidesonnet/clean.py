@@ -19,7 +19,7 @@ from slidesonnet.config import load_config
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
 from slidesonnet.models import ModuleType, resolve_voice
 from slidesonnet.playlist import parse_playlist
-from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
+from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_dict
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,11 @@ def _collect_current_text_hashes(playlist_path: Path) -> set[str]:
 
     raw_config, entries = parse_playlist(playlist_path)
     config = load_config(raw_config, playlist_dir)
-    config.pronunciation = load_pronunciation_files(config.pronunciation_files)
+    config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
+
+    # Collect pronunciation dicts for all backends so audio from any engine is preserved
+    all_backends = {"piper", "elevenlabs"}
+    backend_prons = {b: config.pronunciation_for(b) for b in all_backends}
 
     text_hashes: set[str] = set()
 
@@ -167,13 +171,6 @@ def _collect_current_text_hashes(playlist_path: Path) -> set[str]:
             if not slide.has_narration:
                 continue
 
-            slide.narration_processed = apply_pronunciation(
-                slide.narration_raw, config.pronunciation
-            )
-            slide.narration_parts_processed = [
-                apply_pronunciation(part, config.pronunciation) for part in slide.narration_parts
-            ]
-
             # Collect all possible voice resolutions across all backends
             voices: set[str | None] = {None}  # always include default (no voice)
             if slide.voice:
@@ -181,12 +178,17 @@ def _collect_current_text_hashes(playlist_path: Path) -> set[str]:
                 if voice_cfg:
                     voices |= voice_cfg.all_voice_ids()
 
-            # Compute text_hashes for all parts and all voice resolutions
-            parts = slide.narration_parts_processed
-            texts = parts if len(parts) > 1 else [slide.narration_processed]
-            for utterance_text in texts:
-                for voice in voices:
-                    text_hashes.add(text_hash(utterance_text, voice))
+            # Apply each backend's pronunciation and collect text_hashes
+            for pron in backend_prons.values():
+                processed = apply_pronunciation(slide.narration_raw, pron)
+                parts_processed = [
+                    apply_pronunciation(part, pron) for part in slide.narration_parts
+                ]
+
+                texts = parts_processed if len(parts_processed) > 1 else [processed]
+                for utterance_text in texts:
+                    for voice in voices:
+                        text_hashes.add(text_hash(utterance_text, voice))
 
     return text_hashes
 
@@ -209,9 +211,10 @@ def _collect_current_audio_filenames(playlist_path: Path) -> set[str]:
 
     raw_config, entries = parse_playlist(playlist_path)
     config = load_config(raw_config, playlist_dir)
-    config.pronunciation = load_pronunciation_files(config.pronunciation_files)
+    config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
     tts = create_tts(config)
 
+    pron = config.pronunciation_for(config.tts.backend)
     filenames: set[str] = set()
 
     for entry in entries:
@@ -230,11 +233,9 @@ def _collect_current_audio_filenames(playlist_path: Path) -> set[str]:
             if not slide.has_narration:
                 continue
 
-            slide.narration_processed = apply_pronunciation(
-                slide.narration_raw, config.pronunciation
-            )
+            slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
             slide.narration_parts_processed = [
-                apply_pronunciation(part, config.pronunciation) for part in slide.narration_parts
+                apply_pronunciation(part, pron) for part in slide.narration_parts
             ]
 
             voice = resolve_voice(slide.voice, config.voices, config.tts.backend)

@@ -20,8 +20,13 @@ voices:
     piper: en_US-joe-medium
     elevenlabs: pNInz6obpgDQGcFmaJgB
 pronunciation:
-  - pronunciation/general.md
-  - pronunciation/names.md
+  shared:
+    - pronunciation/general.md
+    - pronunciation/names.md
+  # piper:
+  #   - pronunciation/piper-hacks.md
+  # elevenlabs:
+  #   - pronunciation/elevenlabs-hacks.md
 video:
   resolution: 1920x1080
   fps: 24

@@ -187,5 +187,14 @@ class ProjectConfig:
     tts: TTSConfig = field(default_factory=TTSConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
     voices: dict[str, VoiceConfig] = field(default_factory=dict)
-    pronunciation_files: list[Path] = field(default_factory=list)
-    pronunciation: dict[str, str] = field(default_factory=dict)  # merged from files
+    pronunciation_files: dict[str, list[Path]] = field(default_factory=dict)
+    pronunciation: dict[str, dict[str, str]] = field(default_factory=dict)  # merged from files
+
+    def pronunciation_for(self, backend: str) -> dict[str, str]:
+        """Merge shared + backend-specific pronunciation dicts.
+
+        Backend-specific entries override shared entries for the same word.
+        """
+        merged = dict(self.pronunciation.get("shared", {}))
+        merged.update(self.pronunciation.get(backend, {}))
+        return merged

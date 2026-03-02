@@ -52,8 +52,14 @@ def init_from(target_dir: Path, source_playlist: Path) -> None:
 
     # Copy pronunciation files
     source_dir = source_playlist.parent
-    pron_paths = config_dict.get("pronunciation", [])
-    for pron_rel in pron_paths:
+    pron_raw = config_dict.get("pronunciation", [])
+    if isinstance(pron_raw, list):
+        pron_all_paths = list(pron_raw)
+    elif isinstance(pron_raw, dict):
+        pron_all_paths = [p for paths in pron_raw.values() for p in paths]
+    else:
+        pron_all_paths = []
+    for pron_rel in pron_all_paths:
         src = source_dir / pron_rel
         dst = target_dir / pron_rel
         if src.exists():

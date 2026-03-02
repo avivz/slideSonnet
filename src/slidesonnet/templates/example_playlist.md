@@ -7,7 +7,12 @@ tts:
 voices:
   default: en_US-lessac-medium
 pronunciation:
-  - pronunciation/cs-terms.md
+  shared:
+    - pronunciation/cs-terms.md
+  # piper:
+  #   - pronunciation/piper-hacks.md
+  # elevenlabs:
+  #   - pronunciation/elevenlabs-hacks.md
 video:
   resolution: 1920x1080
   pad_seconds: 1.5

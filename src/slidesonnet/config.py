@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from slidesonnet.exceptions import ConfigError
 from slidesonnet.models import ProjectConfig, TTSConfig, VideoConfig, VoiceConfig
 
 
@@ -100,7 +101,30 @@ def _parse_voices(raw: dict[str, Any]) -> dict[str, VoiceConfig]:
     return voices
 
 
-def _parse_pronunciation_paths(raw: list[Any] | None, playlist_dir: Path) -> list[Path]:
+_PRONUNCIATION_KEYS = {"shared"} | _KNOWN_BACKENDS
+
+
+def _parse_pronunciation_paths(
+    raw: list[Any] | dict[str, Any] | None, playlist_dir: Path
+) -> dict[str, list[Path]]:
     if not raw:
-        return []
-    return [playlist_dir / p for p in raw]
+        return {}
+    if isinstance(raw, list):
+        # Old flat format → treat as shared
+        return {"shared": [playlist_dir / p for p in raw]}
+    if isinstance(raw, dict):
+        unknown = set(raw.keys()) - _PRONUNCIATION_KEYS
+        if unknown:
+            raise ConfigError(
+                f"Unknown pronunciation keys: {sorted(unknown)}. "
+                f"Allowed keys: {sorted(_PRONUNCIATION_KEYS)}"
+            )
+        result: dict[str, list[Path]] = {}
+        for key, paths in raw.items():
+            if not isinstance(paths, list):
+                raise ConfigError(
+                    f"pronunciation.{key} must be a list of paths, got {type(paths).__name__}"
+                )
+            result[key] = [playlist_dir / p for p in paths]
+        return result
+    raise ConfigError(f"pronunciation must be a list or dict, got {type(raw).__name__}")

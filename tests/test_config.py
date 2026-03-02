@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from slidesonnet.config import load_config
+from slidesonnet.exceptions import ConfigError
 from slidesonnet.models import VideoConfig, VoiceConfig, resolve_voice
 
 
@@ -60,8 +61,8 @@ def test_load_full_config():
     assert config.voices["alice"].resolve("piper") == "en_US-amy-medium"
     assert config.voices["alice"].resolve("elevenlabs") == "en_US-amy-medium"
 
-    assert len(config.pronunciation_files) == 2
-    assert config.pronunciation_files[0] == Path("/project/pron/cs.md")
+    assert len(config.pronunciation_files["shared"]) == 2
+    assert config.pronunciation_files["shared"][0] == Path("/project/pron/cs.md")
 
 
 def test_voices_string_format():
@@ -168,3 +169,63 @@ def test_all_voice_ids() -> None:
         backend_voices={"piper": "en_US-amy-medium", "elevenlabs": "abc123"},
     )
     assert vc.all_voice_ids() == {"en_US-amy-medium", "abc123"}
+
+
+# -- Pronunciation per-backend format ----------------------------------------
+
+
+def test_pronunciation_flat_list_backwards_compat() -> None:
+    raw = {"pronunciation": ["pron/a.md", "pron/b.md"]}
+    config = load_config(raw, Path("/proj"))
+    assert config.pronunciation_files == {
+        "shared": [Path("/proj/pron/a.md"), Path("/proj/pron/b.md")]
+    }
+
+
+def test_pronunciation_per_backend_format() -> None:
+    raw = {
+        "pronunciation": {
+            "shared": ["pron/names.md"],
+            "piper": ["pron/piper-hacks.md"],
+            "elevenlabs": ["pron/el-hacks.md"],
+        }
+    }
+    config = load_config(raw, Path("/proj"))
+    assert config.pronunciation_files["shared"] == [Path("/proj/pron/names.md")]
+    assert config.pronunciation_files["piper"] == [Path("/proj/pron/piper-hacks.md")]
+    assert config.pronunciation_files["elevenlabs"] == [Path("/proj/pron/el-hacks.md")]
+
+
+def test_pronunciation_unknown_key_raises() -> None:
+    raw = {"pronunciation": {"shared": ["a.md"], "openai": ["b.md"]}}
+    with pytest.raises(ConfigError, match="Unknown pronunciation keys"):
+        load_config(raw, Path("."))
+
+
+def test_pronunciation_empty() -> None:
+    config = load_config({}, Path("."))
+    assert config.pronunciation_files == {}
+
+
+def test_pronunciation_for_merges_shared_and_backend() -> None:
+    config = load_config({}, Path("."))
+    config.pronunciation = {
+        "shared": {"Euler": "OY-ler", "Knuth": "kuh-NOOTH"},
+        "piper": {"Euler": "OY-lur", "Dijkstra": "DYKE-struh"},
+    }
+    pron = config.pronunciation_for("piper")
+    assert pron["Euler"] == "OY-lur"  # backend overrides shared
+    assert pron["Knuth"] == "kuh-NOOTH"  # shared preserved
+    assert pron["Dijkstra"] == "DYKE-struh"  # backend-only entry
+
+
+def test_pronunciation_for_unknown_backend_returns_shared() -> None:
+    config = load_config({}, Path("."))
+    config.pronunciation = {"shared": {"Euler": "OY-ler"}}
+    pron = config.pronunciation_for("unknown_backend")
+    assert pron == {"Euler": "OY-ler"}
+
+
+def test_pronunciation_for_empty() -> None:
+    config = load_config({}, Path("."))
+    assert config.pronunciation_for("piper") == {}

@@ -13,7 +13,12 @@ voices:
   default: en_US-lessac-medium
   // alice: en_US-amy-medium
 pronunciation:
-  - pronunciation/terms.md
+  shared:
+    - pronunciation/terms.md
+  # piper:
+  #   - pronunciation/piper-hacks.md
+  # elevenlabs:
+  #   - pronunciation/elevenlabs-hacks.md
 video:
   resolution: 1920x1080
   pad_seconds: 1.5

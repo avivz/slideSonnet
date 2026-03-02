@@ -4,6 +4,7 @@ import pytest
 
 from slidesonnet.tts.pronunciation import (
     apply_pronunciation,
+    load_pronunciation_dict,
     load_pronunciation_file,
     load_pronunciation_files,
 )
@@ -79,3 +80,24 @@ def test_no_double_substitution():
 def test_empty_dictionary():
     text = "No changes here."
     assert apply_pronunciation(text, {}) == text
+
+
+def test_load_pronunciation_dict(tmp_path):
+    shared = tmp_path / "shared.md"
+    shared.write_text("**Euler**: OY-ler\n")
+    piper = tmp_path / "piper.md"
+    piper.write_text("**Euler**: OY-lur\n**Knuth**: kuh-NOOTH\n")
+
+    result = load_pronunciation_dict(
+        {
+            "shared": [shared],
+            "piper": [piper],
+        }
+    )
+    assert result["shared"] == {"Euler": "OY-ler"}
+    assert result["piper"] == {"Euler": "OY-lur", "Knuth": "kuh-NOOTH"}
+
+
+def test_load_pronunciation_dict_empty():
+    result = load_pronunciation_dict({})
+    assert result == {}

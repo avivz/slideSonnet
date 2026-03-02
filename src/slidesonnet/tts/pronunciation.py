@@ -45,6 +45,19 @@ def load_pronunciation_files(paths: list[Path]) -> dict[str, str]:
     return merged
 
 
+def load_pronunciation_dict(
+    pronunciation_files: dict[str, list[Path]],
+) -> dict[str, dict[str, str]]:
+    """Load pronunciation files grouped by category (shared, piper, elevenlabs).
+
+    Returns a dict mapping each category to its merged word→replacement dict.
+    """
+    result: dict[str, dict[str, str]] = {}
+    for category, paths in pronunciation_files.items():
+        result[category] = load_pronunciation_files(paths)
+    return result
+
+
 def apply_pronunciation(text: str, dictionary: dict[str, str]) -> str:
     """Apply pronunciation substitutions to text.
 

@@ -154,8 +154,13 @@ voices:
     piper: en_US-amy-medium
     elevenlabs: 21m00Tcm4TlvDq8ikWAM
 pronunciation:
-  - pronunciation/cs-terms.md
-  - pronunciation/math-terms.md
+  shared:
+    - pronunciation/cs-terms.md
+    - pronunciation/math-terms.md
+  # piper:
+  #   - pronunciation/piper-hacks.md
+  # elevenlabs:
+  #   - pronunciation/elevenlabs-hacks.md
 video:
   resolution: 1920x1080
   fps: 24
@@ -194,6 +199,29 @@ Reusable `.md` files with `**word**: replacement` pairs:
 ```
 
 Replacements are word-boundary aware (won't change "Eulerian") and case-insensitive. Reference them in the playlist front matter under `pronunciation:`.
+
+### Per-backend pronunciation
+
+Pronunciation workarounds that fix one TTS engine often break another. You can specify separate files per backend:
+
+```yaml
+pronunciation:
+  shared:
+    - pronunciation/names.md
+  piper:
+    - pronunciation/piper-hacks.md
+  elevenlabs:
+    - pronunciation/elevenlabs-hacks.md
+```
+
+When building with `--tts piper`, the effective dictionary is `shared + piper`. With `--tts elevenlabs`, it's `shared + elevenlabs`. Backend-specific entries override shared entries for the same word.
+
+The flat list format still works and is treated as `shared`:
+
+```yaml
+pronunciation:
+  - pronunciation/names.md
+```
 
 ## Voice presets
 

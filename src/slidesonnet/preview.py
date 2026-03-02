@@ -15,7 +15,7 @@ from slidesonnet.parsers.beamer import BeamerParser
 from slidesonnet.parsers.marp import MarpParser
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.piper import PiperTTS
-from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
+from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_dict
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,8 @@ def preview_single_slide(
     if playlist_path:
         raw_config, _ = parse_playlist(playlist_path.resolve())
         config = load_config(raw_config, playlist_path.resolve().parent)
-        pronunciation = load_pronunciation_files(config.pronunciation_files)
+        config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
+        pronunciation = config.pronunciation_for("piper")
         piper_model = config.tts.piper_model
 
     # Apply pronunciation

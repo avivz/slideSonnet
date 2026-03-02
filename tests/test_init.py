@@ -121,3 +121,34 @@ def test_from_copies_config(tmp_path):
 
     # Check .gitignore created
     assert (target / ".gitignore").exists()
+
+
+def test_from_copies_dict_format_pronunciation(tmp_path):
+    """init_from handles dict-format pronunciation (per-backend)."""
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    source_playlist = source_dir / "lecture.md"
+    source_playlist.write_text(
+        "---\n"
+        "title: Source Project\n"
+        "pronunciation:\n"
+        "  shared:\n"
+        "    - pron/names.md\n"
+        "  piper:\n"
+        "    - pron/piper-hacks.md\n"
+        "---\n"
+        "1. [Intro](intro/slides.md)\n"
+    )
+    # Create pronunciation files
+    pron_dir = source_dir / "pron"
+    pron_dir.mkdir()
+    (pron_dir / "names.md").write_text("**Euler**: OY-ler\n")
+    (pron_dir / "piper-hacks.md").write_text("**Knuth**: kuh-NOOTH\n")
+
+    target = tmp_path / "target"
+    init_from(target, source_playlist)
+
+    assert (target / "pron" / "names.md").exists()
+    assert (target / "pron" / "piper-hacks.md").exists()
+    assert "OY-ler" in (target / "pron" / "names.md").read_text()
+    assert "kuh-NOOTH" in (target / "pron" / "piper-hacks.md").read_text()

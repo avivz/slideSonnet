@@ -34,7 +34,7 @@ from slidesonnet.playlist import parse_playlist
 from slidesonnet.tasks import generate_tasks
 from slidesonnet.tts import create_tts
 from slidesonnet.tts.base import TTSEngine
-from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
+from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_dict
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ def _prepare(
         config.tts.backend = tts_override
 
     # Load pronunciation
-    config.pronunciation = load_pronunciation_files(config.pronunciation_files)
+    config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
 
     # Create TTS engine
     tts = create_tts(config)
@@ -162,12 +162,10 @@ def dry_run(
                 continue
 
             # Apply pronunciation (same as generate_tasks)
-            slide.narration_processed = apply_pronunciation(
-                slide.narration_raw, prep.config.pronunciation
-            )
+            pron = prep.config.pronunciation_for(prep.config.tts.backend)
+            slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
             slide.narration_parts_processed = [
-                apply_pronunciation(part, prep.config.pronunciation)
-                for part in slide.narration_parts
+                apply_pronunciation(part, pron) for part in slide.narration_parts
             ]
 
             # Resolve voice preset (same as generate_tasks)

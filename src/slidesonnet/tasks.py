@@ -106,14 +106,12 @@ def generate_tasks(
         slides = parser.parse(source_path, slides_dir)
 
         # Preprocess pronunciation and resolve voice presets
+        pron = config.pronunciation_for(config.tts.backend)
         for slide in slides:
             if slide.has_narration:
-                slide.narration_processed = apply_pronunciation(
-                    slide.narration_raw, config.pronunciation
-                )
+                slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
                 slide.narration_parts_processed = [
-                    apply_pronunciation(part, config.pronunciation)
-                    for part in slide.narration_parts
+                    apply_pronunciation(part, pron) for part in slide.narration_parts
                 ]
                 if slide.voice:
                     preset = slide.voice
