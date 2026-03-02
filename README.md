@@ -62,16 +62,16 @@ The `examples/showcase/` directory is a full-featured project that exercises eve
 
 | Module | Format | Features demonstrated |
 |---|---|---|
-| `01-intro/slides.md` | MARP | Basic say, multiline say, multiple say blocks, nonarration |
-| `02-deep-dive/slides.tex` | Beamer | `\say{}` with LaTeX, voice/pace overrides, `\nonarration`, `\slidesonnetskip` |
-| `03-examples/slides.md` | MARP | Voice presets, pace control, skip, pronunciation triggers |
+| `part1.md` | MARP | Basic say, multiline say, multiple say blocks, nonarration |
+| `part2.tex` | Beamer | `\say{}` with LaTeX, voice/pace overrides, `\nonarration`, `\slidesonnetskip` |
+| `part3.md` | MARP | Voice presets, pace control, skip, pronunciation triggers |
 | `animations/transition.mp4` | Video | Passthrough (no parsing/TTS) |
 
-It also includes two pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with all configuration options (`lecture01.md`).
+It also includes two pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with all configuration options (`lecture.md`).
 
 ```bash
 cd examples/showcase
-slidesonnet build lecture01.md
+slidesonnet build lecture.md
 ```
 
 ## Writing slides
@@ -133,7 +133,7 @@ Use the `\say` command (defined as a no-op by `slidesonnet.sty` so LaTeX compile
 \end{frame}
 ```
 
-Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\nonarration`, `\nonarration[5]` (per-slide duration override), `\skip`. Frames with `\pause` produce multiple sub-slides that can be narrated independently — see [Beamer documentation](docs/beamer.md) for details.
+Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\nonarration`, `\nonarration[5]` (per-slide duration override), `\slidesonnetskip`. Frames with `\pause` produce multiple sub-slides that can be narrated independently — see [Beamer documentation](docs/beamer.md) for details.
 
 ## Playlist format
 
@@ -158,8 +158,12 @@ pronunciation:
   - pronunciation/math-terms.md
 video:
   resolution: 1920x1080
+  fps: 24
+  crf: 23
   pad_seconds: 1.5
+  pre_silence: 1.0
   silence_duration: 3.0
+  crossfade: 0.5
 ---
 
 # Graph Theory Lecture 1
@@ -170,7 +174,7 @@ video:
 4. [Summary](03-summary/slides.md)
 ```
 
-- Module type is auto-detected from extension (`.md` → MARP, `.tex` → Beamer, `.mp4/.mkv/.webm/.mov` → video passthrough)
+- Module type is auto-detected from extension (`.md` → MARP, `.tex` → Beamer, `.mp4` / `.mkv` / `.webm` / `.mov` → video passthrough)
 - Lines starting with `//` are comments (ignored by parser, visible in markdown)
 - Video files are used as-is
 
@@ -237,7 +241,7 @@ slidesonnet preview-slide slides.md 3 -p lecture01.md  # with playlist config
 slidesonnet init myproject                  # create blank project
 slidesonnet init myproject --example        # create full working demo
 slidesonnet init myproject --from other.md  # copy config from existing project
-slidesonnet clean lecture01.md              # remove cache/ directory
+slidesonnet clean lecture01.md              # clean cache (keeps API audio by default)
 ```
 
 ## Incremental builds

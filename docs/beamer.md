@@ -4,7 +4,7 @@ slideSonnet parses Beamer LaTeX frames and generates narrated video from them. T
 
 ## Setup
 
-Your Beamer document should include the `slidesonnet` package, which defines `\say`, `\nonarration`, `\skip`, and `\slidesonnetskip` as no-ops so LaTeX compiles normally:
+Your Beamer document should include the `slidesonnet` package, which defines `\say`, `\nonarration`, and `\slidesonnetskip` as no-ops so LaTeX compiles normally:
 
 ```latex
 \documentclass{beamer}
@@ -76,18 +76,18 @@ Show the slide with silence (no narration). Without a duration argument, the sli
 
 > **Tip:** Always specify an explicit duration — e.g. `\nonarration[5]` — rather than relying on the global `silence_duration` default. Explicit durations make the pacing of your presentation self-documenting and independent of project-level configuration changes.
 
-### `\skip`
+### `\slidesonnetskip`
 
 Omit the slide from the video entirely:
 
 ```latex
 \begin{frame}
   \frametitle{Notes}
-  \skip
+  \slidesonnetskip
 \end{frame}
 ```
 
-`\slidesonnetskip` is an alias for `\skip`. Use it when `\skip` conflicts with other LaTeX packages — `\skip` is a TeX primitive (a length register), so packages that rely on its original meaning may break if you redefine it. `\slidesonnetskip` avoids this conflict entirely.
+Note: `\skip` is a TeX primitive (a length register) and is **not** used by slideSonnet. Always use `\slidesonnetskip` to skip frames.
 
 ## Overlay frames (`\pause`)
 
@@ -128,8 +128,8 @@ This frame produces 3 PDF pages and 3 video segments, each with its own narratio
 - **Multiple `\say` for the same sub-slide** are concatenated in file order
 - **Missing narration** — sub-slides with no `\say` targeting them become silent (with a warning)
 - **Target beyond pause count** — if `\say[5]{text}` appears in a frame with only 2 pauses, the sub-slide count is extended to 5 (with a warning); the image index clamps to the last available PDF page
-- **`\skip` / `\nonarration` on overlay frames** — applies to all sub-slides in the frame (duration override, if given, applies to every sub-slide)
-- **Unannotated frames** — frames with no `\say`, `\nonarration`, or `\skip` produce a warning and are treated as having no annotation
+- **`\slidesonnetskip` / `\nonarration` on overlay frames** — applies to all sub-slides in the frame (duration override, if given, applies to every sub-slide)
+- **Unannotated frames** — frames with no `\say`, `\nonarration`, or `\slidesonnetskip` produce a warning and are treated as having no annotation
 
 ### Backward compatibility
 
