@@ -380,9 +380,7 @@ def _run_doit(
                     tid = self._progress.add_task(label, total=counts[cat])
                     self._bar_ids[cat] = tid
             if counts["assemble"] > 0:
-                tid = self._progress.add_task(
-                    "Assemble", total=None, visible=False
-                )
+                tid = self._progress.add_task("Assemble", total=None, visible=False)
                 self._bar_ids["assemble"] = tid
             self._progress.start()
 
