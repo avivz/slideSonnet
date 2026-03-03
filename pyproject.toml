@@ -50,7 +50,7 @@ slidesonnet = "slidesonnet.cli:main"
 version = {attr = "slidesonnet.__version__"}
 
 [tool.setuptools.package-data]
-"slidesonnet.templates" = ["*.md", "*.txt"]
+"slidesonnet.templates" = ["*.md", "*.txt", "*.tex", "*.yaml"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
