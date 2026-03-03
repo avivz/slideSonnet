@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import logging
 from pathlib import Path
 from typing import Literal, cast
@@ -11,9 +12,10 @@ import click
 from slidesonnet import __version__
 from slidesonnet.clean import KeepLevel
 from slidesonnet.clean import clean as run_clean
-from slidesonnet.exceptions import FFmpegError, ParserError, SlideSonnetError
+from slidesonnet.exceptions import FFmpegError, ParserError, SlideSonnetError, TTSError
 from slidesonnet.init import init_project
 from slidesonnet.pipeline import (
+    BuildResult,
     DryRunResult,
     build as run_build,
     dry_run as run_dry_run,
@@ -36,19 +38,52 @@ class _CliFormatter(logging.Formatter):
         return record.getMessage()
 
 
-def _configure_logging() -> None:
+def _configure_logging(quiet: bool = False) -> None:
     """Set up logging for CLI use."""
     if not logging.root.handlers:
         handler = logging.StreamHandler()  # stderr by default
         handler.setFormatter(_CliFormatter())
         logging.root.addHandler(handler)
-    logging.root.setLevel(logging.INFO)
+    logging.root.setLevel(logging.WARNING if quiet else logging.INFO)
 
 
-@click.group(invoke_without_command=True)
+def _print_build_result(result: BuildResult) -> None:
+    """Print a single consolidated build completion line."""
+    if result.until:
+        click.echo(f"Stage '{result.until}' complete ({result.elapsed_seconds:.1f}s)")
+    elif result.output_path.exists():
+        size_mb = result.output_path.stat().st_size / (1024 * 1024)
+        click.echo(
+            f"Built {result.output_path.name} ({size_mb:.1f} MB, {result.elapsed_seconds:.1f}s)"
+        )
+
+
+class _SuggestGroup(click.Group):
+    """Click group that suggests close matches for misspelled subcommands."""
+
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        try:
+            return super().resolve_command(ctx, args)
+        except click.UsageError as e:
+            if args:
+                cmd_name = args[0]
+                matches = difflib.get_close_matches(
+                    cmd_name, self.list_commands(ctx), n=1, cutoff=0.6
+                )
+                if matches:
+                    raise click.UsageError(
+                        f"No such command '{cmd_name}'. Did you mean '{matches[0]}'?"
+                    ) from e
+            raise
+
+
+@click.group(cls=_SuggestGroup, invoke_without_command=True)
 @click.version_option(version=__version__)
+@click.option("--quiet", "-q", is_flag=True, help="Suppress progress output (errors still shown)")
 @click.pass_context
-def main(ctx: click.Context) -> None:
+def main(ctx: click.Context, quiet: bool) -> None:
     """slideSonnet — compile narrated lecture videos from slides.
 
     \b
@@ -74,7 +109,9 @@ def main(ctx: click.Context) -> None:
 
     Run "slidesonnet COMMAND --help" for details on a specific command.
     """
-    _configure_logging()
+    _configure_logging(quiet=quiet)
+    ctx.ensure_object(dict)
+    ctx.obj["quiet"] = quiet
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
@@ -108,7 +145,9 @@ def _print_dry_run(result: DryRunResult) -> None:
     type=click.Choice(["slides", "tts", "segments"]),
     help="Run pipeline only up to STAGE (slides, tts, or segments)",
 )
+@click.pass_context
 def build(
+    ctx: click.Context,
     playlist: Path,
     tts: str | None,
     dry_run: bool,
@@ -128,50 +167,65 @@ def build(
       slidesonnet build lecture.yaml -n               # dry-run
       slidesonnet build lecture.yaml --until tts       # stop after audio
     """
+    quiet: bool = ctx.obj.get("quiet", False)
     try:
         if dry_run:
+            if preview:
+                logger.warning("--preview has no effect with --dry-run")
             result = run_dry_run(
                 playlist,
                 tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
             )
             _print_dry_run(result)
         else:
-            output_path = run_build(
+            build_result = run_build(
                 playlist,
                 tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
                 preview=preview,
                 until=until,
+                quiet=quiet,
             )
-            if not until and output_path.exists():
-                size_mb = output_path.stat().st_size / (1024 * 1024)
-                click.echo(f"Video saved to {output_path.name} ({size_mb:.1f} MB)")
+            if not quiet:
+                _print_build_result(build_result)
     except SlideSonnetError as e:
         logger.error("%s", e)
-        if isinstance(e, (ParserError, FFmpegError)):
+        if isinstance(e, (ParserError, FFmpegError, TTSError)):
             logger.error("%s", _DOCTOR_HINT)
         raise SystemExit(1)
 
 
 @main.command()
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.option("--dry-run", "-n", is_flag=True, help="Report cache status without building anything")
 @click.option(
     "--until",
     type=click.Choice(["slides", "tts", "segments"]),
     help="Run pipeline only up to STAGE (slides, tts, or segments)",
 )
-def preview(playlist: Path, until: str | None) -> None:
+@click.pass_context
+def preview(ctx: click.Context, playlist: Path, dry_run: bool, until: str | None) -> None:
     """Build a preview video using local Piper TTS (free, no API key).
 
     Shorthand for: slidesonnet build PLAYLIST --tts piper --preview
     """
+    quiet: bool = ctx.obj.get("quiet", False)
     try:
-        output_path = run_build(playlist, tts_override="piper", preview=True, until=until)
-        if not until and output_path.exists():
-            size_mb = output_path.stat().st_size / (1024 * 1024)
-            click.echo(f"Video saved to {output_path.name} ({size_mb:.1f} MB)")
+        if dry_run:
+            result = run_dry_run(playlist, tts_override="piper")
+            _print_dry_run(result)
+        else:
+            build_result = run_build(
+                playlist,
+                tts_override="piper",
+                preview=True,
+                until=until,
+                quiet=quiet,
+            )
+            if not quiet:
+                _print_build_result(build_result)
     except SlideSonnetError as e:
         logger.error("%s", e)
-        if isinstance(e, (ParserError, FFmpegError)):
+        if isinstance(e, (ParserError, FFmpegError, TTSError)):
             logger.error("%s", _DOCTOR_HINT)
         raise SystemExit(1)
 
@@ -205,7 +259,7 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
         preview_single_slide(slides, slide_number, playlist_path=playlist)
     except SlideSonnetError as e:
         logger.error("%s", e)
-        if isinstance(e, (ParserError, FFmpegError)):
+        if isinstance(e, (ParserError, FFmpegError, TTSError)):
             logger.error("%s", _DOCTOR_HINT)
         raise SystemExit(1)
 

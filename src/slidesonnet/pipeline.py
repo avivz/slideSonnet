@@ -116,6 +116,15 @@ class ListResult:
 
 
 @dataclass
+class BuildResult:
+    """Result of a completed build."""
+
+    output_path: Path
+    elapsed_seconds: float
+    until: str | None = None
+
+
+@dataclass
 class DryRunResult:
     """Summary of what a build would do, without executing anything."""
 
@@ -272,10 +281,11 @@ def build(
     tts_override: Literal["piper", "elevenlabs"] | None = None,
     preview: bool = False,
     until: str | None = None,
-) -> Path:
+    quiet: bool = False,
+) -> BuildResult:
     """Execute the full build pipeline for a playlist.
 
-    Returns path to the final output video.
+    Returns a :class:`BuildResult` with the output path, elapsed time, and stage.
     """
     prep = _prepare(playlist_path, tts_override)
 
@@ -308,20 +318,24 @@ def build(
     task_list = _filter_tasks_until(task_list, until)
 
     # Run doit
-    _run_doit(task_list, prep.build_dir)
+    elapsed = _run_doit(task_list, prep.build_dir, quiet=quiet)
 
-    if until:
-        logger.info("Done (until %s): %s", until, prep.build_dir)
-    else:
-        logger.info("Done: %s", prep.output_path)
-    return prep.output_path
+    return BuildResult(
+        output_path=prep.output_path,
+        elapsed_seconds=elapsed,
+        until=until,
+    )
 
 
 def _run_doit(
     task_list: list[dict[str, Any]],
     build_dir: Path,
-) -> None:
-    """Run doit programmatically with the given tasks."""
+    quiet: bool = False,
+) -> float:
+    """Run doit programmatically with the given tasks.
+
+    Returns elapsed time in seconds.
+    """
     from doit.cmd_base import TaskLoader2
     from doit.doit_cmd import DoitMain
     from doit.reporter import ConsoleReporter
@@ -329,6 +343,7 @@ def _run_doit(
 
     db_file = str(build_dir / ".doit.db")
     tasks = [dict_to_task(t) for t in task_list]
+    start_time = time.monotonic()
 
     _SLIDE_PREFIXES = ("compile_beamer:", "extract_images:", "export_pdf:")
     _AUDIO_PREFIXES = ("tts:", "concat_audio:")
@@ -345,12 +360,21 @@ def _run_doit(
             return "assemble"
         return None
 
+    class _WarningBuffer(logging.Handler):
+        """Buffer WARNING+ records for replay after progress bars finish."""
+
+        def __init__(self) -> None:
+            super().__init__(level=logging.WARNING)
+            self.records: list[logging.LogRecord] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.records.append(record)
+
     class _ProgressReporter(ConsoleReporter):  # type: ignore[misc]
         """Reporter that shows grouped progress bars for slides/audio/video."""
 
         def initialize(self, tasks: Any, selected_tasks: Any) -> None:
             super().initialize(tasks, selected_tasks)
-            self._start_time = time.monotonic()
             self._cached: dict[str, int] = {}
             self._ran: dict[str, int] = {}
 
@@ -360,6 +384,16 @@ def _run_doit(
                 cat = _categorize_task(name)
                 if cat:
                     counts[cat] += 1
+
+            # Buffer warnings during progress to avoid interleaving with bars
+            self._warning_buffer = _WarningBuffer()
+            ss_logger = logging.getLogger("slidesonnet")
+            ss_logger.addHandler(self._warning_buffer)
+            # Suppress normal warning output during progress display
+            self._orig_handler_levels: list[tuple[logging.Handler, int]] = []
+            for handler in logging.root.handlers:
+                self._orig_handler_levels.append((handler, handler.level))
+                handler.setLevel(logging.ERROR)
 
             # Suppress action logger to avoid visual interference
             logging.getLogger("slidesonnet.actions").setLevel(logging.WARNING)
@@ -449,17 +483,44 @@ def _run_doit(
 
         def complete_run(self) -> None:
             self._progress.stop()
-            elapsed = time.monotonic() - self._start_time
-            self.write(f"Build complete ({elapsed:.1f}s)\n")
-            # Still show failures via parent
+            # Restore normal logging and replay buffered warnings
+            for handler, level in self._orig_handler_levels:
+                handler.setLevel(level)
+            ss_logger = logging.getLogger("slidesonnet")
+            ss_logger.removeHandler(self._warning_buffer)
+            for record in self._warning_buffer.records:
+                logging.root.handle(record)
+            # Show failures via parent
             if self.failures or self.runtime_errors:
                 super().complete_run()
 
+    class _QuietReporter(ConsoleReporter):  # type: ignore[misc]
+        """Silent reporter that only shows failures."""
+
+        def initialize(self, tasks: Any, selected_tasks: Any) -> None:
+            super().initialize(tasks, selected_tasks)
+            # Suppress action logger entirely
+            logging.getLogger("slidesonnet.actions").setLevel(logging.WARNING)
+
+        def execute_task(self, task: Any) -> None:
+            pass
+
+        def add_success(self, task: Any) -> None:
+            pass
+
+        def skip_uptodate(self, task: Any) -> None:
+            pass
+
+        def complete_run(self) -> None:
+            if self.failures or self.runtime_errors:
+                super().complete_run()
+
+    reporter = _QuietReporter if quiet else _ProgressReporter
     doit_config: dict[str, Any] = {
         "backend": "sqlite3",
         "dep_file": db_file,
         "verbosity": 0,
-        "reporter": _ProgressReporter,
+        "reporter": reporter,
     }
 
     class _Loader(TaskLoader2):  # type: ignore[misc]
@@ -470,8 +531,10 @@ def _run_doit(
             return tasks
 
     result = DoitMain(_Loader()).run(["run"])
+    elapsed = time.monotonic() - start_time
     if result not in (0, None):
         raise SlideSonnetError(f"Build failed (doit exit code {result})")
+    return elapsed
 
 
 def export_pdfs(playlist_path: Path) -> list[Path]:

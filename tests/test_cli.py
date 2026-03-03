@@ -9,7 +9,7 @@ from click.testing import CliRunner
 from slidesonnet import __version__
 from slidesonnet.clean import CleanResult
 from slidesonnet.cli import main
-from slidesonnet.pipeline import DryRunResult, ListResult, SlideInfo
+from slidesonnet.pipeline import BuildResult, DryRunResult, ListResult, SlideInfo
 
 _MINIMAL_PLAYLIST = "title: test\nmodules:\n  - a.md\n"
 
@@ -117,10 +117,17 @@ def test_build_calls_pipeline(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
         result = runner.invoke(main, ["build", str(playlist)])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override=None, preview=False, until=None)
+        mock_build.assert_called_once_with(
+            playlist,
+            tts_override=None,
+            preview=False,
+            until=None,
+            quiet=False,
+        )
 
 
 def test_build_with_tts_override(runner, tmp_path):
@@ -128,11 +135,16 @@ def test_build_with_tts_override(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
         result = runner.invoke(main, ["build", str(playlist), "--tts", "elevenlabs"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override="elevenlabs", preview=False, until=None
+            playlist,
+            tts_override="elevenlabs",
+            preview=False,
+            until=None,
+            quiet=False,
         )
 
 
@@ -141,10 +153,17 @@ def test_build_with_preview(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture_preview.mp4"
+        out = tmp_path / "cache" / "lecture_preview.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
         result = runner.invoke(main, ["build", str(playlist), "--preview"])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override=None, preview=True, until=None)
+        mock_build.assert_called_once_with(
+            playlist,
+            tts_override=None,
+            preview=True,
+            until=None,
+            quiet=False,
+        )
 
 
 def test_build_help_includes_preview(runner):
@@ -158,10 +177,17 @@ def test_preview_calls_build_with_piper(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
         result = runner.invoke(main, ["preview", str(playlist)])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override="piper", preview=True, until=None)
+        mock_build.assert_called_once_with(
+            playlist,
+            tts_override="piper",
+            preview=True,
+            until=None,
+            quiet=False,
+        )
 
 
 def test_init_md(runner, tmp_path):
@@ -330,11 +356,20 @@ def test_build_with_until_slides(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(
+            output_path=out,
+            elapsed_seconds=1.0,
+            until="slides",
+        )
         result = runner.invoke(main, ["build", str(playlist), "--until", "slides"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override=None, preview=False, until="slides"
+            playlist,
+            tts_override=None,
+            preview=False,
+            until="slides",
+            quiet=False,
         )
 
 
@@ -343,10 +378,21 @@ def test_build_with_until_tts(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(
+            output_path=out,
+            elapsed_seconds=1.0,
+            until="tts",
+        )
         result = runner.invoke(main, ["build", str(playlist), "--until", "tts"])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override=None, preview=False, until="tts")
+        mock_build.assert_called_once_with(
+            playlist,
+            tts_override=None,
+            preview=False,
+            until="tts",
+            quiet=False,
+        )
 
 
 def test_build_with_until_segments(runner, tmp_path):
@@ -354,11 +400,20 @@ def test_build_with_until_segments(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(
+            output_path=out,
+            elapsed_seconds=1.0,
+            until="segments",
+        )
         result = runner.invoke(main, ["build", str(playlist), "--until", "segments"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override=None, preview=False, until="segments"
+            playlist,
+            tts_override=None,
+            preview=False,
+            until="segments",
+            quiet=False,
         )
 
 
@@ -367,11 +422,20 @@ def test_preview_with_until(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(
+            output_path=out,
+            elapsed_seconds=1.0,
+            until="tts",
+        )
         result = runner.invoke(main, ["preview", str(playlist), "--until", "tts"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override="piper", preview=True, until="tts"
+            playlist,
+            tts_override="piper",
+            preview=True,
+            until="tts",
+            quiet=False,
         )
 
 

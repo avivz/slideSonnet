@@ -44,7 +44,7 @@ def parse_playlist(playlist_path: Path) -> tuple[dict[str, Any], list[PlaylistEn
             msg += f" (found: {', '.join(str(k) for k in found_keys)})"
             close = difflib.get_close_matches("modules", [str(k) for k in found_keys], n=1)
             if close:
-                msg += f". Did you mean '{close[0]}'?"
+                msg += ". Did you mean 'modules'?"
         raise ConfigError(msg)
     if not isinstance(modules_raw, list):
         raise ConfigError(
