@@ -23,5 +23,5 @@ video:
 // Build with: slidesonnet build lecture.yaml
 // Preview with: slidesonnet preview lecture.yaml
 modules:
-  - 01-intro/slides.md
-  - 02-definitions/slides.md
+  - 01-intro/slides.tex
+  - 02-definitions/slides.tex

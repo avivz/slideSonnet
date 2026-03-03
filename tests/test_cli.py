@@ -1,5 +1,6 @@
 """Tests for the CLI interface."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -162,49 +163,40 @@ def test_preview_calls_build_with_piper(runner, tmp_path):
         mock_build.assert_called_once_with(playlist, tts_override="piper", preview=True, until=None)
 
 
-def test_init_blank(runner, tmp_path):
+def test_init_md(runner, tmp_path):
     target = tmp_path / "newproject"
-    result = runner.invoke(main, ["init", str(target), "--blank"])
+    result = runner.invoke(main, ["init", "md", str(target)])
     assert result.exit_code == 0
     assert "Project created" in result.output
-    assert (target / "lecture01.yaml").exists()
-    assert (target / ".gitignore").exists()
-
-
-def test_init_example(runner, tmp_path):
-    target = tmp_path / "newproject"
-    result = runner.invoke(main, ["init", str(target), "--example"])
-    assert result.exit_code == 0
-    assert "Example project" in result.output
-    assert (target / "lecture01.yaml").exists()
+    assert (target / "lecture.yaml").exists()
+    assert (target / "01-intro" / "slides.md").exists()
     assert (target / "02-definitions" / "slides.md").exists()
 
 
-def test_init_from(runner, tmp_path):
-    # Create source project
-    source_dir = tmp_path / "source"
-    source_dir.mkdir()
-    source_playlist = source_dir / "lecture.yaml"
-    source_playlist.write_text(
-        "title: Source\ntts:\n  backend: piper\npronunciation:\n"
-        "  - pron/terms.md\nmodules:\n  - intro/slides.md\n"
-    )
-    pron_dir = source_dir / "pron"
-    pron_dir.mkdir()
-    (pron_dir / "terms.md").write_text("**Euler**: OY-ler\n")
-
-    target = tmp_path / "target"
-    result = runner.invoke(main, ["init", str(target), "--from", str(source_playlist)])
-    assert result.exit_code == 0
-    assert "copied config" in result.output
-    assert (target / "lecture01.yaml").exists()
-
-
-def test_init_default_is_blank(runner, tmp_path):
+def test_init_tex(runner, tmp_path):
     target = tmp_path / "newproject"
-    result = runner.invoke(main, ["init", str(target)])
+    result = runner.invoke(main, ["init", "tex", str(target)])
     assert result.exit_code == 0
-    assert (target / "lecture01.yaml").exists()
+    assert "Project created" in result.output
+    assert (target / "lecture.yaml").exists()
+    assert (target / "01-intro" / "slides.tex").exists()
+    assert (target / "02-definitions" / "slides.tex").exists()
+
+
+def test_init_default_dir(runner, tmp_path):
+    with patch("slidesonnet.cli.init_project") as mock_init:
+        result = runner.invoke(main, ["init", "md"])
+        assert result.exit_code == 0
+        assert "Project created" in result.output
+        mock_init.assert_called_once_with(Path("."), fmt="md")
+
+
+def test_init_refuses_overwrite(runner, tmp_path):
+    target = tmp_path / "existing"
+    target.mkdir()
+    (target / "lecture.yaml").write_text("existing content")
+    result = runner.invoke(main, ["init", "md", str(target)])
+    assert result.exit_code == 1
 
 
 def test_preview_slide_calls_preview(runner, tmp_path):

@@ -12,7 +12,7 @@ from slidesonnet import __version__
 from slidesonnet.clean import KeepLevel
 from slidesonnet.clean import clean as run_clean
 from slidesonnet.exceptions import SlideSonnetError
-from slidesonnet.init import init_blank, init_example, init_from
+from slidesonnet.init import init_project
 from slidesonnet.pipeline import (
     DryRunResult,
     build as run_build,
@@ -60,13 +60,13 @@ def main() -> None:
       pdf        PLAYLIST                     (export PDFs only)
       list       PLAYLIST [--tts ...]         (list slides with narration)
       preview-slide SLIDES N [-p PLAYLIST]    (play one slide's audio)
-      init       [DIR] [--blank|--example|--from PLAYLIST]
+      init       md|tex [DIR]                 (scaffold a new project)
       clean      PLAYLIST [--keep nothing|api|current|exact]
 
     \b
     Quick start:
-      slidesonnet init --example my-lecture
-      slidesonnet build my-lecture/lecture01.yaml --tts piper
+      slidesonnet init md my-lecture
+      slidesonnet build my-lecture/lecture.yaml --tts piper
 
     Run "slidesonnet COMMAND --help" for details on a specific command.
     """
@@ -111,8 +111,16 @@ def build(
 ) -> None:
     """Build an MP4 video from a playlist file.
 
+    \b
     PLAYLIST is a YAML file that lists slide modules and configures
     TTS, voice, and video settings.
+
+    \b
+    Examples:
+      slidesonnet build lecture.yaml
+      slidesonnet build lecture.yaml --tts piper --preview
+      slidesonnet build lecture.yaml -n               # dry-run
+      slidesonnet build lecture.yaml --until tts       # stop after audio
     """
     try:
         if dry_run:
@@ -166,10 +174,16 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
 
     \b
     SLIDES is a .md (MARP) or .tex (Beamer) slide file.
-    SLIDE_NUMBER is the 1-based slide index.
+    SLIDE_NUMBER is the 1-based slide index (use "list" to find numbers).
 
+    \b
     Useful for quick iteration on narration text without rebuilding
     the full video.
+
+    \b
+    Examples:
+      slidesonnet preview-slide 01-intro/slides.md 3
+      slidesonnet preview-slide slides.tex 1 -p lecture.yaml
     """
     try:
         preview_single_slide(slides, slide_number, playlist_path=playlist)
@@ -179,41 +193,38 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
 
 
 @main.command()
+@click.argument("fmt", type=click.Choice(["md", "tex"]))
 @click.argument("target", type=click.Path(path_type=Path), default=".")
-@click.option(
-    "--blank",
-    "mode",
-    flag_value="blank",
-    help="Playlist + one empty slide module + pronunciation dir (default)",
-)
-@click.option(
-    "--example",
-    "mode",
-    flag_value="example",
-    help="Two slide modules with sample narration, ready to build",
-)
-@click.option(
-    "--from",
-    "from_path",
-    type=click.Path(exists=True, path_type=Path),
-    help="Copy config and pronunciation from an existing playlist",
-)
-def init(target: Path, mode: str | None, from_path: Path | None) -> None:
-    """Create a new slideSonnet project in TARGET (default: current dir).
+def init(fmt: str, target: Path) -> None:
+    """Create a new slideSonnet project.
 
     \b
-    Generates a playlist file, starter slides, .gitignore, and .env.
-    Use --example for a project you can build immediately.
+    FMT selects the slide format: md (MARP Markdown) or tex (Beamer LaTeX).
+    TARGET is the directory to create (default: current dir).
+
+    \b
+    Creates:
+      lecture.yaml, .gitignore, .env,
+      pronunciation/cs-terms.md,
+      01-intro/slides.{md,tex},
+      02-definitions/slides.{md,tex}
+
+    \b
+    Examples:
+      slidesonnet init md my-lecture
+      slidesonnet init tex my-lecture
+      slidesonnet init md                     # current directory
+
+    \b
+    Refuses to overwrite — if TARGET already contains project files,
+    remove them first or choose a different directory.
     """
-    if from_path:
-        init_from(target, from_path)
-        click.echo(f"Project created at {target} (copied config from {from_path})")
-    elif mode == "example":
-        init_example(target)
-        click.echo(f"Example project created at {target}")
-    else:
-        init_blank(target)
+    try:
+        init_project(target, fmt=cast(Literal["md", "tex"], fmt))
         click.echo(f"Project created at {target}")
+    except SlideSonnetError as e:
+        logger.error("%s", e)
+        raise SystemExit(1)
 
 
 @main.command()
@@ -222,7 +233,8 @@ def init(target: Path, mode: str | None, from_path: Path | None) -> None:
     "--keep",
     type=click.Choice(["nothing", "api", "current", "exact"]),
     default="api",
-    help="What to preserve [default: api]",
+    show_default=True,
+    help="What to preserve",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
 def clean(playlist: Path, keep: str, yes: bool) -> None:
@@ -235,6 +247,12 @@ def clean(playlist: Path, keep: str, yes: bool) -> None:
       --keep current     Audio for current slide text (all backends)
       --keep api         All cloud TTS audio, even orphaned (default)
       --keep nothing     Remove everything, including all audio
+
+    \b
+    Examples:
+      slidesonnet clean lecture.yaml                    # keep API audio
+      slidesonnet clean lecture.yaml --keep current     # keep matching audio
+      slidesonnet clean lecture.yaml --keep nothing -y  # nuke everything
     """
     build_dir = playlist.resolve().parent / "cache"
     if not build_dir.exists():
@@ -292,9 +310,15 @@ def _truncate(text: str, width: int) -> str:
 def list_cmd(playlist: Path, tts: str | None) -> None:
     """List slides with voice and narration text.
 
+    \b
     Parses a playlist's slide modules and prints a table showing each
     slide's number, source file, voice preset, and narration.
     Useful for discovering slide numbers before using preview-slide.
+
+    \b
+    Examples:
+      slidesonnet list lecture.yaml
+      slidesonnet list lecture.yaml --tts piper
     """
     try:
         results = run_list_slides(

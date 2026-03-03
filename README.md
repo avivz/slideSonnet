@@ -7,12 +7,12 @@ Write your slides in [MARP](https://marp.app/) Markdown or LaTeX Beamer, add nar
 ## How it works
 
 ```
-lecture01.yaml (playlist)
+lecture.yaml (playlist)
     |
     ├── 01-intro/slides.md   → [parse → TTS → compose] → module_01.mp4
     ├── animations/euler.mp4  → [passthrough]            → module_02.mp4
     ├── 02-proofs/slides.tex  → [parse → TTS → compose] → module_03.mp4
-    └── [assemble] ─────────────────────────────────────→ lecture01.mp4
+    └── [assemble] ─────────────────────────────────────→ lecture.mp4
 ```
 
 A **playlist** file chains modules together — MARP slides, Beamer slides, and pre-existing video files. Each module is built independently, then concatenated into the final video. [pydoit](https://pydoit.org/) manages the build graph with content-hash caching, so only changed slides trigger TTS.
@@ -48,12 +48,12 @@ The `[piper]` extra includes [Piper TTS](https://github.com/rhasspy/piper) for f
 ## Quick start
 
 ```bash
-# Create an example project
-slidesonnet init myproject --example
+# Create an example project (MARP Markdown)
+slidesonnet init md myproject
 cd myproject
 
 # Build the video
-slidesonnet build lecture01.yaml
+slidesonnet build lecture.yaml
 ```
 
 ## Showcase example
@@ -255,16 +255,15 @@ The playlist references env var names, never values: `api_key_env: ELEVENLABS_AP
 ## CLI reference
 
 ```
-slidesonnet build lecture01.yaml              # build video
-slidesonnet build lecture01.yaml --tts piper  # override TTS backend
-slidesonnet build lecture01.yaml --dry-run    # show what would be built (no TTS/FFmpeg)
-slidesonnet preview lecture01.yaml            # quick build with local Piper TTS
+slidesonnet build lecture.yaml              # build video
+slidesonnet build lecture.yaml --tts piper  # override TTS backend
+slidesonnet build lecture.yaml --dry-run    # show what would be built (no TTS/FFmpeg)
+slidesonnet preview lecture.yaml            # quick build with local Piper TTS
 slidesonnet preview-slide slides.md 3       # play one slide's audio
-slidesonnet preview-slide slides.md 3 -p lecture01.yaml  # with playlist config
-slidesonnet init myproject                  # create blank project
-slidesonnet init myproject --example        # create full working demo
-slidesonnet init myproject --from other.yaml  # copy config from existing project
-slidesonnet clean lecture01.yaml              # clean cache (keeps API audio by default)
+slidesonnet preview-slide slides.md 3 -p lecture.yaml  # with playlist config
+slidesonnet init md myproject               # MARP Markdown project
+slidesonnet init tex myproject              # Beamer LaTeX project
+slidesonnet clean lecture.yaml              # clean cache (keeps API audio by default)
 ```
 
 ## Incremental builds
@@ -279,7 +278,7 @@ TTS audio is cached by content hash of the narration text, not by slide number. 
 Use `--dry-run` (or `-n`) to see what a build would do without making any API calls:
 
 ```
-$ slidesonnet build lecture01.yaml --dry-run
+$ slidesonnet build lecture.yaml --dry-run
 8 narrated slides: 5 cached, 3 need TTS (~1,200 characters via elevenlabs)
 ```
 
@@ -291,7 +290,7 @@ Build artifacts live in `cache/` next to the playlist file. Add it to `.gitignor
 
 ```
 my-course/
-├── lecture01.yaml             # playlist + config
+├── lecture.yaml              # playlist + config
 ├── pronunciation/
 │   └── cs-terms.md
 ├── 01-intro/slides.md        # MARP module
@@ -305,7 +304,7 @@ my-course/
 │   │   ├── utterances/       # text sent to TTS (for debugging)
 │   │   ├── segments/         # per-slide video segments
 │   │   └── module.mp4
-│   └── lecture01.mp4         # final output
+│   └── lecture.mp4           # final output
 └── .gitignore
 ```
 

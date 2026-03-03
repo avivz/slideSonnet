@@ -1,57 +1,16 @@
 """Tests for the init command."""
 
-from slidesonnet.init import init_blank, init_example, init_from
+import pytest
+
+from slidesonnet.exceptions import SlideSonnetError
+from slidesonnet.init import init_project
 
 
-def test_blank_creates_structure(tmp_path):
+def test_md_creates_structure(tmp_path):
     target = tmp_path / "myproject"
-    init_blank(target)
+    init_project(target, "md")
 
-    assert (target / "lecture01.yaml").exists()
-    assert (target / ".gitignore").exists()
-    assert (target / ".env").exists()
-    assert (target / "pronunciation" / "terms.md").exists()
-    assert (target / "01-intro" / "slides.md").exists()
-
-
-def test_blank_gitignore_protects_env(tmp_path):
-    target = tmp_path / "myproject"
-    init_blank(target)
-
-    gitignore = (target / ".gitignore").read_text()
-    assert ".env" in gitignore
-    assert "cache/" in gitignore
-
-
-def test_blank_env_has_placeholder(tmp_path):
-    target = tmp_path / "myproject"
-    init_blank(target)
-
-    env = (target / ".env").read_text()
-    assert "your_api_key_here" in env
-
-
-def test_blank_playlist_has_comments(tmp_path):
-    target = tmp_path / "myproject"
-    init_blank(target)
-
-    playlist = (target / "lecture01.yaml").read_text()
-    assert "//" in playlist  # has documentation comments
-
-
-def test_blank_slides_have_say(tmp_path):
-    target = tmp_path / "myproject"
-    init_blank(target)
-
-    slides = (target / "01-intro" / "slides.md").read_text()
-    assert "<!-- say:" in slides
-
-
-def test_example_creates_full_project(tmp_path):
-    target = tmp_path / "myproject"
-    init_example(target)
-
-    assert (target / "lecture01.yaml").exists()
+    assert (target / "lecture.yaml").exists()
     assert (target / ".gitignore").exists()
     assert (target / ".env").exists()
     assert (target / "pronunciation" / "cs-terms.md").exists()
@@ -59,94 +18,130 @@ def test_example_creates_full_project(tmp_path):
     assert (target / "02-definitions" / "slides.md").exists()
 
 
-def test_example_pronunciation_has_entries(tmp_path):
+def test_tex_creates_structure(tmp_path):
     target = tmp_path / "myproject"
-    init_example(target)
+    init_project(target, "tex")
+
+    assert (target / "lecture.yaml").exists()
+    assert (target / ".gitignore").exists()
+    assert (target / ".env").exists()
+    assert (target / "pronunciation" / "cs-terms.md").exists()
+    assert (target / "01-intro" / "slides.tex").exists()
+    assert (target / "02-definitions" / "slides.tex").exists()
+
+
+def test_playlist_name(tmp_path):
+    """Playlist is named lecture.yaml, not lecture01.yaml."""
+    target = tmp_path / "myproject"
+    init_project(target, "md")
+
+    assert (target / "lecture.yaml").exists()
+    assert not (target / "lecture01.yaml").exists()
+
+
+def test_md_slides_have_say(tmp_path):
+    target = tmp_path / "myproject"
+    init_project(target, "md")
+
+    intro = (target / "01-intro" / "slides.md").read_text()
+    defs = (target / "02-definitions" / "slides.md").read_text()
+    assert "<!-- say:" in intro
+    assert "<!-- say:" in defs
+
+
+def test_tex_slides_have_say(tmp_path):
+    target = tmp_path / "myproject"
+    init_project(target, "tex")
+
+    intro = (target / "01-intro" / "slides.tex").read_text()
+    defs = (target / "02-definitions" / "slides.tex").read_text()
+    assert "\\say{" in intro
+    assert "\\say{" in defs
+
+
+def test_pronunciation_has_entries(tmp_path):
+    target = tmp_path / "myproject"
+    init_project(target, "md")
 
     pron = (target / "pronunciation" / "cs-terms.md").read_text()
     assert "**Dijkstra**" in pron
     assert "DYKE-struh" in pron
 
 
-def test_example_playlist_has_two_modules(tmp_path):
+def test_gitignore_protects_env(tmp_path):
     target = tmp_path / "myproject"
-    init_example(target)
+    init_project(target, "md")
 
-    from slidesonnet.playlist import parse_playlist
+    gitignore = (target / ".gitignore").read_text()
+    assert ".env" in gitignore
+    assert "cache/" in gitignore
 
-    _, entries = parse_playlist(target / "lecture01.yaml")
-    assert len(entries) == 2
 
+def test_env_has_placeholder(tmp_path):
+    target = tmp_path / "myproject"
+    init_project(target, "md")
 
-def test_from_copies_config(tmp_path):
-    # Create a source project
-    source_dir = tmp_path / "source"
-    source_dir.mkdir()
-    source_playlist = source_dir / "lecture.yaml"
-    source_playlist.write_text(
-        "title: Source Project\n"
-        "tts:\n"
-        "  backend: elevenlabs\n"
-        "pronunciation:\n"
-        "  - pron/terms.md\n"
-        "modules:\n"
-        "  - intro/slides.md\n"
-    )
-    # Create pronunciation file
-    pron_dir = source_dir / "pron"
-    pron_dir.mkdir()
-    (pron_dir / "terms.md").write_text("**Euler**: OY-ler\n")
-
-    # Create .env
-    (source_dir / ".env").write_text("ELEVENLABS_API_KEY=sk-real-key\n")
-
-    # Init from source
-    target = tmp_path / "target"
-    init_from(target, source_playlist)
-
-    # Check config was copied
-    playlist = (target / "lecture01.yaml").read_text()
-    assert "Source Project" in playlist
-    assert "elevenlabs" in playlist
-
-    # Check pronunciation was copied
-    assert (target / "pron" / "terms.md").exists()
-    assert "OY-ler" in (target / "pron" / "terms.md").read_text()
-
-    # Check .env values were blanked
     env = (target / ".env").read_text()
-    assert "sk-real-key" not in env
-    assert "your_value_here" in env
-
-    # Check .gitignore created
-    assert (target / ".gitignore").exists()
+    assert "your_api_key_here" in env
 
 
-def test_from_copies_dict_format_pronunciation(tmp_path):
-    """init_from handles dict-format pronunciation (per-backend)."""
-    source_dir = tmp_path / "source"
-    source_dir.mkdir()
-    source_playlist = source_dir / "lecture.yaml"
-    source_playlist.write_text(
-        "title: Source Project\n"
-        "pronunciation:\n"
-        "  shared:\n"
-        "    - pron/names.md\n"
-        "  piper:\n"
-        "    - pron/piper-hacks.md\n"
-        "modules:\n"
-        "  - intro/slides.md\n"
-    )
-    # Create pronunciation files
-    pron_dir = source_dir / "pron"
-    pron_dir.mkdir()
-    (pron_dir / "names.md").write_text("**Euler**: OY-ler\n")
-    (pron_dir / "piper-hacks.md").write_text("**Knuth**: kuh-NOOTH\n")
+def test_tex_playlist_references_tex_modules(tmp_path):
+    target = tmp_path / "myproject"
+    init_project(target, "tex")
 
-    target = tmp_path / "target"
-    init_from(target, source_playlist)
+    playlist = (target / "lecture.yaml").read_text()
+    assert "slides.tex" in playlist
+    assert "slides.md" not in playlist
 
-    assert (target / "pron" / "names.md").exists()
-    assert (target / "pron" / "piper-hacks.md").exists()
-    assert "OY-ler" in (target / "pron" / "names.md").read_text()
-    assert "kuh-NOOTH" in (target / "pron" / "piper-hacks.md").read_text()
+
+def test_md_playlist_references_md_modules(tmp_path):
+    target = tmp_path / "myproject"
+    init_project(target, "md")
+
+    playlist = (target / "lecture.yaml").read_text()
+    assert "slides.md" in playlist
+
+
+# ---- Overwrite safety tests ----
+
+
+def test_refuses_existing_playlist(tmp_path):
+    """init_project refuses if lecture.yaml already exists."""
+    target = tmp_path / "myproject"
+    target.mkdir()
+    (target / "lecture.yaml").write_text("existing")
+
+    with pytest.raises(SlideSonnetError, match="Refusing to overwrite"):
+        init_project(target, "md")
+
+
+def test_refuses_existing_slides(tmp_path):
+    """init_project refuses if a nested file already exists."""
+    target = tmp_path / "myproject"
+    slides_dir = target / "01-intro"
+    slides_dir.mkdir(parents=True)
+    (slides_dir / "slides.md").write_text("existing")
+
+    with pytest.raises(SlideSonnetError, match="Refusing to overwrite"):
+        init_project(target, "md")
+
+
+def test_refuses_existing_gitignore(tmp_path):
+    """init_project refuses if .gitignore already exists."""
+    target = tmp_path / "myproject"
+    target.mkdir()
+    (target / ".gitignore").write_text("existing")
+
+    with pytest.raises(SlideSonnetError, match="Refusing to overwrite"):
+        init_project(target, "md")
+
+
+def test_error_lists_conflicting_files(tmp_path):
+    """Error message includes the paths of conflicting files."""
+    target = tmp_path / "myproject"
+    target.mkdir()
+    (target / "lecture.yaml").write_text("existing")
+    (target / ".env").write_text("existing")
+
+    with pytest.raises(SlideSonnetError, match="lecture.yaml"):
+        init_project(target, "md")
