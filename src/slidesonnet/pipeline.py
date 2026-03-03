@@ -122,6 +122,7 @@ class BuildResult:
     output_path: Path
     elapsed_seconds: float
     until: str | None = None
+    srt_path: Path | None = None
 
 
 @dataclass
@@ -282,6 +283,7 @@ def build(
     preview: bool = False,
     until: str | None = None,
     quiet: bool = False,
+    no_srt: bool = False,
 ) -> BuildResult:
     """Execute the full build pipeline for a playlist.
 
@@ -320,11 +322,68 @@ def build(
     # Run doit
     elapsed = _run_doit(task_list, prep.build_dir, quiet=quiet)
 
+    # Generate SRT subtitles (post-doit, uses cached audio durations)
+    srt_path: Path | None = None
+    if not no_srt and until != "slides":
+        srt_path = _generate_srt(prep, quiet=quiet)
+
     return BuildResult(
         output_path=prep.output_path,
         elapsed_seconds=elapsed,
         until=until,
+        srt_path=srt_path,
     )
+
+
+def _generate_srt(prep: _PreparedBuild, quiet: bool = False) -> Path | None:
+    """Generate SRT subtitles from cached audio files.
+
+    Returns the SRT path on success, None on failure.
+    """
+    from slidesonnet.subtitles import format_srt, generate_subtitles
+
+    try:
+        entries = generate_subtitles(
+            entries=prep.entries,
+            config=prep.config,
+            tts=prep.tts,
+            build_dir=prep.build_dir,
+            playlist_dir=prep.playlist_dir,
+        )
+        if not entries:
+            return None
+        srt_content = format_srt(entries)
+        srt_path = prep.output_path.with_suffix(".srt")
+        srt_path.write_text(srt_content, encoding="utf-8")
+        return srt_path
+    except Exception:
+        logger.warning("SRT generation failed", exc_info=not quiet)
+        return None
+
+
+def generate_srt_file(
+    playlist_path: Path,
+    tts_override: Literal["piper", "elevenlabs"] | None = None,
+    output: Path | None = None,
+) -> Path:
+    """Generate an SRT subtitle file from a previously built playlist.
+
+    Requires a prior build (audio files must exist in cache).
+    """
+    from slidesonnet.subtitles import format_srt, generate_subtitles
+
+    prep = _prepare(playlist_path, tts_override)
+    entries = generate_subtitles(
+        entries=prep.entries,
+        config=prep.config,
+        tts=prep.tts,
+        build_dir=prep.build_dir,
+        playlist_dir=prep.playlist_dir,
+    )
+    srt_content = format_srt(entries)
+    srt_path = output or prep.output_path.with_suffix(".srt")
+    srt_path.write_text(srt_content, encoding="utf-8")
+    return srt_path
 
 
 def _run_doit(

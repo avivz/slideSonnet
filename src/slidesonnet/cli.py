@@ -20,6 +20,7 @@ from slidesonnet.pipeline import (
     build as run_build,
     dry_run as run_dry_run,
     export_pdfs as run_export_pdfs,
+    generate_srt_file as run_generate_srt,
     list_slides as run_list_slides,
 )
 from slidesonnet.preview import preview_single_slide
@@ -53,9 +54,10 @@ def _print_build_result(result: BuildResult) -> None:
         click.echo(f"Stage '{result.until}' complete ({result.elapsed_seconds:.1f}s)")
     elif result.output_path.exists():
         size_mb = result.output_path.stat().st_size / (1024 * 1024)
-        click.echo(
-            f"Built {result.output_path.name} ({size_mb:.1f} MB, {result.elapsed_seconds:.1f}s)"
-        )
+        line = f"Built {result.output_path.name} ({size_mb:.1f} MB, {result.elapsed_seconds:.1f}s)"
+        if result.srt_path and result.srt_path.exists():
+            line += f" + {result.srt_path.name}"
+        click.echo(line)
 
 
 class _SuggestGroup(click.Group):
@@ -95,6 +97,7 @@ def main(ctx: click.Context, quiet: bool) -> None:
     Commands:
       build      PLAYLIST [--tts ...] [--preview] [-n] [--until STAGE]
       preview    PLAYLIST [--until STAGE]     (= build --tts piper --preview)
+      subtitles  PLAYLIST [-o OUTPUT]         (generate SRT from cache)
       pdf        PLAYLIST                     (export PDFs only)
       list       PLAYLIST [--tts ...]         (list slides with narration)
       preview-slide SLIDES N [-p PLAYLIST]    (play one slide's audio)
@@ -145,6 +148,7 @@ def _print_dry_run(result: DryRunResult) -> None:
     type=click.Choice(["slides", "tts", "segments"]),
     help="Run pipeline only up to STAGE (slides, tts, or segments)",
 )
+@click.option("--no-srt", is_flag=True, help="Skip SRT subtitle generation")
 @click.pass_context
 def build(
     ctx: click.Context,
@@ -153,12 +157,14 @@ def build(
     dry_run: bool,
     preview: bool,
     until: str | None,
+    no_srt: bool,
 ) -> None:
     """Build an MP4 video from a playlist file.
 
     \b
     PLAYLIST is a YAML file that lists slide modules and configures
-    TTS, voice, and video settings.
+    TTS, voice, and video settings. An SRT subtitle file is generated
+    alongside the video (use --no-srt to skip).
 
     \b
     Examples:
@@ -184,6 +190,7 @@ def build(
                 preview=preview,
                 until=until,
                 quiet=quiet,
+                no_srt=no_srt,
             )
             if not quiet:
                 _print_build_result(build_result)
@@ -202,8 +209,11 @@ def build(
     type=click.Choice(["slides", "tts", "segments"]),
     help="Run pipeline only up to STAGE (slides, tts, or segments)",
 )
+@click.option("--no-srt", is_flag=True, help="Skip SRT subtitle generation")
 @click.pass_context
-def preview(ctx: click.Context, playlist: Path, dry_run: bool, until: str | None) -> None:
+def preview(
+    ctx: click.Context, playlist: Path, dry_run: bool, until: str | None, no_srt: bool
+) -> None:
     """Build a preview video using local Piper TTS (free, no API key).
 
     Shorthand for: slidesonnet build PLAYLIST --tts piper --preview
@@ -220,6 +230,7 @@ def preview(ctx: click.Context, playlist: Path, dry_run: bool, until: str | None
                 preview=True,
                 until=until,
                 quiet=quiet,
+                no_srt=no_srt,
             )
             if not quiet:
                 _print_build_result(build_result)
@@ -261,6 +272,46 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
         logger.error("%s", e)
         if isinstance(e, (ParserError, FFmpegError, TTSError)):
             logger.error("%s", _DOCTOR_HINT)
+        raise SystemExit(1)
+
+
+@main.command()
+@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    help="Output SRT file path (default: alongside playlist as .srt)",
+)
+@click.option(
+    "--tts",
+    type=click.Choice(["piper", "elevenlabs"]),
+    help="TTS backend (for locating cached audio files)",
+)
+def subtitles(playlist: Path, output: Path | None, tts: str | None) -> None:
+    """Generate SRT subtitles from a previously built playlist.
+
+    \b
+    Reads cached audio durations and narration text to produce an SRT
+    subtitle file. Requires a prior build (audio files must exist in cache).
+
+    \b
+    Examples:
+      slidesonnet subtitles lecture.yaml
+      slidesonnet subtitles lecture.yaml -o lecture_en.srt
+    """
+    try:
+        srt_path = run_generate_srt(
+            playlist,
+            tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+            output=output,
+        )
+        click.echo(str(srt_path))
+    except SlideSonnetError as e:
+        logger.error("%s", e)
+        raise SystemExit(1)
+    except Exception as e:
+        logger.error("SRT generation failed: %s", e)
         raise SystemExit(1)
 
 

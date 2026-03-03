@@ -11,6 +11,9 @@ from slidesonnet.clean import CleanResult
 from slidesonnet.cli import main
 from slidesonnet.pipeline import BuildResult, DryRunResult, ListResult, SlideInfo
 
+# Re-usable assertion kwargs for run_build calls (includes no_srt default)
+_BUILD_DEFAULTS = dict(quiet=False, no_srt=False)
+
 _MINIMAL_PLAYLIST = "title: test\nmodules:\n  - a.md\n"
 
 
@@ -127,6 +130,7 @@ def test_build_calls_pipeline(runner, tmp_path):
             preview=False,
             until=None,
             quiet=False,
+            no_srt=False,
         )
 
 
@@ -145,6 +149,7 @@ def test_build_with_tts_override(runner, tmp_path):
             preview=False,
             until=None,
             quiet=False,
+            no_srt=False,
         )
 
 
@@ -163,6 +168,7 @@ def test_build_with_preview(runner, tmp_path):
             preview=True,
             until=None,
             quiet=False,
+            no_srt=False,
         )
 
 
@@ -187,6 +193,7 @@ def test_preview_calls_build_with_piper(runner, tmp_path):
             preview=True,
             until=None,
             quiet=False,
+            no_srt=False,
         )
 
 
@@ -370,6 +377,7 @@ def test_build_with_until_slides(runner, tmp_path):
             preview=False,
             until="slides",
             quiet=False,
+            no_srt=False,
         )
 
 
@@ -392,6 +400,7 @@ def test_build_with_until_tts(runner, tmp_path):
             preview=False,
             until="tts",
             quiet=False,
+            no_srt=False,
         )
 
 
@@ -414,6 +423,7 @@ def test_build_with_until_segments(runner, tmp_path):
             preview=False,
             until="segments",
             quiet=False,
+            no_srt=False,
         )
 
 
@@ -436,6 +446,7 @@ def test_preview_with_until(runner, tmp_path):
             preview=True,
             until="tts",
             quiet=False,
+            no_srt=False,
         )
 
 
@@ -613,3 +624,95 @@ def test_clean_keep_api_no_prompt(runner, tmp_path):
         result = runner.invoke(main, ["clean", str(playlist)])
         assert result.exit_code == 0
         assert "Continue?" not in result.output
+
+
+# ---- --no-srt and subtitles CLI tests ----
+
+
+def test_build_no_srt_flag(runner, tmp_path):
+    """--no-srt passes no_srt=True to run_build."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["build", str(playlist), "--no-srt"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            playlist,
+            tts_override=None,
+            preview=False,
+            until=None,
+            quiet=False,
+            no_srt=True,
+        )
+
+
+def test_preview_no_srt_flag(runner, tmp_path):
+    """preview --no-srt passes no_srt=True."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["preview", str(playlist), "--no-srt"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            playlist,
+            tts_override="piper",
+            preview=True,
+            until=None,
+            quiet=False,
+            no_srt=True,
+        )
+
+
+def test_build_result_with_srt(runner, tmp_path):
+    """Build output includes SRT filename when srt_path is set."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    out = tmp_path / "lecture.mp4"
+    out.write_bytes(b"\x00" * 1024)
+    srt = tmp_path / "lecture.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n")
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0, srt_path=srt)
+        result = runner.invoke(main, ["build", str(playlist)])
+        assert result.exit_code == 0
+        assert "lecture.srt" in result.output
+
+
+def test_subtitles_command(runner, tmp_path):
+    """subtitles command calls run_generate_srt and prints path."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    srt_path = tmp_path / "lecture.srt"
+
+    with patch("slidesonnet.cli.run_generate_srt", return_value=srt_path) as mock_srt:
+        result = runner.invoke(main, ["subtitles", str(playlist)])
+        assert result.exit_code == 0
+        mock_srt.assert_called_once_with(playlist, tts_override=None, output=None)
+        assert str(srt_path) in result.output
+
+
+def test_subtitles_command_with_output(runner, tmp_path):
+    """subtitles -o custom.srt passes output path."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    custom_srt = tmp_path / "custom.srt"
+
+    with patch("slidesonnet.cli.run_generate_srt", return_value=custom_srt) as mock_srt:
+        result = runner.invoke(main, ["subtitles", str(playlist), "-o", str(custom_srt)])
+        assert result.exit_code == 0
+        mock_srt.assert_called_once_with(playlist, tts_override=None, output=custom_srt)
+
+
+def test_help_includes_subtitles(runner):
+    """Main help lists the subtitles command."""
+    result = runner.invoke(main, ["--help"])
+    assert result.exit_code == 0
+    assert "subtitles" in result.output

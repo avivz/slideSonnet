@@ -257,10 +257,12 @@ The playlist references env var names, never values: `api_key_env: ELEVENLABS_AP
 ## CLI reference
 
 ```
-slidesonnet build lecture.yaml              # build video
+slidesonnet build lecture.yaml              # build video + SRT subtitles
 slidesonnet build lecture.yaml --tts piper  # override TTS backend
+slidesonnet build lecture.yaml --no-srt     # build without generating subtitles
 slidesonnet build lecture.yaml --dry-run    # show what would be built (no TTS/FFmpeg)
 slidesonnet preview lecture.yaml            # quick build with local Piper TTS
+slidesonnet subtitles lecture.yaml          # regenerate SRT from cached audio
 slidesonnet preview-slide slides.md 3       # play one slide's audio
 slidesonnet preview-slide slides.md 3 -p lecture.yaml  # with playlist config
 slidesonnet init md myproject               # MARP Markdown project
@@ -290,6 +292,18 @@ This is especially useful before ElevenLabs builds to estimate API usage and cos
 
 Build artifacts live in `cache/` next to the playlist file. Add it to `.gitignore`.
 
+## Subtitles
+
+Every build automatically generates an SRT subtitle file alongside the video (`lecture.srt` next to `lecture.mp4`). The subtitles use the original narration text (before pronunciation substitutions) and are timed to match the audio.
+
+Long narrations are split into subtitle-sized chunks at sentence boundaries, then clause boundaries, then word boundaries — each chunk timed proportionally by character count.
+
+Use the SRT file as a starting point for translation or editing with any subtitle tool. To skip generation, pass `--no-srt`. To regenerate from cache without rebuilding:
+
+```
+slidesonnet subtitles lecture.yaml
+```
+
 ## Project layout
 
 ```
@@ -301,14 +315,15 @@ my-course/
 ├── 02-proofs/slides.tex      # Beamer module
 ├── animations/euler.mp4      # video module
 ├── .env                      # API keys (gitignored)
+├── lecture.mp4               # final output video
+├── lecture.srt               # auto-generated subtitles
 ├── cache/                    # build artifacts (gitignored)
 │   ├── audio/                # TTS cache (content-addressed)
 │   ├── 01-intro/
 │   │   ├── slides/           # extracted PNGs + manifest
 │   │   ├── utterances/       # text sent to TTS (for debugging)
-│   │   ├── segments/         # per-slide video segments
-│   │   └── module.mp4
-│   └── lecture.mp4           # final output
+│   │   └── segments/         # per-slide video segments
+│   └── .doit.db
 └── .gitignore
 ```
 
