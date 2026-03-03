@@ -29,6 +29,8 @@ Install these system packages first:
 | **marp-cli** | Yes (for MARP slides) | Converts Markdown slides to PNG images | `npm install -g @marp-team/marp-cli` |
 | **pdflatex + pdftoppm** | Only for Beamer | Compiles LaTeX and extracts slide images | `sudo apt install texlive-latex-base poppler-utils` |
 
+After installing, run `slidesonnet doctor` to verify everything is set up correctly.
+
 ### Install slideSonnet
 
 With [uv](https://docs.astral.sh/uv/) (recommended):
@@ -265,6 +267,7 @@ slidesonnet init md myproject               # MARP Markdown project
 slidesonnet init tex myproject              # Beamer LaTeX project
 slidesonnet list lecture.yaml               # list slides with cache status per slide
 slidesonnet clean lecture.yaml              # clean cache (keeps API audio by default)
+slidesonnet doctor                         # check installed dependencies
 ```
 
 ## Incremental builds

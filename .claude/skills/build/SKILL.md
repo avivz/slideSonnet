@@ -1,6 +1,6 @@
 ---
 name: build
-description: Build slideSonnet presentations into narrated MP4 videos. Use when the user asks to "build", "compile", "render", "preview", or "clean" a lecture or presentation, or wants to check build status, export PDFs, or review utterances.
+description: Build slideSonnet presentations into narrated MP4 videos. Use when the user asks to "build", "compile", "render", "preview", "clean", or "doctor" a lecture or presentation, or wants to check build status, export PDFs, check dependencies, or review utterances.
 argument-hint: [playlist path or command]
 ---
 
@@ -74,6 +74,30 @@ slidesonnet clean PLAYLIST [--keep LEVEL]
 | `nothing` | Nothing | Entire cache directory |
 
 All levels remove: slide images, video segments, `.doit.db`, concat audio.
+
+### `slidesonnet doctor` — check dependencies
+
+```bash
+slidesonnet doctor
+```
+
+Verifies that all external tools and Python packages are installed. Reports version info for each, grouped by category:
+
+- **Core** (ffmpeg, ffprobe) — always required, affects exit code
+- **MARP toolchain** (marp-cli) — needed for `.md` slides
+- **Beamer toolchain** (pdflatex, pdftoppm) — needed for `.tex` slides
+- **TTS backends** (piper, elevenlabs) — at least one required
+- **API keys** (ELEVENLABS_API_KEY) — only for elevenlabs TTS
+
+Exit code 0 if all core dependencies are found, 1 if any are missing. Optional tools are reported but don't affect the exit code.
+
+### `slidesonnet init` — scaffold a new project
+
+```bash
+slidesonnet init FMT [TARGET]
+```
+
+Creates a new project directory with a playlist, sample slides, pronunciation files, `.gitignore`, and `.env`. FMT is `md` (MARP) or `tex` (Beamer). TARGET defaults to the current directory.
 
 ## Common Workflows
 

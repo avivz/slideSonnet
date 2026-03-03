@@ -62,6 +62,7 @@ def main() -> None:
       preview-slide SLIDES N [-p PLAYLIST]    (play one slide's audio)
       init       md|tex [DIR]                 (scaffold a new project)
       clean      PLAYLIST [--keep nothing|api|current|exact]
+      doctor                               (check installed dependencies)
 
     \b
     Quick start:
@@ -374,4 +375,14 @@ def list_cmd(playlist: Path, tts: str | None) -> None:
             click.echo("\n" + ", ".join(parts))
     except SlideSonnetError as e:
         logger.error("%s", e)
+        raise SystemExit(1)
+
+
+@main.command()
+def doctor() -> None:
+    """Check that required tools and dependencies are installed."""
+    from slidesonnet.doctor import print_report, run_all_checks
+
+    all_ok = print_report(run_all_checks())
+    if not all_ok:
         raise SystemExit(1)
