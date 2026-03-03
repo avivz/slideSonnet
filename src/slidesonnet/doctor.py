@@ -188,20 +188,21 @@ _CORE_GROUPS = {"Python", "Core (always required)"}
 
 def print_report(groups: list[tuple[str, list[CheckResult]]]) -> bool:
     """Print a formatted report and return True if all core deps are OK."""
+    use_color = "NO_COLOR" not in os.environ
     all_core_ok = True
     for group_name, checks in groups:
         is_core = group_name in _CORE_GROUPS
         click.echo(f"\n{group_name}")
         for check in checks:
             if check.status == "ok":
-                symbol = click.style("\u2713", fg="green")
+                symbol = click.style("\u2713", fg="green") if use_color else "\u2713"
                 line = f"  {symbol} {check.name} {check.version}"
             elif is_core:
-                symbol = click.style("\u2717", fg="red")
+                symbol = click.style("\u2717", fg="red") if use_color else "\u2717"
                 line = f"  {symbol} {check.name}"
                 all_core_ok = False
             else:
-                symbol = click.style("\u2014", fg="yellow")
+                symbol = click.style("\u2014", fg="yellow") if use_color else "\u2014"
                 line = f"  {symbol} {check.name}"
             # Append context for non-ok items
             if check.status != "ok" and check.context:
@@ -212,7 +213,9 @@ def print_report(groups: list[tuple[str, list[CheckResult]]]) -> bool:
 
     click.echo()
     if all_core_ok:
-        click.echo(click.style("All core dependencies found.", fg="green"))
+        msg = "All core dependencies found."
+        click.echo(click.style(msg, fg="green") if use_color else msg)
     else:
-        click.echo(click.style("Missing core dependencies \u2014 see above.", fg="red"))
+        msg = "Missing core dependencies \u2014 see above."
+        click.echo(click.style(msg, fg="red") if use_color else msg)
     return all_core_ok

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,10 @@ def parse_playlist(playlist_path: Path) -> tuple[dict[str, Any], list[PlaylistEn
     Returns:
         (raw_config_dict, list_of_playlist_entries)
     """
-    text = playlist_path.read_text(encoding="utf-8")
+    try:
+        text = playlist_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigError(f"Cannot read playlist file: {playlist_path} ({exc})") from None
 
     # Filter out // comment lines before YAML parsing
     lines = [ln for ln in text.split("\n") if not ln.lstrip().startswith("//")]
@@ -34,7 +38,14 @@ def parse_playlist(playlist_path: Path) -> tuple[dict[str, Any], list[PlaylistEn
     # Extract modules list
     modules_raw = data.pop("modules", None)
     if modules_raw is None:
-        raise ConfigError(f"Playlist missing required 'modules' key: {playlist_path}")
+        found_keys = list(data.keys())
+        msg = f"Playlist missing required 'modules' key: {playlist_path}"
+        if found_keys:
+            msg += f" (found: {', '.join(str(k) for k in found_keys)})"
+            close = difflib.get_close_matches("modules", [str(k) for k in found_keys], n=1)
+            if close:
+                msg += f". Did you mean '{close[0]}'?"
+        raise ConfigError(msg)
     if not isinstance(modules_raw, list):
         raise ConfigError(
             f"'modules' must be a list, got {type(modules_raw).__name__}: {playlist_path}"

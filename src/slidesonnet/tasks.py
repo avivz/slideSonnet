@@ -18,6 +18,7 @@ from typing import Any
 
 from doit.tools import config_changed
 
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.actions import (
     action_assemble,
     action_compile_beamer,
@@ -103,7 +104,10 @@ def generate_tasks(
         parser_cls, extract_fn = get_parser_and_extractor(entry.module_type)
 
         # Read source once for visual hashing (annotation-aware cache key)
-        source_text = source_path.read_text(encoding="utf-8")
+        try:
+            source_text = source_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise SlideSonnetError(f"Module file not found: {entry.path}") from None
 
         # Parse slides eagerly (just reading text — fast)
         slides_dir = module_dir / "slides"

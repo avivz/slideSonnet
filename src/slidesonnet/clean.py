@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -28,11 +29,40 @@ KeepLevel = Literal["nothing", "api", "current", "exact"]
 _API_BACKENDS = frozenset({"elevenlabs"})
 
 
-def clean(playlist_path: Path, keep: KeepLevel = "api") -> None:
+@dataclass
+class CleanResult:
+    """Summary of what was removed/kept during cleanup."""
+
+    removed_files: int = 0
+    removed_bytes: int = 0
+    kept_files: int = 0
+
+    @property
+    def removed_mb(self) -> float:
+        return self.removed_bytes / (1024 * 1024)
+
+
+def _count_dir(path: Path) -> tuple[int, int]:
+    """Count files and total bytes in a directory tree."""
+    count = 0
+    total = 0
+    if not path.exists():
+        return 0, 0
+    for f in path.rglob("*"):
+        if f.is_file():
+            count += 1
+            total += f.stat().st_size
+    return count, total
+
+
+def clean(playlist_path: Path, keep: KeepLevel = "api") -> CleanResult:
     """Clean build artifacts with the given preservation level."""
     build_dir = playlist_path.resolve().parent / "cache"
     if not build_dir.exists():
-        return
+        return CleanResult()
+
+    # Count files before
+    files_before, bytes_before = _count_dir(build_dir)
 
     if keep == "nothing":
         _clean_all(build_dir)
@@ -42,6 +72,17 @@ def clean(playlist_path: Path, keep: KeepLevel = "api") -> None:
         _clean_keep_current(build_dir, playlist_path)
     elif keep == "exact":
         _clean_keep_exact(build_dir, playlist_path)
+
+    # Count files after
+    files_after, _ = _count_dir(build_dir)
+    removed_files = files_before - files_after
+    _, bytes_after = _count_dir(build_dir)
+
+    return CleanResult(
+        removed_files=removed_files,
+        removed_bytes=bytes_before - bytes_after,
+        kept_files=files_after,
+    )
 
 
 def _clean_all(build_dir: Path) -> None:

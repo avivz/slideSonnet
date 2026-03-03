@@ -7,6 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from slidesonnet import __version__
+from slidesonnet.clean import CleanResult
 from slidesonnet.cli import main
 from slidesonnet.pipeline import DryRunResult, ListResult, SlideInfo
 
@@ -78,7 +79,7 @@ def test_clean_default_keep_api(runner, tmp_path):
     build_dir.mkdir()
     (build_dir / ".doit.db").touch()
 
-    with patch("slidesonnet.cli.run_clean") as mock_clean:
+    with patch("slidesonnet.cli.run_clean", return_value=CleanResult(5, 1024, 2)) as mock_clean:
         result = runner.invoke(main, ["clean", str(playlist)])
         assert result.exit_code == 0
         mock_clean.assert_called_once_with(playlist, keep="api")
@@ -91,7 +92,7 @@ def test_clean_keep_nothing(runner, tmp_path):
     build_dir = tmp_path / "cache"
     build_dir.mkdir()
 
-    with patch("slidesonnet.cli.run_clean") as mock_clean:
+    with patch("slidesonnet.cli.run_clean", return_value=CleanResult(5, 1024, 0)) as mock_clean:
         result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing", "--yes"])
         assert result.exit_code == 0
         mock_clean.assert_called_once_with(playlist, keep="nothing")
@@ -106,7 +107,7 @@ def test_clean_keep_choices(runner, tmp_path):
     build_dir.mkdir()
 
     for level in ("nothing", "api", "current", "exact"):
-        with patch("slidesonnet.cli.run_clean"):
+        with patch("slidesonnet.cli.run_clean", return_value=CleanResult(3, 512, 1)):
             result = runner.invoke(main, ["clean", str(playlist), "--keep", level, "--yes"])
             assert result.exit_code == 0, f"--keep {level} failed"
 
@@ -502,7 +503,7 @@ def test_clean_keep_nothing_prompts(runner, tmp_path):
     build_dir = tmp_path / "cache"
     build_dir.mkdir()
 
-    with patch("slidesonnet.cli.run_clean") as mock_clean:
+    with patch("slidesonnet.cli.run_clean", return_value=CleanResult(5, 1024, 0)) as mock_clean:
         result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing"], input="y\n")
         assert result.exit_code == 0
         assert "delete all cached audio" in result.output
@@ -529,7 +530,7 @@ def test_clean_keep_nothing_yes_flag(runner, tmp_path):
     build_dir = tmp_path / "cache"
     build_dir.mkdir()
 
-    with patch("slidesonnet.cli.run_clean") as mock_clean:
+    with patch("slidesonnet.cli.run_clean", return_value=CleanResult(5, 1024, 0)) as mock_clean:
         result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing", "--yes"])
         assert result.exit_code == 0
         assert "delete all cached audio" not in result.output
@@ -544,7 +545,7 @@ def test_clean_keep_api_no_prompt(runner, tmp_path):
     build_dir.mkdir()
     (build_dir / ".doit.db").touch()
 
-    with patch("slidesonnet.cli.run_clean"):
+    with patch("slidesonnet.cli.run_clean", return_value=CleanResult(3, 512, 2)):
         result = runner.invoke(main, ["clean", str(playlist)])
         assert result.exit_code == 0
         assert "Continue?" not in result.output

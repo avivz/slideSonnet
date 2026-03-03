@@ -11,7 +11,7 @@ import click
 from slidesonnet import __version__
 from slidesonnet.clean import KeepLevel
 from slidesonnet.clean import clean as run_clean
-from slidesonnet.exceptions import SlideSonnetError
+from slidesonnet.exceptions import FFmpegError, ParserError, SlideSonnetError
 from slidesonnet.init import init_project
 from slidesonnet.pipeline import (
     DryRunResult,
@@ -23,6 +23,8 @@ from slidesonnet.pipeline import (
 from slidesonnet.preview import preview_single_slide
 
 logger = logging.getLogger(__name__)
+
+_DOCTOR_HINT = '(run "slidesonnet doctor" to check dependencies)'
 
 
 class _CliFormatter(logging.Formatter):
@@ -43,9 +45,10 @@ def _configure_logging() -> None:
     logging.root.setLevel(logging.INFO)
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__)
-def main() -> None:
+@click.pass_context
+def main(ctx: click.Context) -> None:
     """slideSonnet — compile narrated lecture videos from slides.
 
     \b
@@ -72,6 +75,8 @@ def main() -> None:
     Run "slidesonnet COMMAND --help" for details on a specific command.
     """
     _configure_logging()
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
 def _print_dry_run(result: DryRunResult) -> None:
@@ -131,14 +136,19 @@ def build(
             )
             _print_dry_run(result)
         else:
-            run_build(
+            output_path = run_build(
                 playlist,
                 tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
                 preview=preview,
                 until=until,
             )
+            if not until and output_path.exists():
+                size_mb = output_path.stat().st_size / (1024 * 1024)
+                click.echo(f"Video saved to {output_path.name} ({size_mb:.1f} MB)")
     except SlideSonnetError as e:
         logger.error("%s", e)
+        if isinstance(e, (ParserError, FFmpegError)):
+            logger.error("%s", _DOCTOR_HINT)
         raise SystemExit(1)
 
 
@@ -155,9 +165,14 @@ def preview(playlist: Path, until: str | None) -> None:
     Shorthand for: slidesonnet build PLAYLIST --tts piper --preview
     """
     try:
-        run_build(playlist, tts_override="piper", preview=True, until=until)
+        output_path = run_build(playlist, tts_override="piper", preview=True, until=until)
+        if not until and output_path.exists():
+            size_mb = output_path.stat().st_size / (1024 * 1024)
+            click.echo(f"Video saved to {output_path.name} ({size_mb:.1f} MB)")
     except SlideSonnetError as e:
         logger.error("%s", e)
+        if isinstance(e, (ParserError, FFmpegError)):
+            logger.error("%s", _DOCTOR_HINT)
         raise SystemExit(1)
 
 
@@ -190,6 +205,8 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
         preview_single_slide(slides, slide_number, playlist_path=playlist)
     except SlideSonnetError as e:
         logger.error("%s", e)
+        if isinstance(e, (ParserError, FFmpegError)):
+            logger.error("%s", _DOCTOR_HINT)
         raise SystemExit(1)
 
 
@@ -223,6 +240,9 @@ def init(fmt: str, target: Path) -> None:
     try:
         init_project(target, fmt=cast(Literal["md", "tex"], fmt))
         click.echo(f"Project created at {target}")
+        if str(target) != ".":
+            click.echo(f"\n  cd {target}")
+        click.echo("  slidesonnet preview lecture.yaml")
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)
@@ -267,11 +287,16 @@ def clean(playlist: Path, keep: str, yes: bool) -> None:
             abort=True,
         )
 
-    run_clean(playlist, keep=cast(KeepLevel, keep))
-    if keep == "nothing":
-        click.echo(f"Removed {build_dir}")
+    result = run_clean(playlist, keep=cast(KeepLevel, keep))
+    if result.removed_files == 0:
+        click.echo("Nothing to remove.")
+    elif keep == "nothing":
+        click.echo(f"Removed {result.removed_files} files ({result.removed_mb:.1f} MB)")
     else:
-        click.echo(f"Cleaned {build_dir} (kept {keep})")
+        parts = [f"removed {result.removed_files} files ({result.removed_mb:.1f} MB)"]
+        if result.kept_files > 0:
+            parts.append(f"kept {result.kept_files} files")
+        click.echo(f"Cleaned cache: {', '.join(parts)}")
 
 
 @main.command()
@@ -279,8 +304,13 @@ def clean(playlist: Path, keep: str, yes: bool) -> None:
 def pdf(playlist: Path) -> None:
     """Export PDFs for all slide modules in a playlist.
 
+    \b
     Compiles Beamer sources and runs marp --pdf for MARP modules.
     Skips video passthrough modules.
+
+    \b
+    Examples:
+      slidesonnet pdf lecture.yaml
     """
     try:
         paths = run_export_pdfs(playlist)
@@ -291,6 +321,8 @@ def pdf(playlist: Path) -> None:
             click.echo(str(p))
     except SlideSonnetError as e:
         logger.error("%s", e)
+        if isinstance(e, (ParserError, FFmpegError)):
+            logger.error("%s", _DOCTOR_HINT)
         raise SystemExit(1)
 
 
@@ -368,11 +400,13 @@ def list_cmd(playlist: Path, tts: str | None) -> None:
             parts = [f"{total_slides} slides", f"{n_cached} cached"]
             if n_needs_tts > 0:
                 uncached_chars = sum(r.chars for r in results if r.cached is False)
+                verb = "needs" if n_needs_tts == 1 else "need"
                 parts.append(
-                    f"{n_needs_tts} needs TTS"
+                    f"{n_needs_tts} {verb} TTS"
                     f" (~{uncached_chars:,} characters via {list_result.tts_backend})"
                 )
             click.echo("\n" + ", ".join(parts))
+            click.echo("\u25cf cached  \u25cb needs TTS")
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)
@@ -380,7 +414,16 @@ def list_cmd(playlist: Path, tts: str | None) -> None:
 
 @main.command()
 def doctor() -> None:
-    """Check that required tools and dependencies are installed."""
+    """Check that required tools and dependencies are installed.
+
+    \b
+    Checks: ffmpeg, ffprobe, marp-cli, pdflatex, pdftoppm, piper, elevenlabs.
+    Run this if builds fail with "command not found" or tool errors.
+
+    \b
+    Examples:
+      slidesonnet doctor
+    """
     from slidesonnet.doctor import print_report, run_all_checks
 
     all_ok = print_report(run_all_checks())
