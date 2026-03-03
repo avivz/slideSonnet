@@ -31,7 +31,7 @@ def test_help(runner):
     assert "clean" in result.output
     assert "init" in result.output
     assert "pdf" in result.output
-    assert "utterances" in result.output
+    assert "list" in result.output
 
 
 def test_build_help(runner):
@@ -434,38 +434,47 @@ def test_pdf_no_modules(runner, tmp_path):
         assert "No slide modules" in result.output
 
 
-# ---- utterances CLI tests ----
+# ---- list CLI tests ----
 
 
-def test_utterances_calls_dump(runner, tmp_path):
+def test_list_table_output(runner, tmp_path):
     playlist = tmp_path / "lecture.md"
     playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
 
-    with patch("slidesonnet.cli.run_dump_utterances") as mock_dump:
-        mock_dump.return_value = [("a.md", 1, "Hello world")]
-        result = runner.invoke(main, ["utterances", str(playlist)])
+    with patch("slidesonnet.cli.run_list_slides") as mock_list:
+        mock_list.return_value = [
+            ("a.md", 1, "default", "Hello world"),
+            ("a.md", 2, "alice", "[silent]"),
+        ]
+        result = runner.invoke(main, ["list", str(playlist)])
         assert result.exit_code == 0
-        mock_dump.assert_called_once_with(playlist, tts_override=None)
-        assert "[a.md slide 1] Hello world" in result.output
+        mock_list.assert_called_once_with(playlist, tts_override=None)
+        assert "#" in result.output
+        assert "File" in result.output
+        assert "Voice" in result.output
+        assert "Narration" in result.output
+        assert "Hello world" in result.output
+        assert "alice" in result.output
+        assert "[silent]" in result.output
 
 
-def test_utterances_with_tts_override(runner, tmp_path):
+def test_list_with_tts_override(runner, tmp_path):
     playlist = tmp_path / "lecture.md"
     playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
 
-    with patch("slidesonnet.cli.run_dump_utterances") as mock_dump:
-        mock_dump.return_value = [("a.md", 1, "Hello")]
-        result = runner.invoke(main, ["utterances", str(playlist), "--tts", "piper"])
+    with patch("slidesonnet.cli.run_list_slides") as mock_list:
+        mock_list.return_value = [("a.md", 1, "default", "Hello")]
+        result = runner.invoke(main, ["list", str(playlist), "--tts", "piper"])
         assert result.exit_code == 0
-        mock_dump.assert_called_once_with(playlist, tts_override="piper")
+        mock_list.assert_called_once_with(playlist, tts_override="piper")
 
 
-def test_utterances_no_narrated(runner, tmp_path):
+def test_list_no_slides(runner, tmp_path):
     playlist = tmp_path / "lecture.md"
     playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
 
-    with patch("slidesonnet.cli.run_dump_utterances") as mock_dump:
-        mock_dump.return_value = []
-        result = runner.invoke(main, ["utterances", str(playlist)])
+    with patch("slidesonnet.cli.run_list_slides") as mock_list:
+        mock_list.return_value = []
+        result = runner.invoke(main, ["list", str(playlist)])
         assert result.exit_code == 0
-        assert "No narrated slides" in result.output
+        assert "No slides found" in result.output

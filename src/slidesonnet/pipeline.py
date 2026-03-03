@@ -28,6 +28,7 @@ from slidesonnet.models import (
     ModuleType,
     PlaylistEntry,
     ProjectConfig,
+    SlideAnnotation,
     resolve_voice,
 )
 from slidesonnet.playlist import parse_playlist
@@ -442,17 +443,18 @@ def export_pdfs(playlist_path: Path) -> list[Path]:
     return output_paths
 
 
-def dump_utterances(
+def list_slides(
     playlist_path: Path,
     tts_override: Literal["piper", "elevenlabs"] | None = None,
-) -> list[tuple[str, int, str]]:
-    """Extract all utterances from a playlist without running TTS.
+) -> list[tuple[str, int, str, str]]:
+    """List all slides from a playlist with voice and narration info.
 
     Parses slides and applies pronunciation for the selected backend.
-    Returns list of (module_path, slide_index, text) tuples.
+    Returns list of (module_path, slide_index, voice, text) tuples.
+    Skipped slides are excluded; silent slides show ``[silent]``.
     """
     prep = _prepare(playlist_path, tts_override)
-    results: list[tuple[str, int, str]] = []
+    results: list[tuple[str, int, str, str]] = []
 
     for entry in prep.entries:
         if entry.module_type == ModuleType.VIDEO:
@@ -468,9 +470,15 @@ def dump_utterances(
 
         pron = prep.config.pronunciation_for(prep.config.tts.backend)
         for slide in slides:
-            if not slide.has_narration:
+            if slide.is_skip:
                 continue
-            text = apply_pronunciation(slide.narration_raw, pron)
-            results.append((str(entry.path), slide.index, text))
+            voice = slide.voice or "default"
+            if slide.has_narration:
+                text = apply_pronunciation(slide.narration_raw, pron)
+            elif slide.annotation == SlideAnnotation.SILENT:
+                text = "[silent]"
+            else:
+                text = "[no annotation]"
+            results.append((str(entry.path), slide.index, voice, text))
 
     return results

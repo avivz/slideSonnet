@@ -17,8 +17,8 @@ from slidesonnet.pipeline import (
     DryRunResult,
     build as run_build,
     dry_run as run_dry_run,
-    dump_utterances as run_dump_utterances,
     export_pdfs as run_export_pdfs,
+    list_slides as run_list_slides,
 )
 from slidesonnet.preview import preview_single_slide
 
@@ -58,7 +58,7 @@ def main() -> None:
       build      PLAYLIST [--tts ...] [--preview] [-f] [-n] [--until STAGE]
       preview    PLAYLIST [--until STAGE]     (= build --tts piper --preview)
       pdf        PLAYLIST                     (export PDFs only)
-      utterances PLAYLIST [--tts ...]         (print narration text)
+      list       PLAYLIST [--tts ...]         (list slides with narration)
       preview-slide SLIDES N [-p PLAYLIST]    (play one slide's audio)
       init       [DIR] [--blank|--example|--from PLAYLIST]
       clean      PLAYLIST [--keep nothing|api|current|exact]
@@ -270,29 +270,51 @@ def pdf(playlist: Path) -> None:
         raise SystemExit(1)
 
 
-@main.command()
+def _truncate(text: str, width: int) -> str:
+    """Truncate *text* to *width* characters, adding ellipsis if needed."""
+    if len(text) <= width:
+        return text
+    return text[: width - 1] + "\u2026"
+
+
+@main.command("list")
 @click.argument("playlist", type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--tts",
     type=click.Choice(["piper", "elevenlabs"]),
     help="TTS backend for pronunciation rules (default: from playlist config)",
 )
-def utterances(playlist: Path, tts: str | None) -> None:
-    """Print all utterances (post-pronunciation) for a playlist.
+def list_cmd(playlist: Path, tts: str | None) -> None:
+    """List slides with voice and narration text.
 
-    Parses slides and applies pronunciation substitutions for the
-    selected TTS backend. Useful for reviewing what will be spoken.
+    Parses a playlist's slide modules and prints a table showing each
+    slide's number, source file, voice preset, and narration.
+    Useful for discovering slide numbers before using preview-slide.
     """
     try:
-        results = run_dump_utterances(
+        results = run_list_slides(
             playlist,
             tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
         )
         if not results:
-            click.echo("No narrated slides.")
+            click.echo("No slides found.")
             return
-        for module_path, slide_idx, text in results:
-            click.echo(f"[{module_path} slide {slide_idx}] {text}")
+
+        # Compute column widths
+        max_idx = max(len(str(r[1])) for r in results)
+        max_file = max(len(r[0]) for r in results)
+        max_voice = max(len(r[2]) for r in results)
+        w_idx = max(max_idx, 1)
+        w_file = max(max_file, 4)
+        w_voice = max(max_voice, 5)
+
+        header = f"{'#':<{w_idx}}   {'File':<{w_file}}   {'Voice':<{w_voice}}   Narration"
+        click.echo(header)
+        for module_path, slide_idx, voice, text in results:
+            narration = _truncate(text, 60)
+            click.echo(
+                f"{slide_idx:<{w_idx}}   {module_path:<{w_file}}   {voice:<{w_voice}}   {narration}"
+            )
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)
