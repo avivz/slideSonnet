@@ -1,4 +1,4 @@
-"""Configuration loading and validation from playlist YAML front matter."""
+"""Configuration loading and validation from playlist YAML."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ def load_config(raw: dict[str, Any], playlist_dir: Path) -> ProjectConfig:
     """Build a validated ProjectConfig from a raw YAML dict.
 
     Args:
-        raw: Parsed YAML front matter dict.
+        raw: Parsed YAML config dict.
         playlist_dir: Directory containing the playlist file (for resolving paths).
     """
     tts = _parse_tts(raw.get("tts", {}))

@@ -11,18 +11,16 @@ from slidesonnet.hashing import audio_filename
 
 def _create_playlist(tmp_path: Path, slides_text: str | None = None) -> Path:
     """Create a minimal playlist + slides project."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
         tts:
           backend: piper
           piper:
             model: en_US-lessac-medium
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 

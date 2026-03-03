@@ -17,10 +17,9 @@ def _setup_project(
     backend: str = "piper",
 ) -> Path:
     """Create a minimal project with playlist + MARP slides."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent(f"""\
-        ---
         title: Test Lecture
         tts:
           backend: {backend}
@@ -28,9 +27,8 @@ def _setup_project(
             model: en_US-lessac-medium
         video:
           resolution: 640x480
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -315,7 +313,7 @@ class TestDryRunIntegrationShowcase:
     """Run dry_run() on the showcase example."""
 
     def test_showcase_dry_run(self) -> None:
-        showcase = Path("examples/showcase/lecture.md")
+        showcase = Path("examples/showcase/lecture.yaml")
         if not showcase.exists():
             pytest.skip("showcase example not found")
 

@@ -1,4 +1,3 @@
----
 title: My Presentation
 tts:
   backend: piper
@@ -25,12 +24,9 @@ video:
   pre_silence: 1.0
   silence_duration: 3.0
   crossfade: 0.5
----
 
-# My Presentation
-
-// Add your modules below. Each line links to a slide deck or video file.
+// Add your modules below. Each entry is a path to a slide deck or video file.
 // Type is auto-detected: .md = MARP, .tex = Beamer, .mp4 = video
 // Lines starting with // are comments and ignored by the build.
-
-1. [Introduction](01-intro/slides.md)
+modules:
+  - 01-intro/slides.md

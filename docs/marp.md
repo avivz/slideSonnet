@@ -45,7 +45,7 @@ Optional parenthesized parameters control voice and pace:
 <!-- say(voice=bob, pace=slow): Bob speaks slowly here. -->
 ```
 
-Voice names reference presets defined in the playlist YAML front matter.
+Voice names reference presets defined in the playlist YAML `voices:` section.
 
 ### Multi-line narration
 

@@ -7,7 +7,7 @@ Write your slides in [MARP](https://marp.app/) Markdown or LaTeX Beamer, add nar
 ## How it works
 
 ```
-lecture01.md (playlist)
+lecture01.yaml (playlist)
     |
     ├── 01-intro/slides.md   → [parse → TTS → compose] → module_01.mp4
     ├── animations/euler.mp4  → [passthrough]            → module_02.mp4
@@ -53,7 +53,7 @@ slidesonnet init myproject --example
 cd myproject
 
 # Build the video
-slidesonnet build lecture01.md
+slidesonnet build lecture01.yaml
 ```
 
 ## Showcase example
@@ -67,11 +67,11 @@ The `examples/showcase/` directory is a full-featured project that exercises eve
 | `part3.md` | MARP | Voice presets, pace control, skip, pronunciation triggers |
 | `animations/transition.mp4` | Video | Passthrough (no parsing/TTS) |
 
-It also includes two pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with all configuration options (`lecture.md`).
+It also includes two pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with all configuration options (`lecture.yaml`).
 
 ```bash
 cd examples/showcase
-slidesonnet build lecture.md
+slidesonnet build lecture.yaml
 ```
 
 ## Writing slides
@@ -137,10 +137,9 @@ Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\nonarration`, `\nonarrati
 
 ## Playlist format
 
-A single `.md` file per presentation. YAML front matter for configuration, body for the module list:
+A single `.yaml` file per presentation. Configuration and module list in pure YAML:
 
-```markdown
----
+```yaml
 title: Graph Theory Lecture 1
 tts:
   backend: piper
@@ -169,18 +168,15 @@ video:
   pre_silence: 1.0
   silence_duration: 3.0
   crossfade: 0.5
----
-
-# Graph Theory Lecture 1
-
-1. [Introduction](01-intro/slides.md)
-2. [Euler animation](animations/euler.mp4)
-3. [Formal proofs](02-proofs/slides.tex)
-4. [Summary](03-summary/slides.md)
+modules:
+  - 01-intro/slides.md
+  - animations/euler.mp4
+  - 02-proofs/slides.tex
+  - 03-summary/slides.md
 ```
 
 - Module type is auto-detected from extension (`.md` → MARP, `.tex` → Beamer, `.mp4` / `.mkv` / `.webm` / `.mov` → video passthrough)
-- Lines starting with `//` are comments (ignored by parser, visible in markdown)
+- Lines starting with `//` are comments (filtered before YAML parsing)
 - Video files are used as-is
 
 ## Pronunciation files
@@ -198,7 +194,7 @@ Reusable `.md` files with `**word**: replacement` pairs:
 **adjacency**: uh-JAY-suhn-see
 ```
 
-Replacements are word-boundary aware (won't change "Eulerian") and case-insensitive. Reference them in the playlist front matter under `pronunciation:`.
+Replacements are word-boundary aware (won't change "Eulerian") and case-insensitive. Reference them in the playlist under `pronunciation:`.
 
 ### Per-backend pronunciation
 
@@ -225,7 +221,7 @@ pronunciation:
 
 ## Voice presets
 
-Define named voices in the playlist front matter. Each preset can map to different voice IDs per TTS backend, so `--tts piper` and `--tts elevenlabs` both resolve correctly:
+Define named voices in the playlist. Each preset can map to different voice IDs per TTS backend, so `--tts piper` and `--tts elevenlabs` both resolve correctly:
 
 ```yaml
 voices:
@@ -259,18 +255,18 @@ The playlist references env var names, never values: `api_key_env: ELEVENLABS_AP
 ## CLI reference
 
 ```
-slidesonnet build lecture01.md              # build video (3 parallel jobs)
-slidesonnet build lecture01.md -j 8         # build with 8 parallel jobs
-slidesonnet build lecture01.md --tts piper  # override TTS backend
-slidesonnet build lecture01.md --force      # force full rebuild
-slidesonnet build lecture01.md --dry-run    # show what would be built (no TTS/FFmpeg)
-slidesonnet preview lecture01.md            # quick build with local Piper TTS
+slidesonnet build lecture01.yaml              # build video (3 parallel jobs)
+slidesonnet build lecture01.yaml -j 8         # build with 8 parallel jobs
+slidesonnet build lecture01.yaml --tts piper  # override TTS backend
+slidesonnet build lecture01.yaml --force      # force full rebuild
+slidesonnet build lecture01.yaml --dry-run    # show what would be built (no TTS/FFmpeg)
+slidesonnet preview lecture01.yaml            # quick build with local Piper TTS
 slidesonnet preview-slide slides.md 3       # play one slide's audio
-slidesonnet preview-slide slides.md 3 -p lecture01.md  # with playlist config
+slidesonnet preview-slide slides.md 3 -p lecture01.yaml  # with playlist config
 slidesonnet init myproject                  # create blank project
 slidesonnet init myproject --example        # create full working demo
-slidesonnet init myproject --from other.md  # copy config from existing project
-slidesonnet clean lecture01.md              # clean cache (keeps API audio by default)
+slidesonnet init myproject --from other.yaml  # copy config from existing project
+slidesonnet clean lecture01.yaml              # clean cache (keeps API audio by default)
 ```
 
 ## Incremental builds
@@ -285,7 +281,7 @@ TTS audio is cached by content hash of the narration text, not by slide number. 
 Use `--dry-run` (or `-n`) to see what a build would do without making any API calls:
 
 ```
-$ slidesonnet build lecture01.md --dry-run
+$ slidesonnet build lecture01.yaml --dry-run
 8 narrated slides: 5 cached, 3 need TTS (~1,200 characters via elevenlabs)
 ```
 
@@ -297,7 +293,7 @@ Build artifacts live in `cache/` next to the playlist file. Add it to `.gitignor
 
 ```
 my-course/
-├── lecture01.md              # playlist + config
+├── lecture01.yaml             # playlist + config
 ├── pronunciation/
 │   └── cs-terms.md
 ├── 01-intro/slides.md        # MARP module

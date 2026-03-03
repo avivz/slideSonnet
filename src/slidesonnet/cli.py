@@ -49,9 +49,9 @@ def main() -> None:
     """slideSonnet — compile narrated lecture videos from slides.
 
     \b
-    Takes a playlist file (.md with YAML front matter) that lists slide
-    modules (MARP .md, Beamer .tex, or video files) and builds an MP4
-    with synthesized narration from slide annotations.
+    Takes a playlist file (.yaml) that lists slide modules (MARP .md,
+    Beamer .tex, or video files) and builds an MP4 with synthesized
+    narration from slide annotations.
 
     \b
     Commands:
@@ -66,7 +66,7 @@ def main() -> None:
     \b
     Quick start:
       slidesonnet init --example my-lecture
-      slidesonnet build my-lecture/lecture01.md --tts piper
+      slidesonnet build my-lecture/lecture01.yaml --tts piper
 
     Run "slidesonnet COMMAND --help" for details on a specific command.
     """
@@ -113,8 +113,8 @@ def build(
 ) -> None:
     """Build an MP4 video from a playlist file.
 
-    PLAYLIST is a Markdown file with YAML front matter that lists slide
-    modules and configures TTS, voice, and video settings.
+    PLAYLIST is a YAML file that lists slide modules and configures
+    TTS, voice, and video settings.
     """
     try:
         if dry_run:

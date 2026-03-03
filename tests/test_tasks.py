@@ -41,10 +41,9 @@ class MockTTS(TTSEngine):
 
 def _setup_project(tmp_path):
     """Create a minimal project with playlist + slides."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test Lecture
         tts:
           backend: piper
@@ -52,9 +51,8 @@ def _setup_project(tmp_path):
           resolution: 640x480
           pad_seconds: 0.2
           silence_duration: 1.0
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -133,14 +131,12 @@ def test_tts_tasks_per_narrated_slide(tmp_path):
 
 def test_compose_tasks_skip_skipped_slides(tmp_path):
     """Compose tasks skip slides with <!-- skip -->."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -214,14 +210,12 @@ def test_task_dependencies(tmp_path):
 
 def test_video_passthrough_in_assemble(tmp_path):
     """Video modules are referenced directly in assemble file_dep."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Clip](animations/clip.mp4)
+        modules:
+          - animations/clip.mp4
     """)
     )
 
@@ -265,10 +259,9 @@ def test_assemble_depends_on_segments(tmp_path):
 
 def test_voice_preset_changes_cache_key(tmp_path):
     """Same text with different voice presets produces different audio targets."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
         tts:
           backend: piper
@@ -277,9 +270,8 @@ def test_voice_preset_changes_cache_key(tmp_path):
             piper: en_US-amy-medium
           bob:
             piper: en_US-joe-medium
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -313,14 +305,12 @@ def test_voice_preset_changes_cache_key(tmp_path):
 
 def test_unknown_voice_warns(tmp_path, caplog):
     """Unknown voice preset emits a warning but still generates tasks."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -348,19 +338,17 @@ def test_unknown_voice_warns(tmp_path, caplog):
 
 def test_missing_backend_mapping_warns(tmp_path, caplog):
     """Voice preset without mapping for active backend warns and falls back to default."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
         tts:
           backend: piper
         voices:
           alice:
             elevenlabs: 21m00Tcm4TlvDq8ikWAM
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -391,14 +379,12 @@ def test_missing_backend_mapping_warns(tmp_path, caplog):
 
 def test_compose_uses_image_index_for_multi_say(tmp_path: Path) -> None:
     """Compose tasks use image_index (not index) for multi-say slides."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -444,14 +430,12 @@ def test_compose_uses_image_index_for_multi_say(tmp_path: Path) -> None:
 
 def test_multi_part_tts_generates_per_part_tasks(tmp_path: Path) -> None:
     """Multi-say same sub-slide generates per-part TTS tasks + concat_audio."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -513,14 +497,12 @@ def test_single_say_no_concat_audio(tmp_path: Path) -> None:
 
 def test_multi_part_tts_content_addressed(tmp_path: Path) -> None:
     """Each part gets its own content-addressed audio file."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -554,14 +536,12 @@ def test_multi_part_tts_content_addressed(tmp_path: Path) -> None:
 
 def test_multi_part_concat_target_is_content_addressed(tmp_path: Path) -> None:
     """concat_audio target uses hash-based filename ending in _concat.wav."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -882,18 +862,16 @@ class TestActionAssemble:
 
 def test_mixed_type_playlist(tmp_path):
     """Mixed-type playlist (MARP + Beamer + video) generates correct task graph."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Mixed Lecture
         video:
           resolution: 640x480
-        ---
-
-        1. [Intro](01-intro/slides.md)
-        2. [Animation](animations/clip.mp4)
-        3. [Theory](02-theory/slides.tex)
+        modules:
+          - 01-intro/slides.md
+          - animations/clip.mp4
+          - 02-theory/slides.tex
     """)
     )
 
@@ -1129,14 +1107,12 @@ def test_marp_export_pdf_task(tmp_path: Path) -> None:
 
 def test_beamer_compile_and_export_pdf_tasks(tmp_path: Path) -> None:
     """Beamer modules generate compile_beamer and export_pdf tasks."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Theory](01-theory/slides.tex)
+        modules:
+          - 01-theory/slides.tex
     """)
     )
 
@@ -1175,14 +1151,12 @@ def test_beamer_compile_and_export_pdf_tasks(tmp_path: Path) -> None:
 
 def test_video_module_no_export_pdf(tmp_path: Path) -> None:
     """Video passthrough modules do not generate export_pdf tasks."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Clip](animations/clip.mp4)
+        modules:
+          - animations/clip.mp4
     """)
     )
 
@@ -1214,14 +1188,12 @@ def test_uptodate_includes_silence_override(tmp_path: Path) -> None:
 
 def test_silence_override_threaded_to_compose_action(tmp_path: Path) -> None:
     """silence_override from parser is passed through to compose action args."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -1254,14 +1226,12 @@ def test_silence_override_threaded_to_compose_action(tmp_path: Path) -> None:
 
 def test_beamer_extract_images_depends_on_cache_pdf(tmp_path: Path) -> None:
     """Beamer extract_images file_dep references the cache PDF, not the source .tex."""
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test
-        ---
-
-        1. [Theory](01-theory/slides.tex)
+        modules:
+          - 01-theory/slides.tex
     """)
     )
 

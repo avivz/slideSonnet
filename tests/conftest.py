@@ -19,7 +19,7 @@ def simple_md(fixtures_dir):
 
 @pytest.fixture
 def playlist_basic(fixtures_dir):
-    return fixtures_dir / "playlist_basic.md"
+    return fixtures_dir / "playlist_basic.yaml"
 
 
 @pytest.fixture

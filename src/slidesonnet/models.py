@@ -70,12 +70,11 @@ class SlideNarration:
 class PlaylistEntry:
     """One module in the playlist."""
 
-    label: str
     path: Path  # relative to playlist file
     module_type: ModuleType
 
     @classmethod
-    def from_link(cls, label: str, path_str: str) -> PlaylistEntry:
+    def from_path(cls, path_str: str) -> PlaylistEntry:
         path = Path(path_str)
         if path.is_absolute():
             raise ValueError(f"Module path must be relative, got absolute: '{path_str}'")
@@ -85,7 +84,7 @@ class PlaylistEntry:
         module_type = EXTENSION_TO_TYPE.get(suffix)
         if module_type is None:
             raise ValueError(f"Unknown file type for '{path_str}' (extension '{suffix}')")
-        return cls(label=label, path=path, module_type=module_type)
+        return cls(path=path, module_type=module_type)
 
 
 @dataclass
@@ -201,7 +200,7 @@ class VideoConfig:
 
 @dataclass
 class ProjectConfig:
-    """Full project configuration parsed from playlist YAML front matter."""
+    """Full project configuration parsed from playlist YAML."""
 
     title: str = ""
     tts: TTSConfig = field(default_factory=TTSConfig)

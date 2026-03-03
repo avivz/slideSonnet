@@ -8,8 +8,6 @@ from pathlib import Path
 
 import yaml
 
-from slidesonnet.playlist import split_front_matter
-
 _TEMPLATES = importlib.resources.files("slidesonnet.templates")
 
 
@@ -22,7 +20,7 @@ def init_blank(target_dir: Path) -> None:
     """Create a blank project scaffold with documented config."""
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    _write(target_dir / "lecture01.md", _load_template("blank_playlist.md"))
+    _write(target_dir / "lecture01.yaml", _load_template("blank_playlist.yaml"))
     _write(target_dir / ".gitignore", _load_template("gitignore.txt"))
     _write(target_dir / ".env", _load_template("env.txt"))
 
@@ -39,16 +37,19 @@ def init_from(target_dir: Path, source_playlist: Path) -> None:
     """Copy config from an existing project."""
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read and copy front matter
+    # Read source playlist as YAML (filter // comments)
     text = source_playlist.read_text(encoding="utf-8")
-    config_dict, _ = split_front_matter(text)
+    lines = [ln for ln in text.split("\n") if not ln.lstrip().startswith("//")]
+    config_dict = yaml.safe_load("\n".join(lines)) or {}
+    if isinstance(config_dict, dict):
+        config_dict.pop("modules", None)
+    else:
+        config_dict = {}
 
-    # Create playlist with copied config but empty module list
+    # Create playlist with copied config but starter module list
+    config_dict["modules"] = ["01-intro/slides.md"]
     yaml_text = yaml.dump(config_dict, default_flow_style=False, sort_keys=False)
-    playlist_content = (
-        f"---\n{yaml_text}---\n\n# My Presentation\n\n1. [Introduction](01-intro/slides.md)\n"
-    )
-    _write(target_dir / "lecture01.md", playlist_content)
+    _write(target_dir / "lecture01.yaml", yaml_text)
 
     # Copy pronunciation files
     source_dir = source_playlist.parent
@@ -92,7 +93,7 @@ def init_example(target_dir: Path) -> None:
     """Create a full working example project."""
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    _write(target_dir / "lecture01.md", _load_template("example_playlist.md"))
+    _write(target_dir / "lecture01.yaml", _load_template("example_playlist.yaml"))
     _write(target_dir / ".gitignore", _load_template("gitignore.txt"))
     _write(target_dir / ".env", _load_template("env.txt"))
 

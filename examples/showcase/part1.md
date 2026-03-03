@@ -62,7 +62,6 @@ More content.
 A playlist ties modules together with shared config:
 
 ```yaml
----
 tts:
   backend: piper
 voices:
@@ -70,13 +69,13 @@ voices:
   narrator: en_US-amy-medium
 video:
   resolution: 1920x1080
----
-1. [Introduction](part1.md)
-2. [Deep Dive](part2.tex)
-3. [Transition](clip.mp4)
+modules:
+  - part1.md
+  - part2.tex
+  - clip.mp4
 ```
 
-<!-- say: The playlist file is the entry point for a build. It contains YAML front matter with TTS, voice, pronunciation, and video settings. Below that, a numbered list references each module. Modules can be MARP markdown, Beamer LaTeX, or MP4 video files. -->
+<!-- say: The playlist file is the entry point for a build. It's a YAML file with TTS, voice, pronunciation, and video settings. The modules list references each slide deck or video file. Modules can be MARP markdown, Beamer LaTeX, or MP4 video files. -->
 
 ---
 

@@ -40,10 +40,9 @@ class MockTTS:
 def _setup_project(tmp_path: Path) -> Path:
     """Create a minimal project with playlist + slides."""
     # Playlist
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test Lecture
         tts:
           backend: piper
@@ -53,9 +52,8 @@ def _setup_project(tmp_path: Path) -> Path:
           resolution: 640x480
           pad_seconds: 0.2
           silence_duration: 1.0
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 
@@ -300,10 +298,9 @@ def test_multi_part_per_say_caching(
 ) -> None:
     """Editing one say in a multi-say slide only re-synthesizes that part."""
     # Setup project with multi-say slide
-    playlist = tmp_path / "lecture.md"
+    playlist = tmp_path / "lecture.yaml"
     playlist.write_text(
         textwrap.dedent("""\
-        ---
         title: Test Lecture
         tts:
           backend: piper
@@ -311,9 +308,8 @@ def test_multi_part_per_say_caching(
           resolution: 640x480
           pad_seconds: 0.2
           silence_duration: 1.0
-        ---
-
-        1. [Intro](01-intro/slides.md)
+        modules:
+          - 01-intro/slides.md
     """)
     )
 

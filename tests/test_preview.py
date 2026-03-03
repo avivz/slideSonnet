@@ -108,16 +108,14 @@ class TestPreviewSingleSlide:
         pron_file.write_text("**API**: A P I\n")
 
         # Create playlist referencing pronunciation
-        playlist = tmp_path / "lecture.md"
+        playlist = tmp_path / "lecture.yaml"
         playlist.write_text(
             textwrap.dedent("""\
-            ---
             title: Test
             pronunciation:
               - pronunciation.md
-            ---
-
-            1. [Intro](slides.md)
+            modules:
+              - slides.md
         """)
         )
 

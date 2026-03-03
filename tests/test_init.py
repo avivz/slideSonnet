@@ -7,7 +7,7 @@ def test_blank_creates_structure(tmp_path):
     target = tmp_path / "myproject"
     init_blank(target)
 
-    assert (target / "lecture01.md").exists()
+    assert (target / "lecture01.yaml").exists()
     assert (target / ".gitignore").exists()
     assert (target / ".env").exists()
     assert (target / "pronunciation" / "terms.md").exists()
@@ -35,7 +35,7 @@ def test_blank_playlist_has_comments(tmp_path):
     target = tmp_path / "myproject"
     init_blank(target)
 
-    playlist = (target / "lecture01.md").read_text()
+    playlist = (target / "lecture01.yaml").read_text()
     assert "//" in playlist  # has documentation comments
 
 
@@ -51,7 +51,7 @@ def test_example_creates_full_project(tmp_path):
     target = tmp_path / "myproject"
     init_example(target)
 
-    assert (target / "lecture01.md").exists()
+    assert (target / "lecture01.yaml").exists()
     assert (target / ".gitignore").exists()
     assert (target / ".env").exists()
     assert (target / "pronunciation" / "cs-terms.md").exists()
@@ -74,7 +74,7 @@ def test_example_playlist_has_two_modules(tmp_path):
 
     from slidesonnet.playlist import parse_playlist
 
-    _, entries = parse_playlist(target / "lecture01.md")
+    _, entries = parse_playlist(target / "lecture01.yaml")
     assert len(entries) == 2
 
 
@@ -82,16 +82,15 @@ def test_from_copies_config(tmp_path):
     # Create a source project
     source_dir = tmp_path / "source"
     source_dir.mkdir()
-    source_playlist = source_dir / "lecture.md"
+    source_playlist = source_dir / "lecture.yaml"
     source_playlist.write_text(
-        "---\n"
         "title: Source Project\n"
         "tts:\n"
         "  backend: elevenlabs\n"
         "pronunciation:\n"
         "  - pron/terms.md\n"
-        "---\n"
-        "1. [Intro](intro/slides.md)\n"
+        "modules:\n"
+        "  - intro/slides.md\n"
     )
     # Create pronunciation file
     pron_dir = source_dir / "pron"
@@ -106,7 +105,7 @@ def test_from_copies_config(tmp_path):
     init_from(target, source_playlist)
 
     # Check config was copied
-    playlist = (target / "lecture01.md").read_text()
+    playlist = (target / "lecture01.yaml").read_text()
     assert "Source Project" in playlist
     assert "elevenlabs" in playlist
 
@@ -127,17 +126,16 @@ def test_from_copies_dict_format_pronunciation(tmp_path):
     """init_from handles dict-format pronunciation (per-backend)."""
     source_dir = tmp_path / "source"
     source_dir.mkdir()
-    source_playlist = source_dir / "lecture.md"
+    source_playlist = source_dir / "lecture.yaml"
     source_playlist.write_text(
-        "---\n"
         "title: Source Project\n"
         "pronunciation:\n"
         "  shared:\n"
         "    - pron/names.md\n"
         "  piper:\n"
         "    - pron/piper-hacks.md\n"
-        "---\n"
-        "1. [Intro](intro/slides.md)\n"
+        "modules:\n"
+        "  - intro/slides.md\n"
     )
     # Create pronunciation files
     pron_dir = source_dir / "pron"

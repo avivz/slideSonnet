@@ -51,7 +51,7 @@ Optional bracket parameters control voice and pace:
 \say[voice=bob, pace=slow]{Bob speaks slowly here.}
 ```
 
-Voice names reference presets defined in the playlist YAML front matter. When multiple `\say` commands in the same frame (or sub-slide) specify conflicting voice or pace, the last one wins.
+Voice names reference presets defined in the playlist YAML `voices:` section. When multiple `\say` commands in the same frame (or sub-slide) specify conflicting voice or pace, the last one wins.
 
 ### `\nonarration` / `\nonarration[duration]`
 
