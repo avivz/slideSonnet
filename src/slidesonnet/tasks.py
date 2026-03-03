@@ -2,7 +2,7 @@
 
 Text parsing is done eagerly (fast). Image extraction, TTS synthesis,
 video composition, and assembly are generated as doit tasks for
-incremental builds and parallel execution.
+incremental builds.
 
 Task graph:
     extract_images → compose (per slide)
@@ -202,15 +202,12 @@ def generate_tasks(
                 }
             )
 
-            # export_pdf: marp --pdf (run after extract_images to avoid
-            # concurrent Chromium instances — marp --pdf and Playwright both
-            # launch headless browsers that can interfere with each other)
+            # export_pdf: marp --pdf
             all_tasks.append(
                 {
                     "name": f"export_pdf:{module_name}",
                     "actions": [(action_export_pdf_marp, [source_path, pdf_output_path])],
                     "file_dep": [str(source_path)] + css_deps,
-                    "task_dep": [f"extract_images:{module_name}"],
                     "targets": [str(pdf_output_path)],
                     "verbosity": 2,
                 }

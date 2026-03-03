@@ -30,6 +30,8 @@ def test_help(runner):
     assert "preview-slide" in result.output
     assert "clean" in result.output
     assert "init" in result.output
+    assert "pdf" in result.output
+    assert "utterances" in result.output
 
 
 def test_build_help(runner):
@@ -101,7 +103,7 @@ def test_clean_keep_choices(runner, tmp_path):
     build_dir = tmp_path / "cache"
     build_dir.mkdir()
 
-    for level in ("nothing", "api", "utterances", "exact"):
+    for level in ("nothing", "api", "current", "exact"):
         with patch("slidesonnet.cli.run_clean"):
             result = runner.invoke(main, ["clean", str(playlist), "--keep", level])
             assert result.exit_code == 0, f"--keep {level} failed"
@@ -116,7 +118,7 @@ def test_build_calls_pipeline(runner, tmp_path):
         result = runner.invoke(main, ["build", str(playlist)])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=False, jobs=None, preview=False
+            playlist, tts_override=None, force=False, preview=False, until=None
         )
 
 
@@ -129,7 +131,7 @@ def test_build_with_tts_override(runner, tmp_path):
         result = runner.invoke(main, ["build", str(playlist), "--tts", "elevenlabs"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override="elevenlabs", force=False, jobs=None, preview=False
+            playlist, tts_override="elevenlabs", force=False, preview=False, until=None
         )
 
 
@@ -142,20 +144,7 @@ def test_build_with_force(runner, tmp_path):
         result = runner.invoke(main, ["build", str(playlist), "--force"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=True, jobs=None, preview=False
-        )
-
-
-def test_build_with_jobs(runner, tmp_path):
-    playlist = tmp_path / "lecture.md"
-    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
-
-    with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
-        result = runner.invoke(main, ["build", str(playlist), "--jobs", "4"])
-        assert result.exit_code == 0
-        mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=False, jobs=4, preview=False
+            playlist, tts_override=None, force=True, preview=False, until=None
         )
 
 
@@ -168,7 +157,7 @@ def test_build_with_preview(runner, tmp_path):
         result = runner.invoke(main, ["build", str(playlist), "--preview"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=False, jobs=None, preview=True
+            playlist, tts_override=None, force=False, preview=True, until=None
         )
 
 
@@ -186,18 +175,7 @@ def test_preview_calls_build_with_piper(runner, tmp_path):
         mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
         result = runner.invoke(main, ["preview", str(playlist)])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override="piper", jobs=None)
-
-
-def test_preview_with_jobs(runner, tmp_path):
-    playlist = tmp_path / "lecture.md"
-    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
-
-    with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
-        result = runner.invoke(main, ["preview", str(playlist), "-j", "2"])
-        assert result.exit_code == 0
-        mock_build.assert_called_once_with(playlist, tts_override="piper", jobs=2)
+        mock_build.assert_called_once_with(playlist, tts_override="piper", preview=True, until=None)
 
 
 def test_init_blank(runner, tmp_path):
@@ -363,5 +341,131 @@ def test_dry_run_output_no_narrated(runner, tmp_path):
 
     with patch("slidesonnet.cli.run_dry_run", return_value=mock_result):
         result = runner.invoke(main, ["build", str(playlist), "--dry-run"])
+        assert result.exit_code == 0
+        assert "No narrated slides" in result.output
+
+
+# ---- --until CLI tests ----
+
+
+def test_build_with_until_slides(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        result = runner.invoke(main, ["build", str(playlist), "--until", "slides"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            playlist, tts_override=None, force=False, preview=False, until="slides"
+        )
+
+
+def test_build_with_until_tts(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        result = runner.invoke(main, ["build", str(playlist), "--until", "tts"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            playlist, tts_override=None, force=False, preview=False, until="tts"
+        )
+
+
+def test_build_with_until_segments(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        result = runner.invoke(main, ["build", str(playlist), "--until", "segments"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            playlist, tts_override=None, force=False, preview=False, until="segments"
+        )
+
+
+def test_preview_with_until(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
+        result = runner.invoke(main, ["preview", str(playlist), "--until", "tts"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            playlist, tts_override="piper", preview=True, until="tts"
+        )
+
+
+def test_build_until_invalid_choice(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    result = runner.invoke(main, ["build", str(playlist), "--until", "invalid"])
+    assert result.exit_code != 0
+
+
+# ---- pdf CLI tests ----
+
+
+def test_pdf_calls_export_pdfs(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_export_pdfs") as mock_export:
+        mock_export.return_value = [tmp_path / "a.pdf"]
+        result = runner.invoke(main, ["pdf", str(playlist)])
+        assert result.exit_code == 0
+        mock_export.assert_called_once_with(playlist)
+        assert "a.pdf" in result.output
+
+
+def test_pdf_no_modules(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_export_pdfs") as mock_export:
+        mock_export.return_value = []
+        result = runner.invoke(main, ["pdf", str(playlist)])
+        assert result.exit_code == 0
+        assert "No slide modules" in result.output
+
+
+# ---- utterances CLI tests ----
+
+
+def test_utterances_calls_dump(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_dump_utterances") as mock_dump:
+        mock_dump.return_value = [("a.md", 1, "Hello world")]
+        result = runner.invoke(main, ["utterances", str(playlist)])
+        assert result.exit_code == 0
+        mock_dump.assert_called_once_with(playlist, tts_override=None)
+        assert "[a.md slide 1] Hello world" in result.output
+
+
+def test_utterances_with_tts_override(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_dump_utterances") as mock_dump:
+        mock_dump.return_value = [("a.md", 1, "Hello")]
+        result = runner.invoke(main, ["utterances", str(playlist), "--tts", "piper"])
+        assert result.exit_code == 0
+        mock_dump.assert_called_once_with(playlist, tts_override="piper")
+
+
+def test_utterances_no_narrated(runner, tmp_path):
+    playlist = tmp_path / "lecture.md"
+    playlist.write_text("---\ntitle: test\n---\n1. [a](a.md)\n")
+
+    with patch("slidesonnet.cli.run_dump_utterances") as mock_dump:
+        mock_dump.return_value = []
+        result = runner.invoke(main, ["utterances", str(playlist)])
         assert result.exit_code == 0
         assert "No narrated slides" in result.output

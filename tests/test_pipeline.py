@@ -9,7 +9,7 @@ import pytest
 
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import ProjectConfig, TTSConfig
-from slidesonnet.pipeline import _run_doit, build
+from slidesonnet.pipeline import _filter_tasks_until, _run_doit, build
 from slidesonnet.tts import create_tts
 
 
@@ -419,7 +419,7 @@ class TestRunDoit:
         mock_main.run.return_value = 0
         mock_doit.return_value = mock_main
 
-        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=0)
+        _run_doit([{"name": "test"}], tmp_path, force=False)
 
         mock_main.run.assert_called_once()
         args = mock_main.run.call_args[0][0]
@@ -433,7 +433,7 @@ class TestRunDoit:
         mock_main.run.return_value = 0
         mock_doit.return_value = mock_main
 
-        _run_doit([{"name": "test"}], tmp_path, force=True, jobs=0)
+        _run_doit([{"name": "test"}], tmp_path, force=True)
 
         args = mock_main.run.call_args[0][0]
         assert "--always-execute" in args
@@ -449,7 +449,7 @@ class TestRunDoit:
         mock_doit.return_value = mock_main
 
         with pytest.raises(SlideSonnetError, match="doit exit code"):
-            _run_doit([{"name": "test"}], tmp_path, force=False, jobs=0)
+            _run_doit([{"name": "test"}], tmp_path, force=False)
 
     @patch("doit.doit_cmd.DoitMain")
     @patch("doit.task.dict_to_task")
@@ -460,20 +460,20 @@ class TestRunDoit:
         mock_doit.return_value = mock_main
 
         # Should not raise
-        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=0)
+        _run_doit([{"name": "test"}], tmp_path, force=False)
 
     @patch("doit.doit_cmd.DoitMain")
     @patch("doit.task.dict_to_task")
-    def test_sequential_no_parallel_flags(
+    def test_no_parallel_flags(
         self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path
     ) -> None:
-        """jobs=0 means sequential — no num_process/par_type in doit config."""
+        """doit config should not contain parallel settings."""
         mock_d2t.side_effect = lambda t: t
         mock_main = MagicMock()
         mock_main.run.return_value = 0
         mock_doit.return_value = mock_main
 
-        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=0)
+        _run_doit([{"name": "test"}], tmp_path, force=False)
 
         # Inspect the loader config
         loader = mock_doit.call_args[0][0]
@@ -481,52 +481,50 @@ class TestRunDoit:
         assert "num_process" not in config
         assert "par_type" not in config
 
-    @patch("doit.doit_cmd.DoitMain")
-    @patch("doit.task.dict_to_task")
-    def test_parallel_flags(
-        self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path
-    ) -> None:
-        """jobs=4 sets num_process=4 and par_type=thread in doit config."""
-        mock_d2t.side_effect = lambda t: t
-        mock_main = MagicMock()
-        mock_main.run.return_value = 0
-        mock_doit.return_value = mock_main
 
-        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=4)
+class TestFilterTasksUntil:
+    """Tests for _filter_tasks_until()."""
 
-        loader = mock_doit.call_args[0][0]
-        config = loader.load_doit_config()
-        assert config["num_process"] == 4
-        assert config["par_type"] == "thread"
+    _SAMPLE_TASKS: list[dict[str, str]] = [
+        {"name": "compile_beamer:01_intro"},
+        {"name": "extract_images:01_intro"},
+        {"name": "export_pdf:01_intro"},
+        {"name": "tts:01_intro_slide_001"},
+        {"name": "tts:01_intro_slide_002"},
+        {"name": "concat_audio:01_intro_slide_001"},
+        {"name": "compose:01_intro_slide_001"},
+        {"name": "compose:01_intro_slide_002"},
+        {"name": "assemble"},
+    ]
 
-    @patch("doit.doit_cmd.DoitMain")
-    @patch("doit.task.dict_to_task")
-    def test_elevenlabs_caps_jobs(
-        self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path
-    ) -> None:
-        """ElevenLabs backend caps jobs to _ELEVENLABS_MAX_JOBS."""
-        mock_d2t.side_effect = lambda t: t
-        mock_main = MagicMock()
-        mock_main.run.return_value = 0
-        mock_doit.return_value = mock_main
+    def test_none_returns_all(self) -> None:
+        result = _filter_tasks_until(self._SAMPLE_TASKS, None)
+        assert result == self._SAMPLE_TASKS
 
-        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=8, tts_backend="elevenlabs")
+    def test_slides_stage(self) -> None:
+        result = _filter_tasks_until(self._SAMPLE_TASKS, "slides")
+        names = [t["name"] for t in result]
+        assert names == [
+            "compile_beamer:01_intro",
+            "extract_images:01_intro",
+            "export_pdf:01_intro",
+        ]
 
-        loader = mock_doit.call_args[0][0]
-        config = loader.load_doit_config()
-        assert config["num_process"] == 2
+    def test_tts_stage(self) -> None:
+        result = _filter_tasks_until(self._SAMPLE_TASKS, "tts")
+        names = [t["name"] for t in result]
+        assert names == [
+            "compile_beamer:01_intro",
+            "extract_images:01_intro",
+            "export_pdf:01_intro",
+            "tts:01_intro_slide_001",
+            "tts:01_intro_slide_002",
+            "concat_audio:01_intro_slide_001",
+        ]
 
-    @patch("doit.doit_cmd.DoitMain")
-    @patch("doit.task.dict_to_task")
-    def test_default_jobs(self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path) -> None:
-        """jobs=None defaults to _DEFAULT_JOBS."""
-        mock_d2t.side_effect = lambda t: t
-        mock_main = MagicMock()
-        mock_main.run.return_value = 0
-        mock_doit.return_value = mock_main
-
-        _run_doit([{"name": "test"}], tmp_path, force=False, jobs=None)
-
-        loader = mock_doit.call_args[0][0]
-        config = loader.load_doit_config()
-        assert config["num_process"] == 3
+    def test_segments_stage(self) -> None:
+        result = _filter_tasks_until(self._SAMPLE_TASKS, "segments")
+        names = [t["name"] for t in result]
+        # Everything except "assemble"
+        assert "assemble" not in names
+        assert len(names) == 8

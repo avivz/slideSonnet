@@ -38,11 +38,6 @@ from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciatio
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_JOBS = 3
-# ElevenLabs concurrent request limits by plan:
-# Free=2, Starter=3, Creator=5, Pro=10, Scale/Business=15
-_ELEVENLABS_MAX_JOBS = 2
-
 
 @dataclass
 class _PreparedBuild:
@@ -224,12 +219,40 @@ def dry_run(
     )
 
 
+_STAGE_PREFIXES: dict[str, tuple[str, ...]] = {
+    "slides": ("compile_beamer:", "extract_images:", "export_pdf:"),
+    "tts": ("compile_beamer:", "extract_images:", "export_pdf:", "tts:", "concat_audio:"),
+    "segments": (
+        "compile_beamer:",
+        "extract_images:",
+        "export_pdf:",
+        "tts:",
+        "concat_audio:",
+        "compose:",
+    ),
+}
+
+
+def _filter_tasks_until(
+    task_list: list[dict[str, Any]],
+    until: str | None,
+) -> list[dict[str, Any]]:
+    """Filter task list to include only tasks up to the given stage.
+
+    Returns all tasks when *until* is None.
+    """
+    if until is None:
+        return task_list
+    prefixes = _STAGE_PREFIXES[until]
+    return [t for t in task_list if t["name"].startswith(prefixes)]
+
+
 def build(
     playlist_path: Path,
     tts_override: Literal["piper", "elevenlabs"] | None = None,
     force: bool = False,
-    jobs: int | None = None,
     preview: bool = False,
+    until: str | None = None,
 ) -> Path:
     """Execute the full build pipeline for a playlist.
 
@@ -261,10 +284,16 @@ def build(
         output_path=prep.output_path,
     )
 
-    # Run doit
-    _run_doit(task_list, prep.build_dir, force, jobs=jobs, tts_backend=prep.config.tts.backend)
+    # Filter tasks by stage
+    task_list = _filter_tasks_until(task_list, until)
 
-    logger.info("Done: %s", prep.output_path)
+    # Run doit
+    _run_doit(task_list, prep.build_dir, force)
+
+    if until:
+        logger.info("Done (until %s): %s", until, prep.build_dir)
+    else:
+        logger.info("Done: %s", prep.output_path)
     return prep.output_path
 
 
@@ -272,19 +301,12 @@ def _run_doit(
     task_list: list[dict[str, Any]],
     build_dir: Path,
     force: bool,
-    jobs: int | None = None,
-    tts_backend: str = "piper",
 ) -> None:
     """Run doit programmatically with the given tasks."""
     from doit.cmd_base import TaskLoader2
     from doit.doit_cmd import DoitMain
     from doit.reporter import ConsoleReporter
     from doit.task import dict_to_task
-
-    # Resolve effective job count
-    effective_jobs = _DEFAULT_JOBS if jobs is None else jobs
-    if tts_backend == "elevenlabs" and effective_jobs > _ELEVENLABS_MAX_JOBS:
-        effective_jobs = _ELEVENLABS_MAX_JOBS
 
     db_file = str(build_dir / ".doit.db")
     tasks = [dict_to_task(t) for t in task_list]
@@ -366,9 +388,6 @@ def _run_doit(
         "verbosity": 0,
         "reporter": _ProgressReporter,
     }
-    if effective_jobs > 0:
-        doit_config["num_process"] = effective_jobs
-        doit_config["par_type"] = "thread"
 
     class _Loader(TaskLoader2):  # type: ignore[misc]
         def load_doit_config(self) -> dict[str, Any]:
@@ -384,3 +403,74 @@ def _run_doit(
     result = DoitMain(_Loader()).run(run_args)
     if result not in (0, None):
         raise SlideSonnetError(f"Build failed (doit exit code {result})")
+
+
+def export_pdfs(playlist_path: Path) -> list[Path]:
+    """Export PDFs for all slide modules in a playlist (no doit, no images).
+
+    Compiles Beamer sources and runs marp --pdf for MARP modules.
+    Returns list of output PDF paths.
+    """
+    from slidesonnet.actions import (
+        action_compile_beamer,
+        action_export_pdf_beamer,
+        action_export_pdf_marp,
+    )
+
+    prep = _prepare(playlist_path)
+    output_paths: list[Path] = []
+
+    for entry in prep.entries:
+        if entry.module_type == ModuleType.VIDEO:
+            continue
+
+        source_path = prep.playlist_dir / entry.path
+        pdf_output_path = prep.playlist_dir / f"{entry.path.stem}.pdf"
+
+        if entry.module_type == ModuleType.BEAMER:
+            module_dir = prep.build_dir / entry.path.parent / entry.path.stem
+            slides_dir = module_dir / "slides"
+            slides_dir.mkdir(parents=True, exist_ok=True)
+            cache_pdf = slides_dir / f"{source_path.stem}.pdf"
+            action_compile_beamer(source_path, slides_dir, cache_pdf)
+            action_export_pdf_beamer(cache_pdf, pdf_output_path)
+        else:
+            action_export_pdf_marp(source_path, pdf_output_path)
+
+        output_paths.append(pdf_output_path)
+
+    return output_paths
+
+
+def dump_utterances(
+    playlist_path: Path,
+    tts_override: Literal["piper", "elevenlabs"] | None = None,
+) -> list[tuple[str, int, str]]:
+    """Extract all utterances from a playlist without running TTS.
+
+    Parses slides and applies pronunciation for the selected backend.
+    Returns list of (module_path, slide_index, text) tuples.
+    """
+    prep = _prepare(playlist_path, tts_override)
+    results: list[tuple[str, int, str]] = []
+
+    for entry in prep.entries:
+        if entry.module_type == ModuleType.VIDEO:
+            continue
+
+        source_path = prep.playlist_dir / entry.path
+        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
+        slides_dir = module_dir / "slides"
+
+        parser_cls, _ = get_parser_and_extractor(entry.module_type)
+        parser = parser_cls()
+        slides = parser.parse(source_path, slides_dir)
+
+        pron = prep.config.pronunciation_for(prep.config.tts.backend)
+        for slide in slides:
+            if not slide.has_narration:
+                continue
+            text = apply_pronunciation(slide.narration_raw, pron)
+            results.append((str(entry.path), slide.index, text))
+
+    return results
