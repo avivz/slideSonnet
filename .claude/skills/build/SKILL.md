@@ -52,13 +52,13 @@ slidesonnet pdf PLAYLIST
 
 Exports all slide modules to PDF (pdflatex for Beamer, marp --pdf for MARP). Skips video passthrough modules.
 
-### `slidesonnet list` — list slides with narration
+### `slidesonnet list` — list slides with cache status
 
 ```bash
 slidesonnet list PLAYLIST [--tts BACKEND]
 ```
 
-Prints a table of all slides showing slide number, source file, voice preset, and narration text (after pronunciation substitutions). Useful for discovering slide numbers before using preview-slide.
+Prints a table of all slides showing slide number, source file, voice preset, character count, and narration text (after pronunciation substitutions). Each narrated slide is prefixed with a cache symbol: `●` = cached, `○` = needs TTS. A summary line shows totals. Useful for per-slide cache visibility and discovering slide numbers before using preview-slide.
 
 ### `slidesonnet clean` — remove cached artifacts
 
@@ -89,7 +89,8 @@ slidesonnet preview lecture.yaml
 
 **Check what needs rebuilding:**
 ```bash
-slidesonnet build lecture.yaml -n
+slidesonnet build lecture.yaml -n        # aggregate summary
+slidesonnet list lecture.yaml            # per-slide cache detail
 ```
 
 **Rebuild from scratch:**

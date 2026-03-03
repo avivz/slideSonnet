@@ -8,7 +8,7 @@ from click.testing import CliRunner
 
 from slidesonnet import __version__
 from slidesonnet.cli import main
-from slidesonnet.pipeline import DryRunResult
+from slidesonnet.pipeline import DryRunResult, ListResult, SlideInfo
 
 _MINIMAL_PLAYLIST = "title: test\nmodules:\n  - a.md\n"
 
@@ -416,20 +416,30 @@ def test_list_table_output(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_list_slides") as mock_list:
-        mock_list.return_value = [
-            ("a.md", 1, "default", "Hello world"),
-            ("a.md", 2, "alice", "[silent]"),
-        ]
+        mock_list.return_value = ListResult(
+            slides=[
+                SlideInfo("a.md", 1, "default", "Hello world", cached=True, chars=312),
+                SlideInfo("a.md", 2, "alice", "[silent]", cached=None, chars=0),
+            ],
+            tts_backend="piper",
+        )
         result = runner.invoke(main, ["list", str(playlist)])
         assert result.exit_code == 0
         mock_list.assert_called_once_with(playlist, tts_override=None)
         assert "#" in result.output
         assert "File" in result.output
         assert "Voice" in result.output
+        assert "Chars" in result.output
         assert "Narration" in result.output
+        assert "\u25cf" in result.output  # cached symbol
         assert "Hello world" in result.output
+        assert "312" in result.output
         assert "alice" in result.output
         assert "[silent]" in result.output
+        assert "\u2013" in result.output  # dash for silent chars
+        # Summary line
+        assert "2 slides" in result.output
+        assert "1 cached" in result.output
 
 
 def test_list_with_tts_override(runner, tmp_path):
@@ -437,7 +447,10 @@ def test_list_with_tts_override(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_list_slides") as mock_list:
-        mock_list.return_value = [("a.md", 1, "default", "Hello")]
+        mock_list.return_value = ListResult(
+            slides=[SlideInfo("a.md", 1, "default", "Hello", cached=True, chars=5)],
+            tts_backend="piper",
+        )
         result = runner.invoke(main, ["list", str(playlist), "--tts", "piper"])
         assert result.exit_code == 0
         mock_list.assert_called_once_with(playlist, tts_override="piper")
@@ -448,10 +461,35 @@ def test_list_no_slides(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_list_slides") as mock_list:
-        mock_list.return_value = []
+        mock_list.return_value = ListResult(slides=[], tts_backend="piper")
         result = runner.invoke(main, ["list", str(playlist)])
         assert result.exit_code == 0
         assert "No slides found" in result.output
+
+
+def test_list_mixed_cached_uncached(runner, tmp_path):
+    """Table shows ● for cached, ○ for uncached, summary with TTS info."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_list_slides") as mock_list:
+        mock_list.return_value = ListResult(
+            slides=[
+                SlideInfo("a.md", 1, "default", "Hello world", cached=True, chars=312),
+                SlideInfo("a.md", 2, "default", "This is uncached", cached=False, chars=187),
+                SlideInfo("a.md", 3, "alice", "[silent]", cached=None, chars=0),
+            ],
+            tts_backend="piper",
+        )
+        result = runner.invoke(main, ["list", str(playlist)])
+        assert result.exit_code == 0
+        assert "\u25cf" in result.output  # cached
+        assert "\u25cb" in result.output  # uncached
+        assert "3 slides" in result.output
+        assert "1 cached" in result.output
+        assert "1 needs TTS" in result.output
+        assert "187 characters" in result.output
+        assert "piper" in result.output
 
 
 # ---- Confirmation prompt tests ----

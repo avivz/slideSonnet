@@ -321,29 +321,57 @@ def list_cmd(playlist: Path, tts: str | None) -> None:
       slidesonnet list lecture.yaml --tts piper
     """
     try:
-        results = run_list_slides(
+        list_result = run_list_slides(
             playlist,
             tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
         )
+        results = list_result.slides
         if not results:
             click.echo("No slides found.")
             return
 
         # Compute column widths
-        max_idx = max(len(str(r[1])) for r in results)
-        max_file = max(len(r[0]) for r in results)
-        max_voice = max(len(r[2]) for r in results)
+        narrated = [r for r in results if r.cached is not None]
+        max_idx = max(len(str(r.slide_index)) for r in results)
+        max_file = max(len(r.module_path) for r in results)
+        max_voice = max(len(r.voice) for r in results)
+        max_chars = max(len(str(r.chars)) for r in narrated) if narrated else 0
         w_idx = max(max_idx, 1)
         w_file = max(max_file, 4)
         w_voice = max(max_voice, 5)
+        w_chars = max(max_chars, 5)  # "Chars" header
 
-        header = f"{'#':<{w_idx}}   {'File':<{w_file}}   {'Voice':<{w_voice}}   Narration"
+        header = (
+            f"{'#':<{w_idx}}   {'File':<{w_file}}   {'Voice':<{w_voice}}"
+            f"   {'Chars':>{w_chars}}   Narration"
+        )
         click.echo(header)
-        for module_path, slide_idx, voice, text in results:
-            narration = _truncate(text, 60)
+        for r in results:
+            if r.cached is not None:
+                symbol = "\u25cf " if r.cached else "\u25cb "
+                chars_str = str(r.chars)
+            else:
+                symbol = ""
+                chars_str = "\u2013"
+            narration = _truncate(r.text, 60)
             click.echo(
-                f"{slide_idx:<{w_idx}}   {module_path:<{w_file}}   {voice:<{w_voice}}   {narration}"
+                f"{r.slide_index:<{w_idx}}   {r.module_path:<{w_file}}   {r.voice:<{w_voice}}"
+                f"   {chars_str:>{w_chars}}   {symbol}{narration}"
             )
+
+        # Summary line (only when narrated slides exist)
+        if narrated:
+            n_cached = sum(1 for r in narrated if r.cached is True)
+            n_needs_tts = sum(1 for r in narrated if r.cached is False)
+            total_slides = len(results)
+            parts = [f"{total_slides} slides", f"{n_cached} cached"]
+            if n_needs_tts > 0:
+                uncached_chars = sum(r.chars for r in results if r.cached is False)
+                parts.append(
+                    f"{n_needs_tts} needs TTS"
+                    f" (~{uncached_chars:,} characters via {list_result.tts_backend})"
+                )
+            click.echo("\n" + ", ".join(parts))
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)

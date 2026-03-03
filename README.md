@@ -263,6 +263,7 @@ slidesonnet preview-slide slides.md 3       # play one slide's audio
 slidesonnet preview-slide slides.md 3 -p lecture.yaml  # with playlist config
 slidesonnet init md myproject               # MARP Markdown project
 slidesonnet init tex myproject              # Beamer LaTeX project
+slidesonnet list lecture.yaml               # list slides with cache status per slide
 slidesonnet clean lecture.yaml              # clean cache (keeps API audio by default)
 ```
 

@@ -97,6 +97,26 @@ def _prepare(
 
 
 @dataclass
+class SlideInfo:
+    """Per-slide metadata returned by list_slides()."""
+
+    module_path: str
+    slide_index: int
+    voice: str
+    text: str
+    cached: bool | None  # None = not narrated (silent/unannotated)
+    chars: int  # 0 for non-narrated slides
+
+
+@dataclass
+class ListResult:
+    """Result of list_slides(): per-slide info plus project metadata."""
+
+    slides: list[SlideInfo]
+    tts_backend: str
+
+
+@dataclass
 class DryRunResult:
     """Summary of what a build would do, without executing anything."""
 
@@ -440,15 +460,16 @@ def export_pdfs(playlist_path: Path) -> list[Path]:
 def list_slides(
     playlist_path: Path,
     tts_override: Literal["piper", "elevenlabs"] | None = None,
-) -> list[tuple[str, int, str, str]]:
-    """List all slides from a playlist with voice and narration info.
+) -> ListResult:
+    """List all slides from a playlist with voice, narration, and cache info.
 
-    Parses slides and applies pronunciation for the selected backend.
-    Returns list of (module_path, slide_index, voice, text) tuples.
+    Parses slides, applies pronunciation, and checks audio cache.
+    Returns a :class:`ListResult` with per-slide info and TTS backend name.
     Skipped slides are excluded; silent slides show ``[silent]``.
     """
     prep = _prepare(playlist_path, tts_override)
-    results: list[tuple[str, int, str, str]] = []
+    audio_cache_dir = prep.build_dir / "audio"
+    results: list[SlideInfo] = []
 
     for entry in prep.entries:
         if entry.module_type == ModuleType.VIDEO:
@@ -469,10 +490,59 @@ def list_slides(
             voice = slide.voice or "default"
             if slide.has_narration:
                 text = apply_pronunciation(slide.narration_raw, pron)
-            elif slide.annotation == SlideAnnotation.SILENT:
-                text = "[silent]"
-            else:
-                text = "[no annotation]"
-            results.append((str(entry.path), slide.index, voice, text))
 
-    return results
+                # Apply pronunciation to parts (same as dry_run)
+                slide.narration_processed = text
+                slide.narration_parts_processed = [
+                    apply_pronunciation(part, pron) for part in slide.narration_parts
+                ]
+
+                # Resolve voice preset (same as dry_run)
+                resolved_voice = slide.voice
+                if resolved_voice:
+                    rv = resolve_voice(resolved_voice, prep.config.voices, prep.config.tts.backend)
+                    resolved_voice = rv if rv else None
+
+                # Check cache for all parts
+                parts = slide.narration_parts_processed
+                all_cached = True
+                total_chars = 0
+                for part_text in parts:
+                    total_chars += len(part_text)
+                    p = _audio_path(
+                        audio_cache_dir,
+                        part_text,
+                        prep.tts.name(),
+                        prep.tts.cache_key(),
+                        resolved_voice,
+                    )
+                    if not _audio_cache_exists(p):
+                        all_cached = False
+
+                results.append(
+                    SlideInfo(
+                        module_path=str(entry.path),
+                        slide_index=slide.index,
+                        voice=voice,
+                        text=text,
+                        cached=all_cached,
+                        chars=total_chars,
+                    )
+                )
+            else:
+                if slide.annotation == SlideAnnotation.SILENT:
+                    text = "[silent]"
+                else:
+                    text = "[no annotation]"
+                results.append(
+                    SlideInfo(
+                        module_path=str(entry.path),
+                        slide_index=slide.index,
+                        voice=voice,
+                        text=text,
+                        cached=None,
+                        chars=0,
+                    )
+                )
+
+    return ListResult(slides=results, tts_backend=prep.config.tts.backend)
