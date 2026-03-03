@@ -251,7 +251,6 @@ def _filter_tasks_until(
 def build(
     playlist_path: Path,
     tts_override: Literal["piper", "elevenlabs"] | None = None,
-    force: bool = False,
     preview: bool = False,
     until: str | None = None,
 ) -> Path:
@@ -289,7 +288,7 @@ def build(
     task_list = _filter_tasks_until(task_list, until)
 
     # Run doit
-    _run_doit(task_list, prep.build_dir, force)
+    _run_doit(task_list, prep.build_dir)
 
     if until:
         logger.info("Done (until %s): %s", until, prep.build_dir)
@@ -301,7 +300,6 @@ def build(
 def _run_doit(
     task_list: list[dict[str, Any]],
     build_dir: Path,
-    force: bool,
 ) -> None:
     """Run doit programmatically with the given tasks."""
     from doit.cmd_base import TaskLoader2
@@ -397,11 +395,7 @@ def _run_doit(
         def load_tasks(self, cmd: Any, pos_args: Any) -> list[Any]:
             return tasks
 
-    run_args = ["run"]
-    if force:
-        run_args.append("--always-execute")
-
-    result = DoitMain(_Loader()).run(run_args)
+    result = DoitMain(_Loader()).run(["run"])
     if result not in (0, None):
         raise SlideSonnetError(f"Build failed (doit exit code {result})")
 

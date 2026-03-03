@@ -255,10 +255,8 @@ The playlist references env var names, never values: `api_key_env: ELEVENLABS_AP
 ## CLI reference
 
 ```
-slidesonnet build lecture01.yaml              # build video (3 parallel jobs)
-slidesonnet build lecture01.yaml -j 8         # build with 8 parallel jobs
+slidesonnet build lecture01.yaml              # build video
 slidesonnet build lecture01.yaml --tts piper  # override TTS backend
-slidesonnet build lecture01.yaml --force      # force full rebuild
 slidesonnet build lecture01.yaml --dry-run    # show what would be built (no TTS/FFmpeg)
 slidesonnet preview lecture01.yaml            # quick build with local Piper TTS
 slidesonnet preview-slide slides.md 3       # play one slide's audio

@@ -415,24 +415,11 @@ class TestRunDoit:
         mock_main.run.return_value = 0
         mock_doit.return_value = mock_main
 
-        _run_doit([{"name": "test"}], tmp_path, force=False)
+        _run_doit([{"name": "test"}], tmp_path)
 
         mock_main.run.assert_called_once()
         args = mock_main.run.call_args[0][0]
         assert args == ["run"]
-
-    @patch("doit.doit_cmd.DoitMain")
-    @patch("doit.task.dict_to_task")
-    def test_force_flag(self, mock_d2t: MagicMock, mock_doit: MagicMock, tmp_path: Path) -> None:
-        mock_d2t.side_effect = lambda t: t
-        mock_main = MagicMock()
-        mock_main.run.return_value = 0
-        mock_doit.return_value = mock_main
-
-        _run_doit([{"name": "test"}], tmp_path, force=True)
-
-        args = mock_main.run.call_args[0][0]
-        assert "--always-execute" in args
 
     @patch("doit.doit_cmd.DoitMain")
     @patch("doit.task.dict_to_task")
@@ -445,7 +432,7 @@ class TestRunDoit:
         mock_doit.return_value = mock_main
 
         with pytest.raises(SlideSonnetError, match="doit exit code"):
-            _run_doit([{"name": "test"}], tmp_path, force=False)
+            _run_doit([{"name": "test"}], tmp_path)
 
     @patch("doit.doit_cmd.DoitMain")
     @patch("doit.task.dict_to_task")
@@ -456,7 +443,7 @@ class TestRunDoit:
         mock_doit.return_value = mock_main
 
         # Should not raise
-        _run_doit([{"name": "test"}], tmp_path, force=False)
+        _run_doit([{"name": "test"}], tmp_path)
 
     @patch("doit.doit_cmd.DoitMain")
     @patch("doit.task.dict_to_task")
@@ -469,7 +456,7 @@ class TestRunDoit:
         mock_main.run.return_value = 0
         mock_doit.return_value = mock_main
 
-        _run_doit([{"name": "test"}], tmp_path, force=False)
+        _run_doit([{"name": "test"}], tmp_path)
 
         # Inspect the loader config
         loader = mock_doit.call_args[0][0]

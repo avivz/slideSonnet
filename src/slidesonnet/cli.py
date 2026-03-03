@@ -55,7 +55,7 @@ def main() -> None:
 
     \b
     Commands:
-      build      PLAYLIST [--tts ...] [--preview] [-f] [-n] [--until STAGE]
+      build      PLAYLIST [--tts ...] [--preview] [-n] [--until STAGE]
       preview    PLAYLIST [--until STAGE]     (= build --tts piper --preview)
       pdf        PLAYLIST                     (export PDFs only)
       list       PLAYLIST [--tts ...]         (list slides with narration)
@@ -95,7 +95,6 @@ def _print_dry_run(result: DryRunResult) -> None:
     type=click.Choice(["piper", "elevenlabs"]),
     help="Override TTS engine (piper: local/free, elevenlabs: cloud/paid)",
 )
-@click.option("--force", "-f", is_flag=True, help="Force rebuild all stages, ignoring cache")
 @click.option("--dry-run", "-n", is_flag=True, help="Report cache status without building anything")
 @click.option("--preview", is_flag=True, help="Fast low-res build (360p, ultrafast encoding)")
 @click.option(
@@ -106,7 +105,6 @@ def _print_dry_run(result: DryRunResult) -> None:
 def build(
     playlist: Path,
     tts: str | None,
-    force: bool,
     dry_run: bool,
     preview: bool,
     until: str | None,
@@ -127,7 +125,6 @@ def build(
             run_build(
                 playlist,
                 tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
-                force=force,
                 preview=preview,
                 until=until,
             )
@@ -227,7 +224,8 @@ def init(target: Path, mode: str | None, from_path: Path | None) -> None:
     default="api",
     help="What to preserve [default: api]",
 )
-def clean(playlist: Path, keep: str) -> None:
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
+def clean(playlist: Path, keep: str, yes: bool) -> None:
     """Remove cached build artifacts for a playlist.
 
     \b
@@ -242,6 +240,13 @@ def clean(playlist: Path, keep: str) -> None:
     if not build_dir.exists():
         click.echo("Nothing to clean.")
         return
+
+    if keep == "nothing" and not yes:
+        click.confirm(
+            "This will delete all cached audio including API-generated files. Continue?",
+            default=False,
+            abort=True,
+        )
 
     run_clean(playlist, keep=cast(KeepLevel, keep))
     if keep == "nothing":

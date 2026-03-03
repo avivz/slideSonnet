@@ -45,8 +45,7 @@ def action_tts(
 ) -> None:
     """Synthesize TTS audio.
 
-    Caching is handled by doit's uptodate/targets mechanism;
-    force-rebuild is handled by doit's --always-execute flag.
+    Caching is handled by doit's uptodate/targets mechanism.
     """
     utterance_path.parent.mkdir(parents=True, exist_ok=True)
     utterance_path.write_text(text, encoding="utf-8")

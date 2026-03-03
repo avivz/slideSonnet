@@ -40,7 +40,6 @@ def test_build_help(runner):
     result = runner.invoke(main, ["build", "--help"])
     assert result.exit_code == 0
     assert "--tts" in result.output
-    assert "--force" in result.output
     assert "piper" in result.output
     assert "elevenlabs" in result.output
 
@@ -65,7 +64,7 @@ def test_clean_removes_build_dir(runner, tmp_path):
     build_dir.mkdir()
     (build_dir / "artifact.mp4").touch()
 
-    result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing"])
+    result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing", "--yes"])
     assert result.exit_code == 0
     assert "Removed" in result.output
     assert not build_dir.exists()
@@ -92,7 +91,7 @@ def test_clean_keep_nothing(runner, tmp_path):
     build_dir.mkdir()
 
     with patch("slidesonnet.cli.run_clean") as mock_clean:
-        result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing"])
+        result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing", "--yes"])
         assert result.exit_code == 0
         mock_clean.assert_called_once_with(playlist, keep="nothing")
         assert "Removed" in result.output
@@ -107,7 +106,7 @@ def test_clean_keep_choices(runner, tmp_path):
 
     for level in ("nothing", "api", "current", "exact"):
         with patch("slidesonnet.cli.run_clean"):
-            result = runner.invoke(main, ["clean", str(playlist), "--keep", level])
+            result = runner.invoke(main, ["clean", str(playlist), "--keep", level, "--yes"])
             assert result.exit_code == 0, f"--keep {level} failed"
 
 
@@ -119,9 +118,7 @@ def test_build_calls_pipeline(runner, tmp_path):
         mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
         result = runner.invoke(main, ["build", str(playlist)])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=False, preview=False, until=None
-        )
+        mock_build.assert_called_once_with(playlist, tts_override=None, preview=False, until=None)
 
 
 def test_build_with_tts_override(runner, tmp_path):
@@ -133,20 +130,7 @@ def test_build_with_tts_override(runner, tmp_path):
         result = runner.invoke(main, ["build", str(playlist), "--tts", "elevenlabs"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override="elevenlabs", force=False, preview=False, until=None
-        )
-
-
-def test_build_with_force(runner, tmp_path):
-    playlist = tmp_path / "lecture.yaml"
-    playlist.write_text(_MINIMAL_PLAYLIST)
-
-    with patch("slidesonnet.cli.run_build") as mock_build:
-        mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
-        result = runner.invoke(main, ["build", str(playlist), "--force"])
-        assert result.exit_code == 0
-        mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=True, preview=False, until=None
+            playlist, tts_override="elevenlabs", preview=False, until=None
         )
 
 
@@ -158,9 +142,7 @@ def test_build_with_preview(runner, tmp_path):
         mock_build.return_value = tmp_path / "cache" / "lecture_preview.mp4"
         result = runner.invoke(main, ["build", str(playlist), "--preview"])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=False, preview=True, until=None
-        )
+        mock_build.assert_called_once_with(playlist, tts_override=None, preview=True, until=None)
 
 
 def test_build_help_includes_preview(runner):
@@ -359,7 +341,7 @@ def test_build_with_until_slides(runner, tmp_path):
         result = runner.invoke(main, ["build", str(playlist), "--until", "slides"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=False, preview=False, until="slides"
+            playlist, tts_override=None, preview=False, until="slides"
         )
 
 
@@ -371,9 +353,7 @@ def test_build_with_until_tts(runner, tmp_path):
         mock_build.return_value = tmp_path / "cache" / "lecture.mp4"
         result = runner.invoke(main, ["build", str(playlist), "--until", "tts"])
         assert result.exit_code == 0
-        mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=False, preview=False, until="tts"
-        )
+        mock_build.assert_called_once_with(playlist, tts_override=None, preview=False, until="tts")
 
 
 def test_build_with_until_segments(runner, tmp_path):
@@ -385,7 +365,7 @@ def test_build_with_until_segments(runner, tmp_path):
         result = runner.invoke(main, ["build", str(playlist), "--until", "segments"])
         assert result.exit_code == 0
         mock_build.assert_called_once_with(
-            playlist, tts_override=None, force=False, preview=False, until="segments"
+            playlist, tts_override=None, preview=False, until="segments"
         )
 
 
@@ -480,3 +460,61 @@ def test_list_no_slides(runner, tmp_path):
         result = runner.invoke(main, ["list", str(playlist)])
         assert result.exit_code == 0
         assert "No slides found" in result.output
+
+
+# ---- Confirmation prompt tests ----
+
+
+def test_clean_keep_nothing_prompts(runner, tmp_path):
+    """clean --keep nothing without --yes prompts for confirmation."""
+    playlist = tmp_path / "test.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+
+    with patch("slidesonnet.cli.run_clean") as mock_clean:
+        result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing"], input="y\n")
+        assert result.exit_code == 0
+        assert "delete all cached audio" in result.output
+        mock_clean.assert_called_once()
+
+
+def test_clean_keep_nothing_aborts(runner, tmp_path):
+    """clean --keep nothing aborts when user declines."""
+    playlist = tmp_path / "test.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+
+    with patch("slidesonnet.cli.run_clean") as mock_clean:
+        result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing"], input="n\n")
+        assert result.exit_code != 0
+        mock_clean.assert_not_called()
+
+
+def test_clean_keep_nothing_yes_flag(runner, tmp_path):
+    """clean --keep nothing --yes skips the prompt."""
+    playlist = tmp_path / "test.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+
+    with patch("slidesonnet.cli.run_clean") as mock_clean:
+        result = runner.invoke(main, ["clean", str(playlist), "--keep", "nothing", "--yes"])
+        assert result.exit_code == 0
+        assert "delete all cached audio" not in result.output
+        mock_clean.assert_called_once()
+
+
+def test_clean_keep_api_no_prompt(runner, tmp_path):
+    """clean --keep api (default) never prompts."""
+    playlist = tmp_path / "test.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+    (build_dir / ".doit.db").touch()
+
+    with patch("slidesonnet.cli.run_clean"):
+        result = runner.invoke(main, ["clean", str(playlist)])
+        assert result.exit_code == 0
+        assert "Continue?" not in result.output
