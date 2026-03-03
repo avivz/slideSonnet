@@ -67,6 +67,9 @@ def test_no_real_api_keys_in_tracked_files():
     """No tracked file should contain a real-looking API key."""
     violations: list[str] = []
     for path in _tracked_files():
+        # Skip this test file — it contains the regex patterns themselves
+        if path.endswith("test_no_secrets.py"):
+            continue
         content = _read_text_safe(path)
         if content is None:
             continue
