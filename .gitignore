@@ -23,3 +23,8 @@ htmlcov/
 
 # doit
 .doit.db
+
+# Example build outputs
+examples/**/*.mp4
+examples/**/*.srt
+examples/**/*.pdf
