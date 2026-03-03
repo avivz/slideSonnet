@@ -40,6 +40,8 @@ from slidesonnet.models import (
     ProjectConfig,
     resolve_voice,
 )
+from slidesonnet.parsers.beamer import visual_hash as beamer_visual_hash
+from slidesonnet.parsers.marp import visual_hash as marp_visual_hash
 from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.pronunciation import apply_pronunciation
 
@@ -100,6 +102,9 @@ def generate_tasks(
         # Get parser and extract function
         parser_cls, extract_fn = get_parser_and_extractor(entry.module_type)
 
+        # Read source once for visual hashing (annotation-aware cache key)
+        source_text = source_path.read_text(encoding="utf-8")
+
         # Parse slides eagerly (just reading text — fast)
         slides_dir = module_dir / "slides"
         parser = parser_cls()
@@ -151,8 +156,9 @@ def generate_tasks(
                 {
                     "name": f"compile_beamer:{module_name}",
                     "actions": [(action_compile_beamer, [source_path, slides_dir, cache_pdf])],
-                    "file_dep": [str(source_path)],
+                    "file_dep": [],
                     "targets": [str(cache_pdf)],
+                    "uptodate": [config_changed({"visual_hash": beamer_visual_hash(source_text)})],
                     "verbosity": 2,
                 }
             )
@@ -186,7 +192,7 @@ def generate_tasks(
                 }
             )
         else:
-            # MARP: extract_images unchanged
+            # MARP: extract_images (visual-hash tracks annotation-stripped content)
             all_tasks.append(
                 {
                     "name": f"extract_images:{module_name}",
@@ -196,19 +202,21 @@ def generate_tasks(
                             [source_path, slides_dir, extract_fn, manifest_path],
                         )
                     ],
-                    "file_dep": [str(source_path)] + css_deps,
+                    "file_dep": css_deps,
                     "targets": [str(manifest_path)],
+                    "uptodate": [config_changed({"visual_hash": marp_visual_hash(source_text)})],
                     "verbosity": 2,
                 }
             )
 
-            # export_pdf: marp --pdf
+            # export_pdf: marp --pdf (visual-hash tracks annotation-stripped content)
             all_tasks.append(
                 {
                     "name": f"export_pdf:{module_name}",
                     "actions": [(action_export_pdf_marp, [source_path, pdf_output_path])],
-                    "file_dep": [str(source_path)] + css_deps,
+                    "file_dep": css_deps,
                     "targets": [str(pdf_output_path)],
+                    "uptodate": [config_changed({"visual_hash": marp_visual_hash(source_text)})],
                     "verbosity": 2,
                 }
             )

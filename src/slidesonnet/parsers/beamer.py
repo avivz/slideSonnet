@@ -2,6 +2,7 @@ r"""Beamer LaTeX parser: extract \say{} narration and slide images."""
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import subprocess
@@ -28,6 +29,36 @@ _SILENT_RE = re.compile(r"^\s*\\nonarration\s*(?:\[([^\]]*)\])?\s*(?:%.*)?$", re
 
 # Match \slidesonnetskip
 _SKIP_RE = re.compile(r"\\slidesonnetskip\b")
+
+
+def strip_annotations(text: str) -> str:
+    r"""Remove slideSonnet annotations (\say, \nonarration, \slidesonnetskip) from Beamer source."""
+    # Strip \say[...]{...} using brace-counting
+    result = text
+    while True:
+        match = _SAY_START_RE.search(result)
+        if not match:
+            break
+        brace_start = match.end() - 1
+        _, end_pos = _extract_braced(result, brace_start)
+        if end_pos == brace_start:
+            # Failed to find matching brace; stop to avoid infinite loop
+            break
+        result = result[: match.start()] + result[end_pos:]
+    # Strip \nonarration[...] and \slidesonnetskip
+    result = _SILENT_RE.sub("", result)
+    result = _SKIP_RE.sub("", result)
+    return result
+
+
+def visual_hash(source_text: str) -> str:
+    r"""Return a short hash of Beamer source with annotations stripped.
+
+    Two sources that differ only in \say{} text produce the same hash.
+    """
+    stripped = strip_annotations(source_text)
+    return hashlib.sha256(stripped.encode()).hexdigest()[:16]
+
 
 # Match \begin{frame} ... \end{frame}
 _FRAME_BEGIN_RE = re.compile(r"\\begin\{frame\}")

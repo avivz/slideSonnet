@@ -1101,8 +1101,10 @@ def test_marp_export_pdf_task(tmp_path: Path) -> None:
     # Target should be in the playlist directory with .pdf extension
     assert et["targets"][0].endswith(".pdf")
     assert str(tmp_path) in et["targets"][0]
-    # Should depend on the source .md file
-    assert any(dep.endswith(".md") for dep in et["file_dep"])
+    # Source .md should NOT be in file_dep (visual_hash replaces it)
+    assert not any(dep.endswith(".md") for dep in et.get("file_dep", []))
+    # Should have visual_hash in uptodate
+    assert "uptodate" in et
 
 
 def test_beamer_compile_and_export_pdf_tasks(tmp_path: Path) -> None:
@@ -1254,3 +1256,83 @@ def test_beamer_extract_images_depends_on_cache_pdf(tmp_path: Path) -> None:
     # file_dep should reference the cache PDF, not the .tex source
     assert any(dep.endswith(".pdf") for dep in extract_task["file_dep"])
     assert not any(dep.endswith(".tex") for dep in extract_task["file_dep"])
+
+
+# ---- Tests for preview crossfade and visual hash ----
+
+
+def test_preview_disables_crossfade(tmp_path: Path) -> None:
+    """Preview mode sets crossfade to 0.0 so assembly uses fast concat demuxer."""
+    from slidesonnet.pipeline import _prepare
+
+    playlist = _setup_project(tmp_path)
+    prep = _prepare(playlist, tts_override=None)
+    # Simulate preview overrides (same logic as pipeline.build with preview=True)
+    w, h = prep.config.video.resolution.split("x")
+    prep.config.video.resolution = f"{int(w) // 4}x{int(h) // 4}"
+    prep.config.video.fps = prep.config.video.fps // 2
+    prep.config.video.preset = "ultrafast"
+    prep.config.video.crf = 32
+    prep.config.video.crossfade = 0.0
+
+    tasks = generate_tasks(
+        entries=prep.entries,
+        config=prep.config,
+        tts=MockTTS(),
+        build_dir=tmp_path / "cache",
+        playlist_dir=tmp_path,
+        output_path=tmp_path / "cache" / "preview.mp4",
+    )
+
+    assemble = next(t for t in tasks if t["name"] == "assemble")
+    # crossfade=0.0 should be reflected in uptodate config
+    assert assemble["uptodate"][0].config["crossfade"] == 0.0
+
+
+def test_marp_extract_images_uses_visual_hash(tmp_path: Path) -> None:
+    """MARP extract_images uses visual_hash instead of source_path in file_dep."""
+    playlist = _setup_project(tmp_path)
+    tasks = _generate(tmp_path, playlist)
+
+    extract_task = next(t for t in tasks if t["name"].startswith("extract_images:"))
+    # Source .md should NOT be in file_dep
+    assert not any(dep.endswith(".md") for dep in extract_task.get("file_dep", []))
+    # Should have uptodate with visual_hash
+    assert "uptodate" in extract_task
+    uptodate_entry = extract_task["uptodate"][0]
+    assert "visual_hash" in uptodate_entry.config
+
+
+def test_beamer_compile_uses_visual_hash(tmp_path: Path) -> None:
+    """Beamer compile_beamer uses visual_hash instead of source_path in file_dep."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(
+        textwrap.dedent("""\
+        title: Test
+        modules:
+          - 01-theory/slides.tex
+    """)
+    )
+
+    beamer_dir = tmp_path / "01-theory"
+    beamer_dir.mkdir()
+    (beamer_dir / "slides.tex").write_text(
+        textwrap.dedent(r"""
+        \documentclass{beamer}
+        \begin{document}
+        \begin{frame}
+        \say{Hello world.}
+        \end{frame}
+        \end{document}
+    """).lstrip()
+    )
+
+    tasks = _generate(tmp_path, playlist)
+
+    compile_task = next(t for t in tasks if t["name"].startswith("compile_beamer:"))
+    # Source .tex should NOT be in file_dep
+    assert not any(dep.endswith(".tex") for dep in compile_task.get("file_dep", []))
+    # Should have uptodate with visual_hash
+    assert "uptodate" in compile_task
+    uptodate_entry = compile_task["uptodate"][0]
+    assert "visual_hash" in uptodate_entry.config

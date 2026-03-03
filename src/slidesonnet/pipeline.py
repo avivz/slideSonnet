@@ -286,6 +286,7 @@ def build(
         prep.config.video.fps = prep.config.video.fps // 2
         prep.config.video.preset = "ultrafast"
         prep.config.video.crf = 32
+        prep.config.video.crossfade = 0.0
         prep.output_path = prep.playlist_dir / (playlist_path.stem + "_preview.mp4")
 
     # Create directories

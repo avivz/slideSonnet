@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import subprocess
@@ -37,6 +38,23 @@ _SILENT_RE = re.compile(r"<!--\s*nonarration\s*(?:\(([^)]*)\))?\s*-->", re.IGNOR
 
 # Match <!-- skip -->
 _SKIP_RE = re.compile(r"<!--\s*skip\s*-->", re.IGNORECASE)
+
+
+def strip_annotations(text: str) -> str:
+    """Remove slideSonnet annotation comments (say, nonarration, skip) from MARP source."""
+    result = _SAY_RE.sub("", text)
+    result = _SILENT_RE.sub("", result)
+    result = _SKIP_RE.sub("", result)
+    return result
+
+
+def visual_hash(source_text: str) -> str:
+    """Return a short hash of the MARP source with annotations stripped.
+
+    Two sources that differ only in narration text produce the same hash.
+    """
+    stripped = strip_annotations(source_text)
+    return hashlib.sha256(stripped.encode()).hexdigest()[:16]
 
 
 # Fragment list markers (Marp animated items)
