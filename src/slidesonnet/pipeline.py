@@ -14,7 +14,6 @@ from rich.progress import (
     SpinnerColumn,
     TaskProgressColumn,
     TextColumn,
-    TimeElapsedColumn,
 )
 
 from dotenv import load_dotenv
@@ -333,15 +332,16 @@ def _run_doit(
     _SLIDE_PREFIXES = ("compile_beamer:", "extract_images:", "export_pdf:")
     _AUDIO_PREFIXES = ("tts:", "concat_audio:")
     _VIDEO_PREFIXES = ("compose:",)
-    _VIDEO_EXACT = ("assemble",)
 
     def _categorize_task(name: str) -> str | None:
         if name.startswith(_SLIDE_PREFIXES):
             return "slides"
         if name.startswith(_AUDIO_PREFIXES):
             return "audio"
-        if name.startswith(_VIDEO_PREFIXES) or name in _VIDEO_EXACT:
+        if name.startswith(_VIDEO_PREFIXES):
             return "video"
+        if name == "assemble":
+            return "assemble"
         return None
 
     class _ProgressReporter(ConsoleReporter):  # type: ignore[misc]
@@ -350,9 +350,11 @@ def _run_doit(
         def initialize(self, tasks: Any, selected_tasks: Any) -> None:
             super().initialize(tasks, selected_tasks)
             self._start_time = time.monotonic()
+            self._cached: dict[str, int] = {}
+            self._ran: dict[str, int] = {}
 
             # Count tasks per category
-            counts: dict[str, int] = {"slides": 0, "audio": 0, "video": 0}
+            counts: dict[str, int] = {"slides": 0, "audio": 0, "video": 0, "assemble": 0}
             for name in selected_tasks:
                 cat = _categorize_task(name)
                 if cat:
@@ -367,7 +369,6 @@ def _run_doit(
                 TextColumn("{task.description}"),
                 BarColumn(),
                 TaskProgressColumn(),
-                TimeElapsedColumn(),
             )
             self._bar_ids: dict[str, Any] = {}
             for cat, label in [
@@ -378,20 +379,74 @@ def _run_doit(
                 if counts[cat] > 0:
                     tid = self._progress.add_task(label, total=counts[cat])
                     self._bar_ids[cat] = tid
+            if counts["assemble"] > 0:
+                tid = self._progress.add_task(
+                    "Assemble", total=None, visible=False
+                )
+                self._bar_ids["assemble"] = tid
             self._progress.start()
 
         def execute_task(self, task: Any) -> None:
-            pass
+            cat = _categorize_task(task.name)
+            if cat == "assemble" and cat in self._bar_ids:
+                self._progress.update(
+                    self._bar_ids[cat],
+                    description="Assembling...",
+                    visible=True,
+                    refresh=True,
+                )
+
+        _LABELS = {"slides": "Slides", "audio": "Audio", "video": "Video"}
+
+        def _description(self, cat: str) -> str:
+            cached = self._cached.get(cat, 0)
+            ran = self._ran.get(cat, 0)
+            parts: list[str] = []
+            if cached:
+                parts.append(f"{cached} cached")
+            if ran:
+                parts.append(f"{ran} {'synthesized' if cat == 'audio' else 'built'}")
+            if parts:
+                return f"{self._LABELS[cat]} ({', '.join(parts)})"
+            return self._LABELS[cat]
+
+        def _finish_assemble(self) -> None:
+            self._progress.update(
+                self._bar_ids["assemble"],
+                total=1,
+                completed=1,
+                description="Assembled",
+                visible=True,
+                refresh=True,
+            )
 
         def add_success(self, task: Any) -> None:
             cat = _categorize_task(task.name)
             if cat and cat in self._bar_ids:
-                self._progress.advance(self._bar_ids[cat])
+                if cat == "assemble":
+                    self._finish_assemble()
+                else:
+                    self._ran[cat] = self._ran.get(cat, 0) + 1
+                    self._progress.update(
+                        self._bar_ids[cat],
+                        advance=1,
+                        description=self._description(cat),
+                        refresh=True,
+                    )
 
         def skip_uptodate(self, task: Any) -> None:
             cat = _categorize_task(task.name)
             if cat and cat in self._bar_ids:
-                self._progress.advance(self._bar_ids[cat])
+                if cat == "assemble":
+                    self._finish_assemble()
+                else:
+                    self._cached[cat] = self._cached.get(cat, 0) + 1
+                    self._progress.update(
+                        self._bar_ids[cat],
+                        advance=1,
+                        description=self._description(cat),
+                        refresh=True,
+                    )
 
         def complete_run(self) -> None:
             self._progress.stop()
