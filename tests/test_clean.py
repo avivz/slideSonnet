@@ -195,7 +195,7 @@ class TestCleanKeepUtterances:
         playlist = _create_playlist(tmp_path)
         files = _populate_cache(tmp_path)
 
-        clean(playlist, keep="utterances")
+        clean(playlist, keep="current")
 
         assert not files["module_dir"].exists()
         assert not files["doit_db"].exists()
@@ -204,7 +204,7 @@ class TestCleanKeepUtterances:
         playlist = _create_playlist(tmp_path)
         files = _populate_cache(tmp_path)
 
-        clean(playlist, keep="utterances")
+        clean(playlist, keep="current")
 
         assert files["piper_current_0"].exists()
         assert files["piper_current_1"].exists()
@@ -214,7 +214,7 @@ class TestCleanKeepUtterances:
         playlist = _create_playlist(tmp_path)
         files = _populate_cache(tmp_path)
 
-        clean(playlist, keep="utterances")
+        clean(playlist, keep="current")
 
         assert not files["orphan_piper"].exists()
         assert not files["orphan_elevenlabs"].exists()
@@ -223,7 +223,7 @@ class TestCleanKeepUtterances:
         playlist = _create_playlist(tmp_path)
         files = _populate_cache(tmp_path)
 
-        clean(playlist, keep="utterances")
+        clean(playlist, keep="current")
 
         # Stale config but same text → text_hash matches → kept
         assert files["stale_piper"].exists()
@@ -232,7 +232,7 @@ class TestCleanKeepUtterances:
         playlist = _create_playlist(tmp_path)
         files = _populate_cache(tmp_path)
 
-        clean(playlist, keep="utterances")
+        clean(playlist, keep="current")
 
         assert not files["old_format"].exists()
         assert not files["concat"].exists()
@@ -307,7 +307,7 @@ class TestCleanEdgeCases:
     def test_no_cache_dir(self, tmp_path: Path) -> None:
         playlist = _create_playlist(tmp_path)
         # Should not raise for any level
-        for level in ("nothing", "api", "utterances", "exact"):
+        for level in ("nothing", "api", "current", "exact"):
             clean(playlist, keep=level)  # type: ignore[arg-type]
 
     def test_default_keep_is_api(self, tmp_path: Path) -> None:

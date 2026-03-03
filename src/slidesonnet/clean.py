@@ -1,10 +1,10 @@
 """Selective cache cleanup with graduated preservation levels.
 
 Four --keep levels, each progressively more aggressive:
-  nothing    — nuke entire cache directory
-  api        — keep all API-generated audio, remove build artifacts + piper audio
-  utterances — keep audio for current utterances (any engine), remove orphans
-  exact      — keep only audio matching current text + current TTS config
+  nothing — nuke entire cache directory
+  api     — keep all API-generated audio, remove build artifacts + piper audio
+  current — keep audio for current slide text (any engine), remove orphans
+  exact   — keep only audio matching current text + current TTS config
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciatio
 
 logger = logging.getLogger(__name__)
 
-KeepLevel = Literal["nothing", "api", "utterances", "exact"]
+KeepLevel = Literal["nothing", "api", "current", "exact"]
 
 _API_BACKENDS = frozenset({"elevenlabs"})
 
@@ -38,8 +38,8 @@ def clean(playlist_path: Path, keep: KeepLevel = "api") -> None:
         _clean_all(build_dir)
     elif keep == "api":
         _clean_keep_api(build_dir)
-    elif keep == "utterances":
-        _clean_keep_utterances(build_dir, playlist_path)
+    elif keep == "current":
+        _clean_keep_current(build_dir, playlist_path)
     elif keep == "exact":
         _clean_keep_exact(build_dir, playlist_path)
 
@@ -71,8 +71,8 @@ def _clean_keep_api(build_dir: Path) -> None:
     _remove_empty_dir(audio_dir)
 
 
-def _clean_keep_utterances(build_dir: Path, playlist_path: Path) -> None:
-    """Remove build artifacts + orphaned audio. Keep current-utterance audio (any engine)."""
+def _clean_keep_current(build_dir: Path, playlist_path: Path) -> None:
+    """Remove build artifacts + orphaned audio. Keep current slide text audio (any engine)."""
     _remove_build_artifacts(build_dir)
 
     audio_dir = build_dir / "audio"
