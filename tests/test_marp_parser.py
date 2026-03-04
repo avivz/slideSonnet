@@ -938,3 +938,134 @@ class TestNonarrationDuration:
         [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
         assert slide.annotation == SlideAnnotation.SAY
         assert "narrated" in slide.narration_raw
+
+
+class TestMarpEdgeCases:
+    """Adversarial edge-case tests for the MARP parser."""
+
+    def test_nested_html_comments(self) -> None:
+        """<!-- say: text with <!-- inner --> rest --> — parser stops at first -->."""
+        text = "<!-- say: text with <!-- inner --> rest -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SAY
+        # The regex is non-greedy, so it stops at the first -->
+        assert "text with <!-- inner" in slide.narration_raw
+        # "rest -->" is NOT part of the narration
+        assert "rest" not in slide.narration_raw
+
+    def test_html_like_content_in_narration(self) -> None:
+        """Angle brackets in narration text should be preserved."""
+        text = "<!-- say: Use <div> and <span> tags -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SAY
+        assert "<div>" in slide.narration_raw
+        assert "<span>" in slide.narration_raw
+
+    def test_whitespace_only_narration(self, caplog: pytest.LogCaptureFixture) -> None:
+        """<!-- say:   \\n\\n   --> should warn and become SILENT (like empty say)."""
+        text = "<!-- say:   \n\n   -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SILENT
+        assert "did you mean <!-- nonarration -->" in caplog.text
+
+    def test_unclosed_say_directive(self, caplog: pytest.LogCaptureFixture) -> None:
+        """<!-- say: text without closing should be treated as unannotated."""
+        text = "# Slide\n\n<!-- say: text without closing"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.NONE
+        assert "no annotation" in caplog.text
+
+    def test_missing_colon(self, caplog: pytest.LogCaptureFixture) -> None:
+        """<!-- say text --> without colon should not match, slide is unannotated."""
+        text = "# Slide\n\n<!-- say text -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.NONE
+
+    def test_unclosed_parentheses_in_params(self, caplog: pytest.LogCaptureFixture) -> None:
+        """<!-- say(voice=alice: text --> — unclosed paren should not match _SAY_RE."""
+        text = "# Slide\n\n<!-- say(voice=alice: text -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.NONE
+
+    def test_skip_plus_say_skip_wins(self) -> None:
+        """<!-- skip --> + <!-- say: text --> on one slide — skip takes priority."""
+        text = "# Slide\n\n<!-- skip -->\n\n<!-- say: This should be skipped. -->"
+        result, _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert len(result) == 1
+        assert result[0].annotation == SlideAnnotation.SKIP
+
+    def test_triple_dash_inside_inline_code(self) -> None:
+        """--- inside backtick inline code — not a fence, so it DOES split (Marp behavior)."""
+        text = textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Slide 1
+
+            Here is `---` inline.
+
+            <!-- say: First. -->
+
+            ---
+
+            # Slide 2
+
+            <!-- say: Second. -->
+        """)
+        slides = _split_slides(text)
+        assert len(slides) == 2
+
+    def test_multiline_say_with_tabs_and_crlf(self) -> None:
+        """Say directive with tabs and CRLF — whitespace normalized."""
+        text = "<!-- say: \tFirst line.\r\n\t\tSecond line.\r\n\tThird. -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SAY
+        assert "\t" not in slide.narration_raw
+        assert "\r" not in slide.narration_raw
+        assert "\n" not in slide.narration_raw
+        assert "First line." in slide.narration_raw
+        assert "Second line." in slide.narration_raw
+
+    def test_empty_slide_body_only_say(self) -> None:
+        """Slide with only a say directive (no visual content)."""
+        text = "<!-- say: Narration with no visual content. -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SAY
+        assert slide.narration_raw == "Narration with no visual content."
+
+    def test_consecutive_separators_empty_slide(self) -> None:
+        """---\\n--- producing an empty slide between them."""
+        text = textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Slide 1
+
+            <!-- say: First. -->
+
+            ---
+
+            ---
+
+            # Slide 3
+
+            <!-- say: Third. -->
+        """)
+        slides = _split_slides(text)
+        # There should be an empty slide between the two ---
+        assert len(slides) >= 2
+        # First slide has content
+        assert "First." in slides[0]
+        # Last slide has content
+        assert "Third." in slides[-1]
+
+    def test_special_regex_chars_in_narration(self) -> None:
+        """Regex metacharacters in narration text should be preserved."""
+        text = "<!-- say: cost is $100 (50%) and uses [brackets] -->"
+        [slide], _ = _parse_slide(1, text, Path("test.md"), 1)
+        assert slide.annotation == SlideAnnotation.SAY
+        assert "$100" in slide.narration_raw
+        assert "(50%)" in slide.narration_raw
+        assert "[brackets]" in slide.narration_raw

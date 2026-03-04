@@ -854,3 +854,132 @@ class TestNonarrationDuration:
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
         assert slides[0].silence_override == 5.0
+
+
+class TestBeamerEdgeCases:
+    """Adversarial edge-case tests for the Beamer parser."""
+
+    def test_deeply_nested_braces(self) -> None:
+        r"""\\say with 5+ levels of nested braces."""
+        text = r"\say{a{b{c{d{e}d}c}b}a}"
+        matches = _find_say_commands(text)
+        assert len(matches) == 1
+        body = matches[0][1]
+        assert "a" in body
+        assert "e" in body
+        # Verify _extract_braced handles it directly
+        content, end = _extract_braced("{a{b{c{d{e}d}c}b}a}", 0)
+        assert content == "a{b{c{d{e}d}c}b}a"
+        assert end == len("{a{b{c{d{e}d}c}b}a}")
+
+    def test_escaped_backslash_before_brace(self) -> None:
+        r"""\\say{text \\\{ more} — \\\\ is escaped backslash, then \{ is escaped brace."""
+        # \\\{ means: escaped-backslash followed by escaped-brace
+        text = r"\say{text \\\{ more}"
+        matches = _find_say_commands(text)
+        assert len(matches) == 1
+        assert "text" in matches[0][1]
+        assert "more" in matches[0][1]
+
+    def test_unmatched_opening_brace_in_say_body(self) -> None:
+        r"""\\say{text { more} — extra opening brace, brace counting finds outer match."""
+        # The { inside needs a matching } — so this is actually unbalanced
+        # _extract_braced will match {text { more} by depth counting:
+        # depth 1 at {text, depth 2 at { , depth 1 at more}, never reaches 0 → None
+        text = r"\say{text { more}"
+        matches = _find_say_commands(text)
+        # With unmatched inner brace, extract_braced fails (returns None)
+        assert len(matches) == 0
+
+    def test_say_with_empty_optional_params(self) -> None:
+        r"""\\say[]{text} — empty brackets."""
+        text = r"\say[]{Hello world}"
+        matches = _find_say_commands(text)
+        assert len(matches) == 1
+        assert matches[0] == ("", "Hello world")
+
+    def test_multiple_nonarration_first_wins(self) -> None:
+        r"""Multiple \\nonarration — first match wins for duration."""
+        text = r"""
+        \nonarration[3]
+        \pause
+        \nonarration[7]
+        """
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        # _SILENT_RE.search finds the first match
+        assert all(s.annotation == SlideAnnotation.SILENT for s in slides)
+        assert slides[0].silence_override == 3.0
+
+    def test_consecutive_say_commands(self) -> None:
+        r"""\\say{first}\\say{second} — both found, concatenated on sub-slide 1."""
+        text = r"\say{first}\say{second}"
+        matches = _find_say_commands(text)
+        assert len(matches) == 2
+        assert matches[0][1] == "first"
+        assert matches[1][1] == "second"
+        # Parse as frame: both on sub-slide 1
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert "first" in slides[0].narration_raw
+        assert "second" in slides[0].narration_raw
+
+    def test_say_with_latex_math(self) -> None:
+        r"""\\say{The formula $x^{2}$ is quadratic} — braces inside math mode."""
+        text = r"\say{The formula $x^{2}$ is quadratic}"
+        matches = _find_say_commands(text)
+        assert len(matches) == 1
+        assert "formula" in matches[0][1]
+        assert "quadratic" in matches[0][1]
+
+    def test_special_chars_in_say_body(self) -> None:
+        r"""\\say{100\% done \& finished} — escaped percent and ampersand."""
+        text = r"\say{100\% done \& finished}"
+        matches = _find_say_commands(text)
+        assert len(matches) == 1
+        body = matches[0][1]
+        assert "100" in body
+        assert "done" in body
+        assert "finished" in body
+
+    def test_frame_with_no_content_just_say(self) -> None:
+        r"""Frame with only \\say{text} and nothing else."""
+        text = r"\say{Just narration, no content.}"
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert len(slides) == 1
+        assert slides[0].annotation == SlideAnnotation.SAY
+        assert "Just narration, no content." in slides[0].narration_raw
+
+    def test_malformed_frame_missing_end(self) -> None:
+        r"""\\begin{frame}\\say{text} with no \\end{frame} — _extract_frames skips it."""
+        text = r"""
+        \begin{frame}
+        \say{First frame.}
+        \end{frame}
+        \begin{frame}
+        \say{Second frame, no end.}
+        """
+        frames = _extract_frames(text)
+        # Only the complete frame is extracted
+        assert len(frames) == 1
+        assert "First frame" in frames[0]
+
+    def test_say_body_with_newlines(self) -> None:
+        r"""\\say{line one\nline two} — multi-line content normalized."""
+        text = "\\say{line one\nline two}"
+        matches = _find_say_commands(text)
+        assert len(matches) == 1
+        assert "line one" in matches[0][1]
+        assert "line two" in matches[0][1]
+        # After _parse_frame, whitespace is normalized
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert "line one line two" in slides[0].narration_raw
+
+    def test_very_long_narration_text(self) -> None:
+        """Stress test with 10KB of text in a single \\say{}."""
+        long_text = "word " * 2000  # ~10KB
+        text = f"\\say{{{long_text.strip()}}}"
+        matches = _find_say_commands(text)
+        assert len(matches) == 1
+        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
+        assert slides[0].annotation == SlideAnnotation.SAY
+        assert len(slides[0].narration_raw) > 5000
