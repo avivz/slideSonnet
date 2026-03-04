@@ -18,7 +18,7 @@ from typing import Literal
 from slidesonnet.actions import get_parser_and_extractor
 from slidesonnet.config import load_config
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
-from slidesonnet.models import ModuleType, resolve_voice
+from slidesonnet.models import API_BACKENDS, ModuleType, resolve_voice
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_dict
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 KeepLevel = Literal["nothing", "api", "current", "exact"]
 
-_API_BACKENDS = frozenset({"elevenlabs"})
+_API_BACKENDS = API_BACKENDS
 
 
 @dataclass

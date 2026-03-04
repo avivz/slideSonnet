@@ -20,10 +20,11 @@ from dotenv import load_dotenv
 
 from slidesonnet.actions import get_parser_and_extractor
 from slidesonnet.config import load_config
-from slidesonnet.exceptions import SlideSonnetError
+from slidesonnet.exceptions import APINotAllowedError, SlideSonnetError
 from slidesonnet.hashing import _BACKEND_EXTENSIONS
 from slidesonnet.hashing import audio_path as _audio_path
 from slidesonnet.models import (
+    API_BACKENDS,
     ModuleType,
     PlaylistEntry,
     ProjectConfig,
@@ -151,6 +152,124 @@ def _audio_cache_exists(path: Path) -> bool:
             if alt.exists() and alt.stat().st_size > 0:
                 return True
     return False
+
+
+@dataclass
+class _UncachedSlide:
+    """An uncached slide found during preflight check."""
+
+    module_path: str
+    slide_index: int
+    text_preview: str
+    chars: int
+
+
+def _preflight_api_check(prep: _PreparedBuild) -> None:
+    """Raise APINotAllowedError if the build would make paid API calls.
+
+    Only checks API backends (e.g. ElevenLabs). Piper is free and always allowed.
+    """
+    if prep.config.tts.backend not in API_BACKENDS:
+        return
+
+    audio_cache_dir = prep.build_dir / "audio"
+    uncached: list[_UncachedSlide] = []
+    total_chars = 0
+
+    for entry in prep.entries:
+        if entry.module_type == ModuleType.VIDEO:
+            continue
+
+        source_path = prep.playlist_dir / entry.path
+        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
+        slides_dir = module_dir / "slides"
+
+        parser_cls, _ = get_parser_and_extractor(entry.module_type)
+        parser = parser_cls()
+        slides = parser.parse(source_path, slides_dir)
+
+        for slide in slides:
+            if not slide.has_narration:
+                continue
+
+            pron = prep.config.pronunciation_for(prep.config.tts.backend)
+            slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
+            slide.narration_parts_processed = [
+                apply_pronunciation(part, pron) for part in slide.narration_parts
+            ]
+
+            if slide.voice:
+                resolved = resolve_voice(slide.voice, prep.config.voices, prep.config.tts.backend)
+                if resolved:
+                    slide.voice = resolved
+                else:
+                    slide.voice = None
+
+            parts = slide.narration_parts_processed
+
+            if len(parts) > 1:
+                slide_uncached_chars = 0
+                all_cached = True
+                for part_text in parts:
+                    p = _audio_path(
+                        audio_cache_dir,
+                        part_text,
+                        prep.tts.name(),
+                        prep.tts.cache_key(),
+                        slide.voice,
+                    )
+                    if not _audio_cache_exists(p):
+                        all_cached = False
+                        slide_uncached_chars += len(part_text)
+                if not all_cached:
+                    preview = slide.narration_processed[:80]
+                    uncached.append(
+                        _UncachedSlide(
+                            module_path=str(entry.path),
+                            slide_index=slide.index,
+                            text_preview=preview,
+                            chars=slide_uncached_chars,
+                        )
+                    )
+                    total_chars += slide_uncached_chars
+            else:
+                p = _audio_path(
+                    audio_cache_dir,
+                    slide.narration_processed,
+                    prep.tts.name(),
+                    prep.tts.cache_key(),
+                    slide.voice,
+                )
+                if not _audio_cache_exists(p):
+                    chars = len(slide.narration_processed)
+                    preview = slide.narration_processed[:80]
+                    uncached.append(
+                        _UncachedSlide(
+                            module_path=str(entry.path),
+                            slide_index=slide.index,
+                            text_preview=preview,
+                            chars=chars,
+                        )
+                    )
+                    total_chars += chars
+
+    if not uncached:
+        return
+
+    n = len(uncached)
+    lines = [
+        f"Build requires ElevenLabs API calls for {n} uncached "
+        f"slide{'s' if n != 1 else ''} (~{total_chars:,} characters):",
+        "",
+    ]
+    for s in uncached:
+        preview = s.text_preview
+        if len(preview) < len(s.text_preview) or len(preview) >= 80:
+            preview = preview[:77] + "..."
+        lines.append(f'  {s.module_path} slide {s.slide_index}: "{preview}"')
+    lines.append("")
+    lines.append("Pass --allow-api to allow paid API calls, or use --tts piper for free local TTS.")
+    raise APINotAllowedError("\n".join(lines))
 
 
 def dry_run(
@@ -284,12 +403,18 @@ def build(
     until: str | None = None,
     quiet: bool = False,
     no_srt: bool = False,
+    allow_api: bool = False,
 ) -> BuildResult:
     """Execute the full build pipeline for a playlist.
 
     Returns a :class:`BuildResult` with the output path, elapsed time, and stage.
+    Raises :class:`APINotAllowedError` if paid API calls are needed and
+    *allow_api* is False (unless *until* is ``"slides"``).
     """
     prep = _prepare(playlist_path, tts_override)
+
+    if not allow_api and until != "slides":
+        _preflight_api_check(prep)
 
     # Apply preview overrides: quarter resolution, half fps, ultrafast preset, high CRF
     if preview:

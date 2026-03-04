@@ -19,3 +19,7 @@ class ConfigError(SlideSonnetError):
 
 class FFmpegError(SlideSonnetError):
     """FFmpeg is missing or a command failed."""
+
+
+class APINotAllowedError(SlideSonnetError):
+    """Build requires paid API calls but --allow-api was not passed."""

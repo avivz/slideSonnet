@@ -9,6 +9,7 @@ from click.testing import CliRunner
 from slidesonnet import __version__
 from slidesonnet.clean import CleanResult
 from slidesonnet.cli import main
+from slidesonnet.exceptions import APINotAllowedError
 from slidesonnet.pipeline import BuildResult, DryRunResult, ListResult, SlideInfo
 
 # Re-usable assertion kwargs for run_build calls (includes no_srt default)
@@ -131,6 +132,7 @@ def test_build_calls_pipeline(runner, tmp_path):
             until=None,
             quiet=False,
             no_srt=False,
+            allow_api=False,
         )
 
 
@@ -150,6 +152,7 @@ def test_build_with_tts_override(runner, tmp_path):
             until=None,
             quiet=False,
             no_srt=False,
+            allow_api=True,
         )
 
 
@@ -169,6 +172,7 @@ def test_build_with_preview(runner, tmp_path):
             until=None,
             quiet=False,
             no_srt=False,
+            allow_api=False,
         )
 
 
@@ -378,6 +382,7 @@ def test_build_with_until_slides(runner, tmp_path):
             until="slides",
             quiet=False,
             no_srt=False,
+            allow_api=False,
         )
 
 
@@ -401,6 +406,7 @@ def test_build_with_until_tts(runner, tmp_path):
             until="tts",
             quiet=False,
             no_srt=False,
+            allow_api=False,
         )
 
 
@@ -424,6 +430,7 @@ def test_build_with_until_segments(runner, tmp_path):
             until="segments",
             quiet=False,
             no_srt=False,
+            allow_api=False,
         )
 
 
@@ -646,6 +653,7 @@ def test_build_no_srt_flag(runner, tmp_path):
             until=None,
             quiet=False,
             no_srt=True,
+            allow_api=False,
         )
 
 
@@ -716,3 +724,69 @@ def test_help_includes_subtitles(runner):
     result = runner.invoke(main, ["--help"])
     assert result.exit_code == 0
     assert "subtitles" in result.output
+
+
+# ---- --allow-api CLI tests ----
+
+
+def test_allow_api_flag_forwarded(runner, tmp_path):
+    """--allow-api is forwarded to run_build."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["build", str(playlist), "--allow-api"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            playlist,
+            tts_override=None,
+            preview=False,
+            until=None,
+            quiet=False,
+            no_srt=False,
+            allow_api=True,
+        )
+
+
+def test_tts_elevenlabs_implies_allow_api(runner, tmp_path):
+    """--tts elevenlabs implicitly sets allow_api=True."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["build", str(playlist), "--tts", "elevenlabs"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            playlist,
+            tts_override="elevenlabs",
+            preview=False,
+            until=None,
+            quiet=False,
+            no_srt=False,
+            allow_api=True,
+        )
+
+
+def test_api_not_allowed_error_renders(runner, tmp_path):
+    """APINotAllowedError shows message on stderr and exits 1."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.side_effect = APINotAllowedError(
+            "Build requires ElevenLabs API calls for 2 uncached slides"
+        )
+        result = runner.invoke(main, ["build", str(playlist)])
+        assert result.exit_code == 1
+        assert "ElevenLabs API calls" in result.output
+
+
+def test_build_help_includes_allow_api(runner):
+    """Build help mentions --allow-api."""
+    result = runner.invoke(main, ["build", "--help"])
+    assert result.exit_code == 0
+    assert "--allow-api" in result.output

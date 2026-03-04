@@ -23,6 +23,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Rich progress bars with cached/built counts
 - Graduated `slidesonnet clean --keep` levels (api, current, nothing)
 - Hebrew pronunciation tests documenting niqqud word-boundary behavior
+- Adversarial edge-case tests for MARP and Beamer parsers (24 tests covering nested delimiters, escaped characters, malformed annotations, empty slides)
 
 ### Changed
 - Playlist format migrated from Markdown with YAML front matter to pure `.yaml`

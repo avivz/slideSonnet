@@ -12,7 +12,13 @@ import click
 from slidesonnet import __version__
 from slidesonnet.clean import KeepLevel
 from slidesonnet.clean import clean as run_clean
-from slidesonnet.exceptions import FFmpegError, ParserError, SlideSonnetError, TTSError
+from slidesonnet.exceptions import (
+    APINotAllowedError,
+    FFmpegError,
+    ParserError,
+    SlideSonnetError,
+    TTSError,
+)
 from slidesonnet.init import init_project
 from slidesonnet.pipeline import (
     BuildResult,
@@ -95,7 +101,7 @@ def main(ctx: click.Context, quiet: bool) -> None:
 
     \b
     Commands:
-      build      PLAYLIST [--tts ...] [--preview] [-n] [--until STAGE]
+      build      PLAYLIST [--tts ...] [--preview] [-n] [--until STAGE] [--allow-api]
       preview    PLAYLIST [--until STAGE]     (= build --tts piper --preview)
       subtitles  PLAYLIST [-o OUTPUT]         (generate SRT from cache)
       pdf        PLAYLIST                     (export PDFs only)
@@ -149,6 +155,7 @@ def _print_dry_run(result: DryRunResult) -> None:
     help="Run pipeline only up to STAGE (slides, tts, or segments)",
 )
 @click.option("--no-srt", is_flag=True, help="Skip SRT subtitle generation")
+@click.option("--allow-api", is_flag=True, help="Allow paid API calls (e.g. ElevenLabs TTS)")
 @click.pass_context
 def build(
     ctx: click.Context,
@@ -158,6 +165,7 @@ def build(
     preview: bool,
     until: str | None,
     no_srt: bool,
+    allow_api: bool,
 ) -> None:
     """Build an MP4 video from a playlist file.
 
@@ -167,13 +175,21 @@ def build(
     alongside the video (use --no-srt to skip).
 
     \b
+    When the playlist uses a paid TTS backend (e.g. ElevenLabs), the build
+    will fail with a report if uncached slides would require API calls.
+    Pass --allow-api to proceed, or use --tts piper for free local TTS.
+
+    \b
     Examples:
       slidesonnet build lecture.yaml
       slidesonnet build lecture.yaml --tts piper --preview
+      slidesonnet build lecture.yaml --allow-api       # allow paid TTS
       slidesonnet build lecture.yaml -n               # dry-run
       slidesonnet build lecture.yaml --until tts       # stop after audio
     """
     quiet: bool = ctx.obj.get("quiet", False)
+    # Explicit --tts elevenlabs implies opt-in to paid API calls
+    effective_allow_api = allow_api or tts == "elevenlabs"
     try:
         if dry_run:
             if preview:
@@ -191,9 +207,13 @@ def build(
                 until=until,
                 quiet=quiet,
                 no_srt=no_srt,
+                allow_api=effective_allow_api,
             )
             if not quiet:
                 _print_build_result(build_result)
+    except APINotAllowedError as e:
+        click.echo(str(e), err=True)
+        raise SystemExit(1)
     except SlideSonnetError as e:
         logger.error("%s", e)
         if isinstance(e, (ParserError, FFmpegError, TTSError)):

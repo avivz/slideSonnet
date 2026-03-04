@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Literal
 
 
+API_BACKENDS: frozenset[str] = frozenset({"elevenlabs"})
+
+
 class ModuleType(Enum):
     MARP = "marp"
     BEAMER = "beamer"
