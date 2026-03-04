@@ -26,6 +26,7 @@ from slidesonnet.pipeline import (
     build as run_build,
     dry_run as run_dry_run,
     export_pdfs as run_export_pdfs,
+    export_utterances as run_export_utterances,
     generate_srt_file as run_generate_srt,
     list_slides as run_list_slides,
 )
@@ -106,6 +107,7 @@ def main(ctx: click.Context, quiet: bool) -> None:
       subtitles  PLAYLIST [-o OUTPUT]         (generate SRT from cache)
       pdf        PLAYLIST                     (export PDFs only)
       list       PLAYLIST [--tts ...]         (list slides with narration)
+      utterances PLAYLIST [-o FILE] [--tts ...] (export narration text)
       preview-slide SLIDES N [-p PLAYLIST]    (play one slide's audio)
       init       md|tex [DIR]                 (scaffold a new project)
       clean      PLAYLIST [--keep nothing|api|current|exact]
@@ -332,6 +334,68 @@ def subtitles(playlist: Path, output: Path | None, tts: str | None) -> None:
         raise SystemExit(1)
     except Exception as e:
         logger.error("SRT generation failed: %s", e)
+        raise SystemExit(1)
+
+
+@main.command()
+@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    help="Output file path (default: print to stdout)",
+)
+@click.option(
+    "--tts",
+    type=click.Choice(["piper", "elevenlabs"]),
+    help="TTS backend for pronunciation rules (default: from playlist config)",
+)
+def utterances(playlist: Path, output: Path | None, tts: str | None) -> None:
+    """Export narration text for proofreading.
+
+    \b
+    Parses all slide modules and prints narration text (post-pronunciation)
+    grouped by module. No build or TTS calls are made.
+
+    \b
+    Output format:
+      # module-path/slides.md
+      [1] Hello and welcome to this lecture.
+      [2] [silent]
+      [3] (voice: alice) Let's begin with the basics.
+
+    \b
+    Examples:
+      slidesonnet utterances lecture.yaml
+      slidesonnet utterances lecture.yaml -o narration.txt
+      slidesonnet utterances lecture.yaml --tts piper
+    """
+    try:
+        modules = run_export_utterances(
+            playlist,
+            tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+        )
+        lines: list[str] = []
+        for i, mod in enumerate(modules):
+            if i > 0:
+                lines.append("")
+            lines.append(f"# {mod.module_path}")
+            lines.append("")
+            for slide in mod.slides:
+                prefix = f"[{slide.slide_index}]"
+                if slide.text == "[silent]":
+                    lines.append(f"{prefix} [silent]")
+                else:
+                    voice_prefix = f"(voice: {slide.voice}) " if slide.voice else ""
+                    lines.append(f"{prefix} {voice_prefix}{slide.text}")
+        text = "\n".join(lines) + "\n"
+        if output:
+            output.write_text(text, encoding="utf-8")
+            click.echo(str(output))
+        else:
+            click.echo(text, nl=False)
+    except SlideSonnetError as e:
+        logger.error("%s", e)
         raise SystemExit(1)
 
 

@@ -758,6 +758,75 @@ def export_pdfs(playlist_path: Path) -> list[Path]:
     return output_paths
 
 
+@dataclass
+class UtteranceSlide:
+    """Per-slide utterance info returned by export_utterances()."""
+
+    slide_index: int
+    text: str | None  # None = skipped, "[silent]" = silent, else narration text
+    voice: str | None  # Non-default voice name, or None
+
+
+@dataclass
+class UtteranceModule:
+    """Per-module utterance group."""
+
+    module_path: str
+    slides: list[UtteranceSlide]
+
+
+def export_utterances(
+    playlist_path: Path,
+    tts_override: Literal["piper", "elevenlabs"] | None = None,
+) -> list[UtteranceModule]:
+    """Export narration text for all slides, grouped by module.
+
+    Parses slides and applies pronunciation (same as list_slides),
+    but returns structured data for plain-text export. Skipped slides
+    are omitted; silent slides show ``[silent]``; narrated slides show
+    post-pronunciation text with optional voice prefix.
+    """
+    prep = _prepare(playlist_path, tts_override)
+    modules: list[UtteranceModule] = []
+
+    for entry in prep.entries:
+        if entry.module_type == ModuleType.VIDEO:
+            continue
+
+        source_path = prep.playlist_dir / entry.path
+        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
+        slides_dir = module_dir / "slides"
+
+        parser_cls, _ = get_parser_and_extractor(entry.module_type)
+        parser = parser_cls()
+        slides = parser.parse(source_path, slides_dir)
+
+        pron = prep.config.pronunciation_for(prep.config.tts.backend)
+        utterance_slides: list[UtteranceSlide] = []
+
+        for slide in slides:
+            if slide.is_skip:
+                continue
+
+            if slide.has_narration:
+                text = apply_pronunciation(slide.narration_raw, pron)
+                # Determine non-default voice
+                voice: str | None = None
+                if slide.voice:
+                    voice = slide.voice
+                utterance_slides.append(
+                    UtteranceSlide(slide_index=slide.index, text=text, voice=voice)
+                )
+            elif slide.annotation == SlideAnnotation.SILENT:
+                utterance_slides.append(
+                    UtteranceSlide(slide_index=slide.index, text="[silent]", voice=None)
+                )
+
+        modules.append(UtteranceModule(module_path=str(entry.path), slides=utterance_slides))
+
+    return modules
+
+
 def list_slides(
     playlist_path: Path,
     tts_override: Literal["piper", "elevenlabs"] | None = None,

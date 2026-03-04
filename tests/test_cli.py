@@ -10,7 +10,14 @@ from slidesonnet import __version__
 from slidesonnet.clean import CleanResult
 from slidesonnet.cli import main
 from slidesonnet.exceptions import APINotAllowedError
-from slidesonnet.pipeline import BuildResult, DryRunResult, ListResult, SlideInfo
+from slidesonnet.pipeline import (
+    BuildResult,
+    DryRunResult,
+    ListResult,
+    SlideInfo,
+    UtteranceModule,
+    UtteranceSlide,
+)
 
 # Re-usable assertion kwargs for run_build calls (includes no_srt default)
 _BUILD_DEFAULTS = dict(quiet=False, no_srt=False)
@@ -790,3 +797,106 @@ def test_build_help_includes_allow_api(runner):
     result = runner.invoke(main, ["build", "--help"])
     assert result.exit_code == 0
     assert "--allow-api" in result.output
+
+
+# ---- utterances CLI tests ----
+
+
+def test_help_includes_utterances(runner):
+    """Main help lists the utterances command."""
+    result = runner.invoke(main, ["--help"])
+    assert result.exit_code == 0
+    assert "utterances" in result.output
+
+
+def test_utterances_help(runner):
+    """utterances --help shows expected options."""
+    result = runner.invoke(main, ["utterances", "--help"])
+    assert result.exit_code == 0
+    assert "--tts" in result.output
+    assert "-o" in result.output
+    assert "proofreading" in result.output
+
+
+def test_utterances_stdout(runner, tmp_path):
+    """utterances prints formatted text to stdout."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    mock_modules = [
+        UtteranceModule(
+            module_path="01-intro/slides.md",
+            slides=[
+                UtteranceSlide(slide_index=1, text="Hello and welcome.", voice=None),
+                UtteranceSlide(slide_index=2, text="[silent]", voice=None),
+                UtteranceSlide(slide_index=3, text="Let's begin.", voice="alice"),
+            ],
+        ),
+    ]
+
+    with patch("slidesonnet.cli.run_export_utterances", return_value=mock_modules) as mock_export:
+        result = runner.invoke(main, ["utterances", str(playlist)])
+        assert result.exit_code == 0
+        mock_export.assert_called_once_with(playlist, tts_override=None)
+        assert "# 01-intro/slides.md" in result.output
+        assert "[1] Hello and welcome." in result.output
+        assert "[2] [silent]" in result.output
+        assert "[3] (voice: alice) Let's begin." in result.output
+
+
+def test_utterances_output_file(runner, tmp_path):
+    """utterances -o writes to file and prints path."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    out_file = tmp_path / "narration.txt"
+
+    mock_modules = [
+        UtteranceModule(
+            module_path="slides.md",
+            slides=[UtteranceSlide(slide_index=1, text="Hello.", voice=None)],
+        ),
+    ]
+
+    with patch("slidesonnet.cli.run_export_utterances", return_value=mock_modules):
+        result = runner.invoke(main, ["utterances", str(playlist), "-o", str(out_file)])
+        assert result.exit_code == 0
+        assert str(out_file) in result.output
+        assert out_file.exists()
+        content = out_file.read_text()
+        assert "[1] Hello." in content
+
+
+def test_utterances_with_tts_override(runner, tmp_path):
+    """utterances --tts passes override."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_export_utterances", return_value=[]) as mock_export:
+        result = runner.invoke(main, ["utterances", str(playlist), "--tts", "piper"])
+        assert result.exit_code == 0
+        mock_export.assert_called_once_with(playlist, tts_override="piper")
+
+
+def test_utterances_multiple_modules(runner, tmp_path):
+    """utterances separates modules with blank line + header."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    mock_modules = [
+        UtteranceModule(
+            module_path="01-intro/slides.md",
+            slides=[UtteranceSlide(slide_index=1, text="First module.", voice=None)],
+        ),
+        UtteranceModule(
+            module_path="02-defs/slides.tex",
+            slides=[UtteranceSlide(slide_index=1, text="Second module.", voice=None)],
+        ),
+    ]
+
+    with patch("slidesonnet.cli.run_export_utterances", return_value=mock_modules):
+        result = runner.invoke(main, ["utterances", str(playlist)])
+        assert result.exit_code == 0
+        assert "# 01-intro/slides.md" in result.output
+        assert "# 02-defs/slides.tex" in result.output
+        assert "First module." in result.output
+        assert "Second module." in result.output

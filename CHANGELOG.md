@@ -10,6 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - `slidesonnet subtitles` command to regenerate SRT from cached audio
 - `slidesonnet doctor` command to check external dependencies
 - `slidesonnet list` command with per-slide cache status
+- `slidesonnet utterances` command to export narration text for proofreading
 - `slidesonnet preview` for fast low-res builds (skips crossfade, Piper TTS)
 - `slidesonnet preview-slide` for single-slide audio preview
 - `--dry-run` flag with API cost estimation

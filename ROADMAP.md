@@ -8,7 +8,7 @@ Current version: 0.1.0 (alpha)
 
 3. **Remove large files from git history** — ~54 MB tracked media inflating `.git/` to 123 MB. Use `git filter-repo` or BFG to purge before promoting the repo publicly. MP4s should be gitignored; ElevenLabs caches need alternate storage (LFS or external).
 
-4. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images, just utterance text export). The `--until` flag exists but may not cover all use cases.
+4. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images). The `--until` flag exists but may not cover all use cases.
 
 ## Next — before beta
 
@@ -69,3 +69,4 @@ Current version: 0.1.0 (alpha)
 - [x] Adversarial parser edge-case tests
 - [x] Cache-only default mode with `--allow-api` preflight check
 - [x] Lower `requires-python` to `>=3.12` (no 3.13-only features used)
+- [x] `slidesonnet utterances` narration text export for proofreading

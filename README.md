@@ -268,6 +268,7 @@ slidesonnet preview-slide slides.md 3 -p lecture.yaml  # with playlist config
 slidesonnet init md myproject               # MARP Markdown project
 slidesonnet init tex myproject              # Beamer LaTeX project
 slidesonnet list lecture.yaml               # list slides with cache status per slide
+slidesonnet utterances lecture.yaml         # export narration text for proofreading
 slidesonnet clean lecture.yaml              # clean cache (keeps API audio by default)
 slidesonnet doctor                         # check installed dependencies
 ```
