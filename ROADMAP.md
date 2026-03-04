@@ -1,52 +1,52 @@
 # Roadmap
 
-Current version: 0.1.0 (alpha, unreleased)
+Current version: 0.1.0 (alpha)
 
-## Now — blocking release
+## Now — ship first release
 
-1. **First PyPI release** — Tag v0.1.0a1 and publish to TestPyPI, then PyPI. The README advertises `uv tool install slidesonnet[piper]` but the package doesn't exist yet. Validates the entire install story.
+1. **Tag and publish v0.1.0a1** — CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
 
-2. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images, just utterance text export). Review CLI surface to avoid overcomplicating things. The `--until` flag exists but may not cover all use cases.
+3. **Remove large files from git history** — ~54 MB tracked media inflating `.git/` to 123 MB. Use `git filter-repo` or BFG to purge before promoting the repo publicly. MP4s should be gitignored; ElevenLabs caches need alternate storage (LFS or external).
+
+4. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images, just utterance text export). The `--until` flag exists but may not cover all use cases.
 
 ## Next — before beta
 
-5. **`--output` flag** — Build to a custom filename/path (cache stays near sources). Document in README.
+1. **`--output` flag** — Build to a custom filename/path (cache stays near sources). Document in README.
 
-6. **ElevenLabs expressiveness** — Extra emotion and expressiveness parameters for ElevenLabs audio generation.
+2. **Integration tests in CI** — Install ffmpeg + Piper in CI and run at least one end-to-end build. Currently only unit tests run in CI.
 
-7. **Overhaul showcase example** — The showcase is outdated. Update to demonstrate all current features (subtitles, pronunciation, voice presets, skip, nonarration durations).
+3. **Overhaul showcase example** — The showcase is outdated. Update to demonstrate all current features (subtitles, pronunciation, voice presets, skip, nonarration durations).
 
-8. **Integration tests in CI** — Install ffmpeg + Piper in CI and run at least one end-to-end build. Currently only unit tests run in CI.
+4. **ElevenLabs expressiveness** — Extra emotion and expressiveness parameters for ElevenLabs audio generation.
 
-9. **Test coverage audit** — Identify missing and redundant tests. Ensure all CLI commands have test coverage.
+5. **Test coverage audit** — Identify missing and redundant tests. Ensure all CLI commands have test coverage.
 
-10. **Code review** — Audit for dead code, duplicated logic, fragile patterns. The parsing regex and annotation stripping logic appear in multiple places.
+6. **Code review** — Audit for dead code, duplicated logic, fragile patterns. The parsing regex and annotation stripping logic appear in multiple places.
 
-11. **Documentation review** — Ensure README, `docs/marp.md`, `docs/beamer.md`, and `--help` text are all consistent and complete.
+7. **Documentation review** — Ensure README, `docs/marp.md`, `docs/beamer.md`, and `--help` text are all consistent and complete.
 
-12. **Design a logo** — Needed for GitHub repo, PyPI page, project website, and YouTube branding. Do before public launch.
-
-13. **Remove large files from git history** — The repo has ~54 MB of tracked media (3 lecture MP4s, ~48 ElevenLabs audio cache files) plus historical copies inflating `.git/` to 123 MB. MP4s are build artifacts and should be gitignored. ElevenLabs audio caches cost real money to regenerate — move them to a separate storage mechanism (Git LFS, a release artifact, or a shared cache outside the repo). Use `git filter-repo` or BFG to purge historical blobs. Do before first public release / PyPI publish.
+8. **Design a logo** — Needed for GitHub repo, PyPI page, project website, and YouTube branding. Do before public launch.
 
 ## Later — backlog
 
-13. **Hebrew TTS** — Research is done (see `dev/hebrew-tts-research.md`). LightBlue Piper+Phonikud is the most promising local path. Cartesia Sonic-3 for cloud. Requires a new backend module.
+1. **Hebrew TTS** — Research is done (see `dev/hebrew-tts-research.md`). LightBlue Piper+Phonikud is the most promising local path. Cartesia Sonic-3 for cloud. Requires a new backend module.
 
-14. **Watch mode** — `slidesonnet watch slides.md 3 -p lecture.yaml` to auto-rebuild on file save. Adds watchdog dependency.
+2. **Watch mode** — `slidesonnet watch slides.md 3 -p lecture.yaml` to auto-rebuild on file save. Adds watchdog dependency.
 
-15. **Pronunciation correction workflow** — Interactive tooling for iterating on pronunciation dictionaries.
+3. **Pronunciation correction workflow** — Interactive tooling for iterating on pronunciation dictionaries.
 
-16. **Basel problem example finalization** — Finalize the sample lesson. Add Hebrew subtitle translation as a demo.
+4. **Basel problem example finalization** — Finalize the sample lesson. Add Hebrew subtitle translation as a demo.
 
-17. **`--json` output** — Machine-readable output for CI/automation.
+5. **`--json` output** — Machine-readable output for CI/automation.
 
-18. **`--quiet` mode** — Suppress non-error output for scripting.
+6. **`--quiet` mode** — Suppress non-error output for scripting.
 
-19. **Additional TTS backends** — Cartesia, Google Cloud TTS, Azure Speech. Each follows the existing backend pattern.
+7. **Additional TTS backends** — Cartesia, Google Cloud TTS, Azure Speech. Each follows the existing backend pattern.
 
-20. **Code tutorial presentation mode** — A slide format for teaching programming: syntax-highlighted code that evolves across slides (lines added, removed, modified), shell commands being typed, program output, and GUI screenshots. Narrated programming tutorials from text source files — no screen recording needed. Needs design: source format, diff specification, shell session description.
+8. **Code tutorial presentation mode** — A slide format for teaching programming: syntax-highlighted code that evolves across slides (lines added, removed, modified), shell commands being typed, program output, and GUI screenshots. Narrated programming tutorials from text source files — no screen recording needed. Needs design: source format, diff specification, shell session description.
 
-## Done (pre-release)
+## Done
 
 - [x] Core pipeline: parse -> TTS -> compose -> assemble (MARP + Beamer)
 - [x] Incremental builds via doit with content-hash caching
@@ -64,6 +64,8 @@ Current version: 0.1.0 (alpha, unreleased)
 - [x] Video passthrough modules (.mp4/.mkv/.webm/.mov)
 - [x] Crossfade transitions between slides
 - [x] CI: lint, typecheck, unit tests, wheel build + smoke test
+- [x] CI publish workflow (TestPyPI → PyPI → GitHub Release)
 - [x] CLI UX polish (two passes)
-- [x] Adversarial parser edge-case tests (nested braces, escaped delimiters, malformed annotations, empty slides)
+- [x] Adversarial parser edge-case tests
 - [x] Cache-only default mode with `--allow-api` preflight check
+- [x] Lower `requires-python` to `>=3.12` (no 3.13-only features used)
