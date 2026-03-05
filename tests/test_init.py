@@ -10,7 +10,7 @@ def test_md_creates_structure(tmp_path):
     target = tmp_path / "myproject"
     init_project(target, "md")
 
-    assert (target / "lecture.yaml").exists()
+    assert (target / "slidesonnet.yaml").exists()
     assert (target / ".gitignore").exists()
     assert (target / ".env").exists()
     assert (target / "pronunciation" / "cs-terms.md").exists()
@@ -22,7 +22,7 @@ def test_tex_creates_structure(tmp_path):
     target = tmp_path / "myproject"
     init_project(target, "tex")
 
-    assert (target / "lecture.yaml").exists()
+    assert (target / "slidesonnet.yaml").exists()
     assert (target / ".gitignore").exists()
     assert (target / ".env").exists()
     assert (target / "pronunciation" / "cs-terms.md").exists()
@@ -31,12 +31,12 @@ def test_tex_creates_structure(tmp_path):
 
 
 def test_playlist_name(tmp_path):
-    """Playlist is named lecture.yaml, not lecture01.yaml."""
+    """Playlist is named slidesonnet.yaml, not lecture.yaml."""
     target = tmp_path / "myproject"
     init_project(target, "md")
 
-    assert (target / "lecture.yaml").exists()
-    assert not (target / "lecture01.yaml").exists()
+    assert (target / "slidesonnet.yaml").exists()
+    assert not (target / "lecture.yaml").exists()
 
 
 def test_md_slides_have_say(tmp_path):
@@ -89,7 +89,7 @@ def test_tex_playlist_references_tex_modules(tmp_path):
     target = tmp_path / "myproject"
     init_project(target, "tex")
 
-    playlist = (target / "lecture.yaml").read_text()
+    playlist = (target / "slidesonnet.yaml").read_text()
     assert "slides.tex" in playlist
     assert "slides.md" not in playlist
 
@@ -98,7 +98,7 @@ def test_md_playlist_references_md_modules(tmp_path):
     target = tmp_path / "myproject"
     init_project(target, "md")
 
-    playlist = (target / "lecture.yaml").read_text()
+    playlist = (target / "slidesonnet.yaml").read_text()
     assert "slides.md" in playlist
 
 
@@ -106,10 +106,10 @@ def test_md_playlist_references_md_modules(tmp_path):
 
 
 def test_refuses_existing_playlist(tmp_path):
-    """init_project refuses if lecture.yaml already exists."""
+    """init_project refuses if slidesonnet.yaml already exists."""
     target = tmp_path / "myproject"
     target.mkdir()
-    (target / "lecture.yaml").write_text("existing")
+    (target / "slidesonnet.yaml").write_text("existing")
 
     with pytest.raises(SlideSonnetError, match="Refusing to overwrite"):
         init_project(target, "md")
@@ -140,8 +140,8 @@ def test_error_lists_conflicting_files(tmp_path):
     """Error message includes the paths of conflicting files."""
     target = tmp_path / "myproject"
     target.mkdir()
-    (target / "lecture.yaml").write_text("existing")
+    (target / "slidesonnet.yaml").write_text("existing")
     (target / ".env").write_text("existing")
 
-    with pytest.raises(SlideSonnetError, match="lecture.yaml"):
+    with pytest.raises(SlideSonnetError, match="slidesonnet.yaml"):
         init_project(target, "md")

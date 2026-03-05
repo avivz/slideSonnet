@@ -34,7 +34,7 @@ video:
   silence_duration: 3.0
   crossfade: 0.5
 
-// Build with: slidesonnet build lecture.yaml
+// Build with: slidesonnet build
 modules:
   - part1.md
   - part2.tex

@@ -25,6 +25,7 @@ from slidesonnet.actions import (
     action_compose_narrated,
     action_compose_silent,
     action_concat_audio,
+    action_concat_pdfs,
     action_export_pdf_beamer,
     action_export_pdf_marp,
     action_extract_images,
@@ -81,6 +82,7 @@ def generate_tasks(
     build_dir: Path,
     playlist_dir: Path,
     output_path: Path,
+    pdf_output_path: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Generate doit task dicts for the full build pipeline.
 
@@ -90,6 +92,7 @@ def generate_tasks(
     audio_cache_dir = build_dir / "audio"
     all_segments: list[Path] = []
     all_tasks: list[dict[str, Any]] = []
+    all_module_pdfs: list[Path] = []
 
     for i, entry in enumerate(entries, start=1):
         source_path = playlist_dir / entry.path
@@ -150,7 +153,7 @@ def generate_tasks(
 
         # Task: extract images (+ compile step for Beamer)
         css_deps = sorted(str(p) for p in source_path.parent.glob("*.css"))
-        pdf_output_path = playlist_dir / f"{entry.path.stem}.pdf"
+        module_pdf_path = module_dir / f"{entry.path.stem}.pdf"
 
         if entry.module_type == ModuleType.BEAMER:
             cache_pdf = slides_dir / f"{source_path.stem}.pdf"
@@ -184,17 +187,18 @@ def generate_tasks(
                 }
             )
 
-            # export_pdf: copy compiled PDF to playlist directory
+            # export_pdf: copy compiled PDF to cache
             all_tasks.append(
                 {
                     "name": f"export_pdf:{module_name}",
-                    "actions": [(action_export_pdf_beamer, [cache_pdf, pdf_output_path])],
+                    "actions": [(action_export_pdf_beamer, [cache_pdf, module_pdf_path])],
                     "file_dep": [str(cache_pdf)],
                     "task_dep": [f"compile_beamer:{module_name}"],
-                    "targets": [str(pdf_output_path)],
+                    "targets": [str(module_pdf_path)],
                     "verbosity": 2,
                 }
             )
+            all_module_pdfs.append(module_pdf_path)
         else:
             # MARP: extract_images (visual-hash tracks annotation-stripped content)
             all_tasks.append(
@@ -213,17 +217,18 @@ def generate_tasks(
                 }
             )
 
-            # export_pdf: marp --pdf (visual-hash tracks annotation-stripped content)
+            # export_pdf: marp --pdf to cache (visual-hash tracks annotation-stripped content)
             all_tasks.append(
                 {
                     "name": f"export_pdf:{module_name}",
-                    "actions": [(action_export_pdf_marp, [source_path, pdf_output_path])],
+                    "actions": [(action_export_pdf_marp, [source_path, module_pdf_path])],
                     "file_dep": css_deps,
-                    "targets": [str(pdf_output_path)],
+                    "targets": [str(module_pdf_path)],
                     "uptodate": [config_changed({"visual_hash": marp_visual_hash(source_text)})],
                     "verbosity": 2,
                 }
             )
+            all_module_pdfs.append(module_pdf_path)
 
         # Per-slide tasks
         segment_paths: list[Path] = []
@@ -419,5 +424,21 @@ def generate_tasks(
             "verbosity": 2,
         }
     )
+
+    # Task: concatenate per-module PDFs into a single output PDF
+    if all_module_pdfs and pdf_output_path is not None:
+        export_pdf_task_names = [
+            t["name"] for t in all_tasks if t["name"].startswith("export_pdf:")
+        ]
+        all_tasks.append(
+            {
+                "name": "assemble_pdf",
+                "actions": [(action_concat_pdfs, [all_module_pdfs, pdf_output_path])],
+                "file_dep": [str(p) for p in all_module_pdfs],
+                "task_dep": export_pdf_task_names,
+                "targets": [str(pdf_output_path)],
+                "verbosity": 2,
+            }
+        )
 
     return all_tasks

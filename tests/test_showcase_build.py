@@ -75,11 +75,11 @@ def test_showcase_builds(tmp_path: Path) -> None:
     # Replace 0-byte placeholder with a real MP4 for video passthrough
     _generate_placeholder_mp4(project / "animations" / "transition.mp4")
 
-    output = build(project / "lecture.yaml", tts_override="piper")
+    result = build(project / "lecture.yaml", tts_override="piper")
 
     # --- Final output exists and is a valid video ---
-    expected = project / "lecture.mp4"
-    assert output == expected
+    expected = project / "showcase.mp4"
+    assert result.output_path == expected
     assert expected.exists()
     assert expected.stat().st_size > 0
 

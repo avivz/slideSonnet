@@ -184,6 +184,21 @@ def action_export_pdf_beamer(
     shutil.copy2(cache_pdf, output_path)
 
 
+def action_concat_pdfs(pdf_paths: list[Path], output_path: Path) -> None:
+    """Concatenate multiple PDFs into one, or copy if single.
+
+    Uses ``pdfunite`` (from poppler-utils, ships with pdftoppm).
+    """
+    import subprocess
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if len(pdf_paths) == 1:
+        shutil.copy2(pdf_paths[0], output_path)
+    else:
+        cmd = ["pdfunite", *[str(p) for p in pdf_paths], str(output_path)]
+        subprocess.run(cmd, check=True, capture_output=True)
+
+
 def get_parser_and_extractor(
     module_type: ModuleType,
 ) -> tuple[type[SlideParser], Callable[[Path, Path], list[Path]]]:

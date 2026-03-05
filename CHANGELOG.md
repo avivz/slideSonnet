@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- Default config renamed to `slidesonnet.yaml` (auto-discovered in cwd; `lecture.yaml` fallback)
+- `output:` config field and `--output` / `-o` CLI flag for custom video naming
+- Output video defaults to directory name (e.g., `my-lecture/` produces `my-lecture.mp4`)
+- `slidesonnet pdf` now produces a single concatenated PDF via `pdfunite`
+- PLAYLIST argument is now optional on all commands (auto-discovers config in cwd)
+- `slidesonnet doctor` checks for `pdfunite`
 - SRT subtitle generation — every build produces a `.srt` file alongside the video
 - `slidesonnet subtitles` command to regenerate SRT from cached audio
 - `slidesonnet doctor` command to check external dependencies
@@ -27,6 +33,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Adversarial edge-case tests for MARP and Beamer parsers (24 tests covering nested delimiters, escaped characters, malformed annotations, empty slides)
 
 ### Changed
+- Default config file renamed from `lecture.yaml` to `slidesonnet.yaml` (`slidesonnet init` creates the new name; `lecture.yaml` auto-discovered as fallback)
+- `slidesonnet pdf` now produces a single concatenated PDF instead of per-module PDFs
+- Per-module PDFs generated into cache directory (fixes collision bug with same-named modules)
 - Playlist format migrated from Markdown with YAML front matter to pure `.yaml`
 - `init` command simplified: positional format argument, dropped `--from`
 - `utterances` command renamed to `list`

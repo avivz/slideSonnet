@@ -206,6 +206,7 @@ class ProjectConfig:
     """Full project configuration parsed from playlist YAML."""
 
     title: str = ""
+    output: str = ""
     tts: TTSConfig = field(default_factory=TTSConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
     voices: dict[str, VoiceConfig] = field(default_factory=dict)

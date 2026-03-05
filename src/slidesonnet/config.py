@@ -23,6 +23,7 @@ def load_config(raw: dict[str, Any], playlist_dir: Path) -> ProjectConfig:
 
     return ProjectConfig(
         title=raw.get("title", ""),
+        output=raw.get("output", ""),
         tts=tts,
         video=video,
         voices=voices,

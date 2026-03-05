@@ -12,6 +12,7 @@ from slidesonnet.models import VideoConfig, VoiceConfig, resolve_voice
 def test_load_defaults():
     config = load_config({}, Path("."))
     assert config.title == ""
+    assert config.output == ""
     assert config.tts.backend == "piper"
     assert config.tts.piper_model == "en_US-lessac-medium"
     assert config.video.resolution == "1920x1080"
@@ -93,6 +94,17 @@ def test_voices_per_backend_format():
     assert config.voices["narrator"].resolve("piper") == "en_US-amy-medium"
     assert config.voices["narrator"].resolve("elevenlabs") == "21m00Tcm4TlvDq8ikWAM"
     assert config.voices["narrator"].resolve("unknown") is None
+
+
+def test_output_field_present():
+    raw = {"output": "my-lecture.mp4"}
+    config = load_config(raw, Path("."))
+    assert config.output == "my-lecture.mp4"
+
+
+def test_output_field_absent():
+    config = load_config({}, Path("."))
+    assert config.output == ""
 
 
 def test_crossfade_default():

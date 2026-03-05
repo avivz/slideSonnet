@@ -37,7 +37,7 @@ def init_project(target_dir: Path, fmt: Literal["md", "tex"]) -> None:
     """
     ext = fmt  # "md" or "tex"
     targets = [
-        target_dir / "lecture.yaml",
+        target_dir / "slidesonnet.yaml",
         target_dir / ".gitignore",
         target_dir / ".env",
         target_dir / "pronunciation" / "cs-terms.md",
@@ -49,7 +49,7 @@ def init_project(target_dir: Path, fmt: Literal["md", "tex"]) -> None:
     target_dir.mkdir(parents=True, exist_ok=True)
 
     playlist_template = "example_playlist_tex.yaml" if fmt == "tex" else "example_playlist.yaml"
-    _write(target_dir / "lecture.yaml", _load_template(playlist_template))
+    _write(target_dir / "slidesonnet.yaml", _load_template(playlist_template))
     _write(target_dir / ".gitignore", _load_template("gitignore.txt"))
     _write(target_dir / ".env", _load_template("env.txt"))
 

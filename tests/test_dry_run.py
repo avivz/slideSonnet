@@ -345,8 +345,15 @@ class TestDryRunIntegrationBuildThenDryRun:
     """)
         playlist = _setup_project(tmp_path, slides_text=slides_text, backend="piper")
 
+        def _fake_export_pdf(source: Path, output_path: Path) -> None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"%PDF-1.4 fake")
+
         # Build (uses real marp-cli + piper)
-        with patch("slidesonnet.parsers.marp.export_pdf"):
+        with (
+            patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_export_pdf),
+            patch("slidesonnet.tasks.action_concat_pdfs", return_value=None),
+        ):
             build(playlist, tts_override="piper")
 
         # Dry-run should show all cached
@@ -383,7 +390,14 @@ class TestDryRunIntegrationEditSlide:
     """)
         playlist = _setup_project(tmp_path, slides_text=slides_text, backend="piper")
 
-        with patch("slidesonnet.parsers.marp.export_pdf"):
+        def _fake_export_pdf(source: Path, output_path: Path) -> None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"%PDF-1.4 fake")
+
+        with (
+            patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_export_pdf),
+            patch("slidesonnet.tasks.action_concat_pdfs", return_value=None),
+        ):
             build(playlist, tts_override="piper")
 
         # Edit one slide

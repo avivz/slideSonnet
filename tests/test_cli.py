@@ -140,6 +140,7 @@ def test_build_calls_pipeline(runner, tmp_path):
             quiet=False,
             no_srt=False,
             allow_api=False,
+            output_override=None,
         )
 
 
@@ -160,6 +161,7 @@ def test_build_with_tts_override(runner, tmp_path):
             quiet=False,
             no_srt=False,
             allow_api=True,
+            output_override=None,
         )
 
 
@@ -180,6 +182,7 @@ def test_build_with_preview(runner, tmp_path):
             quiet=False,
             no_srt=False,
             allow_api=False,
+            output_override=None,
         )
 
 
@@ -205,6 +208,7 @@ def test_preview_calls_build_with_piper(runner, tmp_path):
             until=None,
             quiet=False,
             no_srt=False,
+            output_override=None,
         )
 
 
@@ -213,7 +217,7 @@ def test_init_md(runner, tmp_path):
     result = runner.invoke(main, ["init", "md", str(target)])
     assert result.exit_code == 0
     assert "Project created" in result.output
-    assert (target / "lecture.yaml").exists()
+    assert (target / "slidesonnet.yaml").exists()
     assert (target / "01-intro" / "slides.md").exists()
     assert (target / "02-definitions" / "slides.md").exists()
 
@@ -223,7 +227,7 @@ def test_init_tex(runner, tmp_path):
     result = runner.invoke(main, ["init", "tex", str(target)])
     assert result.exit_code == 0
     assert "Project created" in result.output
-    assert (target / "lecture.yaml").exists()
+    assert (target / "slidesonnet.yaml").exists()
     assert (target / "01-intro" / "slides.tex").exists()
     assert (target / "02-definitions" / "slides.tex").exists()
 
@@ -239,7 +243,7 @@ def test_init_default_dir(runner, tmp_path):
 def test_init_refuses_overwrite(runner, tmp_path):
     target = tmp_path / "existing"
     target.mkdir()
-    (target / "lecture.yaml").write_text("existing content")
+    (target / "slidesonnet.yaml").write_text("existing content")
     result = runner.invoke(main, ["init", "md", str(target)])
     assert result.exit_code == 1
 
@@ -390,6 +394,7 @@ def test_build_with_until_slides(runner, tmp_path):
             quiet=False,
             no_srt=False,
             allow_api=False,
+            output_override=None,
         )
 
 
@@ -414,6 +419,7 @@ def test_build_with_until_tts(runner, tmp_path):
             quiet=False,
             no_srt=False,
             allow_api=False,
+            output_override=None,
         )
 
 
@@ -438,6 +444,7 @@ def test_build_with_until_segments(runner, tmp_path):
             quiet=False,
             no_srt=False,
             allow_api=False,
+            output_override=None,
         )
 
 
@@ -461,6 +468,7 @@ def test_preview_with_until(runner, tmp_path):
             until="tts",
             quiet=False,
             no_srt=False,
+            output_override=None,
         )
 
 
@@ -480,22 +488,12 @@ def test_pdf_calls_export_pdfs(runner, tmp_path):
     playlist.write_text(_MINIMAL_PLAYLIST)
 
     with patch("slidesonnet.cli.run_export_pdfs") as mock_export:
-        mock_export.return_value = [tmp_path / "a.pdf"]
+        pdf_out = tmp_path / "lecture.pdf"
+        mock_export.return_value = pdf_out
         result = runner.invoke(main, ["pdf", str(playlist)])
         assert result.exit_code == 0
         mock_export.assert_called_once_with(playlist)
-        assert "a.pdf" in result.output
-
-
-def test_pdf_no_modules(runner, tmp_path):
-    playlist = tmp_path / "lecture.yaml"
-    playlist.write_text(_MINIMAL_PLAYLIST)
-
-    with patch("slidesonnet.cli.run_export_pdfs") as mock_export:
-        mock_export.return_value = []
-        result = runner.invoke(main, ["pdf", str(playlist)])
-        assert result.exit_code == 0
-        assert "No slide modules" in result.output
+        assert "lecture.pdf" in result.output
 
 
 # ---- list CLI tests ----
@@ -661,6 +659,7 @@ def test_build_no_srt_flag(runner, tmp_path):
             quiet=False,
             no_srt=True,
             allow_api=False,
+            output_override=None,
         )
 
 
@@ -681,6 +680,7 @@ def test_preview_no_srt_flag(runner, tmp_path):
             until=None,
             quiet=False,
             no_srt=True,
+            output_override=None,
         )
 
 
@@ -754,6 +754,7 @@ def test_allow_api_flag_forwarded(runner, tmp_path):
             quiet=False,
             no_srt=False,
             allow_api=True,
+            output_override=None,
         )
 
 
@@ -775,6 +776,7 @@ def test_tts_elevenlabs_implies_allow_api(runner, tmp_path):
             quiet=False,
             no_srt=False,
             allow_api=True,
+            output_override=None,
         )
 
 
@@ -900,3 +902,75 @@ def test_utterances_multiple_modules(runner, tmp_path):
         assert "# 02-defs/slides.tex" in result.output
         assert "First module." in result.output
         assert "Second module." in result.output
+
+
+# ---- Auto-discovery tests ----
+
+
+def test_build_auto_discovers_slidesonnet_yaml(runner, tmp_path, monkeypatch):
+    """build without PLAYLIST arg discovers slidesonnet.yaml in cwd."""
+    monkeypatch.chdir(tmp_path)
+    playlist = tmp_path / "slidesonnet.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "test.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["build"])
+        assert result.exit_code == 0
+        mock_build.assert_called_once()
+        call_args = mock_build.call_args
+        assert call_args[1]["output_override"] is None or call_args[0][0] == playlist
+
+
+def test_build_auto_discovers_lecture_yaml_fallback(runner, tmp_path, monkeypatch):
+    """build without PLAYLIST arg falls back to lecture.yaml."""
+    monkeypatch.chdir(tmp_path)
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "test.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["build"])
+        assert result.exit_code == 0
+
+
+def test_build_auto_discovery_fails(runner, tmp_path, monkeypatch):
+    """build without PLAYLIST arg in empty dir fails with helpful message."""
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(main, ["build"])
+    assert result.exit_code != 0
+    assert "No playlist file found" in result.output
+
+
+def test_build_slidesonnet_yaml_priority(runner, tmp_path, monkeypatch):
+    """slidesonnet.yaml is preferred over lecture.yaml."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "slidesonnet.yaml").write_text(_MINIMAL_PLAYLIST)
+    (tmp_path / "lecture.yaml").write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "test.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["build"])
+        assert result.exit_code == 0
+        call_playlist = mock_build.call_args[0][0]
+        assert call_playlist.name == "slidesonnet.yaml"
+
+
+# ---- --output flag tests ----
+
+
+def test_build_output_flag(runner, tmp_path):
+    """--output / -o passes output_override to run_build."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "custom.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["build", str(playlist), "-o", str(out)])
+        assert result.exit_code == 0
+        mock_build.assert_called_once()
+        assert mock_build.call_args[1]["output_override"] == out

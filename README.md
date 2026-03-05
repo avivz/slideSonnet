@@ -7,12 +7,12 @@ Write your slides in [MARP](https://marp.app/) Markdown or LaTeX Beamer, add nar
 ## How it works
 
 ```
-lecture.yaml (playlist)
+slidesonnet.yaml (playlist)
     |
     ├── 01-intro/slides.md   → [parse → TTS → compose] → module_01.mp4
     ├── animations/euler.mp4  → [passthrough]            → module_02.mp4
     ├── 02-proofs/slides.tex  → [parse → TTS → compose] → module_03.mp4
-    └── [assemble] ─────────────────────────────────────→ lecture.mp4
+    └── [assemble] ─────────────────────────────────────→ my-course.mp4
 ```
 
 A **playlist** file chains modules together — MARP slides, Beamer slides, and pre-existing video files. Each module is built independently, then concatenated into the final video. [pydoit](https://pydoit.org/) manages the build graph with content-hash caching, so only changed slides trigger TTS.
@@ -52,10 +52,10 @@ The `[piper]` extra includes [Piper TTS](https://github.com/rhasspy/piper) for f
 ```bash
 # Create an example project (MARP Markdown)
 slidesonnet init md myproject
-cd myproject
 
 # Build the video
-slidesonnet build lecture.yaml
+cd myproject
+slidesonnet build
 ```
 
 ## Showcase example
@@ -69,11 +69,11 @@ The `examples/showcase/` directory is a full-featured project that exercises eve
 | `part3.md` | MARP | Voice presets, pace control, skip, pronunciation triggers |
 | `animations/transition.mp4` | Video | Passthrough (no parsing/TTS) |
 
-It also includes two pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with all configuration options (`lecture.yaml`).
+It also includes two pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with all configuration options (`slidesonnet.yaml`).
 
 ```bash
 cd examples/showcase
-slidesonnet build lecture.yaml
+slidesonnet build
 ```
 
 ## Writing slides
@@ -257,19 +257,19 @@ The playlist references env var names, never values: `api_key_env: ELEVENLABS_AP
 ## CLI reference
 
 ```
-slidesonnet build lecture.yaml              # build video + SRT subtitles
-slidesonnet build lecture.yaml --tts piper  # override TTS backend
-slidesonnet build lecture.yaml --no-srt     # build without generating subtitles
-slidesonnet build lecture.yaml --dry-run    # show what would be built (no TTS/FFmpeg)
-slidesonnet preview lecture.yaml            # quick build with local Piper TTS
-slidesonnet subtitles lecture.yaml          # regenerate SRT from cached audio
+slidesonnet build                          # build video + SRT subtitles
+slidesonnet build --tts piper              # override TTS backend
+slidesonnet build --no-srt                 # build without generating subtitles
+slidesonnet build --dry-run                # show what would be built (no TTS/FFmpeg)
+slidesonnet preview                        # quick build with local Piper TTS
+slidesonnet subtitles                      # regenerate SRT from cached audio
 slidesonnet preview-slide slides.md 3       # play one slide's audio
-slidesonnet preview-slide slides.md 3 -p lecture.yaml  # with playlist config
+slidesonnet preview-slide slides.md 3 -p slidesonnet.yaml  # with playlist config
 slidesonnet init md myproject               # MARP Markdown project
 slidesonnet init tex myproject              # Beamer LaTeX project
-slidesonnet list lecture.yaml               # list slides with cache status per slide
-slidesonnet utterances lecture.yaml         # export narration text for proofreading
-slidesonnet clean lecture.yaml              # clean cache (keeps API audio by default)
+slidesonnet list                           # list slides with cache status per slide
+slidesonnet utterances                     # export narration text for proofreading
+slidesonnet clean                          # clean cache (keeps API audio by default)
 slidesonnet doctor                         # check installed dependencies
 ```
 
@@ -285,7 +285,7 @@ TTS audio is cached by content hash of the narration text, not by slide number. 
 Use `--dry-run` (or `-n`) to see what a build would do without making any API calls:
 
 ```
-$ slidesonnet build lecture.yaml --dry-run
+$ slidesonnet build --dry-run
 8 narrated slides: 5 cached, 3 need TTS (~1,200 characters via elevenlabs)
 ```
 
@@ -295,29 +295,29 @@ Build artifacts live in `cache/` next to the playlist file. Add it to `.gitignor
 
 ## Subtitles
 
-Every build automatically generates an SRT subtitle file alongside the video (`lecture.srt` next to `lecture.mp4`). The subtitles use the original narration text (before pronunciation substitutions) and are timed to match the audio.
+Every build automatically generates an SRT subtitle file alongside the video (e.g., `my-course.srt` next to `my-course.mp4`). The subtitles use the original narration text (before pronunciation substitutions) and are timed to match the audio.
 
 Long narrations are split into subtitle-sized chunks at sentence boundaries, then clause boundaries, then word boundaries — each chunk timed proportionally by character count.
 
 Use the SRT file as a starting point for translation or editing with any subtitle tool. To skip generation, pass `--no-srt`. To regenerate from cache without rebuilding:
 
 ```
-slidesonnet subtitles lecture.yaml
+slidesonnet subtitles
 ```
 
 ## Project layout
 
 ```
 my-course/
-├── lecture.yaml              # playlist + config
+├── slidesonnet.yaml           # playlist + config
 ├── pronunciation/
 │   └── cs-terms.md
 ├── 01-intro/slides.md        # MARP module
 ├── 02-proofs/slides.tex      # Beamer module
 ├── animations/euler.mp4      # video module
 ├── .env                      # API keys (gitignored)
-├── lecture.mp4               # final output video
-├── lecture.srt               # auto-generated subtitles
+├── my-course.mp4             # final output video
+├── my-course.srt             # auto-generated subtitles
 ├── cache/                    # build artifacts (gitignored)
 │   ├── audio/                # TTS cache (content-addressed)
 │   ├── 01-intro/

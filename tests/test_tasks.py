@@ -94,6 +94,7 @@ def _generate(tmp_path, playlist):
     build_dir = tmp_path / "cache"
     build_dir.mkdir()
     output_path = build_dir / "lecture.mp4"
+    pdf_output_path = tmp_path / "lecture.pdf"
 
     tasks = generate_tasks(
         entries=entries,
@@ -102,6 +103,7 @@ def _generate(tmp_path, playlist):
         build_dir=build_dir,
         playlist_dir=tmp_path,
         output_path=output_path,
+        pdf_output_path=pdf_output_path,
     )
     return tasks
 
@@ -118,6 +120,31 @@ def test_generates_correct_task_types(tmp_path):
     assert "export_pdf" in basenames
     assert "concat" not in basenames
     assert "assemble" in basenames
+    assert "assemble_pdf" in basenames
+
+
+def test_assemble_pdf_task(tmp_path):
+    """assemble_pdf task depends on all export_pdf tasks and targets a single PDF."""
+    playlist = _setup_project(tmp_path)
+    tasks = _generate(tmp_path, playlist)
+
+    assemble_pdf = next((t for t in tasks if t["name"] == "assemble_pdf"), None)
+    assert assemble_pdf is not None
+    assert str(tmp_path / "lecture.pdf") in assemble_pdf["targets"]
+    # Should depend on export_pdf tasks
+    export_pdf_names = [t["name"] for t in tasks if t["name"].startswith("export_pdf:")]
+    assert assemble_pdf["task_dep"] == export_pdf_names
+
+
+def test_per_module_pdfs_in_cache(tmp_path):
+    """Per-module PDFs go to cache dir, not playlist dir."""
+    playlist = _setup_project(tmp_path)
+    tasks = _generate(tmp_path, playlist)
+
+    export_pdf_tasks = [t for t in tasks if t["name"].startswith("export_pdf:")]
+    for t in export_pdf_tasks:
+        target = t["targets"][0]
+        assert "cache" in target, f"PDF target should be in cache: {target}"
 
 
 def test_tts_tasks_per_narrated_slide(tmp_path):
@@ -1147,8 +1174,10 @@ def test_beamer_compile_and_export_pdf_tasks(tmp_path: Path) -> None:
     export_task = next(t for t in tasks if t["name"] == "export_pdf:01_slides")
     assert "compile_beamer:01_slides" in export_task.get("task_dep", [])
 
-    # export_pdf target is in the playlist directory
-    assert export_task["targets"][0] == str(tmp_path / "slides.pdf")
+    # export_pdf target is in the cache directory
+    assert export_task["targets"][0] == str(
+        tmp_path / "cache" / "01-theory" / "slides" / "slides.pdf"
+    )
 
 
 def test_video_module_no_export_pdf(tmp_path: Path) -> None:

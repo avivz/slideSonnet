@@ -20,8 +20,8 @@ video:
   crossfade: 0.5
 
 // This is an example slideSonnet project.
-// Build with: slidesonnet build lecture.yaml
-// Preview with: slidesonnet preview lecture.yaml
+// Build with: slidesonnet build
+// Preview with: slidesonnet preview
 modules:
   - 01-intro/slides.tex
   - 02-definitions/slides.tex

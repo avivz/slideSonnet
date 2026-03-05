@@ -6,9 +6,7 @@ Current version: 0.1.0 (alpha)
 
 1. **Tag and publish v0.1.0a1** — CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
 
-3. **Remove large files from git history** — ~54 MB tracked media inflating `.git/` to 123 MB. Use `git filter-repo` or BFG to purge before promoting the repo publicly. MP4s should be gitignored; ElevenLabs caches need alternate storage (LFS or external).
-
-4. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images). The `--until` flag exists but may not cover all use cases.
+3. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images). The `--until` flag exists but may not cover all use cases.
 
 ## Next — before beta
 
@@ -32,7 +30,7 @@ Current version: 0.1.0 (alpha)
 
 1. **Hebrew TTS** — Research is done (see `dev/hebrew-tts-research.md`). LightBlue Piper+Phonikud is the most promising local path. Cartesia Sonic-3 for cloud. Requires a new backend module.
 
-2. **Watch mode** — `slidesonnet watch slides.md 3 -p lecture.yaml` to auto-rebuild on file save. Adds watchdog dependency.
+2. **Watch mode** — `slidesonnet watch slides.md 3 -p slidesonnet.yaml` to auto-rebuild on file save. Adds watchdog dependency.
 
 3. **Pronunciation correction workflow** — Interactive tooling for iterating on pronunciation dictionaries.
 
@@ -70,3 +68,4 @@ Current version: 0.1.0 (alpha)
 - [x] Cache-only default mode with `--allow-api` preflight check
 - [x] Lower `requires-python` to `>=3.12` (no 3.13-only features used)
 - [x] `slidesonnet utterances` narration text export for proofreading
+- [x] Purge large files from git history; binary assets moved to Git LFS

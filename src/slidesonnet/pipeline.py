@@ -51,11 +51,43 @@ class _PreparedBuild:
     entries: list[PlaylistEntry]
     tts: TTSEngine
     output_path: Path
+    pdf_output_path: Path
+
+
+def _resolve_output_name(
+    playlist_dir: Path,
+    config_output: str,
+    output_override: Path | None = None,
+) -> Path:
+    """Determine the output video path.
+
+    Precedence: ``output_override`` (--output flag, resolved relative to cwd)
+    > ``config_output`` (output: YAML field, resolved relative to playlist dir)
+    > parent directory name + ``.mp4``.
+    """
+    if output_override is not None:
+        p = Path(output_override)
+        if not p.is_absolute():
+            p = Path.cwd() / p
+        if p.suffix != ".mp4":
+            p = p.with_suffix(".mp4")
+        return p.resolve()
+
+    if config_output:
+        p = playlist_dir / config_output
+        if p.suffix != ".mp4":
+            p = p.with_suffix(".mp4")
+        return p.resolve()
+
+    # Default: directory name
+    dir_name = playlist_dir.name
+    return (playlist_dir / (dir_name + ".mp4")).resolve()
 
 
 def _prepare(
     playlist_path: Path,
     tts_override: Literal["piper", "elevenlabs"] | None = None,
+    output_override: Path | None = None,
 ) -> _PreparedBuild:
     """Resolve paths, load config, create TTS engine.
 
@@ -83,7 +115,8 @@ def _prepare(
     tts = create_tts(config)
 
     # Output path
-    output_path = playlist_dir / (playlist_path.stem + ".mp4")
+    output_path = _resolve_output_name(playlist_dir, config.output, output_override)
+    pdf_output_path = output_path.with_suffix(".pdf")
 
     return _PreparedBuild(
         playlist_path=playlist_path,
@@ -93,6 +126,7 @@ def _prepare(
         entries=entries,
         tts=tts,
         output_path=output_path,
+        pdf_output_path=pdf_output_path,
     )
 
 
@@ -369,12 +403,20 @@ def dry_run(
 
 
 _STAGE_PREFIXES: dict[str, tuple[str, ...]] = {
-    "slides": ("compile_beamer:", "extract_images:", "export_pdf:"),
-    "tts": ("compile_beamer:", "extract_images:", "export_pdf:", "tts:", "concat_audio:"),
+    "slides": ("compile_beamer:", "extract_images:", "export_pdf:", "assemble_pdf"),
+    "tts": (
+        "compile_beamer:",
+        "extract_images:",
+        "export_pdf:",
+        "assemble_pdf",
+        "tts:",
+        "concat_audio:",
+    ),
     "segments": (
         "compile_beamer:",
         "extract_images:",
         "export_pdf:",
+        "assemble_pdf",
         "tts:",
         "concat_audio:",
         "compose:",
@@ -404,6 +446,7 @@ def build(
     quiet: bool = False,
     no_srt: bool = False,
     allow_api: bool = False,
+    output_override: Path | None = None,
 ) -> BuildResult:
     """Execute the full build pipeline for a playlist.
 
@@ -411,7 +454,7 @@ def build(
     Raises :class:`APINotAllowedError` if paid API calls are needed and
     *allow_api* is False (unless *until* is ``"slides"``).
     """
-    prep = _prepare(playlist_path, tts_override)
+    prep = _prepare(playlist_path, tts_override, output_override)
 
     if not allow_api and until != "slides":
         _preflight_api_check(prep)
@@ -424,7 +467,8 @@ def build(
         prep.config.video.preset = "ultrafast"
         prep.config.video.crf = 32
         prep.config.video.crossfade = 0.0
-        prep.output_path = prep.playlist_dir / (playlist_path.stem + "_preview.mp4")
+        stem = prep.output_path.stem
+        prep.output_path = prep.output_path.with_name(stem + "_preview.mp4")
 
     # Create directories
     prep.build_dir.mkdir(parents=True, exist_ok=True)
@@ -439,6 +483,7 @@ def build(
         build_dir=prep.build_dir,
         playlist_dir=prep.playlist_dir,
         output_path=prep.output_path,
+        pdf_output_path=prep.pdf_output_path,
     )
 
     # Filter tasks by stage
@@ -721,41 +766,51 @@ def _run_doit(
     return elapsed
 
 
-def export_pdfs(playlist_path: Path) -> list[Path]:
-    """Export PDFs for all slide modules in a playlist (no doit, no images).
+def export_pdfs(
+    playlist_path: Path,
+    output_override: Path | None = None,
+) -> Path:
+    """Export a concatenated PDF for all slide modules in a playlist.
 
-    Compiles Beamer sources and runs marp --pdf for MARP modules.
-    Returns list of output PDF paths.
+    Compiles Beamer sources and runs marp --pdf for MARP modules,
+    then concatenates into a single output PDF.
+    Returns the output PDF path.
     """
     from slidesonnet.actions import (
         action_compile_beamer,
+        action_concat_pdfs,
         action_export_pdf_beamer,
         action_export_pdf_marp,
     )
 
-    prep = _prepare(playlist_path)
-    output_paths: list[Path] = []
+    prep = _prepare(playlist_path, output_override=output_override)
+    per_module_pdfs: list[Path] = []
 
-    for entry in prep.entries:
+    for i, entry in enumerate(prep.entries, start=1):
         if entry.module_type == ModuleType.VIDEO:
             continue
 
         source_path = prep.playlist_dir / entry.path
-        pdf_output_path = prep.playlist_dir / f"{entry.path.stem}.pdf"
+        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
+        cache_pdf = module_dir / f"{i:02d}_{entry.path.stem}.pdf"
 
         if entry.module_type == ModuleType.BEAMER:
-            module_dir = prep.build_dir / entry.path.parent / entry.path.stem
             slides_dir = module_dir / "slides"
             slides_dir.mkdir(parents=True, exist_ok=True)
-            cache_pdf = slides_dir / f"{source_path.stem}.pdf"
-            action_compile_beamer(source_path, slides_dir, cache_pdf)
-            action_export_pdf_beamer(cache_pdf, pdf_output_path)
+            compiled_pdf = slides_dir / f"{source_path.stem}.pdf"
+            action_compile_beamer(source_path, slides_dir, compiled_pdf)
+            action_export_pdf_beamer(compiled_pdf, cache_pdf)
         else:
-            action_export_pdf_marp(source_path, pdf_output_path)
+            module_dir.mkdir(parents=True, exist_ok=True)
+            action_export_pdf_marp(source_path, cache_pdf)
 
-        output_paths.append(pdf_output_path)
+        per_module_pdfs.append(cache_pdf)
 
-    return output_paths
+    if not per_module_pdfs:
+        raise SlideSonnetError("No slide modules to export.")
+
+    action_concat_pdfs(per_module_pdfs, prep.pdf_output_path)
+    return prep.pdf_output_path
 
 
 @dataclass

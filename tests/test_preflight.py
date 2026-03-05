@@ -40,6 +40,7 @@ def _make_prep(
         entries=[entry],
         tts=tts,
         output_path=Path("/fake/lecture.mp4"),
+        pdf_output_path=Path("/fake/lecture.pdf"),
     )
     return prep
 

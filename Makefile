@@ -25,29 +25,29 @@ typecheck:
 
 # --- Examples: showcase ---
 showcase:
-	cd examples/showcase && ../../$(SLIDESONNET) build lecture.yaml
+	cd examples/showcase && ../../$(SLIDESONNET) build
 
 showcase-piper:
-	cd examples/showcase && ../../$(SLIDESONNET) build lecture.yaml --tts piper
+	cd examples/showcase && ../../$(SLIDESONNET) build --tts piper
 
 clean-showcase:
-	cd examples/showcase && ../../$(SLIDESONNET) clean lecture.yaml
+	cd examples/showcase && ../../$(SLIDESONNET) clean
 
 # --- Examples: basel-problem ---
 basel:
-	cd examples/basel-problem && ../../$(SLIDESONNET) build lecture.yaml
+	cd examples/basel-problem && ../../$(SLIDESONNET) build
 
 basel-piper:
-	cd examples/basel-problem && ../../$(SLIDESONNET) build lecture.yaml --tts piper
+	cd examples/basel-problem && ../../$(SLIDESONNET) build --tts piper
 
 clean-basel:
-	cd examples/basel-problem && ../../$(SLIDESONNET) clean lecture.yaml
+	cd examples/basel-problem && ../../$(SLIDESONNET) clean
 
 purge-showcase:
-	cd examples/showcase && ../../$(SLIDESONNET) clean lecture.yaml --keep nothing
+	cd examples/showcase && ../../$(SLIDESONNET) clean --keep nothing
 
 purge-basel:
-	cd examples/basel-problem && ../../$(SLIDESONNET) clean lecture.yaml --keep nothing
+	cd examples/basel-problem && ../../$(SLIDESONNET) clean --keep nothing
 
 # --- Aggregate ---
 clean-examples: clean-showcase clean-basel

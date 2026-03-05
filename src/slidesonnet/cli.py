@@ -55,6 +55,27 @@ def _configure_logging(quiet: bool = False) -> None:
     logging.root.setLevel(logging.WARNING if quiet else logging.INFO)
 
 
+_AUTO_NAMES = ("slidesonnet.yaml", "lecture.yaml")
+
+
+def _discover_playlist(playlist: Path | None) -> Path:
+    """Return the playlist path, auto-discovering if not provided.
+
+    Checks for ``slidesonnet.yaml`` then ``lecture.yaml`` in the current
+    directory when *playlist* is None.
+    """
+    if playlist is not None:
+        return playlist
+    for name in _AUTO_NAMES:
+        candidate = Path(name)
+        if candidate.exists():
+            return candidate
+    raise click.UsageError(
+        "No playlist file found. Create slidesonnet.yaml in the current directory,\n"
+        "or pass the path explicitly: slidesonnet build <playlist.yaml>"
+    )
+
+
 def _print_build_result(result: BuildResult) -> None:
     """Print a single consolidated build completion line."""
     if result.until:
@@ -102,21 +123,25 @@ def main(ctx: click.Context, quiet: bool) -> None:
 
     \b
     Commands:
-      build      PLAYLIST [--tts ...] [--preview] [-n] [--until STAGE] [--allow-api]
-      preview    PLAYLIST [--until STAGE]     (= build --tts piper --preview)
-      subtitles  PLAYLIST [-o OUTPUT]         (generate SRT from cache)
-      pdf        PLAYLIST                     (export PDFs only)
-      list       PLAYLIST [--tts ...]         (list slides with narration)
-      utterances PLAYLIST [-o FILE] [--tts ...] (export narration text)
-      preview-slide SLIDES N [-p PLAYLIST]    (play one slide's audio)
-      init       md|tex [DIR]                 (scaffold a new project)
-      clean      PLAYLIST [--keep nothing|api|current|exact]
-      doctor                               (check installed dependencies)
+      build      [PLAYLIST] [--tts ...] [--preview] [-n] [--until STAGE] [-o OUTPUT]
+      preview    [PLAYLIST] [--until STAGE]     (= build --tts piper --preview)
+      subtitles  [PLAYLIST] [-o OUTPUT]         (generate SRT from cache)
+      pdf        [PLAYLIST]                     (export concatenated PDF)
+      list       [PLAYLIST] [--tts ...]         (list slides with narration)
+      utterances [PLAYLIST] [-o FILE] [--tts ...] (export narration text)
+      preview-slide SLIDES N [-p PLAYLIST]      (play one slide's audio)
+      init       md|tex [DIR]                   (scaffold a new project)
+      clean      [PLAYLIST] [--keep nothing|api|current|exact]
+      doctor                                    (check installed dependencies)
+
+    \b
+    PLAYLIST defaults to slidesonnet.yaml (or lecture.yaml) in the current
+    directory if not specified.
 
     \b
     Quick start:
       slidesonnet init md my-lecture
-      slidesonnet build my-lecture/lecture.yaml --tts piper
+      cd my-lecture && slidesonnet build --tts piper
 
     Run "slidesonnet COMMAND --help" for details on a specific command.
     """
@@ -143,7 +168,7 @@ def _print_dry_run(result: DryRunResult) -> None:
 
 
 @main.command()
-@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
 @click.option(
     "--tts",
     type=click.Choice(["piper", "elevenlabs"]),
@@ -158,23 +183,26 @@ def _print_dry_run(result: DryRunResult) -> None:
 )
 @click.option("--no-srt", is_flag=True, help="Skip SRT subtitle generation")
 @click.option("--allow-api", is_flag=True, help="Allow paid API calls (e.g. ElevenLabs TTS)")
+@click.option("-o", "--output", type=click.Path(path_type=Path), help="Output video path")
 @click.pass_context
 def build(
     ctx: click.Context,
-    playlist: Path,
+    playlist: Path | None,
     tts: str | None,
     dry_run: bool,
     preview: bool,
     until: str | None,
     no_srt: bool,
     allow_api: bool,
+    output: Path | None,
 ) -> None:
     """Build an MP4 video from a playlist file.
 
     \b
     PLAYLIST is a YAML file that lists slide modules and configures
-    TTS, voice, and video settings. An SRT subtitle file is generated
-    alongside the video (use --no-srt to skip).
+    TTS, voice, and video settings. Defaults to slidesonnet.yaml (or
+    lecture.yaml) in the current directory if not specified. An SRT
+    subtitle file is generated alongside the video (use --no-srt to skip).
 
     \b
     When the playlist uses a paid TTS backend (e.g. ElevenLabs), the build
@@ -183,12 +211,16 @@ def build(
 
     \b
     Examples:
-      slidesonnet build lecture.yaml
-      slidesonnet build lecture.yaml --tts piper --preview
-      slidesonnet build lecture.yaml --allow-api       # allow paid TTS
-      slidesonnet build lecture.yaml -n               # dry-run
-      slidesonnet build lecture.yaml --until tts       # stop after audio
+      slidesonnet build
+      slidesonnet build --tts piper --preview
+      slidesonnet build --allow-api             # allow paid TTS
+      slidesonnet build -n                      # dry-run
+      slidesonnet build --until tts             # stop after audio
+      slidesonnet build -o my-lecture.mp4        # custom output name
     """
+    playlist = _discover_playlist(playlist)
+    if not playlist.exists():
+        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
     quiet: bool = ctx.obj.get("quiet", False)
     # Explicit --tts elevenlabs implies opt-in to paid API calls
     effective_allow_api = allow_api or tts == "elevenlabs"
@@ -210,6 +242,7 @@ def build(
                 quiet=quiet,
                 no_srt=no_srt,
                 allow_api=effective_allow_api,
+                output_override=output,
             )
             if not quiet:
                 _print_build_result(build_result)
@@ -224,7 +257,7 @@ def build(
 
 
 @main.command()
-@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
 @click.option("--dry-run", "-n", is_flag=True, help="Report cache status without building anything")
 @click.option(
     "--until",
@@ -232,14 +265,23 @@ def build(
     help="Run pipeline only up to STAGE (slides, tts, or segments)",
 )
 @click.option("--no-srt", is_flag=True, help="Skip SRT subtitle generation")
+@click.option("-o", "--output", type=click.Path(path_type=Path), help="Output video path")
 @click.pass_context
 def preview(
-    ctx: click.Context, playlist: Path, dry_run: bool, until: str | None, no_srt: bool
+    ctx: click.Context,
+    playlist: Path | None,
+    dry_run: bool,
+    until: str | None,
+    no_srt: bool,
+    output: Path | None,
 ) -> None:
     """Build a preview video using local Piper TTS (free, no API key).
 
-    Shorthand for: slidesonnet build PLAYLIST --tts piper --preview
+    Shorthand for: slidesonnet build --tts piper --preview
     """
+    playlist = _discover_playlist(playlist)
+    if not playlist.exists():
+        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
     quiet: bool = ctx.obj.get("quiet", False)
     try:
         if dry_run:
@@ -253,6 +295,7 @@ def preview(
                 until=until,
                 quiet=quiet,
                 no_srt=no_srt,
+                output_override=output,
             )
             if not quiet:
                 _print_build_result(build_result)
@@ -298,7 +341,7 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
 
 
 @main.command()
-@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
 @click.option(
     "-o",
     "--output",
@@ -310,7 +353,7 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
     type=click.Choice(["piper", "elevenlabs"]),
     help="TTS backend (for locating cached audio files)",
 )
-def subtitles(playlist: Path, output: Path | None, tts: str | None) -> None:
+def subtitles(playlist: Path | None, output: Path | None, tts: str | None) -> None:
     """Generate SRT subtitles from a previously built playlist.
 
     \b
@@ -319,9 +362,12 @@ def subtitles(playlist: Path, output: Path | None, tts: str | None) -> None:
 
     \b
     Examples:
-      slidesonnet subtitles lecture.yaml
-      slidesonnet subtitles lecture.yaml -o lecture_en.srt
+      slidesonnet subtitles
+      slidesonnet subtitles -o lecture_en.srt
     """
+    playlist = _discover_playlist(playlist)
+    if not playlist.exists():
+        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
     try:
         srt_path = run_generate_srt(
             playlist,
@@ -338,7 +384,7 @@ def subtitles(playlist: Path, output: Path | None, tts: str | None) -> None:
 
 
 @main.command()
-@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
 @click.option(
     "-o",
     "--output",
@@ -350,7 +396,7 @@ def subtitles(playlist: Path, output: Path | None, tts: str | None) -> None:
     type=click.Choice(["piper", "elevenlabs"]),
     help="TTS backend for pronunciation rules (default: from playlist config)",
 )
-def utterances(playlist: Path, output: Path | None, tts: str | None) -> None:
+def utterances(playlist: Path | None, output: Path | None, tts: str | None) -> None:
     """Export narration text for proofreading.
 
     \b
@@ -366,10 +412,13 @@ def utterances(playlist: Path, output: Path | None, tts: str | None) -> None:
 
     \b
     Examples:
-      slidesonnet utterances lecture.yaml
-      slidesonnet utterances lecture.yaml -o narration.txt
-      slidesonnet utterances lecture.yaml --tts piper
+      slidesonnet utterances
+      slidesonnet utterances -o narration.txt
+      slidesonnet utterances --tts piper
     """
+    playlist = _discover_playlist(playlist)
+    if not playlist.exists():
+        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
     try:
         modules = run_export_utterances(
             playlist,
@@ -411,7 +460,7 @@ def init(fmt: str, target: Path) -> None:
 
     \b
     Creates:
-      lecture.yaml, .gitignore, .env,
+      slidesonnet.yaml, .gitignore, .env,
       pronunciation/cs-terms.md,
       01-intro/slides.{md,tex},
       02-definitions/slides.{md,tex}
@@ -431,14 +480,14 @@ def init(fmt: str, target: Path) -> None:
         click.echo(f"Project created at {target}")
         if str(target) != ".":
             click.echo(f"\n  cd {target}")
-        click.echo("  slidesonnet preview lecture.yaml")
+        click.echo("  slidesonnet preview")
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)
 
 
 @main.command()
-@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
 @click.option(
     "--keep",
     type=click.Choice(["nothing", "api", "current", "exact"]),
@@ -447,7 +496,7 @@ def init(fmt: str, target: Path) -> None:
     help="What to preserve",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
-def clean(playlist: Path, keep: str, yes: bool) -> None:
+def clean(playlist: Path | None, keep: str, yes: bool) -> None:
     """Remove cached build artifacts for a playlist.
 
     \b
@@ -460,10 +509,13 @@ def clean(playlist: Path, keep: str, yes: bool) -> None:
 
     \b
     Examples:
-      slidesonnet clean lecture.yaml                    # keep API audio
-      slidesonnet clean lecture.yaml --keep current     # keep matching audio
-      slidesonnet clean lecture.yaml --keep nothing -y  # nuke everything
+      slidesonnet clean                              # keep API audio
+      slidesonnet clean --keep current               # keep matching audio
+      slidesonnet clean --keep nothing -y            # nuke everything
     """
+    playlist = _discover_playlist(playlist)
+    if not playlist.exists():
+        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
     build_dir = playlist.resolve().parent / "cache"
     if not build_dir.exists():
         click.echo("Nothing to clean.")
@@ -489,25 +541,24 @@ def clean(playlist: Path, keep: str, yes: bool) -> None:
 
 
 @main.command()
-@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
-def pdf(playlist: Path) -> None:
-    """Export PDFs for all slide modules in a playlist.
+@click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
+def pdf(playlist: Path | None) -> None:
+    """Export a concatenated PDF for all slide modules in a playlist.
 
     \b
-    Compiles Beamer sources and runs marp --pdf for MARP modules.
-    Skips video passthrough modules.
+    Compiles Beamer sources and runs marp --pdf for MARP modules,
+    then concatenates into a single output PDF.
 
     \b
     Examples:
-      slidesonnet pdf lecture.yaml
+      slidesonnet pdf
     """
+    playlist = _discover_playlist(playlist)
+    if not playlist.exists():
+        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
     try:
-        paths = run_export_pdfs(playlist)
-        if not paths:
-            click.echo("No slide modules to export.")
-            return
-        for p in paths:
-            click.echo(str(p))
+        pdf_path = run_export_pdfs(playlist)
+        click.echo(str(pdf_path))
     except SlideSonnetError as e:
         logger.error("%s", e)
         if isinstance(e, (ParserError, FFmpegError)):
@@ -523,13 +574,13 @@ def _truncate(text: str, width: int) -> str:
 
 
 @main.command("list")
-@click.argument("playlist", type=click.Path(exists=True, path_type=Path))
+@click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
 @click.option(
     "--tts",
     type=click.Choice(["piper", "elevenlabs"]),
     help="TTS backend for pronunciation rules (default: from playlist config)",
 )
-def list_cmd(playlist: Path, tts: str | None) -> None:
+def list_cmd(playlist: Path | None, tts: str | None) -> None:
     """List slides with voice and narration text.
 
     \b
@@ -539,9 +590,12 @@ def list_cmd(playlist: Path, tts: str | None) -> None:
 
     \b
     Examples:
-      slidesonnet list lecture.yaml
-      slidesonnet list lecture.yaml --tts piper
+      slidesonnet list
+      slidesonnet list --tts piper
     """
+    playlist = _discover_playlist(playlist)
+    if not playlist.exists():
+        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
     try:
         list_result = run_list_slides(
             playlist,
@@ -606,7 +660,7 @@ def doctor() -> None:
     """Check that required tools and dependencies are installed.
 
     \b
-    Checks: ffmpeg, ffprobe, marp-cli, pdflatex, pdftoppm, piper, elevenlabs.
+    Checks: ffmpeg, ffprobe, marp-cli, pdflatex, pdftoppm, pdfunite, piper, elevenlabs.
     Run this if builds fail with "command not found" or tool errors.
 
     \b

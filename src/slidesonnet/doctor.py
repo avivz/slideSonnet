@@ -117,6 +117,20 @@ def check_pdftoppm() -> CheckResult:
     return CheckResult("pdftoppm", "ok", version, "", "PDF to image conversion")
 
 
+def check_pdfunite() -> CheckResult:
+    """Check for pdfunite."""
+    if not shutil.which("pdfunite"):
+        return CheckResult(
+            "pdfunite",
+            "missing",
+            "",
+            "sudo apt install poppler-utils",
+            "PDF concatenation",
+        )
+    version = _get_cli_version(["pdfunite", "-v"], r"version\s+(\S+)", stderr=True) or "unknown"
+    return CheckResult("pdfunite", "ok", version, "", "PDF concatenation")
+
+
 def check_piper() -> CheckResult:
     """Check for piper TTS (PATH or venv fallback)."""
     found = shutil.which("piper")
@@ -176,7 +190,10 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
         ("Python", [check_python()]),
         ("Core (always required)", [check_ffmpeg(), check_ffprobe()]),
         ("MARP toolchain (for .md slides)", [check_marp()]),
-        ("Beamer toolchain (for .tex slides)", [check_pdflatex(), check_pdftoppm()]),
+        (
+            "Beamer toolchain (for .tex slides)",
+            [check_pdflatex(), check_pdftoppm(), check_pdfunite()],
+        ),
         ("TTS backends (at least one required)", [check_piper(), check_elevenlabs()]),
         ("API keys", [check_api_key()]),
     ]

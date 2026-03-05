@@ -9,7 +9,7 @@ import pytest
 
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import ProjectConfig, TTSConfig
-from slidesonnet.pipeline import _filter_tasks_until, _run_doit, build
+from slidesonnet.pipeline import _filter_tasks_until, _resolve_output_name, _run_doit, build
 from slidesonnet.tts import create_tts
 
 
@@ -122,15 +122,23 @@ def _fake_concat_xfade(segments, output, **kwargs):
     output.write_bytes(b"fake-xfade-video")
 
 
+def _fake_export_pdf(source, output_path):
+    """Mock export_pdf that creates a dummy PDF file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(b"%PDF-1.4 fake")
+
+
 @patch("slidesonnet.pipeline.create_tts")
-@patch("slidesonnet.parsers.marp.export_pdf")
+@patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_export_pdf)
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.tasks.action_concat_pdfs", return_value=None)
 def test_pipeline_parses_and_synthesizes(
+    mock_concat_pdfs,
     mock_duration,
     mock_compose,
     mock_silent,
@@ -156,14 +164,16 @@ def test_pipeline_parses_and_synthesizes(
 
 
 @patch("slidesonnet.pipeline.create_tts")
-@patch("slidesonnet.parsers.marp.export_pdf")
+@patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_export_pdf)
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.tasks.action_concat_pdfs", return_value=None)
 def test_content_addressed_cache(
+    mock_concat_pdfs,
     mock_duration,
     mock_compose,
     mock_silent,
@@ -192,14 +202,16 @@ def test_content_addressed_cache(
 
 
 @patch("slidesonnet.pipeline.create_tts")
-@patch("slidesonnet.parsers.marp.export_pdf")
+@patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_export_pdf)
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.tasks.action_concat_pdfs", return_value=None)
 def test_edit_one_slide_rebuilds_only_that(
+    mock_concat_pdfs,
     mock_duration,
     mock_compose,
     mock_silent,
@@ -237,14 +249,16 @@ def test_edit_one_slide_rebuilds_only_that(
 
 
 @patch("slidesonnet.pipeline.create_tts")
-@patch("slidesonnet.parsers.marp.export_pdf")
+@patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_export_pdf)
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.tasks.action_concat_pdfs", return_value=None)
 def test_utterance_files_created(
+    mock_concat_pdfs,
     mock_duration,
     mock_compose,
     mock_silent,
@@ -276,7 +290,7 @@ def _fake_concat_audio(audio_paths: list[Path], output: Path) -> None:
 
 
 @patch("slidesonnet.pipeline.create_tts")
-@patch("slidesonnet.parsers.marp.export_pdf")
+@patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_export_pdf)
 @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
 @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
 @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
@@ -284,7 +298,9 @@ def _fake_concat_audio(audio_paths: list[Path], output: Path) -> None:
 @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
 @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
 @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
+@patch("slidesonnet.tasks.action_concat_pdfs", return_value=None)
 def test_multi_part_per_say_caching(
+    mock_concat_pdfs: MagicMock,
     mock_duration: MagicMock,
     mock_compose: MagicMock,
     mock_silent: MagicMock,
@@ -472,6 +488,7 @@ class TestFilterTasksUntil:
         {"name": "compile_beamer:01_intro"},
         {"name": "extract_images:01_intro"},
         {"name": "export_pdf:01_intro"},
+        {"name": "assemble_pdf"},
         {"name": "tts:01_intro_slide_001"},
         {"name": "tts:01_intro_slide_002"},
         {"name": "concat_audio:01_intro_slide_001"},
@@ -491,6 +508,7 @@ class TestFilterTasksUntil:
             "compile_beamer:01_intro",
             "extract_images:01_intro",
             "export_pdf:01_intro",
+            "assemble_pdf",
         ]
 
     def test_tts_stage(self) -> None:
@@ -500,6 +518,7 @@ class TestFilterTasksUntil:
             "compile_beamer:01_intro",
             "extract_images:01_intro",
             "export_pdf:01_intro",
+            "assemble_pdf",
             "tts:01_intro_slide_001",
             "tts:01_intro_slide_002",
             "concat_audio:01_intro_slide_001",
@@ -510,4 +529,40 @@ class TestFilterTasksUntil:
         names = [t["name"] for t in result]
         # Everything except "assemble"
         assert "assemble" not in names
-        assert len(names) == 8
+        assert len(names) == 9
+
+
+class TestResolveOutputName:
+    """Tests for _resolve_output_name()."""
+
+    def test_default_uses_directory_name(self, tmp_path: Path) -> None:
+        playlist_dir = tmp_path / "my-lecture"
+        playlist_dir.mkdir()
+        result = _resolve_output_name(playlist_dir, "")
+        assert result == (playlist_dir / "my-lecture.mp4").resolve()
+
+    def test_config_output_relative(self, tmp_path: Path) -> None:
+        playlist_dir = tmp_path / "proj"
+        playlist_dir.mkdir()
+        result = _resolve_output_name(playlist_dir, "output.mp4")
+        assert result == (playlist_dir / "output.mp4").resolve()
+
+    def test_config_output_appends_mp4(self, tmp_path: Path) -> None:
+        playlist_dir = tmp_path / "proj"
+        playlist_dir.mkdir()
+        result = _resolve_output_name(playlist_dir, "lecture")
+        assert result.suffix == ".mp4"
+
+    def test_override_takes_precedence(self, tmp_path: Path) -> None:
+        playlist_dir = tmp_path / "proj"
+        playlist_dir.mkdir()
+        override = tmp_path / "custom.mp4"
+        result = _resolve_output_name(playlist_dir, "config-name.mp4", override)
+        assert result.name == "custom.mp4"
+
+    def test_override_appends_mp4(self, tmp_path: Path) -> None:
+        playlist_dir = tmp_path / "proj"
+        playlist_dir.mkdir()
+        override = tmp_path / "custom"
+        result = _resolve_output_name(playlist_dir, "", override)
+        assert result.suffix == ".mp4"

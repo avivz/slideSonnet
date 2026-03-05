@@ -13,7 +13,7 @@ Build, preview, clean, and inspect slideSonnet presentations.
 ### `slidesonnet build` — compile playlist to MP4
 
 ```bash
-slidesonnet build PLAYLIST [OPTIONS]
+slidesonnet build [PLAYLIST] [OPTIONS]
 ```
 
 | Flag | Effect |
@@ -27,15 +27,15 @@ slidesonnet build PLAYLIST [OPTIONS]
 | `--until tts` | Generate audio only (no video composition) |
 | `--until segments` | Compose segments only (no final assembly) |
 
-Output goes to `{playlist_dir}/{playlist_stem}.mp4` (or `_preview.mp4` with `--preview`).
+Output goes to `{playlist_dir}/{dir_name}.mp4` (or custom with `--output`; `_preview.mp4` with `--preview`).
 
 ### `slidesonnet preview` — quick preview with Piper
 
 ```bash
-slidesonnet preview PLAYLIST [--until STAGE]
+slidesonnet preview [PLAYLIST] [--until STAGE]
 ```
 
-Shortcut for `slidesonnet build PLAYLIST --tts piper --preview`. Always free, always fast. Supports `--no-srt` to skip subtitle generation.
+Shortcut for `slidesonnet build --tts piper --preview`. Always free, always fast. Supports `--no-srt` to skip subtitle generation.
 
 ### `slidesonnet preview-slide` — listen to one slide's narration
 
@@ -48,7 +48,7 @@ Synthesizes and plays audio for a single slide (1-based index). Uses Piper TTS. 
 ### `slidesonnet pdf` — export PDFs
 
 ```bash
-slidesonnet pdf PLAYLIST
+slidesonnet pdf [PLAYLIST]
 ```
 
 Exports all slide modules to PDF (pdflatex for Beamer, marp --pdf for MARP). Skips video passthrough modules.
@@ -56,7 +56,7 @@ Exports all slide modules to PDF (pdflatex for Beamer, marp --pdf for MARP). Ski
 ### `slidesonnet list` — list slides with cache status
 
 ```bash
-slidesonnet list PLAYLIST [--tts BACKEND]
+slidesonnet list [PLAYLIST] [--tts BACKEND]
 ```
 
 Prints a table of all slides showing slide number, source file, voice preset, character count, and narration text (after pronunciation substitutions). Each narrated slide is prefixed with a cache symbol: `●` = cached, `○` = needs TTS. A summary line shows totals. Useful for per-slide cache visibility and discovering slide numbers before using preview-slide.
@@ -64,7 +64,7 @@ Prints a table of all slides showing slide number, source file, voice preset, ch
 ### `slidesonnet subtitles` — generate SRT subtitles
 
 ```bash
-slidesonnet subtitles PLAYLIST [-o OUTPUT] [--tts BACKEND]
+slidesonnet subtitles [PLAYLIST] [-o OUTPUT] [--tts BACKEND]
 ```
 
 Generates an SRT subtitle file from cached audio durations and narration text. Requires a prior build (audio files must exist in cache). Output defaults to `{playlist_stem}.srt` alongside the playlist.
@@ -72,7 +72,7 @@ Generates an SRT subtitle file from cached audio durations and narration text. R
 ### `slidesonnet clean` — remove cached artifacts
 
 ```bash
-slidesonnet clean PLAYLIST [--keep LEVEL]
+slidesonnet clean [PLAYLIST] [--keep LEVEL]
 ```
 
 | Level | Keeps | Removes |
@@ -112,44 +112,44 @@ Creates a new project directory with a playlist, sample slides, pronunciation fi
 
 **Full build with Piper (free):**
 ```bash
-slidesonnet build lecture.yaml --tts piper
+slidesonnet build --tts piper
 ```
 
 **Quick preview iteration:**
 ```bash
-slidesonnet preview lecture.yaml
+slidesonnet preview
 ```
 
 **Check what needs rebuilding:**
 ```bash
-slidesonnet build lecture.yaml -n        # aggregate summary
-slidesonnet list lecture.yaml            # per-slide cache detail
+slidesonnet build -n                     # aggregate summary
+slidesonnet list                         # per-slide cache detail
 ```
 
 **Rebuild from scratch:**
 ```bash
-slidesonnet clean lecture.yaml && slidesonnet build lecture.yaml --tts piper
+slidesonnet clean && slidesonnet build --tts piper
 ```
 
 **Test just the TTS without composing video:**
 ```bash
-slidesonnet build lecture.yaml --tts piper --until tts
+slidesonnet build --tts piper --until tts
 ```
 
 **Listen to a specific slide's narration:**
 ```bash
-slidesonnet preview-slide slides.md 3 -p lecture.yaml
+slidesonnet preview-slide slides.md 3 -p slidesonnet.yaml
 ```
 
 **Regenerate subtitles from cache (e.g. after editing SRT):**
 ```bash
-slidesonnet subtitles lecture.yaml
-slidesonnet subtitles lecture.yaml -o lecture_en.srt
+slidesonnet subtitles
+slidesonnet subtitles -o lecture_en.srt
 ```
 
 **Build without subtitles:**
 ```bash
-slidesonnet build lecture.yaml --tts piper --no-srt
+slidesonnet build --tts piper --no-srt
 ```
 
 ## Critical Rules
