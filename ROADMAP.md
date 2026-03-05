@@ -14,17 +14,15 @@ Current version: 0.1.0 (alpha)
 
 1. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images). The `--until` flag exists but may not cover all use cases.
 
-2. **Integration tests in CI** — Install ffmpeg + Piper in CI and run at least one end-to-end build. Currently only unit tests run in CI.
+2. **ElevenLabs expressiveness** — Extra emotion and expressiveness parameters for ElevenLabs audio generation.
 
-3. **ElevenLabs expressiveness** — Extra emotion and expressiveness parameters for ElevenLabs audio generation.
+3. **Test coverage audit** — Identify missing and redundant tests. Ensure all CLI commands have test coverage.
 
-4. **Test coverage audit** — Identify missing and redundant tests. Ensure all CLI commands have test coverage.
+4. **Code review** — Audit for dead code, duplicated logic, fragile patterns. The parsing regex and annotation stripping logic appear in multiple places.
 
-5. **Code review** — Audit for dead code, duplicated logic, fragile patterns. The parsing regex and annotation stripping logic appear in multiple places.
+5. **Documentation review** — Ensure README, `docs/marp.md`, `docs/beamer.md`, and `--help` text are all consistent and complete.
 
-6. **Documentation review** — Ensure README, `docs/marp.md`, `docs/beamer.md`, and `--help` text are all consistent and complete.
-
-7. **Design a logo** — Needed for GitHub repo, PyPI page, project website, and YouTube branding. Do before public launch.
+6. **Design a logo** — Needed for GitHub repo, PyPI page, project website, and YouTube branding. Do before public launch.
 
 ## Later — backlog
 
