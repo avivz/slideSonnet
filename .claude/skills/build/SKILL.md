@@ -69,6 +69,14 @@ slidesonnet subtitles [PLAYLIST] [-o OUTPUT] [--tts BACKEND]
 
 Generates an SRT subtitle file from cached audio durations and narration text. Requires a prior build (audio files must exist in cache). Output defaults to `{playlist_stem}.srt` alongside the playlist.
 
+### `slidesonnet utterances` — export narration text
+
+```bash
+slidesonnet utterances [PLAYLIST] [-o OUTPUT] [--tts BACKEND]
+```
+
+Exports all narration text (after pronunciation substitutions) for proofreading. Output defaults to stdout. Use `-o FILE` to write to a file. Useful for reviewing what TTS will actually say before building.
+
 ### `slidesonnet clean` — remove cached artifacts
 
 ```bash
