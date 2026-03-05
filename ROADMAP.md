@@ -4,27 +4,27 @@ Current version: 0.1.0 (alpha)
 
 ## Now — ship first release
 
-1. **Tag and publish v0.1.0a1** — CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
+1. **Rewrite showcase example from scratch** — The showcase is the project's demo reel and must reflect current capabilities. Rewrite all slide modules with better narrative, rename config to `slidesonnet.yaml`, and cover all current features (subtitles, dry-run, preview, utterances, auto-discovery, `--output`, pronunciation, voice presets, skip, nonarration durations, fragment animation). Must build with `--tts piper` (no API key required). Human approves the final video. Upload to YouTube. **Blocks v0.1.0a1.**
 
-3. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images). The `--until` flag exists but may not cover all use cases.
+2. **Finalize and record Basel problem example** — Polish the existing Basel problem lesson into a publishable state. Must build from `examples/` with `--tts piper`. Human approves the final video. Upload to YouTube. **Blocks v0.1.0a1.**
+
+3. **Tag and publish v0.1.0a1** — Blocked by showcase + Basel videos. CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
 
 ## Next — before beta
 
-1. **`--output` flag** — Build to a custom filename/path (cache stays near sources). Document in README.
+1. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images). The `--until` flag exists but may not cover all use cases.
 
 2. **Integration tests in CI** — Install ffmpeg + Piper in CI and run at least one end-to-end build. Currently only unit tests run in CI.
 
-3. **Overhaul showcase example** — The showcase is outdated. Update to demonstrate all current features (subtitles, pronunciation, voice presets, skip, nonarration durations).
+3. **ElevenLabs expressiveness** — Extra emotion and expressiveness parameters for ElevenLabs audio generation.
 
-4. **ElevenLabs expressiveness** — Extra emotion and expressiveness parameters for ElevenLabs audio generation.
+4. **Test coverage audit** — Identify missing and redundant tests. Ensure all CLI commands have test coverage.
 
-5. **Test coverage audit** — Identify missing and redundant tests. Ensure all CLI commands have test coverage.
+5. **Code review** — Audit for dead code, duplicated logic, fragile patterns. The parsing regex and annotation stripping logic appear in multiple places.
 
-6. **Code review** — Audit for dead code, duplicated logic, fragile patterns. The parsing regex and annotation stripping logic appear in multiple places.
+6. **Documentation review** — Ensure README, `docs/marp.md`, `docs/beamer.md`, and `--help` text are all consistent and complete.
 
-7. **Documentation review** — Ensure README, `docs/marp.md`, `docs/beamer.md`, and `--help` text are all consistent and complete.
-
-8. **Design a logo** — Needed for GitHub repo, PyPI page, project website, and YouTube branding. Do before public launch.
+7. **Design a logo** — Needed for GitHub repo, PyPI page, project website, and YouTube branding. Do before public launch.
 
 ## Later — backlog
 
@@ -34,7 +34,7 @@ Current version: 0.1.0 (alpha)
 
 3. **Pronunciation correction workflow** — Interactive tooling for iterating on pronunciation dictionaries.
 
-4. **Basel problem example finalization** — Finalize the sample lesson. Add Hebrew subtitle translation as a demo.
+4. **Basel problem example — Hebrew subtitles** — Add Hebrew subtitle translation as a demo of multilingual workflows.
 
 5. **`--json` output** — Machine-readable output for CI/automation.
 
@@ -69,3 +69,4 @@ Current version: 0.1.0 (alpha)
 - [x] Lower `requires-python` to `>=3.12` (no 3.13-only features used)
 - [x] `slidesonnet utterances` narration text export for proofreading
 - [x] Purge large files from git history; binary assets moved to Git LFS
+- [x] `--output` flag and `slidesonnet.yaml` config rename with auto-discovery
