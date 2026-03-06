@@ -451,7 +451,8 @@ def utterances(playlist: Path | None, output: Path | None, tts: str | None) -> N
 @main.command()
 @click.argument("fmt", type=click.Choice(["md", "tex"]))
 @click.argument("target", type=click.Path(path_type=Path), default=".")
-def init(fmt: str, target: Path) -> None:
+@click.pass_context
+def init(ctx: click.Context, fmt: str, target: Path) -> None:
     """Create a new slideSonnet project.
 
     \b
@@ -477,10 +478,11 @@ def init(fmt: str, target: Path) -> None:
     """
     try:
         init_project(target, fmt=cast(Literal["md", "tex"], fmt))
-        click.echo(f"Project created at {target}")
-        if str(target) != ".":
-            click.echo(f"\n  cd {target}")
-        click.echo("  slidesonnet preview")
+        if not ctx.obj.get("quiet", False):
+            click.echo(f"Project created at {target}")
+            if str(target) != ".":
+                click.echo(f"\n  cd {target}")
+            click.echo("  slidesonnet preview")
     except SlideSonnetError as e:
         logger.error("%s", e)
         raise SystemExit(1)
@@ -496,7 +498,8 @@ def init(fmt: str, target: Path) -> None:
     help="What to preserve",
 )
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompts")
-def clean(playlist: Path | None, keep: str, yes: bool) -> None:
+@click.pass_context
+def clean(ctx: click.Context, playlist: Path | None, keep: str, yes: bool) -> None:
     """Remove cached build artifacts for a playlist.
 
     \b
@@ -516,9 +519,11 @@ def clean(playlist: Path | None, keep: str, yes: bool) -> None:
     playlist = _discover_playlist(playlist)
     if not playlist.exists():
         raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
+    quiet: bool = ctx.obj.get("quiet", False)
     build_dir = playlist.resolve().parent / "cache"
     if not build_dir.exists():
-        click.echo("Nothing to clean.")
+        if not quiet:
+            click.echo("Nothing to clean.")
         return
 
     if keep == "nothing" and not yes:
@@ -529,15 +534,16 @@ def clean(playlist: Path | None, keep: str, yes: bool) -> None:
         )
 
     result = run_clean(playlist, keep=cast(KeepLevel, keep))
-    if result.removed_files == 0:
-        click.echo("Nothing to remove.")
-    elif keep == "nothing":
-        click.echo(f"Removed {result.removed_files} files ({result.removed_mb:.1f} MB)")
-    else:
-        parts = [f"removed {result.removed_files} files ({result.removed_mb:.1f} MB)"]
-        if result.kept_files > 0:
-            parts.append(f"kept {result.kept_files} files")
-        click.echo(f"Cleaned cache: {', '.join(parts)}")
+    if not quiet:
+        if result.removed_files == 0:
+            click.echo("Nothing to remove.")
+        elif keep == "nothing":
+            click.echo(f"Removed {result.removed_files} files ({result.removed_mb:.1f} MB)")
+        else:
+            parts = [f"removed {result.removed_files} files ({result.removed_mb:.1f} MB)"]
+            if result.kept_files > 0:
+                parts.append(f"kept {result.kept_files} files")
+            click.echo(f"Cleaned cache: {', '.join(parts)}")
 
 
 @main.command()

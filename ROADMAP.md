@@ -36,9 +36,7 @@ Current version: 0.1.0 (alpha)
 
 5. **`--json` output** — Machine-readable output for CI/automation.
 
-6. **`--quiet` mode** — Suppress non-error output for scripting.
-
-7. **Additional TTS backends** — Cartesia, Google Cloud TTS, Azure Speech. Each follows the existing backend pattern.
+6. **Additional TTS backends** — Cartesia, Google Cloud TTS, Azure Speech. Each follows the existing backend pattern.
 
 8. **Code tutorial presentation mode** — A slide format for teaching programming: syntax-highlighted code that evolves across slides (lines added, removed, modified), shell commands being typed, program output, and GUI screenshots. Narrated programming tutorials from text source files — no screen recording needed. Needs design: source format, diff specification, shell session description.
 
@@ -68,3 +66,4 @@ Current version: 0.1.0 (alpha)
 - [x] `slidesonnet utterances` narration text export for proofreading
 - [x] Purge large files from git history; binary assets moved to Git LFS
 - [x] `--output` flag and `slidesonnet.yaml` config rename with auto-discovery
+- [x] `--quiet` mode covers all CLI commands (init, clean now respect `-q`)

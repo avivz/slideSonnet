@@ -974,3 +974,65 @@ def test_build_output_flag(runner, tmp_path):
         assert result.exit_code == 0
         mock_build.assert_called_once()
         assert mock_build.call_args[1]["output_override"] == out
+
+
+# ---- --quiet flag tests ----
+
+
+def test_build_quiet_suppresses_result(runner, tmp_path):
+    """-q build produces no stdout."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["-q", "build", str(playlist)])
+        assert result.exit_code == 0
+        assert result.output == ""
+
+
+def test_build_quiet_passes_to_pipeline(runner, tmp_path):
+    """-q passes quiet=True to run_build."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=1.0)
+        result = runner.invoke(main, ["-q", "build", str(playlist)])
+        assert result.exit_code == 0
+        mock_build.assert_called_once()
+        assert mock_build.call_args[1]["quiet"] is True
+
+
+def test_init_quiet_suppresses_output(runner, tmp_path):
+    """-q init produces no stdout but still creates project."""
+    target = tmp_path / "newproject"
+    result = runner.invoke(main, ["-q", "init", "md", str(target)])
+    assert result.exit_code == 0
+    assert result.output == ""
+    assert (target / "slidesonnet.yaml").exists()
+
+
+def test_clean_quiet_suppresses_output(runner, tmp_path):
+    """-q clean with results produces no stdout."""
+    playlist = tmp_path / "test.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+    (build_dir / ".doit.db").touch()
+
+    with patch("slidesonnet.cli.run_clean", return_value=CleanResult(5, 1024, 2)):
+        result = runner.invoke(main, ["-q", "clean", str(playlist)])
+        assert result.exit_code == 0
+        assert result.output == ""
+
+
+def test_clean_quiet_no_cache(runner, tmp_path):
+    """-q clean with missing cache produces no stdout."""
+    playlist = tmp_path / "test.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    result = runner.invoke(main, ["-q", "clean", str(playlist)])
+    assert result.exit_code == 0
+    assert result.output == ""

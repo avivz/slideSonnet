@@ -44,6 +44,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - `\silent` / `<!-- silent -->` renamed to `\nonarration` / `<!-- nonarration -->`
 
 ### Fixed
+- `--quiet` / `-q` flag now suppresses output from `init` and `clean` commands (previously only `build` and `preview` respected it)
 - Quadratic regex backtracking in MARP `_SAY_RE` pattern
 - Fence detection tracks fence type and length per CommonMark spec
 - LaTeX `%` line comments correctly skipped in brace extraction
