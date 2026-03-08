@@ -191,6 +191,56 @@ class TestMergeVideos:
         mock_composer.concatenate_segments_xfade.assert_not_called()
 
 
+class TestActionConcatPdfs:
+    """Tests for action_concat_pdfs."""
+
+    def test_single_pdf_copies(self, tmp_path: Path) -> None:
+        from slidesonnet.actions import action_concat_pdfs
+
+        src = tmp_path / "module.pdf"
+        src.write_bytes(b"%PDF-1.4 content")
+        output = tmp_path / "out" / "combined.pdf"
+
+        action_concat_pdfs([src], output)
+
+        assert output.exists()
+        assert output.read_bytes() == b"%PDF-1.4 content"
+
+    @patch("subprocess.run")
+    def test_multiple_pdfs_calls_pdfunite(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        from slidesonnet.actions import action_concat_pdfs
+
+        a = tmp_path / "a.pdf"
+        b = tmp_path / "b.pdf"
+        output = tmp_path / "combined.pdf"
+
+        action_concat_pdfs([a, b], output)
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "pdfunite"
+        assert str(a) in cmd
+        assert str(b) in cmd
+        assert str(output) in cmd
+
+
+class TestActionCompileBeamer:
+    """Tests for action_compile_beamer."""
+
+    def test_raises_if_pdf_not_produced(self, tmp_path: Path) -> None:
+        from slidesonnet.actions import action_compile_beamer
+
+        source = tmp_path / "slides.tex"
+        source.touch()
+        slides_dir = tmp_path / "slides"
+        slides_dir.mkdir()
+        pdf_path = slides_dir / "slides.pdf"
+
+        with patch("slidesonnet.parsers.beamer.compile_pdf"):
+            with pytest.raises(RuntimeError, match="Expected PDF not produced"):
+                action_compile_beamer(source, slides_dir, pdf_path)
+
+
 class TestGetParserAndExtractor:
     def test_marp(self) -> None:
         from slidesonnet.actions import get_parser_and_extractor

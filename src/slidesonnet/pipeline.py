@@ -309,7 +309,7 @@ def _preflight_api_check(prep: _PreparedBuild) -> None:
     ]
     for s in uncached:
         preview = s.text_preview
-        if len(preview) < len(s.text_preview) or len(preview) >= 80:
+        if len(preview) >= 80:
             preview = preview[:77] + "..."
         lines.append(f'  {s.module_path} slide {s.slide_index}: "{preview}"')
     lines.append("")

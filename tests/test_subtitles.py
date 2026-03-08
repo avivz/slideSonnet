@@ -18,7 +18,10 @@ from slidesonnet.models import (
 )
 from slidesonnet.subtitles import (
     SubtitleEntry,
+    _find_audio_path,
     _format_srt_time,
+    _split_at_midpoint,
+    _split_long_sentence,
     _split_sentences,
     format_srt,
     generate_subtitles,
@@ -390,3 +393,350 @@ class TestGenerateSubtitles:
         assert result[0].text == "First visible."
         # Skip slide produces no offset, so start = 0 + pre_silence
         assert result[0].start == pytest.approx(1.0)
+
+    def test_audio_not_found_skips_subtitle(self, tmp_path: Path) -> None:
+        """When audio path is not found, subtitle is skipped with a warning."""
+        config = _make_config(crossfade=0.0)
+        tts = _make_tts()
+        entries = [PlaylistEntry(path=Path("slides.md"), module_type=ModuleType.MARP)]
+
+        slides = [_make_slide(1, narration_raw="Missing audio.")]
+
+        build_dir = tmp_path / "cache"
+        (build_dir / "audio").mkdir(parents=True)
+
+        with (
+            patch("slidesonnet.subtitles.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.subtitles._find_audio_path", return_value=None),
+        ):
+            mock_parser = MagicMock()
+            mock_parser.parse.return_value = slides
+            mock_gpe.return_value = (lambda: mock_parser, None)
+            (tmp_path / "slides.md").touch()
+
+            result = generate_subtitles(entries, config, tts, build_dir, tmp_path)
+
+        assert len(result) == 0
+
+    def test_audio_probe_failure_skips_subtitle(self, tmp_path: Path) -> None:
+        """When audio duration probe fails, subtitle is skipped."""
+        config = _make_config(crossfade=0.0)
+        tts = _make_tts()
+        entries = [PlaylistEntry(path=Path("slides.md"), module_type=ModuleType.MARP)]
+
+        slides = [_make_slide(1, narration_raw="Probe fails.")]
+
+        build_dir = tmp_path / "cache"
+        audio_dir = build_dir / "audio"
+        audio_dir.mkdir(parents=True)
+        fake_audio = audio_dir / "fake.wav"
+        fake_audio.write_bytes(b"RIFF" + b"\x00" * 100)
+
+        with (
+            patch("slidesonnet.subtitles.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.subtitles.get_duration", side_effect=RuntimeError("probe fail")),
+            patch("slidesonnet.subtitles._find_audio_path", return_value=fake_audio),
+        ):
+            mock_parser = MagicMock()
+            mock_parser.parse.return_value = slides
+            mock_gpe.return_value = (lambda: mock_parser, None)
+            (tmp_path / "slides.md").touch()
+
+            result = generate_subtitles(entries, config, tts, build_dir, tmp_path)
+
+        assert len(result) == 0
+
+    def test_multi_chunk_subtitle_distribution(self, tmp_path: Path) -> None:
+        """Long narration text is split into multiple subtitle entries with proportional timing."""
+        config = _make_config(pre_silence=0.0, pad_seconds=0.0, crossfade=0.0)
+        tts = _make_tts()
+        entries = [PlaylistEntry(path=Path("slides.md"), module_type=ModuleType.MARP)]
+
+        # Long text that will split into multiple chunks at max_chars=40
+        long_text = "This is the first sentence. This is the second sentence with more words."
+        slides = [_make_slide(1, narration_raw=long_text)]
+
+        build_dir = tmp_path / "cache"
+        audio_dir = build_dir / "audio"
+        audio_dir.mkdir(parents=True)
+        fake_audio = audio_dir / "fake.wav"
+        fake_audio.write_bytes(b"RIFF" + b"\x00" * 100)
+
+        with (
+            patch("slidesonnet.subtitles.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.subtitles.get_duration", return_value=6.0),
+            patch("slidesonnet.subtitles._find_audio_path", return_value=fake_audio),
+        ):
+            mock_parser = MagicMock()
+            mock_parser.parse.return_value = slides
+            mock_gpe.return_value = (lambda: mock_parser, None)
+            (tmp_path / "slides.md").touch()
+
+            result = generate_subtitles(entries, config, tts, build_dir, tmp_path, max_chars=40)
+
+        # Should have multiple subtitle entries
+        assert len(result) >= 2
+        # All text should be present across chunks
+        combined = " ".join(r.text for r in result)
+        assert "first sentence" in combined
+        assert "second sentence" in combined
+        # Timing should be continuous
+        for i in range(1, len(result)):
+            assert result[i].start == pytest.approx(result[i - 1].end, abs=0.01)
+
+    def test_video_passthrough(self, tmp_path: Path) -> None:
+        """Video entry advances offset by video duration."""
+        config = _make_config(crossfade=0.5)
+        tts = _make_tts()
+        entries = [
+            PlaylistEntry(path=Path("intro.mp4"), module_type=ModuleType.VIDEO),
+            PlaylistEntry(path=Path("slides.md"), module_type=ModuleType.MARP),
+        ]
+
+        slides = [_make_slide(1, narration_raw="After video.")]
+
+        build_dir = tmp_path / "cache"
+        audio_dir = build_dir / "audio"
+        audio_dir.mkdir(parents=True)
+        fake_audio = audio_dir / "fake.wav"
+        fake_audio.write_bytes(b"RIFF" + b"\x00" * 100)
+
+        (tmp_path / "intro.mp4").touch()
+        (tmp_path / "slides.md").touch()
+
+        with (
+            patch("slidesonnet.subtitles.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.subtitles.get_duration") as mock_dur,
+            patch("slidesonnet.subtitles._find_audio_path", return_value=fake_audio),
+        ):
+            # First call: video duration, second: slide audio duration
+            mock_dur.side_effect = [10.0, 2.0]
+            mock_parser = MagicMock()
+            mock_parser.parse.return_value = slides
+            mock_gpe.return_value = (lambda: mock_parser, None)
+
+            result = generate_subtitles(entries, config, tts, build_dir, tmp_path)
+
+        assert len(result) == 1
+        # Video is 10s, then crossfade offset: 10 - 0.5 = 9.5
+        # Slide start = 9.5 + pre_silence(1.0) = 10.5
+        assert result[0].start == pytest.approx(10.5)
+
+    def test_video_probe_failure(self, tmp_path: Path) -> None:
+        """Video entry with probe failure is skipped."""
+        config = _make_config(crossfade=0.0)
+        tts = _make_tts()
+        entries = [
+            PlaylistEntry(path=Path("broken.mp4"), module_type=ModuleType.VIDEO),
+        ]
+
+        build_dir = tmp_path / "cache"
+        (build_dir / "audio").mkdir(parents=True)
+        (tmp_path / "broken.mp4").touch()
+
+        with patch("slidesonnet.subtitles.get_duration", side_effect=RuntimeError("probe fail")):
+            result = generate_subtitles(entries, config, tts, build_dir, tmp_path)
+
+        assert len(result) == 0
+
+    def test_silence_override_duration(self, tmp_path: Path) -> None:
+        """Silent slide with silence_override uses that duration."""
+        config = _make_config(crossfade=0.0, silence_duration=3.0)
+        tts = _make_tts()
+        entries = [PlaylistEntry(path=Path("slides.md"), module_type=ModuleType.MARP)]
+
+        slides = [
+            _make_slide(
+                1, annotation=SlideAnnotation.SILENT, narration_raw="", silence_override=5.0
+            ),
+            _make_slide(2, narration_raw="After custom silence."),
+        ]
+
+        build_dir = tmp_path / "cache"
+        audio_dir = build_dir / "audio"
+        audio_dir.mkdir(parents=True)
+        fake_audio = audio_dir / "fake.wav"
+        fake_audio.write_bytes(b"RIFF" + b"\x00" * 100)
+
+        with (
+            patch("slidesonnet.subtitles.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.subtitles.get_duration", return_value=2.0),
+            patch("slidesonnet.subtitles._find_audio_path", return_value=fake_audio),
+        ):
+            mock_parser = MagicMock()
+            mock_parser.parse.return_value = slides
+            mock_gpe.return_value = (lambda: mock_parser, None)
+            (tmp_path / "slides.md").touch()
+
+            result = generate_subtitles(entries, config, tts, build_dir, tmp_path)
+
+        assert len(result) == 1
+        # Silent slide offset = 5.0 (override, not 3.0 from config)
+        # Second slide start = 5.0 + 1.0 (pre_silence) = 6.0
+        assert result[0].start == pytest.approx(6.0)
+
+
+# ---- _split_long_sentence() tests ----
+
+
+class TestSplitLongSentence:
+    def test_short_returns_as_is(self) -> None:
+        assert _split_long_sentence("Short.", 80) == ["Short."]
+
+    def test_empty_returns_empty(self) -> None:
+        assert _split_long_sentence("", 80) == []
+        assert _split_long_sentence("   ", 80) == []
+
+    def test_clause_split(self) -> None:
+        text = "This is a long clause, and here is another clause, plus one more for good measure."
+        result = _split_long_sentence(text, 40)
+        assert len(result) >= 2
+        for chunk in result:
+            assert len(chunk) <= 40
+
+    def test_clause_split_fallback_to_midpoint(self) -> None:
+        """If clause split produces chunks > max_chars, falls back to word split."""
+        text = "A" * 50 + ", " + "B" * 50  # Each clause > 40 chars
+        result = _split_long_sentence(text, 40)
+        assert len(result) >= 2
+
+    def test_clause_grouping(self) -> None:
+        """Multiple short clauses group into chunks <= max_chars."""
+        text = "First, second, third, fourth, and fifth part of the long text here."
+        result = _split_long_sentence(text, 40)
+        assert len(result) >= 1
+        for chunk in result:
+            assert len(chunk) <= 40
+
+    def test_no_clause_boundaries_uses_midpoint(self) -> None:
+        """Single long sentence without commas/semicolons splits at word boundary."""
+        text = "This very long sentence has no clause boundaries at all and needs word splitting"
+        result = _split_long_sentence(text, 30)
+        assert len(result) >= 2
+        for chunk in result:
+            assert len(chunk) <= 30
+
+
+# ---- _split_at_midpoint() tests ----
+
+
+class TestSplitAtMidpoint:
+    def test_short_returns_as_is(self) -> None:
+        assert _split_at_midpoint("Short text", 80) == ["Short text"]
+
+    def test_splits_at_space(self) -> None:
+        text = "Hello world this is a long text"
+        result = _split_at_midpoint(text, 15)
+        assert len(result) >= 2
+        for chunk in result:
+            assert len(chunk) <= 15
+
+    def test_no_space_returns_as_is(self) -> None:
+        """Text with no spaces can't be split further."""
+        text = "A" * 50
+        result = _split_at_midpoint(text, 30)
+        # Should return as-is since there's no space to split on
+        assert result == [text]
+
+
+# ---- _find_audio_path() tests ----
+
+
+class TestFindAudioPath:
+    def test_direct_path_found(self, tmp_path: Path) -> None:
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Hello.",
+            narration_processed="Hello.",
+            narration_parts=["Hello."],
+            narration_parts_processed=["Hello."],
+        )
+        tts = _make_tts()
+
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+
+        # Create the expected file
+        from slidesonnet.hashing import audio_path as _audio_path
+
+        expected = _audio_path(audio_dir, "Hello.", tts.name(), tts.cache_key(), None)
+        expected.write_bytes(b"\x00" * 50)
+
+        result = _find_audio_path(audio_dir, slide, tts)
+        assert result is not None
+        assert result == expected
+
+    def test_alternate_extension(self, tmp_path: Path) -> None:
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Hello.",
+            narration_processed="Hello.",
+            narration_parts=["Hello."],
+            narration_parts_processed=["Hello."],
+        )
+        tts = _make_tts()
+
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+
+        from slidesonnet.hashing import audio_path as _audio_path
+
+        expected = _audio_path(audio_dir, "Hello.", tts.name(), tts.cache_key(), None)
+        # Write alternate extension
+        alt = expected.with_suffix(".mp3")
+        alt.write_bytes(b"\x00" * 50)
+
+        result = _find_audio_path(audio_dir, slide, tts)
+        if expected.suffix != ".mp3":
+            assert result is not None
+            assert result == alt
+
+    def test_not_found(self, tmp_path: Path) -> None:
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Missing.",
+            narration_processed="Missing.",
+            narration_parts=["Missing."],
+            narration_parts_processed=["Missing."],
+        )
+        tts = _make_tts()
+
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+
+        result = _find_audio_path(audio_dir, slide, tts)
+        assert result is None
+
+    def test_multi_part_concat_path(self, tmp_path: Path) -> None:
+        """Multi-part slide looks for the concatenated audio file."""
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Part one. Part two.",
+            narration_processed="Part one. Part two.",
+            narration_parts=["Part one.", "Part two."],
+            narration_parts_processed=["Part one.", "Part two."],
+        )
+        tts = _make_tts()
+
+        audio_dir = tmp_path / "audio"
+        audio_dir.mkdir()
+
+        # Create the concatenated file
+        from slidesonnet.hashing import audio_path as _audio_path
+        from slidesonnet.hashing import concat_filename as _concat_filename
+
+        part_paths = [
+            _audio_path(audio_dir, "Part one.", tts.name(), tts.cache_key(), None),
+            _audio_path(audio_dir, "Part two.", tts.name(), tts.cache_key(), None),
+        ]
+        concat_name = _concat_filename(part_paths)
+        concat_path = audio_dir / concat_name
+        concat_path.write_bytes(b"\x00" * 50)
+
+        result = _find_audio_path(audio_dir, slide, tts)
+        assert result is not None
+        assert result == concat_path

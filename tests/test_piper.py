@@ -216,6 +216,51 @@ class TestSpeed:
         assert len(parts) == 3  # piper:model:speaker
 
 
+class TestFindPiper:
+    """Tests for _find_piper()."""
+
+    @patch("slidesonnet.tts.piper.shutil.which", return_value="/usr/bin/piper")
+    def test_finds_on_path(self, mock_which: MagicMock) -> None:
+        from slidesonnet.tts.piper import _find_piper
+
+        assert _find_piper() == "/usr/bin/piper"
+
+    @patch("slidesonnet.tts.piper.shutil.which", return_value=None)
+    def test_falls_back_to_venv(self, mock_which: MagicMock, tmp_path: Path) -> None:
+        from slidesonnet.tts.piper import _find_piper
+
+        venv_piper = tmp_path / "piper"
+        venv_piper.touch()
+        venv_piper.chmod(0o755)
+
+        with patch("slidesonnet.tts.piper._VENV_BIN", tmp_path):
+            result = _find_piper()
+            assert result == str(venv_piper)
+
+    @patch("slidesonnet.tts.piper.shutil.which", return_value=None)
+    def test_returns_piper_when_not_found(self, mock_which: MagicMock, tmp_path: Path) -> None:
+        from slidesonnet.tts.piper import _find_piper
+
+        with patch("slidesonnet.tts.piper._VENV_BIN", tmp_path):
+            # No venv piper file exists
+            result = _find_piper()
+            assert result == "piper"
+
+
+class TestEnsureVoiceExists:
+    """Test _ensure_voice when model already exists."""
+
+    def test_model_exists_returns_early(self, tmp_path: Path) -> None:
+        from slidesonnet.tts.piper import _ensure_voice
+
+        model_path = tmp_path / "en_US-lessac-medium.onnx"
+        model_path.write_bytes(b"\x00" * 100)  # non-empty
+
+        with patch("slidesonnet.tts.piper._VOICES_DIR", tmp_path):
+            # Should not raise or download anything
+            _ensure_voice("en_US-lessac-medium")
+
+
 class TestName:
     def test_name(self) -> None:
         assert PiperTTS().name() == "piper"

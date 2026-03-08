@@ -1036,3 +1036,416 @@ def test_clean_quiet_no_cache(runner, tmp_path):
     result = runner.invoke(main, ["-q", "clean", str(playlist)])
     assert result.exit_code == 0
     assert result.output == ""
+
+
+# ---- Suggest group tests ----
+
+
+def test_suggest_close_command(runner):
+    """Misspelled command suggests a close match."""
+    result = runner.invoke(main, ["buld"])
+    assert result.exit_code != 0
+    assert "Did you mean 'build'" in result.output
+
+
+def test_suggest_no_match(runner):
+    """Totally unrelated command shows generic error."""
+    result = runner.invoke(main, ["xyzzy123"])
+    assert result.exit_code != 0
+
+
+# ---- Error path tests ----
+
+
+def test_build_slidesonneterror(runner, tmp_path):
+    """SlideSonnetError in build renders error and exits 1."""
+    from slidesonnet.exceptions import SlideSonnetError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build", side_effect=SlideSonnetError("test error")):
+        result = runner.invoke(main, ["build", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_build_parser_error_shows_doctor_hint(runner, tmp_path):
+    """ParserError shows the doctor hint."""
+    from slidesonnet.exceptions import ParserError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build", side_effect=ParserError("parse failed")):
+        result = runner.invoke(main, ["build", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_build_ffmpeg_error_shows_doctor_hint(runner, tmp_path):
+    """FFmpegError shows the doctor hint."""
+    from slidesonnet.exceptions import FFmpegError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build", side_effect=FFmpegError("ffmpeg died")):
+        result = runner.invoke(main, ["build", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_build_tts_error_shows_doctor_hint(runner, tmp_path):
+    """TTSError shows the doctor hint."""
+    from slidesonnet.exceptions import TTSError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build", side_effect=TTSError("tts failed")):
+        result = runner.invoke(main, ["build", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_preview_error_handling(runner, tmp_path):
+    """preview command handles SlideSonnetError."""
+    from slidesonnet.exceptions import SlideSonnetError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build", side_effect=SlideSonnetError("boom")):
+        result = runner.invoke(main, ["preview", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_preview_ffmpeg_error_doctor_hint(runner, tmp_path):
+    """preview with FFmpegError shows doctor hint."""
+    from slidesonnet.exceptions import FFmpegError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build", side_effect=FFmpegError("ffmpeg died")):
+        result = runner.invoke(main, ["preview", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_preview_nonexistent(runner):
+    """preview with nonexistent file fails."""
+    result = runner.invoke(main, ["preview", "nonexistent.yaml"])
+    assert result.exit_code != 0
+
+
+def test_preview_dry_run(runner, tmp_path):
+    """preview --dry-run calls run_dry_run with piper override."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    mock_result = DryRunResult(
+        total_narrated=2, cached=2, needs_tts=0, uncached_chars=0, tts_backend="piper"
+    )
+
+    with patch("slidesonnet.cli.run_dry_run", return_value=mock_result) as mock_dry:
+        result = runner.invoke(main, ["preview", str(playlist), "--dry-run"])
+        assert result.exit_code == 0
+        mock_dry.assert_called_once_with(playlist, tts_override="piper")
+
+
+def test_preview_slide_error(runner, tmp_path):
+    """preview-slide handles SlideSonnetError."""
+    from slidesonnet.exceptions import SlideSonnetError
+
+    slides = tmp_path / "slides.md"
+    slides.write_text("---\nmarp: true\n---\n\n# Hello\n\n<!-- say: Hi. -->\n")
+
+    with patch("slidesonnet.cli.preview_single_slide", side_effect=SlideSonnetError("failed")):
+        result = runner.invoke(main, ["preview-slide", str(slides), "1"])
+        assert result.exit_code == 1
+
+
+def test_subtitles_nonexistent(runner):
+    """subtitles with nonexistent file fails."""
+    result = runner.invoke(main, ["subtitles", "nonexistent.yaml"])
+    assert result.exit_code != 0
+
+
+def test_subtitles_slidesonneterror(runner, tmp_path):
+    """subtitles handles SlideSonnetError."""
+    from slidesonnet.exceptions import SlideSonnetError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_generate_srt", side_effect=SlideSonnetError("fail")):
+        result = runner.invoke(main, ["subtitles", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_subtitles_generic_exception(runner, tmp_path):
+    """subtitles handles generic exceptions."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_generate_srt", side_effect=RuntimeError("oops")):
+        result = runner.invoke(main, ["subtitles", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_utterances_nonexistent(runner):
+    """utterances with nonexistent file fails."""
+    result = runner.invoke(main, ["utterances", "nonexistent.yaml"])
+    assert result.exit_code != 0
+
+
+def test_utterances_error(runner, tmp_path):
+    """utterances handles SlideSonnetError."""
+    from slidesonnet.exceptions import SlideSonnetError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_export_utterances", side_effect=SlideSonnetError("fail")):
+        result = runner.invoke(main, ["utterances", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_pdf_nonexistent(runner):
+    """pdf with nonexistent file fails."""
+    result = runner.invoke(main, ["pdf", "nonexistent.yaml"])
+    assert result.exit_code != 0
+
+
+def test_pdf_error(runner, tmp_path):
+    """pdf handles SlideSonnetError."""
+    from slidesonnet.exceptions import SlideSonnetError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_export_pdfs", side_effect=SlideSonnetError("pdf fail")):
+        result = runner.invoke(main, ["pdf", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_pdf_ffmpeg_error_doctor_hint(runner, tmp_path):
+    """pdf with FFmpegError shows doctor hint."""
+    from slidesonnet.exceptions import FFmpegError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_export_pdfs", side_effect=FFmpegError("ffmpeg fail")):
+        result = runner.invoke(main, ["pdf", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_clean_nonexistent(runner):
+    """clean with nonexistent file fails."""
+    result = runner.invoke(main, ["clean", "nonexistent.yaml"])
+    assert result.exit_code != 0
+
+
+def test_clean_nothing_removed(runner, tmp_path):
+    """clean with removed_files=0 shows 'Nothing to remove'."""
+    playlist = tmp_path / "test.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+    build_dir = tmp_path / "cache"
+    build_dir.mkdir()
+    (build_dir / ".doit.db").touch()
+
+    with patch("slidesonnet.cli.run_clean", return_value=CleanResult(0, 0, 3)):
+        result = runner.invoke(main, ["clean", str(playlist)])
+        assert result.exit_code == 0
+        assert "Nothing to remove" in result.output
+
+
+# ---- Doctor tests ----
+
+
+def test_doctor_all_ok(runner):
+    """doctor exits 0 when all checks pass."""
+    with (
+        patch("slidesonnet.doctor.run_all_checks", return_value=[]),
+        patch("slidesonnet.doctor.print_report", return_value=True),
+    ):
+        result = runner.invoke(main, ["doctor"])
+        assert result.exit_code == 0
+
+
+def test_doctor_failure(runner):
+    """doctor exits 1 when checks fail."""
+    with (
+        patch("slidesonnet.doctor.run_all_checks", return_value=[]),
+        patch("slidesonnet.doctor.print_report", return_value=False),
+    ):
+        result = runner.invoke(main, ["doctor"])
+        assert result.exit_code == 1
+
+
+# ---- Build result display tests ----
+
+
+def test_build_result_stage_complete(runner, tmp_path):
+    """Build with --until shows stage completion message."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        out = tmp_path / "cache" / "lecture.mp4"
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=2.5, until="tts")
+        result = runner.invoke(main, ["build", str(playlist), "--until", "tts"])
+        assert result.exit_code == 0
+        assert "Stage 'tts' complete" in result.output
+        assert "2.5s" in result.output
+
+
+def test_build_result_output_exists(runner, tmp_path):
+    """Build result shows file size when output exists."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    out = tmp_path / "lecture.mp4"
+    out.write_bytes(b"\x00" * (2 * 1024 * 1024))  # 2 MB
+
+    with patch("slidesonnet.cli.run_build") as mock_build:
+        mock_build.return_value = BuildResult(output_path=out, elapsed_seconds=5.0)
+        result = runner.invoke(main, ["build", str(playlist)])
+        assert result.exit_code == 0
+        assert "Built lecture.mp4" in result.output
+        assert "2.0 MB" in result.output
+
+
+def test_build_dry_run_preview_warning(runner, tmp_path):
+    """--dry-run --preview logs a warning about preview being ignored."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    mock_result = DryRunResult(
+        total_narrated=1, cached=1, needs_tts=0, uncached_chars=0, tts_backend="piper"
+    )
+
+    with patch("slidesonnet.cli.run_dry_run", return_value=mock_result):
+        result = runner.invoke(main, ["build", str(playlist), "--dry-run", "--preview"])
+        assert result.exit_code == 0
+
+
+# ---- list command edge cases ----
+
+
+def test_list_error(runner, tmp_path):
+    """list handles SlideSonnetError."""
+    from slidesonnet.exceptions import SlideSonnetError
+
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(_MINIMAL_PLAYLIST)
+
+    with patch("slidesonnet.cli.run_list_slides", side_effect=SlideSonnetError("fail")):
+        result = runner.invoke(main, ["list", str(playlist)])
+        assert result.exit_code == 1
+
+
+def test_list_nonexistent(runner):
+    """list with nonexistent file fails."""
+    result = runner.invoke(main, ["list", "nonexistent.yaml"])
+    assert result.exit_code != 0
+
+
+# ---- No subcommand test ----
+
+
+def test_no_subcommand_prints_help(runner):
+    """Invoking without subcommand prints help."""
+    result = runner.invoke(main, [])
+    assert result.exit_code == 0
+    assert "slideSonnet" in result.output
+    assert "build" in result.output
+
+
+# ---- _truncate tests ----
+
+
+def test_truncate_short():
+    from slidesonnet.cli import _truncate
+
+    assert _truncate("Hello", 10) == "Hello"
+
+
+def test_truncate_long():
+    from slidesonnet.cli import _truncate
+
+    result = _truncate("Hello World and More", 10)
+    assert len(result) == 10
+    assert result.endswith("\u2026")
+
+
+# ---- _CliFormatter tests ----
+
+
+def test_cli_formatter_warning():
+    from slidesonnet.cli import _CliFormatter
+
+    fmt = _CliFormatter()
+    import logging
+
+    record = logging.LogRecord("test", logging.WARNING, "", 0, "Something went wrong", (), None)
+    result = fmt.format(record)
+    assert result.startswith("WARNING:")
+    assert "Something went wrong" in result
+
+
+def test_cli_formatter_info():
+    from slidesonnet.cli import _CliFormatter
+
+    fmt = _CliFormatter()
+    import logging
+
+    record = logging.LogRecord("test", logging.INFO, "", 0, "Just info", (), None)
+    result = fmt.format(record)
+    assert result == "Just info"
+
+
+def test_cli_formatter_error():
+    from slidesonnet.cli import _CliFormatter
+
+    fmt = _CliFormatter()
+    import logging
+
+    record = logging.LogRecord("test", logging.ERROR, "", 0, "Bad stuff", (), None)
+    result = fmt.format(record)
+    assert result.startswith("ERROR:")
+    assert "Bad stuff" in result
+
+
+# ---- _configure_logging tests ----
+
+
+def test_configure_logging_quiet():
+    import logging
+
+    from slidesonnet.cli import _configure_logging
+
+    # Save state
+    old_level = logging.root.level
+    old_handlers = logging.root.handlers[:]
+    try:
+        logging.root.handlers.clear()
+        _configure_logging(quiet=True)
+        assert logging.root.level == logging.WARNING
+    finally:
+        logging.root.level = old_level
+        logging.root.handlers[:] = old_handlers
+
+
+def test_configure_logging_normal():
+    import logging
+
+    from slidesonnet.cli import _configure_logging
+
+    old_level = logging.root.level
+    old_handlers = logging.root.handlers[:]
+    try:
+        logging.root.handlers.clear()
+        _configure_logging(quiet=False)
+        assert logging.root.level == logging.INFO
+    finally:
+        logging.root.level = old_level
+        logging.root.handlers[:] = old_handlers

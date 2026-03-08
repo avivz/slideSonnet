@@ -841,6 +841,182 @@ class TestConcatenateAudioMocked:
         assert output.parent.exists()
 
 
+class TestGetDurationStreamMocked:
+    """Mocked tests for get_duration() with stream parameter."""
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_stream_video(self, mock_run: MagicMock) -> None:
+        """get_duration(stream='video') extracts from streams list."""
+        mock_run.return_value = MagicMock(
+            stdout=json.dumps(
+                {
+                    "streams": [
+                        {"codec_type": "video", "duration": "10.5"},
+                        {"codec_type": "audio", "duration": "10.7"},
+                    ]
+                }
+            )
+        )
+        result = get_duration(Path("test.mp4"), stream="video")
+        assert result == pytest.approx(10.5)
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_stream_audio(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(
+            stdout=json.dumps(
+                {
+                    "streams": [
+                        {"codec_type": "video", "duration": "10.5"},
+                        {"codec_type": "audio", "duration": "10.7"},
+                    ]
+                }
+            )
+        )
+        result = get_duration(Path("test.mp4"), stream="audio")
+        assert result == pytest.approx(10.7)
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_stream_missing_falls_back(self, mock_run: MagicMock) -> None:
+        """If requested stream has no duration, falls back to format duration."""
+        # First call: -show_streams (no duration in video stream)
+        # Second call: -show_format (fallback)
+        mock_run.side_effect = [
+            MagicMock(
+                stdout=json.dumps(
+                    {"streams": [{"codec_type": "video"}]}  # no duration field
+                )
+            ),
+            MagicMock(stdout=json.dumps({"format": {"duration": "12.0"}})),
+        ]
+        result = get_duration(Path("test.mp4"), stream="video")
+        assert result == pytest.approx(12.0)
+
+    @patch("slidesonnet.video.composer.subprocess.run")
+    def test_stream_non_numeric(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(
+            stdout=json.dumps({"streams": [{"codec_type": "video", "duration": "N/A"}]})
+        )
+        with pytest.raises(RuntimeError, match="non-numeric duration"):
+            get_duration(Path("test.mp4"), stream="video")
+
+
+class TestComposeSegmentMismatchWarning:
+    """Test stream mismatch warning in compose_segment."""
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    @patch("slidesonnet.video.composer.get_duration")
+    def test_mismatch_logs_warning(
+        self,
+        mock_dur: MagicMock,
+        mock_ffmpeg: MagicMock,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Large stream mismatch logs a warning."""
+        # Return different durations for video and audio streams
+        mock_dur.side_effect = [5.0, 4.0]  # video=5, audio=4 → Δ=1.0
+
+        compose_segment(
+            image=tmp_path / "s.png",
+            audio=tmp_path / "a.wav",
+            output=tmp_path / "o.mp4",
+            duration=1.0,
+        )
+
+        assert "stream mismatch" in caplog.text
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    @patch("slidesonnet.video.composer.get_duration", side_effect=RuntimeError("no probe"))
+    def test_mismatch_probe_failure_silent(
+        self,
+        mock_dur: MagicMock,
+        mock_ffmpeg: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Probe failure during mismatch check is silently ignored."""
+        # Should not raise
+        compose_segment(
+            image=tmp_path / "s.png",
+            audio=tmp_path / "a.wav",
+            output=tmp_path / "o.mp4",
+            duration=1.0,
+        )
+
+
+class TestConcatenateSegmentsXfadeNormalize:
+    """Tests for xfade with resolution/fps normalization."""
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_resolution_normalization(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        """When resolution is given, filter adds scale+pad+setsar per input."""
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5, resolution="1920x1080")
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+        assert "scale=1920:1080" in fc
+        assert "pad=1920:1080" in fc
+        assert "setsar=1" in fc
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_fps_normalization(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        """When fps is given, filter adds fps filter."""
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5, fps=30)
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+        assert "fps=30" in fc
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_resolution_and_fps(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        """Both resolution and fps normalize all inputs."""
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5, resolution="640x480", fps=24)
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+        assert "scale=640:480" in fc
+        assert "fps=24" in fc
+        # Video inputs should use normalized labels [v0s], [v1s]
+        assert "[v0s]" in fc
+        assert "[v1s]" in fc
+
+    @patch("slidesonnet.video.composer.get_duration", return_value=5.0)
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_fps_only_no_resolution(
+        self, mock_ffmpeg: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        """fps without resolution still normalizes."""
+        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+        output = tmp_path / "out.mp4"
+
+        concatenate_segments_xfade(segs, output, crossfade=0.5, fps=60)
+
+        cmd = mock_ffmpeg.call_args[0][0]
+        fc_idx = cmd.index("-filter_complex")
+        fc = cmd[fc_idx + 1]
+        assert "fps=60" in fc
+
+
 class TestRunFfmpeg:
     """Mocked tests for _run_ffmpeg()."""
 

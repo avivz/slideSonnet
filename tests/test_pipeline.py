@@ -10,6 +10,7 @@ import pytest
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import ProjectConfig, TTSConfig
 from slidesonnet.pipeline import (
+    _PreparedBuild,
     _filter_tasks_until,
     _prepare,
     _resolve_output_name,
@@ -604,6 +605,497 @@ class TestFilterTasksUntil:
         assert len(names) == 9
 
 
+class TestAudioCacheExists:
+    """Tests for _audio_cache_exists()."""
+
+    def test_file_exists_nonempty(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import _audio_cache_exists
+
+        f = tmp_path / "audio.wav"
+        f.write_bytes(b"\x00" * 100)
+        assert _audio_cache_exists(f) is True
+
+    def test_file_exists_empty(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import _audio_cache_exists
+
+        f = tmp_path / "audio.wav"
+        f.touch()
+        assert _audio_cache_exists(f) is False
+
+    def test_file_not_found(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import _audio_cache_exists
+
+        assert _audio_cache_exists(tmp_path / "nope.wav") is False
+
+    def test_alternate_extension_found(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import _audio_cache_exists
+
+        # Request .mp3, but .wav exists
+        mp3 = tmp_path / "audio.mp3"
+        wav = tmp_path / "audio.wav"
+        wav.write_bytes(b"\x00" * 100)
+        assert _audio_cache_exists(mp3) is True
+
+    def test_alternate_extension_empty(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import _audio_cache_exists
+
+        mp3 = tmp_path / "audio.mp3"
+        wav = tmp_path / "audio.wav"
+        wav.touch()  # empty
+        assert _audio_cache_exists(mp3) is False
+
+
+class TestPreflightMultiPart:
+    """Tests for _preflight_api_check with multi-part slides."""
+
+    def test_multi_part_uncached_raises(self) -> None:
+        from slidesonnet.models import SlideAnnotation, SlideNarration
+        from slidesonnet.pipeline import _PreparedBuild, _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+        config.pronunciation_for.return_value = {}
+        config.voices = {}
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = MagicMock()
+        entry.path = Path("01-intro/slides.md")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        # Multi-part slide (2 parts)
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Part one. Part two.",
+            narration_parts=["Part one.", "Part two."],
+        )
+
+        with (
+            patch("slidesonnet.pipeline.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.pipeline._audio_cache_exists", return_value=False),
+            patch("slidesonnet.pipeline.apply_pronunciation", side_effect=lambda t, _: t),
+        ):
+            parser = MagicMock()
+            parser.parse.return_value = [slide]
+            mock_gpe.return_value = (MagicMock(return_value=parser), MagicMock())
+
+            from slidesonnet.exceptions import APINotAllowedError
+
+            with pytest.raises(APINotAllowedError) as exc_info:
+                _preflight_api_check(prep)
+
+            msg = str(exc_info.value)
+            assert "1 uncached slide" in msg
+            assert "Part one" in msg
+
+    def test_multi_part_all_cached_passes(self) -> None:
+        from slidesonnet.models import SlideAnnotation, SlideNarration
+        from slidesonnet.pipeline import _PreparedBuild, _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+        config.pronunciation_for.return_value = {}
+        config.voices = {}
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = MagicMock()
+        entry.path = Path("01-intro/slides.md")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Part one. Part two.",
+            narration_parts=["Part one.", "Part two."],
+        )
+
+        with (
+            patch("slidesonnet.pipeline.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.pipeline._audio_cache_exists", return_value=True),
+            patch("slidesonnet.pipeline.apply_pronunciation", side_effect=lambda t, _: t),
+        ):
+            parser = MagicMock()
+            parser.parse.return_value = [slide]
+            mock_gpe.return_value = (MagicMock(return_value=parser), MagicMock())
+
+            # Should not raise
+            _preflight_api_check(prep)
+
+
+class TestPreflightVideoEntry:
+    """Tests for _preflight_api_check skipping video entries."""
+
+    def test_video_entry_skipped(self) -> None:
+        from slidesonnet.models import ModuleType
+        from slidesonnet.pipeline import _PreparedBuild, _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = ModuleType.VIDEO
+        entry.path = Path("video.mp4")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        # Should not raise — video entries are skipped
+        _preflight_api_check(prep)
+
+
+class TestGenerateSrtFile:
+    """Tests for generate_srt_file()."""
+
+    def test_generates_srt(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import generate_srt_file
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Hello\n<!-- say: Welcome. -->\n")
+
+        with (
+            patch("slidesonnet.subtitles.get_duration", return_value=2.0),
+            patch("slidesonnet.subtitles._find_audio_path") as mock_find,
+        ):
+            # Create a fake audio file for _find_audio_path
+            fake_audio = tmp_path / "fake.wav"
+            fake_audio.write_bytes(b"\x00" * 100)
+            mock_find.return_value = fake_audio
+
+            srt_path = generate_srt_file(playlist)
+
+        assert srt_path.exists()
+        content = srt_path.read_text()
+        assert "Welcome." in content
+
+    def test_custom_output(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import generate_srt_file
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Hello\n<!-- say: Hi there. -->\n")
+        custom = tmp_path / "custom.srt"
+
+        with (
+            patch("slidesonnet.subtitles.get_duration", return_value=1.0),
+            patch("slidesonnet.subtitles._find_audio_path") as mock_find,
+        ):
+            fake_audio = tmp_path / "fake.wav"
+            fake_audio.write_bytes(b"\x00" * 100)
+            mock_find.return_value = fake_audio
+
+            result = generate_srt_file(playlist, output=custom)
+
+        assert result == custom
+        assert custom.exists()
+
+
+class TestGenerateSrtFailure:
+    """Tests for _generate_srt failure path."""
+
+    @patch("slidesonnet.pipeline.create_tts")
+    @patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_export_pdf)
+    @patch("slidesonnet.parsers.marp.extract_images", side_effect=_fake_extract)
+    @patch("slidesonnet.video.composer.concatenate_segments_xfade", side_effect=_fake_concat_xfade)
+    @patch("slidesonnet.video.composer.concatenate_segments", side_effect=_fake_concat)
+    @patch("slidesonnet.video.composer.compose_silent_segment", side_effect=_fake_compose_silent)
+    @patch("slidesonnet.video.composer.compose_segment", side_effect=_fake_compose_segment)
+    @patch("slidesonnet.video.composer.get_duration", return_value=1.0)
+    @patch("slidesonnet.tasks.action_concat_pdfs", return_value=None)
+    def test_srt_failure_returns_none_in_result(
+        self,
+        mock_concat_pdfs,
+        mock_duration,
+        mock_compose,
+        mock_silent,
+        mock_concat,
+        mock_concat_xfade,
+        mock_extract,
+        mock_export_pdf,
+        mock_create_tts,
+        tmp_path,
+    ):
+        """If SRT generation raises, build still succeeds with srt_path=None."""
+        playlist = _setup_project(tmp_path)
+        mock_tts = MockTTS()
+        mock_create_tts.return_value = mock_tts
+
+        with patch("slidesonnet.pipeline._generate_srt", side_effect=Exception("srt boom")):
+            # _generate_srt catches exceptions internally, so let's patch at lower level
+            pass
+
+        # Actually test the internal catch by patching generate_subtitles
+        with patch(
+            "slidesonnet.subtitles.generate_subtitles",
+            side_effect=RuntimeError("audio not found"),
+        ):
+            result = build(playlist)
+
+        assert result.srt_path is None
+
+
+class TestListSlides:
+    """Tests for list_slides()."""
+
+    def test_basic_listing(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import list_slides
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text(
+            textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Slide One
+
+            <!-- say: Hello world. -->
+
+            ---
+
+            # Silent
+
+            <!-- nonarration -->
+
+            ---
+
+            # No annotation
+        """)
+        )
+
+        result = list_slides(playlist)
+
+        assert result.tts_backend == "piper"
+        assert len(result.slides) >= 2
+        narrated = [s for s in result.slides if s.cached is not None]
+        assert len(narrated) >= 1
+        assert narrated[0].text == "Hello world."
+        silent = [s for s in result.slides if s.text == "[silent]"]
+        assert len(silent) == 1
+
+    def test_unannotated_shows_no_annotation(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import list_slides
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Bare Slide\n")
+
+        result = list_slides(playlist)
+
+        assert len(result.slides) == 1
+        assert result.slides[0].text == "[no annotation]"
+        assert result.slides[0].cached is None
+
+
+class TestExportUtterances:
+    """Tests for export_utterances()."""
+
+    def test_basic_utterances(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import export_utterances
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text(
+            textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Hello
+
+            <!-- say: Welcome to the lecture. -->
+
+            ---
+
+            # Silent
+
+            <!-- nonarration -->
+
+            ---
+
+            # Skipped
+
+            <!-- skip -->
+        """)
+        )
+
+        modules = export_utterances(playlist)
+
+        assert len(modules) == 1
+        mod = modules[0]
+        assert mod.module_path == "slides.md"
+        # Skip slides are excluded, but narrated + silent are included
+        narrated = [s for s in mod.slides if s.text and s.text != "[silent]"]
+        assert len(narrated) == 1
+        assert narrated[0].text == "Welcome to the lecture."
+        silent = [s for s in mod.slides if s.text == "[silent]"]
+        assert len(silent) == 1
+
+    def test_video_entries_skipped(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import export_utterances
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - intro.mp4
+              - slides.md
+        """)
+        )
+        (tmp_path / "intro.mp4").touch()
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Hello\n<!-- say: Hi. -->\n")
+
+        modules = export_utterances(playlist)
+
+        assert len(modules) == 1
+        assert modules[0].module_path == "slides.md"
+
+
+class TestExportPdfs:
+    """Tests for export_pdfs()."""
+
+    def test_marp_module(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import export_pdfs
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Hello\n<!-- say: Hi. -->\n")
+
+        def _fake_marp_export(source: Path, output: Path) -> None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"%PDF-1.4 fake")
+
+        def _fake_concat(pdfs: list[Path], output: Path) -> None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"%PDF-1.4 concatenated")
+
+        with (
+            patch("slidesonnet.parsers.marp.export_pdf", side_effect=_fake_marp_export),
+            patch("slidesonnet.actions.action_concat_pdfs", side_effect=_fake_concat),
+        ):
+            result = export_pdfs(playlist)
+
+        assert result.exists()
+        assert result.suffix == ".pdf"
+
+    def test_no_slide_modules_raises(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import export_pdfs
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - intro.mp4
+        """)
+        )
+        (tmp_path / "intro.mp4").touch()
+
+        with pytest.raises(SlideSonnetError, match="No slide modules"):
+            export_pdfs(playlist)
+
+
 class TestResolveOutputName:
     """Tests for _resolve_output_name()."""
 
@@ -638,3 +1130,441 @@ class TestResolveOutputName:
         override = tmp_path / "custom"
         result = _resolve_output_name(playlist_dir, "", override)
         assert result.suffix == ".mp4"
+
+    def test_relative_override_resolved_to_cwd(self, tmp_path: Path) -> None:
+        playlist_dir = tmp_path / "proj"
+        playlist_dir.mkdir()
+        override = Path("relative/output.mp4")
+        result = _resolve_output_name(playlist_dir, "", override)
+        assert result.is_absolute()
+        assert result.name == "output.mp4"
+        # Should be relative to cwd, not playlist_dir
+        assert str(Path.cwd()) in str(result)
+
+
+class TestDryRun:
+    """Tests for dry_run()."""
+
+    def test_basic_dry_run(self, tmp_path: Path) -> None:
+        """dry_run returns correct counts for narrated/silent/unannotated slides."""
+        from slidesonnet.pipeline import dry_run
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text(
+            textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Narrated
+
+            <!-- say: Hello world. -->
+
+            ---
+
+            # Silent
+
+            <!-- nonarration -->
+
+            ---
+
+            # Bare slide
+        """)
+        )
+
+        result = dry_run(playlist)
+
+        assert result.tts_backend == "piper"
+        assert result.total_narrated == 1
+        assert result.needs_tts == 1  # no cache exists
+        assert result.cached == 0
+        assert result.uncached_chars == len("Hello world.")
+
+    def test_video_entries_skipped(self, tmp_path: Path) -> None:
+        """dry_run skips video entries."""
+        from slidesonnet.pipeline import dry_run
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - intro.mp4
+              - slides.md
+        """)
+        )
+        (tmp_path / "intro.mp4").touch()
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Hello\n<!-- say: Hi. -->\n")
+
+        result = dry_run(playlist)
+
+        assert result.total_narrated == 1
+        assert result.needs_tts == 1
+
+    def test_multi_part_slides(self, tmp_path: Path) -> None:
+        """dry_run handles multi-part slides correctly."""
+        from slidesonnet.pipeline import dry_run
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text(
+            textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Multi-say
+
+            <!-- say(1): Part one. -->
+            <!-- say(1): Part two. -->
+        """)
+        )
+
+        result = dry_run(playlist)
+
+        assert result.total_narrated == 1
+        assert result.needs_tts == 1
+        assert result.uncached_chars == len("Part one.") + len("Part two.")
+
+    def test_tts_override(self, tmp_path: Path) -> None:
+        """dry_run respects tts_override parameter."""
+        from slidesonnet.pipeline import dry_run
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: elevenlabs
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Hello\n<!-- say: Hi. -->\n")
+
+        # Override to piper so we don't need API key
+        result = dry_run(playlist, tts_override="piper")
+
+        assert result.tts_backend == "piper"
+
+
+class TestBuildOptions:
+    """Tests for build() flag handling."""
+
+    def _make_prep(self, tmp_path: Path) -> _PreparedBuild:
+        from slidesonnet.models import VideoConfig
+
+        config = ProjectConfig(
+            tts=TTSConfig(backend="piper"),
+            video=VideoConfig(),
+        )
+        tts = MagicMock()
+        return _PreparedBuild(
+            playlist_path=tmp_path / "lecture.yaml",
+            playlist_dir=tmp_path,
+            build_dir=tmp_path / "cache",
+            config=config,
+            entries=[],
+            tts=tts,
+            output_path=tmp_path / "lecture.mp4",
+            pdf_output_path=tmp_path / "lecture.pdf",
+        )
+
+    @patch("slidesonnet.pipeline._generate_srt", return_value=None)
+    @patch("slidesonnet.pipeline._run_doit", return_value=1.0)
+    @patch("slidesonnet.pipeline._preflight_api_check")
+    @patch("slidesonnet.pipeline.generate_tasks", return_value=[])
+    @patch("slidesonnet.pipeline._prepare")
+    def test_preview_modifies_config(
+        self, mock_prepare, mock_gen, mock_preflight, mock_doit, mock_srt, tmp_path
+    ):
+        """preview=True applies quarter resolution, half fps, ultrafast preset."""
+        prep = self._make_prep(tmp_path)
+        mock_prepare.return_value = prep
+
+        build(tmp_path / "lecture.yaml", preview=True)
+
+        assert prep.config.video.resolution == "480x270"
+        assert prep.config.video.fps == 12
+        assert prep.config.video.preset == "ultrafast"
+        assert prep.config.video.crf == 32
+        assert prep.config.video.crossfade == 0.0
+        assert "_preview" in str(prep.output_path)
+
+    @patch("slidesonnet.pipeline._generate_srt", return_value=None)
+    @patch("slidesonnet.pipeline._run_doit", return_value=0.5)
+    @patch("slidesonnet.pipeline._preflight_api_check")
+    @patch("slidesonnet.pipeline.generate_tasks", return_value=[])
+    @patch("slidesonnet.pipeline._prepare")
+    def test_until_slides_skips_preflight_and_srt(
+        self, mock_prepare, mock_gen, mock_preflight, mock_doit, mock_srt, tmp_path
+    ):
+        """until='slides' skips both preflight API check and SRT generation."""
+        prep = self._make_prep(tmp_path)
+        mock_prepare.return_value = prep
+
+        result = build(tmp_path / "lecture.yaml", until="slides")
+
+        mock_preflight.assert_not_called()
+        mock_srt.assert_not_called()
+        assert result.until == "slides"
+        assert result.srt_path is None
+
+    @patch("slidesonnet.pipeline._generate_srt")
+    @patch("slidesonnet.pipeline._run_doit", return_value=0.5)
+    @patch("slidesonnet.pipeline._preflight_api_check")
+    @patch("slidesonnet.pipeline.generate_tasks", return_value=[])
+    @patch("slidesonnet.pipeline._prepare")
+    def test_no_srt_skips_srt_generation(
+        self, mock_prepare, mock_gen, mock_preflight, mock_doit, mock_srt, tmp_path
+    ):
+        """no_srt=True skips SRT generation entirely."""
+        prep = self._make_prep(tmp_path)
+        mock_prepare.return_value = prep
+
+        result = build(tmp_path / "lecture.yaml", no_srt=True)
+
+        mock_srt.assert_not_called()
+        assert result.srt_path is None
+
+    @patch("slidesonnet.pipeline._generate_srt", return_value=None)
+    @patch("slidesonnet.pipeline._run_doit", return_value=0.5)
+    @patch("slidesonnet.pipeline._preflight_api_check")
+    @patch("slidesonnet.pipeline.generate_tasks", return_value=[])
+    @patch("slidesonnet.pipeline._prepare")
+    def test_allow_api_skips_preflight(
+        self, mock_prepare, mock_gen, mock_preflight, mock_doit, mock_srt, tmp_path
+    ):
+        """allow_api=True skips preflight API check."""
+        prep = self._make_prep(tmp_path)
+        mock_prepare.return_value = prep
+
+        build(tmp_path / "lecture.yaml", allow_api=True)
+
+        mock_preflight.assert_not_called()
+
+
+class TestPreflightPiperSkips:
+    """Tests for _preflight_api_check with non-API backends."""
+
+    def test_piper_backend_returns_immediately(self) -> None:
+        from slidesonnet.pipeline import _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "piper"
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[MagicMock()],  # Would fail if not returned early
+            tts=MagicMock(),
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        # Should return immediately without parsing entries
+        _preflight_api_check(prep)
+
+
+class TestPreflightSinglePart:
+    """Tests for _preflight_api_check with single-part slides."""
+
+    def test_single_part_uncached_raises(self) -> None:
+        from slidesonnet.exceptions import APINotAllowedError
+        from slidesonnet.models import SlideAnnotation, SlideNarration
+        from slidesonnet.pipeline import _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+        config.pronunciation_for.return_value = {}
+        config.voices = {}
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = MagicMock()
+        entry.path = Path("slides.md")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        # Single-part slide (only narration_raw, no multi-part)
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Hello from a single part slide.",
+            narration_parts=["Hello from a single part slide."],
+        )
+
+        with (
+            patch("slidesonnet.pipeline.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.pipeline._audio_cache_exists", return_value=False),
+            patch("slidesonnet.pipeline.apply_pronunciation", side_effect=lambda t, _: t),
+        ):
+            parser = MagicMock()
+            parser.parse.return_value = [slide]
+            mock_gpe.return_value = (MagicMock(return_value=parser), MagicMock())
+
+            with pytest.raises(APINotAllowedError) as exc_info:
+                _preflight_api_check(prep)
+
+            msg = str(exc_info.value)
+            assert "1 uncached slide" in msg
+            assert "Hello from a single part slide" in msg
+
+    def test_plural_message_for_multiple_uncached(self) -> None:
+        from slidesonnet.exceptions import APINotAllowedError
+        from slidesonnet.models import SlideAnnotation, SlideNarration
+        from slidesonnet.pipeline import _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+        config.pronunciation_for.return_value = {}
+        config.voices = {}
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = MagicMock()
+        entry.path = Path("slides.md")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        slides = [
+            SlideNarration(
+                index=i,
+                annotation=SlideAnnotation.SAY,
+                narration_raw=f"Slide {i} text.",
+                narration_parts=[f"Slide {i} text."],
+            )
+            for i in range(1, 4)
+        ]
+
+        with (
+            patch("slidesonnet.pipeline.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.pipeline._audio_cache_exists", return_value=False),
+            patch("slidesonnet.pipeline.apply_pronunciation", side_effect=lambda t, _: t),
+        ):
+            parser = MagicMock()
+            parser.parse.return_value = slides
+            mock_gpe.return_value = (MagicMock(return_value=parser), MagicMock())
+
+            with pytest.raises(APINotAllowedError) as exc_info:
+                _preflight_api_check(prep)
+
+            msg = str(exc_info.value)
+            assert "3 uncached slides" in msg  # plural
+
+    def test_non_narrated_slides_skipped(self) -> None:
+        from slidesonnet.models import SlideAnnotation, SlideNarration
+        from slidesonnet.pipeline import _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+        config.pronunciation_for.return_value = {}
+        config.voices = {}
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = MagicMock()
+        entry.path = Path("slides.md")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        # Silent and unannotated slides — no narration
+        slides = [
+            SlideNarration(index=1, annotation=SlideAnnotation.SILENT),
+            SlideNarration(index=2, annotation=SlideAnnotation.NONE),
+            SlideNarration(index=3, annotation=SlideAnnotation.SKIP),
+        ]
+
+        with (
+            patch("slidesonnet.pipeline.get_parser_and_extractor") as mock_gpe,
+        ):
+            parser = MagicMock()
+            parser.parse.return_value = slides
+            mock_gpe.return_value = (MagicMock(return_value=parser), MagicMock())
+
+            # Should not raise — no narrated slides
+            _preflight_api_check(prep)
+
+
+class TestGenerateSrtInternal:
+    """Tests for _generate_srt() internal behavior."""
+
+    def test_empty_entries_returns_none(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import _generate_srt
+
+        prep = _PreparedBuild(
+            playlist_path=tmp_path / "lecture.yaml",
+            playlist_dir=tmp_path,
+            build_dir=tmp_path / "cache",
+            config=MagicMock(),
+            entries=[],
+            tts=MagicMock(),
+            output_path=tmp_path / "lecture.mp4",
+            pdf_output_path=tmp_path / "lecture.pdf",
+        )
+
+        with patch("slidesonnet.subtitles.generate_subtitles", return_value=[]):
+            result = _generate_srt(prep)
+
+        assert result is None

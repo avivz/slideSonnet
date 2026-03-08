@@ -329,3 +329,96 @@ class TestCleanEdgeCases:
         clean(playlist, keep="api")
 
         assert not audio.exists()
+
+    def test_clean_result_counts(self, tmp_path: Path) -> None:
+        playlist = _create_playlist(tmp_path)
+        _populate_cache(tmp_path)
+
+        result = clean(playlist, keep="api")
+
+        assert result.removed_files > 0
+        assert result.removed_bytes > 0
+        assert result.kept_files >= 0
+        assert result.removed_mb >= 0
+
+    def test_clean_api_no_audio_dir(self, tmp_path: Path) -> None:
+        """clean --keep api with no audio/ dir just removes artifacts."""
+        playlist = _create_playlist(tmp_path)
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        (cache / ".doit.db").write_text("{}")
+
+        result = clean(playlist, keep="api")
+
+        assert result.removed_files >= 1
+        assert not (cache / ".doit.db").exists()
+
+    def test_clean_current_no_audio_dir(self, tmp_path: Path) -> None:
+        """clean --keep current with no audio/ dir just removes artifacts."""
+        playlist = _create_playlist(tmp_path)
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        (cache / ".doit.db").write_text("{}")
+
+        result = clean(playlist, keep="current")
+
+        assert result.removed_files >= 1
+
+    def test_clean_exact_no_audio_dir(self, tmp_path: Path) -> None:
+        """clean --keep exact with no audio/ dir just removes artifacts."""
+        playlist = _create_playlist(tmp_path)
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        (cache / ".doit.db").write_text("{}")
+
+        result = clean(playlist, keep="exact")
+
+        assert result.removed_files >= 1
+
+
+class TestCleanWithVideoModule:
+    """Tests for clean with video entries in playlist."""
+
+    def test_video_entries_skipped(self, tmp_path: Path) -> None:
+        """Video entries in playlist are skipped during text hash collection."""
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+              piper:
+                model: en_US-lessac-medium
+            modules:
+              - intro.mp4
+              - 01-intro/slides.md
+        """)
+        )
+        (tmp_path / "intro.mp4").touch()
+        slides_dir = tmp_path / "01-intro"
+        slides_dir.mkdir()
+        (slides_dir / "slides.md").write_text(
+            textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Slide
+
+            <!-- say: Hello world. -->
+        """)
+        )
+
+        # Populate cache
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        audio = cache / "audio"
+        audio.mkdir()
+        piper_key = "piper:en_US-lessac-medium:None"
+        name = audio_filename("Hello world.", "piper", piper_key)
+        (audio / name).write_bytes(b"audio")
+
+        clean(playlist, keep="current")
+
+        # Audio for "Hello world." should be kept
+        assert (audio / name).exists()
