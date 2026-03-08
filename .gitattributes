@@ -3,3 +3,4 @@ examples/showcase/images/*.jpg filter=lfs diff=lfs merge=lfs -text
 examples/showcase/animations/*.mp4 filter=lfs diff=lfs merge=lfs -text
 tests/fixtures/*.wav filter=lfs diff=lfs merge=lfs -text
 examples/showcase/*.mp4 filter=lfs diff=lfs merge=lfs -text
+examples/basel-problem/basel-problem.mp4 filter=lfs diff=lfs merge=lfs -text

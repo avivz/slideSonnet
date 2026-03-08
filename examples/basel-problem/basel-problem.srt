@@ -1,0 +1,459 @@
+1
+00:00:01,000 --> 00:00:04,419
+Today, I want to tell you about one of my favorite stories
+
+2
+00:00:04,419 --> 00:00:07,662
+in mathematics: the Basel Problem — a sum that resisted
+
+3
+00:00:07,662 --> 00:00:11,140
+solution for eighty-five years before a young mathematician
+
+4
+00:00:11,140 --> 00:00:14,087
+finally cracked it with a beautifully simple idea.
+
+5
+00:00:15,587 --> 00:00:17,338
+Here's the question.
+
+6
+00:00:17,338 --> 00:00:24,164
+Take every perfect square — one, four, nine, sixteen, twenty-five, and so on —
+
+7
+00:00:24,164 --> 00:00:27,665
+flip each one over, and add them all up.
+
+8
+00:00:27,665 --> 00:00:32,828
+Does this infinite sum converge? And if it does... to what?
+
+9
+00:00:34,328 --> 00:00:38,816
+The problem was first posed by Pietro Mengoli in 1650.
+
+10
+00:00:38,816 --> 00:00:41,143
+Now, the sum does converge —
+
+11
+00:00:41,143 --> 00:00:47,376
+you can check that by comparing it with the integral of one over x squared.
+
+12
+00:00:47,376 --> 00:00:53,941
+Add up the first hundred terms, you get about 1.6349. A thousand terms? 1.6439.
+
+13
+00:00:53,941 --> 00:00:59,924
+It's clearly approaching something near 1.6449. But what is this number?
+
+14
+00:00:59,924 --> 00:01:05,077
+Is it the root of some polynomial? The logarithm of something?
+
+15
+00:01:05,077 --> 00:01:07,321
+Nobody could figure it out.
+
+16
+00:01:08,821 --> 00:01:14,185
+Even Jakob Bernoulli, one of the greatest mathematicians of his era,
+
+17
+00:01:14,185 --> 00:01:16,157
+publicly gave up in 1689.
+
+18
+00:01:16,157 --> 00:01:16,867
+He wrote:
+
+19
+00:01:18,367 --> 00:01:22,652
+"If anyone finds and communicates to us that which thusfar
+
+20
+00:01:22,652 --> 00:01:26,569
+has eluded our efforts, great will be our gratitude."
+
+21
+00:01:28,069 --> 00:01:31,148
+For eighty-five years, nobody could solve it.
+
+22
+00:01:31,148 --> 00:01:35,116
+Then in 1734, a twenty-seven year old named Leonard Euler,
+
+23
+00:01:35,116 --> 00:01:40,111
+working at the Academy of Sciences in Saint Petersburg, found the answer.
+
+24
+00:01:40,111 --> 00:01:42,985
+He presented his proof the following year.
+
+25
+00:01:44,485 --> 00:01:48,363
+The sum equals pi squared over six. And that was shocking.
+
+26
+00:01:48,363 --> 00:01:52,441
+Pi is the ratio of a circle's circumference to its diameter —
+
+27
+00:01:52,441 --> 00:01:56,519
+why on earth would it show up in a sum of reciprocal squares?
+
+28
+00:01:56,519 --> 00:02:01,801
+There's no circle anywhere in sight. Let me show you Euler's original argument.
+
+29
+00:02:01,801 --> 00:02:04,743
+It's not fully rigorous by modern standards,
+
+30
+00:02:04,743 --> 00:02:09,557
+but the intuition is so compelling that everyone accepted it right away,
+
+31
+00:02:09,557 --> 00:02:13,167
+and the gaps got filled in over the following century.
+
+32
+00:02:14,667 --> 00:02:20,022
+Euler's proof starts with something you might not expect — the sine function.
+
+33
+00:02:20,022 --> 00:02:22,803
+We know the Taylor series for sine of x:
+
+34
+00:02:22,803 --> 00:02:25,723
+it's x minus x cubed over three factorial,
+
+35
+00:02:25,723 --> 00:02:29,270
+plus x to the fifth over five factorial, and so on.
+
+36
+00:02:30,770 --> 00:02:35,797
+Now remember, an infinite series is just a limit of partial sums.
+
+37
+00:02:35,797 --> 00:02:40,129
+For any fixed nonzero x, we can divide that limit by x —
+
+38
+00:02:40,129 --> 00:02:43,841
+that's justified by the algebraic limit theorem.
+
+39
+00:02:43,841 --> 00:02:48,714
+So we get sine of x over x equals one minus x squared over six,
+
+40
+00:02:48,714 --> 00:02:50,571
+plus higher-order terms.
+
+41
+00:02:52,071 --> 00:02:56,588
+Hold onto that coefficient of x squared — it's negative one-sixth.
+
+42
+00:02:56,588 --> 00:02:58,915
+That number is going to come back.
+
+43
+00:03:00,415 --> 00:03:06,312
+Now here's Euler's bold move — the step that made this proof famous.
+
+44
+00:03:06,312 --> 00:03:12,642
+The function sine of x over x equals zero whenever x is plus or minus pi,
+
+45
+00:03:12,642 --> 00:03:17,499
+plus or minus two pi, plus or minus three pi, and so on.
+
+46
+00:03:18,999 --> 00:03:21,054
+Euler reasoned by analogy.
+
+47
+00:03:21,054 --> 00:03:26,982
+If a polynomial has certain roots, you can factor it as a product of terms,
+
+48
+00:03:26,982 --> 00:03:28,405
+one for each root.
+
+49
+00:03:28,405 --> 00:03:32,120
+He applied the same logic to sine of x over x —
+
+50
+00:03:32,120 --> 00:03:36,784
+even though it's not a polynomial, it's an infinite series.
+
+51
+00:03:36,784 --> 00:03:39,551
+He wrote it as an infinite product,
+
+52
+00:03:39,551 --> 00:03:43,424
+where each factor corresponds to a pair of roots.
+
+53
+00:03:43,424 --> 00:03:46,665
+Now, this was an assumption, not a proof.
+
+54
+00:03:46,665 --> 00:03:50,064
+The rigorous justification came much later,
+
+55
+00:03:50,064 --> 00:03:54,095
+with the Weierstrass factorization theorem of 1876.
+
+56
+00:03:54,095 --> 00:03:55,518
+So what do we get?
+
+57
+00:03:57,018 --> 00:03:59,747
+Before we tackle the infinite product,
+
+58
+00:03:59,747 --> 00:04:02,764
+let's see why this works for a finite one.
+
+59
+00:04:02,764 --> 00:04:08,366
+Take just three factors. Each factor looks like one minus a-k times x squared.
+
+60
+00:04:08,366 --> 00:04:11,526
+When we multiply them out, an x-squared term
+
+61
+00:04:11,526 --> 00:04:14,327
+only shows up when we pick the negative
+
+62
+00:04:14,327 --> 00:04:20,073
+a-k x-squared piece from exactly one factor and the one from every other factor.
+
+63
+00:04:20,073 --> 00:04:23,665
+Pick the x-squared piece from two or more factors,
+
+64
+00:04:23,665 --> 00:04:26,394
+and you get x to the fourth or higher.
+
+65
+00:04:26,394 --> 00:04:31,852
+So the x-squared coefficient is just the sum, a-one plus a-two plus a-three,
+
+66
+00:04:31,852 --> 00:04:33,145
+with a minus sign.
+
+67
+00:04:34,645 --> 00:04:37,467
+Now extend this to the infinite product.
+
+68
+00:04:37,467 --> 00:04:39,584
+By exactly the same reasoning,
+
+69
+00:04:39,584 --> 00:04:44,663
+the x-squared coefficient is the sum of all the a-k's with a minus sign.
+
+70
+00:04:44,663 --> 00:04:49,884
+That gives us negative one over pi squared, plus one over four pi squared,
+
+71
+00:04:49,884 --> 00:04:52,776
+plus one over nine pi squared, and so on.
+
+72
+00:04:52,776 --> 00:04:58,208
+Factor out the one over pi squared, and what's left? Exactly our mystery sum.
+
+73
+00:04:58,208 --> 00:05:02,582
+Now, extending the finite argument to an infinite product does
+
+74
+00:05:02,582 --> 00:05:07,097
+require absolute convergence and a valid power series expansion.
+
+75
+00:05:07,097 --> 00:05:10,978
+That's true here, but it wasn't proven in Euler's time.
+
+76
+00:05:10,978 --> 00:05:12,741
+Granting that assumption,
+
+77
+00:05:12,741 --> 00:05:16,833
+the extraction works just as it does for a finite product.
+
+78
+00:05:18,333 --> 00:05:19,390
+Now we compare.
+
+79
+00:05:19,390 --> 00:05:24,602
+The Taylor series told us the x squared coefficient is negative one-sixth.
+
+80
+00:05:26,102 --> 00:05:28,374
+And the infinite product told us it's
+
+81
+00:05:28,374 --> 00:05:31,013
+negative one over pi squared times our sum.
+
+82
+00:05:32,513 --> 00:05:35,711
+Both are power series for the same function,
+
+83
+00:05:35,711 --> 00:05:38,909
+and a power series representation is unique.
+
+84
+00:05:38,909 --> 00:05:41,380
+So the coefficients have to match.
+
+85
+00:05:41,380 --> 00:05:47,194
+Set them equal, and you get: one over pi squared times the sum equals one-sixth.
+
+86
+00:05:48,694 --> 00:05:53,024
+Multiply both sides by pi squared, and there it is.
+
+87
+00:05:53,024 --> 00:05:59,307
+One plus one-fourth plus one-ninth plus one-sixteenth, and so on forever —
+
+88
+00:05:59,307 --> 00:06:01,853
+it equals pi squared over six.
+
+89
+00:06:01,853 --> 00:06:07,966
+That mysterious 1.6449 that nobody could pin down for eighty-five years?
+
+90
+00:06:07,966 --> 00:06:14,164
+Pi squared over six. The circle constant was hiding in the sum all along.
+
+91
+00:06:15,664 --> 00:06:21,452
+So should we worry that Euler's proof cut corners? Mathematicians certainly did.
+
+92
+00:06:21,452 --> 00:06:25,070
+It took over a century before Weierstrass provided
+
+93
+00:06:25,070 --> 00:06:28,471
+the tools to make that factoring step rigorous.
+
+94
+00:06:28,471 --> 00:06:30,931
+But the answer was never in doubt.
+
+95
+00:06:30,931 --> 00:06:33,898
+Sometimes intuition runs ahead of proof —
+
+96
+00:06:33,898 --> 00:06:37,371
+and that gap is where new mathematics gets born.
+
+97
+00:06:38,871 --> 00:06:43,305
+What we just computed is actually a special value of what
+
+98
+00:06:43,305 --> 00:06:47,661
+we now call the Riemann zeta function — at s equals two.
+
+99
+00:06:47,661 --> 00:06:52,950
+Euler himself went on to show that all the even values, zeta of two,
+
+100
+00:06:52,950 --> 00:06:58,940
+zeta of four, zeta of six, and so on, are rational multiples of powers of pi.
+
+101
+00:06:58,940 --> 00:07:03,840
+But the odd values? Zeta of three, zeta of five, zeta of seven?
+
+102
+00:07:03,840 --> 00:07:05,162
+Still mysterious.
+
+103
+00:07:05,162 --> 00:07:10,063
+To this day, nobody's found clean closed forms for any of them.
+
+104
+00:07:10,063 --> 00:07:13,796
+Some of the biggest open problems in mathematics
+
+105
+00:07:13,796 --> 00:07:17,141
+trace right back to this one beautiful sum.
+
+106
+00:07:18,641 --> 00:07:20,006
+So what did we learn?
+
+107
+00:07:20,006 --> 00:07:24,166
+Sometimes a simple question — one you could explain to a child —
+
+108
+00:07:24,166 --> 00:07:26,701
+hides an answer of extraordinary depth.
+
+109
+00:07:26,701 --> 00:07:29,497
+Euler's genius wasn't just technical skill.
+
+110
+00:07:29,497 --> 00:07:33,592
+It was the boldness to try something that had no right to work,
+
+111
+00:07:33,592 --> 00:07:36,712
+and the taste to recognize beauty in the result.
+
+112
+00:07:36,712 --> 00:07:41,652
+And at the heart of it all is pi, quietly connecting the geometry of circles
+
+113
+00:07:41,652 --> 00:07:46,398
+to the arithmetic of whole numbers in ways we're still discovering today.
+
+114
+00:07:46,398 --> 00:07:49,583
+Thanks for joining me on this journey through one
+
+115
+00:07:49,583 --> 00:07:52,443
+of the most beautiful proofs in mathematics.
