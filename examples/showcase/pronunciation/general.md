@@ -8,9 +8,9 @@
 **GUI**: gooey
 **regex**: rej-ex
 **async**: ay-sink
-**OAuth**: oh-auth
-**YAML**: yam-ul
-**JSON**: jay-son
+**OAuth**: oh auth
+**YAML**: yammel
+**JSON**: jayson
 **REST**: rest
 
 ## Project Terms

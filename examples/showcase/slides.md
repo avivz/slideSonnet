@@ -9,32 +9,32 @@ math: katex
 
 Compile slide decks into narrated videos --- entirely from text.
 
-<!-- say(voice=alex): So Sam, what's the deal with slideSonnet? Tell me about it. -->
-<!-- say: Oh you're gonna *love* this. It takes your plain-text slides and turns them into narrated videos. You just write slides, throw in some comments for narration, and vwalla! you get an MP4. -->
+<!-- say(voice=alex): [inquisitive] So Sam, what's the deal with slideSonnet? Tell me about it! -->
+<!-- say: [excited] Oh you're gonna LOVE this! It takes your plain-text slides and turns them into fully narrated VIDEOS. You just write slides, throw in some comments for narration, and SHAZZAM — you get an MP4! -->
 
 ---
 
-# The Problem
+# The Problem With Recording Narrations
 
-<!-- say(voice=alex): OK but why? Can't I just record myself talking over slides? -->
+<!-- say(voice=alex): [skeptical] OK but WHY? ... Can't I just record myself talking over slides? -->
 * Recording narrated lectures is tedious
-<!-- say: Sure, if you enjoy sitting in a quiet room with a mic, talking through *every* single slide till you get it right... -->
+<!-- say: [dry humor] Sure, if you ENJOY sitting in a quiet room with a mic, talking through EVERY ... SINGLE ... slide till you get it right... -->
 * One edit means re-recording everything
-<!-- say: And the best part — change one slide and you get to re-record it. Every. Single. Time. -->
+<!-- say: [sarcastic] And the BEST part — change one slide and you get to re-record it. EVERY... SINGLE... TIME. -->
 * **Narration should live in the source**
-<!-- say: With slideSonnet, your narration is just text that's sitting next to the code for your slides. Edit a line, hit rebuild, done. No mic, no re-recording, no pain. -->
+<!-- say: [enthusiastic] With slideSonnet, your narration is just text sitting next to the code for your slides! Edit a line, hit rebuild, DONE! No mic, no re-recording, no pain! -->
 
 ---
 
 # How It Works
 
-<!-- say(voice=alex): Alright, you've got my attention. How does it actually work? -->
+<!-- say(voice=alex): [intrigued] Alright, you've got my attention. How does it ACTUALLY work? -->
 1) Write slides in **Markdown** (Rendered with MARP) or **LaTeX** (using Beamer)
-<!-- say: Step one — write your slides. In Markdown or Beamer LaTeX, whatever floats your boat. -->
+<!-- say: [confidently] Step one: write your slides. In Markdown or in LaTeX, whatever floats your boat! -->
 2) Add `say` comments for narration
-<!-- say: Step two — drop in say comments. Just text with the words you want spoken. That's literally it. -->
+<!-- say: Step two: drop in "say" comments. Just text ... with the words you want spoken. That's LITERALLY it! -->
 3) Run `slidesonnet build`
-<!-- say: Step three — run slidesonnet build. It does the speech synthesis, renders your slides, stitches it all together into a video. One command and you're done. -->
+<!-- say: [enthusiastic] Step three: run slidesonnet build. It does the speech synthesis, renders your slides, and stitches it ALL together. ONE command and you're done! -->
 
 ---
 
@@ -50,8 +50,8 @@ slidesonnet init         # scaffold a MARP project
 slidesonnet build        # compile to MP4
 ```
 
-<!-- say(voice=alex): OK I want to try it. What do I do? -->
-<!-- say: Literally three commands. pip install, init to set up a project template, build to make the video. That's it — you'll have a narrated MP4 before your coffee gets cold. -->
+<!-- say(voice=alex): [eager] OK I want to try it! What do I do? -->
+<!-- say: [confidently] Literally THREE commands. pip install, INIT to set up a project template, and BUILD to make the video. That's IT! [proudly] You'll have a narrated MP4 before your coffee gets cold! -->
 
 ---
 
@@ -76,8 +76,8 @@ Some visible content.
 ...
 ```
 
-<!-- say(voice=alex): Hold on — the narration is literally just a comment in the Markdown? -->
-<!-- say: Yep! An HTML comment that starts with say colon. The text inside becomes audio. And here's the fun part — what you're hearing right now? Written *exactly* this way! -->
+<!-- say(voice=alex): [surprised] Hold on — the narration is LITERALLY JUST a comment in the Markdown? -->
+<!-- say: [proudly] YEP! An HTML comment that starts with say colon. The text inside becomes audio. [excitement building] And here's the FUN part — what you're hearing RIGHT now? [enthusiastic] Written EXACTLY this way! -->
 
 ---
 
@@ -100,8 +100,8 @@ modules:
   - slides.md
 ```
 
-<!-- say(voice=alex): So where does all the config stuff go? Voices, text-to-speech settings? -->
-<!-- say: The playlist file — slidesonnet dot yaml. It's got your text-to-speech backend, voice mappings, pronunciation dictionaries, the whole deal. And slideSonnet finds it automatically, so you just run build and everything just works. -->
+<!-- say(voice=alex): [curious] So where does all the CONFIG STUFF go? Voices, text-to-speech settings? -->
+<!-- say: [enthusiastic] The playlist file is slide sonnet dot yaml. It's got your text-to-speech backend, your voice mappings, pronunciation dictionaries — the WHOLE deal! [proudly] And slideSonnet finds it AUTOMATICALLY, so you hit build, and everything else JUST WORKS! -->
 
 ---
 
@@ -117,8 +117,8 @@ Switch voices on any slide with `voice=`:
 
 Voices are defined in the playlist. Beamer uses `\say[voice=alex]{text}`.
 
-<!-- say(voice=alex): Wait a second — this is how we're using different voices right now? -->
-<!-- say: Yup! You're alex, and I'm the default voice. You just stick a voice parameter in the say comment and slide sonnet handles the rest. Pretty slick, right? -->
+<!-- say(voice=alex): [awe] Wait a SECOND! [in wonder] THIS is how we're using different voices RIGHT NOW? -->
+<!-- say: [playfully] YUP! You're alex, and I AM the default voice. You just STICK a voice parameter in the say comment and slideSonnet handles the rest! [proudly] Pretty SLICK, right? -->
 
 ---
 
@@ -126,13 +126,13 @@ Voices are defined in the playlist. Beamer uses `\say[voice=alex]{text}`.
 
 Bullet points reveal one at a time, each with its own narration:
 
-<!-- say(voice=alex): Can you do that thing where bullets pop in one at a time? -->
+<!-- say(voice=alex): [curious] Can you do that thing where bullets pop in one at a time? -->
 * Use `*` bullets instead of `-` dashes
-<!-- say: Oh yeah. Just use star bullets instead of dashes and each one becomes a fragment. -->
+<!-- say: [confidently] Oh YEAH! Just use star bullets instead of dashes and each one becomes a fragment! -->
 * Each fragment gets its own narration
-<!-- say: Every fragment gets its own sub-slide and narration. Easy! -->
+<!-- say: [enthusiastic] Every fragment gets its own sub-slide and narration. EASY! -->
 * Just like a live presentation
-<!-- say: It ends up feeling just like a real talk. Ideas building one by one. -->
+<!-- say: [enthusiastic] It ends up feeling JUST like a REAL talk — ideas building one by one! -->
 
 ---
 
@@ -147,8 +147,8 @@ Two special annotations:
 
 Great for title cards, pauses, or draft slides you want to keep in the source.
 
-<!-- say(voice=alex): What if I've got a slide that doesn't need any talking? -->
-<!-- say: Easy. Nonarration gives you a quiet pause — nice for title cards. And skip just hides the slide from the video completely. Great for drafts. Oh, and fun fact — there's a skipped slide lurking at the end of this slide deck too! -->
+<!-- say(voice=alex): [wondering] What if I've got a slide that doesn't need any talking? -->
+<!-- say: [casually] Easy. Nonarration gives you a quiet pause — nice for title cards. And skip just HIDES the slide from the video completely. Great for drafts. [conspiratorial] Oh, and FUN fact — there's a skipped slide lurking at the END of this slide deck too! -->
 
 ---
 
@@ -166,8 +166,8 @@ def greet(name: str) -> str:
 
 ![w:280 The Great Wave](images/great-wave.jpg)
 
-<!-- say(voice=alex): What about the fancy stuff — math, code, images? -->
-<!-- say: MARP has you covered. Math, syntax-highlighted code, images — all standard Markdown, no plugins. And we've got pronunciation dictionaries too, so names like Dijkstra and Euler actually come out right. -->
+<!-- say(voice=alex): [curious] What about the FANCY stuff — math? code? images? -->
+<!-- say: [confidently] MARP has you COVERED. [excited] Math, syntax-highlighted code, images — all standard Markdown, no plugins. And we've got pronunciation dictionaries too, so names like Dijkstra and Euler ACTUALLY come out right! -->
 
 ---
 
@@ -181,8 +181,8 @@ slidesonnet build --dry-run      # estimate API cost
 
 Only changed slides are re-synthesized --- everything else is cached.
 
-<!-- say(voice=alex): Doesn't cloud TTS get expensive when you're still tweaking things? -->
-<!-- say: Nah, you don't need cloud for drafting. Use Piper — it's free, runs locally. Throw in the preview flag for a quick rough cut. And the best part? slideSonnet caches everything. Change one slide, only that slide rebuilds. Fast and cheap! -->
+<!-- say(voice=alex): [concerned] Doesn't cloud TTS get EXPENSIVE when you're still tweaking things? -->
+<!-- say: [reassuringly] NAH, you don't need cloud for drafting. Use Piper — it's FREE! runs locally. Throw in the preview flag for a quick rough cut. [enthusiastic] And the BEST part? slideSonnet caches EVERYTHING! Change one slide, only THAT slide rebuilds. Fast and cheap! -->
 
 ---
 
@@ -196,8 +196,8 @@ Write slides. Add narration. Build great presentations.
 
 **Text in, video out.**
 
-<!-- say(voice=alex): OK I'm sold. Let's do this. -->
-<!-- say: That's what I like to hear! pip install slidesonnet, write some slides, add your say comments, and hit build. Go make something awesome! -->
+<!-- say(voice=alex): OK I'm SOLD. [excited] Let's DO this! -->
+<!-- say: [warmly] THAT'S what I like to hear! pip install slidesonnet, write some slides, add your say comments, and hit build. [enthusiastic] Now go and make SOMETHING AWESOME! -->
 
 ---
 
