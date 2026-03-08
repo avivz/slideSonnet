@@ -52,6 +52,18 @@ slidesonnet clean --keep current                   # Keep audio for current slid
 - **Prefer `make clean-*` over `make purge-*`** — clean keeps cached API audio (which costs money to regenerate), purge nukes everything. Only use purge when explicitly asked.
 - **No integration tests in CI** — GitHub Actions free tier has limited minutes. CI runs lint, typecheck, unit tests, and wheel build only. Integration tests (`make test`) are local-only.
 
+## Example Videos
+
+Example videos are **not** stored in the repo. They are hosted as GitHub Release assets on the `v0.0.0` release. MP4 files live on disk in `examples/` but are gitignored.
+
+```bash
+# Upload or replace a video
+gh release upload v0.0.0 examples/showcase/showcase.mp4 --clobber
+
+# Upload all example videos
+gh release upload v0.0.0 examples/showcase/showcase.mp4 examples/basel-problem/basel-problem.mp4 examples/basel-problem-he/basel-problem-he.mp4 --clobber
+```
+
 ## Releasing
 
 ```bash

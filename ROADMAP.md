@@ -4,9 +4,7 @@ Current version: 0.1.0 (alpha)
 
 ## Now — ship alpha
 
-1. **Finalize and record Basel problem example** — Polish the existing Basel problem lesson into a publishable state. Must build from `examples/` with `--tts piper`. Human approves the final video. Upload to YouTube. **Blocks v0.1.0a1.**
-
-2. **Tag and publish v0.1.0a1** — Blocked by Basel video. CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
+1. **Tag and publish v0.1.0a1** — CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
 
 ## Next — before beta
 
@@ -38,8 +36,7 @@ Current version: 0.1.0 (alpha)
 6. **Hebrew TTS** — Research is done (see `dev/hebrew-tts-research.md`). LightBlue Piper+Phonikud is the most promising local path. Cartesia Sonic-3 for cloud. Requires a new backend module.
 7. **Watch mode** — `slidesonnet watch` to auto-rebuild on file save. Adds watchdog dependency.
 8. **Pronunciation correction workflow** — Interactive tooling for iterating on pronunciation dictionaries.
-9. **Basel problem example — Hebrew subtitles** — Add Hebrew subtitle translation as a demo of multilingual workflows.
-10. **Additional TTS backends** — Cartesia, Google Cloud TTS, Azure Speech. Each follows the existing backend pattern.
+9. **Additional TTS backends** — Cartesia, Google Cloud TTS, Azure Speech. Each follows the existing backend pattern.
 11. **Code tutorial presentation mode** — A slide format for teaching programming: syntax-highlighted code that evolves across slides (lines added, removed, modified), shell commands being typed, program output, and GUI screenshots. Narrated programming tutorials from text source files — no screen recording needed. Needs design: source format, diff specification, shell session description.
 
 ## Done
@@ -67,6 +64,9 @@ Current version: 0.1.0 (alpha)
 - [x] Lower `requires-python` to `>=3.12` (no 3.13-only features used)
 - [x] `slidesonnet utterances` narration text export for proofreading
 - [x] Purge large files from git history; binary assets moved to Git LFS
+- [x] Example videos human-approved and uploaded to GitHub Releases (v0.0.0): showcase, Basel problem (EN), Basel problem (HE)
+- [x] MP4 videos removed from Git LFS; hosted on GitHub Releases instead
+- [x] Basel problem example — Hebrew subtitle translation
 - [x] `--output` flag and `slidesonnet.yaml` config rename with auto-discovery
 - [x] `--quiet` mode covers all CLI commands (init, clean now respect `-q`)
 - [x] Showcase example rewritten from scratch (covers all current features, builds with `--tts piper`)

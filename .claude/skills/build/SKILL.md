@@ -166,5 +166,6 @@ slidesonnet build --tts piper --no-srt
 - **Prefer `slidesonnet clean --keep api`** (the default) over `--keep nothing` to preserve expensive cloud audio.
 - **Use `--dry-run` first** when unsure about cache state — it shows what would be rebuilt without doing anything.
 - **Use `--preview` for iteration** — 4x faster than full-quality builds.
+- **Example videos are hosted on GitHub Releases** (`v0.0.0`), not in the repo. After rebuilding an example, upload with `gh release upload v0.0.0 path/to/video.mp4 --clobber`.
 
 $ARGUMENTS

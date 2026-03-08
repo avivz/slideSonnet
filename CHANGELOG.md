@@ -34,6 +34,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Adversarial edge-case tests for MARP and Beamer parsers (24 tests covering nested delimiters, escaped characters, malformed annotations, empty slides)
 
 ### Changed
+- Example videos moved from Git LFS to GitHub Releases (`v0.0.0`); MP4 files no longer tracked in repo
 - Default config file renamed from `lecture.yaml` to `slidesonnet.yaml` (`slidesonnet init` creates the new name; `lecture.yaml` auto-discovered as fallback)
 - `slidesonnet pdf` now produces a single concatenated PDF instead of per-module PDFs
 - Per-module PDFs generated into cache directory (fixes collision bug with same-named modules)
