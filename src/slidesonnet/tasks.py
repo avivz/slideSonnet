@@ -103,8 +103,11 @@ def generate_tasks(
             all_segments.append(source_path)
             continue
 
-        # Get parser and extract function
+        # Get parser, extract function, and visual hash function
         parser_cls, extract_fn = get_parser_and_extractor(entry.module_type)
+        visual_hash_fn = (
+            beamer_visual_hash if entry.module_type == ModuleType.BEAMER else marp_visual_hash
+        )
 
         # Read source once for visual hashing (annotation-aware cache key)
         try:
@@ -154,6 +157,7 @@ def generate_tasks(
         # Task: extract images (+ compile step for Beamer)
         css_deps = sorted(str(p) for p in source_path.parent.glob("*.css"))
         module_pdf_path = module_dir / f"{entry.path.stem}.pdf"
+        v_hash = visual_hash_fn(source_text)
 
         if entry.module_type == ModuleType.BEAMER:
             cache_pdf = slides_dir / f"{source_path.stem}.pdf"
@@ -165,7 +169,7 @@ def generate_tasks(
                     "actions": [(action_compile_beamer, [source_path, slides_dir, cache_pdf])],
                     "file_dep": [],
                     "targets": [str(cache_pdf)],
-                    "uptodate": [config_changed({"visual_hash": beamer_visual_hash(source_text)})],
+                    "uptodate": [config_changed({"visual_hash": v_hash})],
                     "verbosity": 2,
                 }
             )
@@ -212,7 +216,7 @@ def generate_tasks(
                     ],
                     "file_dep": css_deps,
                     "targets": [str(manifest_path)],
-                    "uptodate": [config_changed({"visual_hash": marp_visual_hash(source_text)})],
+                    "uptodate": [config_changed({"visual_hash": v_hash})],
                     "verbosity": 2,
                 }
             )
@@ -224,7 +228,7 @@ def generate_tasks(
                     "actions": [(action_export_pdf_marp, [source_path, module_pdf_path])],
                     "file_dep": css_deps,
                     "targets": [str(module_pdf_path)],
-                    "uptodate": [config_changed({"visual_hash": marp_visual_hash(source_text)})],
+                    "uptodate": [config_changed({"visual_hash": v_hash})],
                     "verbosity": 2,
                 }
             )
@@ -356,6 +360,7 @@ def generate_tasks(
                         "uptodate": [
                             config_changed(
                                 {
+                                    "visual_hash": v_hash,
                                     "pad_seconds": config.video.pad_seconds,
                                     "pre_silence": config.video.pre_silence,
                                     "resolution": config.video.resolution,
@@ -390,6 +395,7 @@ def generate_tasks(
                         "uptodate": [
                             config_changed(
                                 {
+                                    "visual_hash": v_hash,
                                     "silence_duration": config.video.silence_duration,
                                     "silence_override": slide.silence_override,
                                     "resolution": config.video.resolution,
