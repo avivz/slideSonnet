@@ -388,3 +388,18 @@ def test_pronunciation_for_unknown_backend_returns_shared() -> None:
 def test_pronunciation_for_empty() -> None:
     config = load_config({}, Path("."))
     assert config.pronunciation_for("piper") == {}
+
+
+def test_video_pre_silence() -> None:
+    config = load_config({"video": {"pre_silence": 2.5}}, Path("."))
+    assert config.video.pre_silence == 2.5
+
+
+def test_pronunciation_value_not_list_raises() -> None:
+    with pytest.raises(ConfigError, match="must be a list of paths"):
+        load_config({"pronunciation": {"shared": "not-a-list.md"}}, Path("."))
+
+
+def test_pronunciation_not_list_or_dict_raises() -> None:
+    with pytest.raises(ConfigError, match="must be a list or dict"):
+        load_config({"pronunciation": 42}, Path("."))

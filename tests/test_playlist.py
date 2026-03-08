@@ -117,3 +117,16 @@ def test_not_a_mapping_raises(tmp_path):
 def test_pronunciation_paths_in_config(playlist_basic):
     config, _ = parse_playlist(playlist_basic)
     assert config["pronunciation"] == ["pronunciation/cs-terms.md"]
+
+
+def test_unreadable_file_raises(tmp_path):
+    playlist = tmp_path / "nonexistent.yaml"
+    with pytest.raises(Exception, match="Cannot read playlist file"):
+        parse_playlist(playlist)
+
+
+def test_close_match_suggests_modules(tmp_path):
+    playlist = tmp_path / "test.yaml"
+    playlist.write_text("title: Test\nmoduels:\n  - slides.md\n")
+    with pytest.raises(Exception, match="Did you mean 'modules'"):
+        parse_playlist(playlist)

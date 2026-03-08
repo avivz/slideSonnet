@@ -422,3 +422,134 @@ class TestCleanWithVideoModule:
 
         # Audio for "Hello world." should be kept
         assert (audio / name).exists()
+
+
+class TestCleanNonFileInAudioDir:
+    """Tests for clean skipping non-file entries (subdirectories) in audio/."""
+
+    def test_subdirectory_in_audio_dir_skipped(self, tmp_path: Path) -> None:
+        playlist = _create_playlist(tmp_path)
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        audio = cache / "audio"
+        audio.mkdir()
+
+        # Create a subdirectory inside audio/ — should be skipped, not crash
+        subdir = audio / "some_subdir"
+        subdir.mkdir()
+
+        # Also add a real audio file to ensure it's processed
+        piper_key = "piper:en_US-lessac-medium:None"
+        name = audio_filename("Welcome to the first slide.", "piper", piper_key)
+        (audio / name).write_bytes(b"audio")
+
+        # Should not crash on the subdir
+        clean(playlist, keep="api")
+        assert subdir.exists()  # subdir not deleted
+
+    def test_subdirectory_skipped_keep_current(self, tmp_path: Path) -> None:
+        playlist = _create_playlist(tmp_path)
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        audio = cache / "audio"
+        audio.mkdir()
+        subdir = audio / "nested"
+        subdir.mkdir()
+
+        clean(playlist, keep="current")
+        assert subdir.exists()
+
+    def test_subdirectory_skipped_keep_exact(self, tmp_path: Path) -> None:
+        playlist = _create_playlist(tmp_path)
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        audio = cache / "audio"
+        audio.mkdir()
+        subdir = audio / "nested"
+        subdir.mkdir()
+
+        clean(playlist, keep="exact")
+        assert subdir.exists()
+
+
+class TestCleanWithVoicePreset:
+    """Tests for clean preserving voice-annotated audio."""
+
+    def test_voice_audio_preserved_keep_current(self, tmp_path: Path) -> None:
+        """Clean --keep current preserves audio for slides with voice presets."""
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+              piper:
+                model: en_US-lessac-medium
+            voices:
+              alex:
+                piper: en_US-joe-medium
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text(
+            textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Hello
+
+            <!-- say(voice=alex): Alex says hello. -->
+        """)
+        )
+
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        audio = cache / "audio"
+        audio.mkdir()
+
+        # Create audio file with alex's resolved voice
+        piper_key = "piper:en_US-joe-medium:None"
+        name = audio_filename("Alex says hello.", "piper", piper_key, voice="en_US-joe-medium")
+        (audio / name).write_bytes(b"audio-data")
+
+        clean(playlist, keep="current")
+
+        assert (audio / name).exists()
+
+
+class TestCleanVideoEntryFilenames:
+    """Tests for _collect_current_audio_filenames skipping video entries."""
+
+    def test_video_entry_skipped(self, tmp_path: Path) -> None:
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+              piper:
+                model: en_US-lessac-medium
+            modules:
+              - intro.mp4
+              - slides.md
+        """)
+        )
+        (tmp_path / "intro.mp4").touch()
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Hello\n<!-- say: Hi. -->\n")
+
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        audio = cache / "audio"
+        audio.mkdir()
+
+        piper_key = "piper:en_US-lessac-medium:None"
+        name = audio_filename("Hi.", "piper", piper_key)
+        (audio / name).write_bytes(b"audio-data")
+
+        # Should not crash on video entry, and should keep current audio
+        clean(playlist, keep="exact")
+        assert (audio / name).exists()

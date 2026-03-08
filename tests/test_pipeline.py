@@ -1547,6 +1547,400 @@ class TestPreflightSinglePart:
             _preflight_api_check(prep)
 
 
+def _setup_project_with_voice(tmp_path: Path) -> Path:
+    """Create a project with voice annotations (modeled on showcase)."""
+    playlist = tmp_path / "lecture.yaml"
+    playlist.write_text(
+        textwrap.dedent("""\
+        title: Test
+        tts:
+          backend: piper
+        voices:
+          alex:
+            piper: en_US-joe-medium
+            elevenlabs: yr43K8H5LoTp6S1QFSGg
+        modules:
+          - slides.md
+    """)
+    )
+    slides = tmp_path / "slides.md"
+    slides.write_text(
+        textwrap.dedent("""\
+        ---
+        marp: true
+        ---
+
+        # Default voice
+
+        <!-- say: The default voice narrates. -->
+
+        ---
+
+        # Alex voice
+
+        <!-- say(voice=alex): Alex chimes in. -->
+    """)
+    )
+    return playlist
+
+
+class TestDryRunWithVoice:
+    """Tests for dry_run() with voice annotations."""
+
+    def test_voice_resolution(self, tmp_path: Path) -> None:
+        """dry_run resolves voice presets when checking cache."""
+        from slidesonnet.pipeline import dry_run
+
+        playlist = _setup_project_with_voice(tmp_path)
+        result = dry_run(playlist)
+
+        assert result.total_narrated == 2
+        assert result.needs_tts == 2
+
+
+class TestListSlidesWithVoice:
+    """Tests for list_slides() with voice annotations."""
+
+    def test_voice_shown_in_listing(self, tmp_path: Path) -> None:
+        """list_slides shows resolved voice for annotated slides."""
+        from slidesonnet.pipeline import list_slides
+
+        playlist = _setup_project_with_voice(tmp_path)
+        result = list_slides(playlist)
+
+        voices = {s.text: s.voice for s in result.slides if s.cached is not None}
+        assert voices["The default voice narrates."] == "default"
+        assert voices["Alex chimes in."] == "alex"
+
+
+class TestExportUtterancesWithVoice:
+    """Tests for export_utterances() with voice annotations."""
+
+    def test_voice_included_in_utterance(self, tmp_path: Path) -> None:
+        """export_utterances includes voice name for non-default voices."""
+        from slidesonnet.pipeline import export_utterances
+
+        playlist = _setup_project_with_voice(tmp_path)
+        modules = export_utterances(playlist)
+
+        assert len(modules) == 1
+        slides = modules[0].slides
+        default_slide = [s for s in slides if s.text == "The default voice narrates."][0]
+        alex_slide = [s for s in slides if s.text == "Alex chimes in."][0]
+        assert default_slide.voice is None
+        assert alex_slide.voice == "alex"
+
+
+class TestPreflightWithVoice:
+    """Tests for _preflight_api_check() with voice annotations."""
+
+    def test_voice_resolved_during_preflight(self) -> None:
+        from slidesonnet.exceptions import APINotAllowedError
+        from slidesonnet.models import SlideAnnotation, SlideNarration, VoiceConfig
+        from slidesonnet.pipeline import _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+        config.pronunciation_for.return_value = {}
+        config.voices = {
+            "alex": VoiceConfig(name="alex", backend_voices={"elevenlabs": "yr43K8H5LoTp6S1QFSGg"}),
+        }
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = MagicMock()
+        entry.path = Path("slides.md")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Alex chimes in.",
+            narration_parts=["Alex chimes in."],
+            voice="alex",
+        )
+
+        with (
+            patch("slidesonnet.pipeline.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.pipeline._audio_cache_exists", return_value=False),
+            patch("slidesonnet.pipeline.apply_pronunciation", side_effect=lambda t, _: t),
+        ):
+            parser = MagicMock()
+            parser.parse.return_value = [slide]
+            mock_gpe.return_value = (MagicMock(return_value=parser), MagicMock())
+
+            with pytest.raises(APINotAllowedError):
+                _preflight_api_check(prep)
+
+            # Voice should have been resolved to the elevenlabs ID
+            assert slide.voice == "yr43K8H5LoTp6S1QFSGg"
+
+
+class TestPreflightUnknownVoice:
+    """Tests for _preflight_api_check with unknown voice preset."""
+
+    def test_unknown_voice_cleared_to_none(self) -> None:
+        from slidesonnet.exceptions import APINotAllowedError
+        from slidesonnet.models import SlideAnnotation, SlideNarration
+        from slidesonnet.pipeline import _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+        config.pronunciation_for.return_value = {}
+        config.voices = {}  # no voice presets defined
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = MagicMock()
+        entry.path = Path("slides.md")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw="Hello.",
+            narration_parts=["Hello."],
+            voice="nonexistent_voice",
+        )
+
+        with (
+            patch("slidesonnet.pipeline.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.pipeline._audio_cache_exists", return_value=False),
+            patch("slidesonnet.pipeline.apply_pronunciation", side_effect=lambda t, _: t),
+        ):
+            parser = MagicMock()
+            parser.parse.return_value = [slide]
+            mock_gpe.return_value = (MagicMock(return_value=parser), MagicMock())
+
+            with pytest.raises(APINotAllowedError):
+                _preflight_api_check(prep)
+
+            assert slide.voice is None
+
+
+class TestDryRunUnknownVoice:
+    """Tests for dry_run() with unknown voice preset."""
+
+    def test_unknown_voice_cleared(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import dry_run
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text(
+            textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Hello
+
+            <!-- say(voice=nonexistent): Hello there. -->
+        """)
+        )
+
+        result = dry_run(playlist)
+        assert result.needs_tts == 1
+
+
+class TestPreflightLongText:
+    """Tests for preflight error message truncation with long narration."""
+
+    def test_long_text_truncated_in_message(self) -> None:
+        from slidesonnet.exceptions import APINotAllowedError
+        from slidesonnet.models import SlideAnnotation, SlideNarration
+        from slidesonnet.pipeline import _preflight_api_check
+
+        config = MagicMock()
+        config.tts.backend = "elevenlabs"
+        config.pronunciation_for.return_value = {}
+        config.voices = {}
+
+        tts = MagicMock()
+        tts.name.return_value = "elevenlabs"
+        tts.cache_key.return_value = "key123"
+
+        entry = MagicMock()
+        entry.module_type = MagicMock()
+        entry.path = Path("slides.md")
+
+        prep = _PreparedBuild(
+            playlist_path=Path("/fake/lecture.yaml"),
+            playlist_dir=Path("/fake"),
+            build_dir=Path("/fake/cache"),
+            config=config,
+            entries=[entry],
+            tts=tts,
+            output_path=Path("/fake/lecture.mp4"),
+            pdf_output_path=Path("/fake/lecture.pdf"),
+        )
+
+        long_text = "A" * 120  # well over 80 chars
+        slide = SlideNarration(
+            index=1,
+            annotation=SlideAnnotation.SAY,
+            narration_raw=long_text,
+            narration_parts=[long_text],
+        )
+
+        with (
+            patch("slidesonnet.pipeline.get_parser_and_extractor") as mock_gpe,
+            patch("slidesonnet.pipeline._audio_cache_exists", return_value=False),
+            patch("slidesonnet.pipeline.apply_pronunciation", side_effect=lambda t, _: t),
+        ):
+            parser = MagicMock()
+            parser.parse.return_value = [slide]
+            mock_gpe.return_value = (MagicMock(return_value=parser), MagicMock())
+
+            with pytest.raises(APINotAllowedError) as exc_info:
+                _preflight_api_check(prep)
+
+            msg = str(exc_info.value)
+            assert "..." in msg
+            # Full text should NOT appear — truncated to 77 + "..."
+            assert long_text not in msg
+
+
+class TestListSlidesVideoAndSkip:
+    """Tests for list_slides() with video and skip slides."""
+
+    def test_video_entry_skipped(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import list_slides
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - intro.mp4
+              - slides.md
+        """)
+        )
+        (tmp_path / "intro.mp4").touch()
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Hello\n<!-- say: Hi. -->\n")
+
+        result = list_slides(playlist)
+
+        assert len(result.slides) == 1
+        assert result.slides[0].text == "Hi."
+
+    def test_skip_slide_excluded(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import list_slides
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text(
+            textwrap.dedent("""\
+            ---
+            marp: true
+            ---
+
+            # Visible
+
+            <!-- say: Hello. -->
+
+            ---
+
+            # Skipped
+
+            <!-- skip -->
+        """)
+        )
+
+        result = list_slides(playlist)
+
+        assert len(result.slides) == 1
+        assert result.slides[0].text == "Hello."
+
+
+class TestExportPdfsBeamer:
+    """Tests for export_pdfs() with Beamer modules."""
+
+    def test_beamer_module(self, tmp_path: Path) -> None:
+        from slidesonnet.pipeline import export_pdfs
+
+        playlist = tmp_path / "lecture.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.tex
+        """)
+        )
+        slides = tmp_path / "slides.tex"
+        slides.write_text("\\documentclass{beamer}\n\\begin{document}\n\\end{document}\n")
+
+        def _fake_compile(source, slides_dir, compiled_pdf):
+            compiled_pdf.parent.mkdir(parents=True, exist_ok=True)
+            compiled_pdf.write_bytes(b"%PDF-1.4 compiled")
+
+        def _fake_export_beamer(compiled_pdf, cache_pdf):
+            cache_pdf.parent.mkdir(parents=True, exist_ok=True)
+            cache_pdf.write_bytes(b"%PDF-1.4 exported")
+
+        def _fake_concat(pdfs, output):
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"%PDF-1.4 concat")
+
+        with (
+            patch("slidesonnet.actions.action_compile_beamer", side_effect=_fake_compile),
+            patch("slidesonnet.actions.action_export_pdf_beamer", side_effect=_fake_export_beamer),
+            patch("slidesonnet.actions.action_concat_pdfs", side_effect=_fake_concat),
+        ):
+            result = export_pdfs(playlist)
+
+        assert result.exists()
+        assert result.suffix == ".pdf"
+
+
 class TestGenerateSrtInternal:
     """Tests for _generate_srt() internal behavior."""
 

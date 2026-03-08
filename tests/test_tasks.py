@@ -1365,3 +1365,52 @@ def test_beamer_compile_uses_visual_hash(tmp_path: Path) -> None:
     assert "uptodate" in compile_task
     uptodate_entry = compile_task["uptodate"][0]
     assert "visual_hash" in uptodate_entry.config
+
+
+class TestAudioCacheMigration:
+    """Tests for _audio_cache_valid() extension migration."""
+
+    def test_migrates_alternate_extension(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+
+        from slidesonnet.tasks import _audio_cache_valid
+
+        # Target is .mp3 but .wav exists
+        target = tmp_path / "audio.mp3"
+        alt = tmp_path / "audio.wav"
+        alt.write_bytes(b"\x00" * 100)
+
+        task = MagicMock()
+        task.targets = [str(target)]
+
+        result = _audio_cache_valid(task, {})
+
+        assert result is True
+        assert target.exists()
+        assert not alt.exists()
+
+
+class TestMissingModuleFile:
+    """Tests for generate_tasks() with missing module file."""
+
+    def test_missing_module_raises(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+
+        from slidesonnet.exceptions import SlideSonnetError
+        from slidesonnet.models import ModuleType, PlaylistEntry, ProjectConfig, TTSConfig
+        from slidesonnet.tasks import generate_tasks
+
+        entries = [PlaylistEntry(path=Path("nonexistent.md"), module_type=ModuleType.MARP)]
+        config = ProjectConfig(tts=TTSConfig(backend="piper"))
+        tts = MagicMock()
+
+        with pytest.raises(SlideSonnetError, match="Module file not found"):
+            generate_tasks(
+                entries=entries,
+                config=config,
+                tts=tts,
+                build_dir=tmp_path / "cache",
+                playlist_dir=tmp_path,
+                output_path=tmp_path / "out.mp4",
+                pdf_output_path=tmp_path / "out.pdf",
+            )

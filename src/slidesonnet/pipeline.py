@@ -205,7 +205,7 @@ class _UncachedSlide:
 
     module_path: str
     slide_index: int
-    text_preview: str
+    text: str
     chars: int
 
 
@@ -267,12 +267,11 @@ def _preflight_api_check(prep: _PreparedBuild) -> None:
                         all_cached = False
                         slide_uncached_chars += len(part_text)
                 if not all_cached:
-                    preview = slide.narration_processed[:80]
                     uncached.append(
                         _UncachedSlide(
                             module_path=str(entry.path),
                             slide_index=slide.index,
-                            text_preview=preview,
+                            text=slide.narration_processed,
                             chars=slide_uncached_chars,
                         )
                     )
@@ -287,12 +286,11 @@ def _preflight_api_check(prep: _PreparedBuild) -> None:
                 )
                 if not _audio_cache_exists(p):
                     chars = len(slide.narration_processed)
-                    preview = slide.narration_processed[:80]
                     uncached.append(
                         _UncachedSlide(
                             module_path=str(entry.path),
                             slide_index=slide.index,
-                            text_preview=preview,
+                            text=slide.narration_processed,
                             chars=chars,
                         )
                     )
@@ -308,9 +306,9 @@ def _preflight_api_check(prep: _PreparedBuild) -> None:
         "",
     ]
     for s in uncached:
-        preview = s.text_preview
-        if len(preview) >= 80:
-            preview = preview[:77] + "..."
+        preview = s.text
+        if len(s.text) > 80:
+            preview = s.text[:77] + "..."
         lines.append(f'  {s.module_path} slide {s.slide_index}: "{preview}"')
     lines.append("")
     lines.append("Pass --allow-api to allow paid API calls, or use --tts piper for free local TTS.")
