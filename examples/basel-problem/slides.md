@@ -59,7 +59,7 @@ Even Jakob Bernoulli, one of the greatest mathematicians of his era, publicly ad
 > — Jakob Bernoulli, 1689
 
 <!-- say: Even Jakob Bernoulli, one of the greatest mathematicians of
-     his era, publicly gave up in 1689. He wrote: -->
+     his era, admitted defeat in 1689. He wrote: -->
 
 <!-- say(voice=bernoulli): "If anyone finds and communicates to us that
      which thusfar has eluded our efforts, great will be our
