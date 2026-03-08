@@ -1,0 +1,283 @@
+1
+00:00:01,000 --> 00:00:05,519
+[inquisitive] So Sam, what's the deal with slideSonnet? Tell me about it!
+
+2
+00:00:06,719 --> 00:00:09,011
+[excited] Oh you're gonna LOVE this!
+
+3
+00:00:09,011 --> 00:00:13,722
+It takes your plain-text slides and turns them into fully narrated VIDEOS.
+
+4
+00:00:13,722 --> 00:00:18,434
+You just write slides, throw in some comments for narration, and SHAZZAM —
+
+5
+00:00:18,434 --> 00:00:19,389
+you get an MP4!
+
+6
+00:00:20,589 --> 00:00:25,918
+[skeptical] OK but WHY? ... Can't I just record myself talking over slides?
+
+7
+00:00:27,118 --> 00:00:31,493
+[dry humor] Sure, if you ENJOY sitting in a quiet room with a mic,
+
+8
+00:00:31,493 --> 00:00:33,150
+talking through EVERY ...
+
+9
+00:00:33,150 --> 00:00:35,869
+SINGLE ... slide till you get it right...
+
+10
+00:00:37,069 --> 00:00:43,262
+[sarcastic] And the BEST part — change one slide and you get to re-record it.
+
+11
+00:00:43,262 --> 00:00:45,193
+EVERY... SINGLE... TIME.
+
+12
+00:00:46,393 --> 00:00:48,543
+[enthusiastic] With slideSonnet,
+
+13
+00:00:48,543 --> 00:00:53,179
+your narration is just text sitting next to the code for your slides!
+
+14
+00:00:53,179 --> 00:00:57,547
+Edit a line, hit rebuild, DONE! No mic, no re-recording, no pain!
+
+15
+00:00:58,747 --> 00:01:03,188
+[intrigued] Alright, you've got my attention. How does it ACTUALLY work?
+
+16
+00:01:04,388 --> 00:01:07,148
+[confidently] Step one: write your slides.
+
+17
+00:01:07,148 --> 00:01:10,500
+In Markdown or in LaTeX, whatever floats your boat!
+
+18
+00:01:11,700 --> 00:01:18,183
+Step two: drop in "say" comments. Just text ... with the words you want spoken.
+
+19
+00:01:18,183 --> 00:01:19,824
+That's LITERALLY it!
+
+20
+00:01:21,024 --> 00:01:24,286
+[enthusiastic] Step three: run slidesonnet build.
+
+21
+00:01:24,286 --> 00:01:29,610
+It does the speech synthesis, renders your slides, and stitches it ALL together.
+
+22
+00:01:29,610 --> 00:01:31,473
+ONE command and you're done!
+
+23
+00:01:32,673 --> 00:01:35,364
+[eager] OK I want to try it! What do I do?
+
+24
+00:01:36,564 --> 00:01:39,302
+[confidently] Literally THREE commands.
+
+25
+00:01:39,302 --> 00:01:44,638
+pip install, INIT to set up a project template, and BUILD to make the video.
+
+26
+00:01:44,638 --> 00:01:50,043
+That's IT! [proudly] You'll have a narrated MP4 before your coffee gets cold!
+
+27
+00:01:51,243 --> 00:01:57,199
+[surprised] Hold on — the narration is LITERALLY JUST a comment in the Markdown?
+
+28
+00:01:58,399 --> 00:02:02,172
+[proudly] YEP! An HTML comment that starts with say colon.
+
+29
+00:02:02,172 --> 00:02:04,124
+The text inside becomes audio.
+
+30
+00:02:04,124 --> 00:02:09,198
+[excitement building] And here's the FUN part — what you're hearing RIGHT now?
+
+31
+00:02:09,198 --> 00:02:11,800
+[enthusiastic] Written EXACTLY this way!
+
+32
+00:02:13,000 --> 00:02:16,809
+[curious] So where does all the CONFIG STUFF go?
+
+33
+00:02:16,809 --> 00:02:19,348
+Voices, text-to-speech settings?
+
+34
+00:02:20,548 --> 00:02:24,259
+[enthusiastic] The playlist file is slide sonnet dot yaml.
+
+35
+00:02:24,259 --> 00:02:27,971
+It's got your text-to-speech backend, your voice mappings,
+
+36
+00:02:27,971 --> 00:02:30,786
+pronunciation dictionaries — the WHOLE deal!
+
+37
+00:02:30,786 --> 00:02:35,073
+[proudly] And slideSonnet finds it AUTOMATICALLY, so you hit build,
+
+38
+00:02:35,073 --> 00:02:37,057
+and everything else JUST WORKS!
+
+39
+00:02:38,257 --> 00:02:39,497
+[awe] Wait a SECOND!
+
+40
+00:02:39,497 --> 00:02:43,403
+[in wonder] THIS is how we're using different voices RIGHT NOW?
+
+41
+00:02:44,603 --> 00:02:48,347
+[playfully] YUP! You're alex, and I AM the default voice.
+
+42
+00:02:48,347 --> 00:02:51,172
+You just STICK a voice parameter in the say
+
+43
+00:02:51,172 --> 00:02:53,865
+comment and slideSonnet handles the rest!
+
+44
+00:02:53,865 --> 00:02:55,836
+[proudly] Pretty SLICK, right?
+
+45
+00:02:57,036 --> 00:03:00,353
+[curious] Can you do that thing where bullets pop in one at a time?
+
+46
+00:03:01,553 --> 00:03:02,819
+[confidently] Oh YEAH!
+
+47
+00:03:02,819 --> 00:03:06,961
+Just use star bullets instead of dashes and each one becomes a fragment!
+
+48
+00:03:08,161 --> 00:03:12,131
+[enthusiastic] Every fragment gets its own sub-slide and narration. EASY!
+
+49
+00:03:13,331 --> 00:03:16,937
+[enthusiastic] It ends up feeling JUST like a REAL talk —
+
+50
+00:03:16,937 --> 00:03:18,582
+ideas building one by one!
+
+51
+00:03:19,782 --> 00:03:22,473
+[wondering] What if I've got a slide that doesn't need any talking?
+
+52
+00:03:23,673 --> 00:03:28,695
+[casually] Easy. Nonarration gives you a quiet pause — nice for title cards.
+
+53
+00:03:28,695 --> 00:03:33,586
+And skip just HIDES the slide from the video completely. Great for drafts.
+
+54
+00:03:33,586 --> 00:03:35,899
+[conspiratorial] Oh, and FUN fact —
+
+55
+00:03:35,899 --> 00:03:40,260
+there's a skipped slide lurking at the END of this slide deck too!
+
+56
+00:03:41,460 --> 00:03:46,215
+[curious] What about the FANCY stuff — math? code? images?
+
+57
+00:03:47,415 --> 00:03:49,850
+[confidently] MARP has you COVERED.
+
+58
+00:03:49,850 --> 00:03:54,860
+[excited] Math, syntax-highlighted code, images — all standard Markdown,
+
+59
+00:03:54,860 --> 00:03:55,625
+no plugins.
+
+60
+00:03:55,625 --> 00:03:58,756
+And we've got pronunciation dictionaries too,
+
+61
+00:03:58,756 --> 00:04:02,722
+so names like Dijkstra and Euler ACTUALLY come out right!
+
+62
+00:04:03,922 --> 00:04:08,520
+[concerned] Doesn't cloud TTS get EXPENSIVE when you're still tweaking things?
+
+63
+00:04:09,720 --> 00:04:14,434
+[reassuringly] NAH, you don't need cloud for drafting. Use Piper — it's FREE!
+
+64
+00:04:14,434 --> 00:04:18,229
+runs locally. Throw in the preview flag for a quick rough cut.
+
+65
+00:04:18,229 --> 00:04:22,147
+[enthusiastic] And the BEST part? slideSonnet caches EVERYTHING!
+
+66
+00:04:22,147 --> 00:04:25,759
+Change one slide, only THAT slide rebuilds. Fast and cheap!
+
+67
+00:04:26,959 --> 00:04:30,120
+OK I'm SOLD. [excited] Let's DO this!
+
+68
+00:04:31,320 --> 00:04:33,685
+[warmly] THAT'S what I like to hear!
+
+69
+00:04:33,685 --> 00:04:38,022
+pip install slidesonnet, write some slides, add your say comments,
+
+70
+00:04:38,022 --> 00:04:38,941
+and hit build.
+
+71
+00:04:38,941 --> 00:04:42,161
+[enthusiastic] Now go and make SOMETHING AWESOME!
