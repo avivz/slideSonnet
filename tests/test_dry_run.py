@@ -313,7 +313,7 @@ class TestDryRunIntegrationShowcase:
     """Run dry_run() on the showcase example."""
 
     def test_showcase_dry_run(self) -> None:
-        showcase = Path("examples/showcase/lecture.yaml")
+        showcase = Path("examples/showcase/slidesonnet.yaml")
         if not showcase.exists():
             pytest.skip("showcase example not found")
 

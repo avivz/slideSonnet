@@ -121,6 +121,13 @@ def _extract_images_via_playwright(source: Path, output_dir: Path) -> list[Path]
     except subprocess.CalledProcessError as e:
         raise ParserError(f"marp failed:\n{e.stderr}")
 
+    # Patch HTML so relative paths (images, etc.) resolve from the source directory,
+    # not from the cache directory where the HTML was written.
+    html_content = html_path.read_text(encoding="utf-8")
+    base_uri = source.parent.resolve().as_uri() + "/"
+    html_content = html_content.replace("<head>", f'<head><base href="{base_uri}">', 1)
+    html_path.write_text(html_content, encoding="utf-8")
+
     try:
         images = _screenshot_presentation(html_path, output_dir, source.stem)
     finally:

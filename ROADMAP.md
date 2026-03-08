@@ -12,17 +12,19 @@ Current version: 0.1.0 (alpha)
 
 ## Next — before beta
 
-1. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images). The `--until` flag exists but may not cover all use cases.
+1. **Default `init` format to `md`** — `slidesonnet init` with no FMT argument should default to `md` and print a message mentioning `slidesonnet init tex` for Beamer. Reduces first-contact friction.
 
-2. **ElevenLabs expressiveness** — Extra emotion and expressiveness parameters for ElevenLabs audio generation.
+2. **Partial-build CLI options** — Let users run just parts of the pipeline (just TTS, just images). The `--until` flag exists but may not cover all use cases.
 
-3. **Test coverage audit** — Identify missing and redundant tests. Ensure all CLI commands have test coverage.
+3. **ElevenLabs expressiveness** — Extra emotion and expressiveness parameters for ElevenLabs audio generation.
 
-4. **Code review** — Audit for dead code, duplicated logic, fragile patterns. The parsing regex and annotation stripping logic appear in multiple places.
+4. **Test coverage audit** — Identify missing and redundant tests. Ensure all CLI commands have test coverage.
 
-5. **Documentation review** — Ensure README, `docs/marp.md`, `docs/beamer.md`, and `--help` text are all consistent and complete.
+5. **Code review** — Audit for dead code, duplicated logic, fragile patterns. The parsing regex and annotation stripping logic appear in multiple places.
 
-6. **Design a logo** — Needed for GitHub repo, PyPI page, project website, and YouTube branding. Do before public launch.
+6. **Documentation review** — Ensure README, `docs/marp.md`, `docs/beamer.md`, and `--help` text are all consistent and complete.
+
+7. **Design a logo** — Needed for GitHub repo, PyPI page, project website, and YouTube branding. Do before public launch.
 
 ## Later — backlog
 

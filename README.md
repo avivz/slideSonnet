@@ -60,16 +60,9 @@ slidesonnet build
 
 ## Showcase example
 
-The `examples/showcase/` directory is a full-featured project that exercises every slideSonnet capability:
+The `examples/showcase/` directory is a single-file MARP presentation introducing slideSonnet through a dialog between two voices. It demonstrates narration, fragment animation, voice switching, silent/skipped slides, math, code, and images — all in one `slides.md` file.
 
-| Module | Format | Features demonstrated |
-|---|---|---|
-| `part1.md` | MARP | Basic say, multiline say, multiple say blocks, nonarration |
-| `part2.tex` | Beamer | `\say{}` with LaTeX, voice/pace overrides, `\nonarration`, `\slidesonnetskip` |
-| `part3.md` | MARP | Voice presets, pace control, skip, pronunciation triggers |
-| `animations/transition.mp4` | Video | Passthrough (no parsing/TTS) |
-
-It also includes two pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with all configuration options (`slidesonnet.yaml`).
+It also includes pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with ElevenLabs and Piper voice configuration (`slidesonnet.yaml`).
 
 ```bash
 cd examples/showcase

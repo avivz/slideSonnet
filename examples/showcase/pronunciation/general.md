@@ -18,8 +18,8 @@
 **slideSonnet**: slide-sonnet
 **TTS**: T-T-S
 **MP4**: M-P-4
-**KaTeX**: ka-tech
+**KaTeX**: ka-tekh
 **TikZ**: tickz
 **FFmpeg**: eff-eff-em-peg
 **MARP**: marp
-**LaTeX**: lah-tech
+**LaTeX**: LAh-tekh
