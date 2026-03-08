@@ -7,7 +7,7 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from slidesonnet.exceptions import TTSError
 from slidesonnet.models import TTSConfig
@@ -43,6 +43,7 @@ class ElevenLabsTTS(TTSEngine):
         self.model_id: str = config.elevenlabs_model_id
         self.stability: float = config.elevenlabs_stability
         self.similarity_boost: float = config.elevenlabs_similarity_boost
+        self.speed: float = config.elevenlabs_speed
 
     def _ensure_client(self) -> _ElevenLabsType:
         """Validate dependencies and create the client on first call."""
@@ -72,15 +73,18 @@ class ElevenLabsTTS(TTSEngine):
         # Retry on HTTP 429 (rate limit / concurrent limit exceeded) with exponential
         # backoff — parallel builds may exceed the plan's concurrent request limit.
         assert VoiceSettings is not None  # guaranteed by _ensure_client()
+        vs_kwargs: dict[str, Any] = {
+            "stability": self.stability,
+            "similarity_boost": self.similarity_boost,
+        }
+        if self.speed != 1.0:
+            vs_kwargs["speed"] = self.speed
         audio_generator = client.text_to_speech.convert(
             text=text,
             voice_id=voice_id,
             model_id=self.model_id,
             output_format="mp3_44100_128",
-            voice_settings=VoiceSettings(
-                stability=self.stability,
-                similarity_boost=self.similarity_boost,
-            ),
+            voice_settings=VoiceSettings(**vs_kwargs),
             request_options={"max_retries": 5},
         )
 
@@ -102,9 +106,10 @@ class ElevenLabsTTS(TTSEngine):
         return "elevenlabs"
 
     def cache_key(self) -> str:
-        return (
-            f"elevenlabs:{self.voice_id}:{self.model_id}:{self.stability}:{self.similarity_boost}"
-        )
+        key = f"elevenlabs:{self.voice_id}:{self.model_id}:{self.stability}:{self.similarity_boost}"
+        if self.speed != 1.0:
+            key += f":{self.speed}"
+        return key
 
 
 def _get_audio_duration(path: Path) -> float:

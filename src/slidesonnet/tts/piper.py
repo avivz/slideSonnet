@@ -52,9 +52,15 @@ def _ensure_voice(voice_name: str) -> None:
 
 
 class PiperTTS(TTSEngine):
-    def __init__(self, model: str = "en_US-lessac-medium", speaker: int | None = None):
+    def __init__(
+        self,
+        model: str = "en_US-lessac-medium",
+        speaker: int | None = None,
+        speed: float = 1.0,
+    ):
         self.model = model
         self.speaker = speaker
+        self.speed = speed
 
     def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,6 +78,9 @@ class PiperTTS(TTSEngine):
         ]
         if self.speaker is not None:
             cmd.extend(["--speaker", str(self.speaker)])
+        if self.speed != 1.0:
+            length_scale = 1.0 / self.speed
+            cmd.extend(["--length_scale", str(length_scale)])
 
         try:
             subprocess.run(
@@ -92,7 +101,10 @@ class PiperTTS(TTSEngine):
         return "piper"
 
     def cache_key(self) -> str:
-        return f"piper:{self.model}:{self.speaker}"
+        key = f"piper:{self.model}:{self.speaker}"
+        if self.speed != 1.0:
+            key += f":{self.speed}"
+        return key
 
 
 def _wav_duration(path: Path) -> float:

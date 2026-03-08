@@ -11,7 +11,7 @@ def create_tts(config: ProjectConfig) -> TTSEngine:
     from slidesonnet.tts.piper import PiperTTS
 
     if config.tts.backend == "piper":
-        return PiperTTS(model=config.tts.piper_model)
+        return PiperTTS(model=config.tts.piper_model, speed=config.tts.piper_speed)
     elif config.tts.backend == "elevenlabs":
         from slidesonnet.tts.elevenlabs import ElevenLabsTTS
 

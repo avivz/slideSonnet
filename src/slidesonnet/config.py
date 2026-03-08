@@ -40,6 +40,8 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
         kwargs["backend"] = raw["backend"]
     if "model" in piper:
         kwargs["piper_model"] = piper["model"]
+    if "speed" in piper:
+        kwargs["piper_speed"] = float(piper["speed"])
     if "api_key_env" in el:
         kwargs["elevenlabs_api_key_env"] = el["api_key_env"]
     if "voice_id" in el:
@@ -50,6 +52,8 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
         kwargs["elevenlabs_stability"] = float(el["stability"])
     if "similarity_boost" in el:
         kwargs["elevenlabs_similarity_boost"] = float(el["similarity_boost"])
+    if "speed" in el:
+        kwargs["elevenlabs_speed"] = float(el["speed"])
 
     return TTSConfig(**kwargs)
 

@@ -171,6 +171,51 @@ class TestEnsureVoice:
         assert "auto-download" in str(exc_info.value)
 
 
+class TestSpeed:
+    """Tests for speed / --length_scale support."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_ensure_voice(self) -> Iterator[None]:
+        with patch("slidesonnet.tts.piper._ensure_voice"):
+            yield
+
+    @patch("slidesonnet.tts.piper._wav_duration", return_value=1.0)
+    @patch("slidesonnet.tts.piper.subprocess.run")
+    def test_length_scale_when_speed_set(
+        self, mock_run: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        tts = PiperTTS(speed=1.5)
+        out = tmp_path / "out.wav"
+        tts.synthesize("Hi", out)
+
+        cmd = mock_run.call_args[0][0]
+        assert "--length_scale" in cmd
+        idx = cmd.index("--length_scale")
+        assert float(cmd[idx + 1]) == pytest.approx(1.0 / 1.5)
+
+    @patch("slidesonnet.tts.piper._wav_duration", return_value=1.0)
+    @patch("slidesonnet.tts.piper.subprocess.run")
+    def test_no_length_scale_at_default_speed(
+        self, mock_run: MagicMock, mock_dur: MagicMock, tmp_path: Path
+    ) -> None:
+        tts = PiperTTS(speed=1.0)
+        out = tmp_path / "out.wav"
+        tts.synthesize("Hi", out)
+
+        cmd = mock_run.call_args[0][0]
+        assert "--length_scale" not in cmd
+
+    def test_cache_key_with_speed(self) -> None:
+        tts = PiperTTS(speed=1.5)
+        assert ":1.5" in tts.cache_key()
+
+    def test_cache_key_default_speed(self) -> None:
+        tts = PiperTTS(speed=1.0)
+        # Default speed → key should be "piper:model:speaker" with no trailing speed
+        parts = tts.cache_key().split(":")
+        assert len(parts) == 3  # piper:model:speaker
+
+
 class TestName:
     def test_name(self) -> None:
         assert PiperTTS().name() == "piper"

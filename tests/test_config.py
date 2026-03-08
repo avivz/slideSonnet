@@ -231,6 +231,44 @@ def test_all_voice_ids() -> None:
 # -- Pronunciation per-backend format ----------------------------------------
 
 
+# -- TTS speed parsing ------------------------------------------------------
+
+
+def test_speed_defaults():
+    config = load_config({}, Path("."))
+    assert config.tts.piper_speed == 1.0
+    assert config.tts.elevenlabs_speed == 1.0
+
+
+def test_speed_from_yaml():
+    raw = {
+        "tts": {
+            "piper": {"speed": 1.5},
+            "elevenlabs": {"speed": 1.1},
+        }
+    }
+    config = load_config(raw, Path("."))
+    assert config.tts.piper_speed == 1.5
+    assert config.tts.elevenlabs_speed == 1.1
+
+
+def test_speed_piper_only():
+    raw = {"tts": {"piper": {"speed": 2.0}}}
+    config = load_config(raw, Path("."))
+    assert config.tts.piper_speed == 2.0
+    assert config.tts.elevenlabs_speed == 1.0
+
+
+def test_speed_elevenlabs_only():
+    raw = {"tts": {"elevenlabs": {"speed": 0.8}}}
+    config = load_config(raw, Path("."))
+    assert config.tts.elevenlabs_speed == 0.8
+    assert config.tts.piper_speed == 1.0
+
+
+# -- Pronunciation per-backend format ----------------------------------------
+
+
 def test_pronunciation_flat_list_backwards_compat() -> None:
     raw = {"pronunciation": ["pron/a.md", "pron/b.md"]}
     config = load_config(raw, Path("/proj"))

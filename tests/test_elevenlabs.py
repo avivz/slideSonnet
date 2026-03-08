@@ -134,3 +134,92 @@ def test_name():
 
     tts = ElevenLabsTTS(config)
     assert tts.name() == "elevenlabs"
+
+
+# -- Speed tests ------------------------------------------------------------
+
+
+@patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key-123"})
+@patch("slidesonnet.tts.elevenlabs.ElevenLabs")
+def test_speed_passed_to_voice_settings(mock_elevenlabs_cls, tmp_path):
+    """When speed != 1.0, it is passed to VoiceSettings."""
+    mock_client = MagicMock()
+    mock_elevenlabs_cls.return_value = mock_client
+    mock_client.text_to_speech.convert.return_value = [b"audio"]
+
+    mock_vs_cls = MagicMock()
+    config = TTSConfig(
+        backend="elevenlabs",
+        elevenlabs_voice_id="voice-abc",
+        elevenlabs_speed=1.1,
+    )
+
+    from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+
+    tts = ElevenLabsTTS(config)
+
+    output = tmp_path / "speech.mp3"
+    with (
+        patch("slidesonnet.tts.elevenlabs._get_audio_duration", return_value=2.0),
+        patch("slidesonnet.tts.elevenlabs.VoiceSettings", mock_vs_cls),
+    ):
+        tts.synthesize("Hello", output)
+
+    vs_kwargs = mock_vs_cls.call_args[1]
+    assert vs_kwargs["speed"] == 1.1
+
+
+@patch.dict(os.environ, {"ELEVENLABS_API_KEY": "test-key-123"})
+@patch("slidesonnet.tts.elevenlabs.ElevenLabs")
+def test_speed_default_not_in_voice_settings(mock_elevenlabs_cls, tmp_path):
+    """When speed == 1.0 (default), speed is not passed to VoiceSettings."""
+    mock_client = MagicMock()
+    mock_elevenlabs_cls.return_value = mock_client
+    mock_client.text_to_speech.convert.return_value = [b"audio"]
+
+    mock_vs_cls = MagicMock()
+    config = TTSConfig(
+        backend="elevenlabs",
+        elevenlabs_voice_id="voice-abc",
+    )
+
+    from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+
+    tts = ElevenLabsTTS(config)
+
+    output = tmp_path / "speech.mp3"
+    with (
+        patch("slidesonnet.tts.elevenlabs._get_audio_duration", return_value=2.0),
+        patch("slidesonnet.tts.elevenlabs.VoiceSettings", mock_vs_cls),
+    ):
+        tts.synthesize("Hello", output)
+
+    vs_kwargs = mock_vs_cls.call_args[1]
+    assert "speed" not in vs_kwargs
+
+
+def test_cache_key_with_speed():
+    """cache_key includes speed when != 1.0."""
+    config = TTSConfig(
+        backend="elevenlabs",
+        elevenlabs_voice_id="v",
+        elevenlabs_speed=1.1,
+    )
+    from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+
+    tts = ElevenLabsTTS(config)
+    assert ":1.1" in tts.cache_key()
+
+
+def test_cache_key_default_speed():
+    """cache_key does not include speed when == 1.0."""
+    config = TTSConfig(
+        backend="elevenlabs",
+        elevenlabs_voice_id="v",
+    )
+    from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+
+    tts = ElevenLabsTTS(config)
+    # Default speed (1.0) → key should end with similarity_boost, no trailing speed
+    parts = tts.cache_key().split(":")
+    assert len(parts) == 5  # elevenlabs:voice:model:stability:similarity_boost

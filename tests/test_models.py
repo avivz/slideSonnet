@@ -48,6 +48,38 @@ def test_tts_config_boundary_values() -> None:
     assert tc.elevenlabs_similarity_boost == 1.0
 
 
+# -- TTS speed validation ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "field, value, match",
+    [
+        ("piper_speed", 0, "piper_speed must be positive"),
+        ("piper_speed", -1.0, "piper_speed must be positive"),
+        ("elevenlabs_speed", 0, "elevenlabs_speed must be positive"),
+        ("elevenlabs_speed", -0.5, "elevenlabs_speed must be positive"),
+    ],
+)
+def test_tts_config_speed_out_of_range(field: str, value: float, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        TTSConfig(**{field: value})
+
+
+def test_tts_config_speed_defaults() -> None:
+    tc = TTSConfig()
+    assert tc.piper_speed == 1.0
+    assert tc.elevenlabs_speed == 1.0
+
+
+def test_tts_config_speed_boundary_values() -> None:
+    tc = TTSConfig(piper_speed=0.1, elevenlabs_speed=0.5)
+    assert tc.piper_speed == 0.1
+    assert tc.elevenlabs_speed == 0.5
+
+    tc2 = TTSConfig(elevenlabs_speed=2.0)
+    assert tc2.elevenlabs_speed == 2.0
+
+
 def test_slide_narration_image_index_defaults_to_index() -> None:
     sn = SlideNarration(index=5)
     assert sn.image_index == 5

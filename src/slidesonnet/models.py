@@ -135,6 +135,8 @@ class TTSConfig:
     elevenlabs_model_id: str = "eleven_multilingual_v2"
     elevenlabs_stability: float = 0.5
     elevenlabs_similarity_boost: float = 0.75
+    piper_speed: float = 1.0
+    elevenlabs_speed: float = 1.0
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.elevenlabs_stability <= 1.0):
@@ -145,6 +147,10 @@ class TTSConfig:
             raise ValueError(
                 f"elevenlabs_similarity_boost must be between 0 and 1, got {self.elevenlabs_similarity_boost}"
             )
+        if self.piper_speed <= 0:
+            raise ValueError(f"piper_speed must be positive, got {self.piper_speed}")
+        if self.elevenlabs_speed <= 0:
+            raise ValueError(f"elevenlabs_speed must be positive, got {self.elevenlabs_speed}")
 
 
 _RESOLUTION_RE = re.compile(r"^\d+x\d+$")
