@@ -1,4 +1,6 @@
-# slideSonnet
+<p align="center">
+  <img src="assets/logo/slidesonnet-logo.png" alt="SlideSonnet — Text → Video" width="500">
+</p>
 
 Compile text-based slide presentations into narrated MP4 videos.
 

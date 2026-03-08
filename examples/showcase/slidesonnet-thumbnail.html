@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>SlideSonnet Thumbnail</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@700;900&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1280px;
+    height: 720px;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    background: #0d1117;
+    position: relative;
+  }
+
+  /* Subtle grid pattern overlay */
+  body::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: 0;
+  }
+
+  /* Gradient glow behind center */
+  .center-glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px;
+  }
+
+  .panels {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 30px;
+  }
+
+  /* === CODE EDITOR PANEL === */
+  .editor {
+    width: 460px;
+    background: #161b22;
+    border-radius: 12px;
+    border: 1px solid #30363d;
+    overflow: hidden;
+    box-shadow:
+      0 0 40px rgba(0, 0, 0, 0.5),
+      0 0 80px rgba(99, 102, 241, 0.08);
+  }
+
+  .editor-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #0d1117;
+    border-bottom: 1px solid #30363d;
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .dot.red { background: #ff5f57; }
+  .dot.yellow { background: #febc2e; }
+  .dot.green { background: #28c840; }
+
+  .editor-filename {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #8b949e;
+    margin-left: 8px;
+  }
+
+  .editor-body {
+    padding: 20px 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15.5px;
+    line-height: 1.75;
+  }
+
+  .line {
+    display: flex;
+    white-space: pre;
+  }
+
+  .line-num {
+    color: #484f58;
+    width: 30px;
+    text-align: right;
+    margin-right: 18px;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .code-content {
+    flex: 1;
+  }
+
+  .comment { color: #6a9955; }
+  .keyword { color: #ff7b72; }
+  .heading { color: #79c0ff; }
+  .string { color: #a5d6ff; }
+  .punct { color: #8b949e; }
+  .text { color: #c9d1d9; }
+  .directive { color: #d2a8ff; }
+
+  .highlight-line {
+    background: rgba(99, 102, 241, 0.08);
+    margin: 0 -22px;
+    padding: 0 22px;
+    border-left: 3px solid #6366f1;
+  }
+
+  /* === ARROW === */
+  .arrow-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 28px;
+    position: relative;
+  }
+
+  .arrow-icon {
+    font-size: 64px;
+    font-weight: 900;
+    background: linear-gradient(135deg, #6366f1, #38bdf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 20px rgba(99, 102, 241, 0.4));
+    line-height: 1;
+  }
+
+  .arrow-label {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px;
+    color: #6366f1;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+
+  /* === VIDEO PLAYER PANEL === */
+  .player {
+    width: 460px;
+    background: #161b22;
+    border-radius: 12px;
+    border: 1px solid #30363d;
+    overflow: hidden;
+    box-shadow:
+      0 0 40px rgba(0, 0, 0, 0.5),
+      0 0 80px rgba(56, 189, 248, 0.08);
+  }
+
+  .player-viewport {
+    width: 100%;
+    height: 230px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Rendered slide content */
+  .slide-content {
+    text-align: center;
+    padding: 30px;
+  }
+
+  .slide-content h2 {
+    font-family: 'Inter', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: #f1f5f9;
+    margin-bottom: 16px;
+  }
+
+  .slide-content .slide-bullet {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    color: #94a3b8;
+    margin: 6px 0;
+    text-align: left;
+    padding-left: 60px;
+  }
+
+  .slide-content .slide-bullet::before {
+    content: '\2022';
+    color: #6366f1;
+    margin-right: 10px;
+    font-weight: bold;
+  }
+
+  /* Waveform / audio indicator */
+  .audio-indicator {
+    position: absolute;
+    bottom: 14px;
+    right: 16px;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    opacity: 0.7;
+  }
+
+  .audio-bar {
+    width: 4px;
+    background: #38bdf8;
+    border-radius: 2px;
+  }
+
+  /* Play button overlay — subtle */
+  .play-overlay {
+    position: absolute;
+    bottom: 14px;
+    left: 16px;
+    width: 36px;
+    height: 36px;
+    background: rgba(99, 102, 241, 0.9);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .play-triangle {
+    width: 0;
+    height: 0;
+    border-left: 13px solid #fff;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    margin-left: 3px;
+  }
+
+  .player-controls {
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-top: 1px solid #30363d;
+  }
+
+  .progress-bar {
+    flex: 1;
+    height: 4px;
+    background: #30363d;
+    border-radius: 2px;
+    position: relative;
+  }
+
+  .progress-fill {
+    width: 35%;
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #38bdf8);
+    border-radius: 2px;
+  }
+
+  .progress-dot {
+    position: absolute;
+    top: 50%;
+    left: 35%;
+    transform: translate(-50%, -50%);
+    width: 12px;
+    height: 12px;
+    background: #38bdf8;
+    border-radius: 50%;
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.5);
+  }
+
+  .time-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #8b949e;
+  }
+
+  /* === TITLE === */
+  .title-row {
+    text-align: center;
+  }
+
+  .title-main {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 72px;
+    font-weight: 700;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, #e2e8f0 0%, #f8fafc 40%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 2px 10px rgba(56, 189, 248, 0.2));
+  }
+
+  .title-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    color: #6366f1;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+
+  /* Corner accents */
+  .corner-accent {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    z-index: 0;
+  }
+  .corner-accent.tl {
+    top: 0; left: 0;
+    border-top: 3px solid rgba(99, 102, 241, 0.5);
+    border-left: 3px solid rgba(99, 102, 241, 0.5);
+  }
+  .corner-accent.tr {
+    top: 0; right: 0;
+    border-top: 3px solid rgba(56, 189, 248, 0.5);
+    border-right: 3px solid rgba(56, 189, 248, 0.5);
+  }
+  .corner-accent.bl {
+    bottom: 0; left: 0;
+    border-bottom: 3px solid rgba(99, 102, 241, 0.5);
+    border-left: 3px solid rgba(99, 102, 241, 0.5);
+  }
+  .corner-accent.br {
+    bottom: 0; right: 0;
+    border-bottom: 3px solid rgba(56, 189, 248, 0.5);
+    border-right: 3px solid rgba(56, 189, 248, 0.5);
+  }
+</style>
+</head>
+<body>
+
+<div class="center-glow"></div>
+<div class="corner-accent tl"></div>
+<div class="corner-accent tr"></div>
+<div class="corner-accent bl"></div>
+<div class="corner-accent br"></div>
+
+<div class="container">
+  <div class="panels">
+    <!-- CODE EDITOR -->
+    <div class="editor">
+      <div class="editor-titlebar">
+        <div class="dot red"></div>
+        <div class="dot yellow"></div>
+        <div class="dot green"></div>
+        <span class="editor-filename">slides.md</span>
+      </div>
+      <div class="editor-body">
+        <div class="line">
+          <span class="line-num">1</span>
+          <span class="code-content"><span class="directive">---</span></span>
+        </div>
+        <div class="line">
+          <span class="line-num">2</span>
+          <span class="code-content"><span class="keyword">marp</span><span class="punct">:</span> <span class="string">true</span></span>
+        </div>
+        <div class="line">
+          <span class="line-num">3</span>
+          <span class="code-content"><span class="directive">---</span></span>
+        </div>
+        <div class="line">
+          <span class="line-num">4</span>
+          <span class="code-content"></span>
+        </div>
+        <div class="line">
+          <span class="line-num">5</span>
+          <span class="code-content"><span class="heading"># Why LLMs Matter</span></span>
+        </div>
+        <div class="line">
+          <span class="line-num">6</span>
+          <span class="code-content"></span>
+        </div>
+        <div class="line">
+          <span class="line-num">7</span>
+          <span class="code-content"><span class="text">- Scalable reasoning</span></span>
+        </div>
+        <div class="line">
+          <span class="line-num">8</span>
+          <span class="code-content"><span class="text">- Emergent abilities</span></span>
+        </div>
+        <div class="line">
+          <span class="line-num">9</span>
+          <span class="code-content"></span>
+        </div>
+        <div class="line highlight-line">
+          <span class="line-num">10</span>
+          <span class="code-content"><span class="comment">&lt;!-- say: Let me explain</span></span>
+        </div>
+        <div class="line highlight-line">
+          <span class="line-num">11</span>
+          <span class="code-content"><span class="comment">  why this changes</span></span>
+        </div>
+        <div class="line highlight-line">
+          <span class="line-num">12</span>
+          <span class="code-content"><span class="comment">  everything. --&gt;</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ARROW -->
+    <div class="arrow-section">
+      <div class="arrow-icon">&rsaquo;</div>
+      <div class="arrow-label">render</div>
+    </div>
+
+    <!-- VIDEO PLAYER -->
+    <div class="player">
+      <div class="player-viewport">
+        <div class="slide-content">
+          <h2>Why LLMs Matter</h2>
+          <div class="slide-bullet">Scalable reasoning</div>
+          <div class="slide-bullet">Emergent abilities</div>
+        </div>
+        <div class="play-overlay">
+          <div class="play-triangle"></div>
+        </div>
+        <div class="audio-indicator">
+          <div class="audio-bar" style="height: 8px;"></div>
+          <div class="audio-bar" style="height: 18px;"></div>
+          <div class="audio-bar" style="height: 12px;"></div>
+          <div class="audio-bar" style="height: 24px;"></div>
+          <div class="audio-bar" style="height: 16px;"></div>
+          <div class="audio-bar" style="height: 20px;"></div>
+          <div class="audio-bar" style="height: 10px;"></div>
+          <div class="audio-bar" style="height: 22px;"></div>
+          <div class="audio-bar" style="height: 14px;"></div>
+        </div>
+      </div>
+      <div class="player-controls">
+        <span class="time-label">1:12</span>
+        <div class="progress-bar">
+          <div class="progress-fill"></div>
+          <div class="progress-dot"></div>
+        </div>
+        <span class="time-label">3:24</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TITLE -->
+  <div class="title-row">
+    <div class="title-main">SlideSonnet</div>
+    <div class="title-sub">Text &rarr; Video</div>
+  </div>
+</div>
+
+</body>
+</html>
