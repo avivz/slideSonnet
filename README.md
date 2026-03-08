@@ -72,12 +72,9 @@ Source: [`examples/basel-problem/`](examples/basel-problem/)
 
 The `examples/showcase/` directory is a single-file MARP presentation introducing slideSonnet through a dialog between two voices. It demonstrates narration, fragment animation, voice switching, silent/skipped slides, math, code, and images — all in one `slides.md` file.
 
-It also includes pronunciation dictionaries (`pronunciation/general.md` and `pronunciation/names.md`) and a playlist with ElevenLabs and Piper voice configuration (`slidesonnet.yaml`).
+[![slideSonnet Showcase](https://img.youtube.com/vi/u6yOFujj_f0/maxresdefault.jpg)](https://youtu.be/u6yOFujj_f0)
 
-```bash
-cd examples/showcase
-slidesonnet build
-```
+Source: [`examples/showcase/`](examples/showcase/) — includes pronunciation dictionaries and a playlist with ElevenLabs and Piper voice configuration.
 
 ## Writing slides
 
