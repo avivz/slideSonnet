@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +111,16 @@ def _prepare(
 
     # Load pronunciation
     config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
+
+    # Validate ElevenLabs API key early (before any build work)
+    if config.tts.backend == "elevenlabs":
+        api_key_env = config.tts.elevenlabs_api_key_env
+        if not os.environ.get(api_key_env, ""):
+            raise SlideSonnetError(
+                f"ElevenLabs API key not found (${api_key_env} is not set).\n"
+                f"Create a .env file with {api_key_env}=your-key, "
+                f"or use --tts piper for free local TTS."
+            )
 
     # Create TTS engine
     tts = create_tts(config)

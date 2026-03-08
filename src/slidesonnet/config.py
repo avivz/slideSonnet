@@ -16,10 +16,25 @@ def load_config(raw: dict[str, Any], playlist_dir: Path) -> ProjectConfig:
         raw: Parsed YAML config dict.
         playlist_dir: Directory containing the playlist file (for resolving paths).
     """
-    tts = _parse_tts(raw.get("tts", {}))
+    raw_tts = raw.get("tts", {})
+    tts = _parse_tts(raw_tts)
     video = _parse_video(raw.get("video", {}))
     voices = _parse_voices(raw.get("voices", {}))
     pronunciation_files = _parse_pronunciation_paths(raw.get("pronunciation", []), playlist_dir)
+
+    # Inherit engine defaults from voices.default when not explicitly set in YAML
+    if "default" in voices:
+        default_voice = voices["default"]
+        piper_explicitly_set = "model" in raw_tts.get("piper", {})
+        if not piper_explicitly_set:
+            resolved = default_voice.resolve("piper")
+            if resolved:
+                tts.piper_model = resolved
+        el_explicitly_set = "voice_id" in raw_tts.get("elevenlabs", {})
+        if not el_explicitly_set:
+            resolved = default_voice.resolve("elevenlabs")
+            if resolved:
+                tts.elevenlabs_voice_id = resolved
 
     return ProjectConfig(
         title=raw.get("title", ""),

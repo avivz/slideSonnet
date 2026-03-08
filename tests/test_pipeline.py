@@ -9,7 +9,13 @@ import pytest
 
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import ProjectConfig, TTSConfig
-from slidesonnet.pipeline import _filter_tasks_until, _resolve_output_name, _run_doit, build
+from slidesonnet.pipeline import (
+    _filter_tasks_until,
+    _prepare,
+    _resolve_output_name,
+    _run_doit,
+    build,
+)
 from slidesonnet.tts import create_tts
 
 
@@ -395,6 +401,72 @@ def _create_dummy_png(path: Path) -> None:
 
 
 # ---- Mocked unit tests for _create_tts and _run_doit ----
+
+
+class TestElevenLabsAPIKeyValidation:
+    """Tests for early ElevenLabs API key validation in _prepare()."""
+
+    def test_missing_api_key_raises_early(self, tmp_path: Path) -> None:
+        """_prepare() should raise SlideSonnetError when ElevenLabs key is missing."""
+        playlist = tmp_path / "slidesonnet.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: elevenlabs
+              elevenlabs:
+                voice_id: abc123
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Slide\n<!-- say: Hello -->\n")
+
+        # Ensure the env var is unset
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(SlideSonnetError, match="ElevenLabs API key not found"):
+                _prepare(playlist)
+
+    def test_present_api_key_passes(self, tmp_path: Path) -> None:
+        """_prepare() should succeed when ElevenLabs key is set."""
+        playlist = tmp_path / "slidesonnet.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: elevenlabs
+              elevenlabs:
+                voice_id: abc123
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Slide\n<!-- say: Hello -->\n")
+
+        with patch.dict("os.environ", {"ELEVENLABS_API_KEY": "test-key-123"}):
+            prep = _prepare(playlist)
+            assert prep.config.tts.backend == "elevenlabs"
+
+    def test_piper_backend_skips_api_key_check(self, tmp_path: Path) -> None:
+        """_prepare() should not check API key for piper backend."""
+        playlist = tmp_path / "slidesonnet.yaml"
+        playlist.write_text(
+            textwrap.dedent("""\
+            title: Test
+            tts:
+              backend: piper
+            modules:
+              - slides.md
+        """)
+        )
+        slides = tmp_path / "slides.md"
+        slides.write_text("---\nmarp: true\n---\n# Slide\n<!-- say: Hello -->\n")
+
+        # Should not raise even without any env vars
+        prep = _prepare(playlist)
+        assert prep.config.tts.backend == "piper"
 
 
 class TestCreateTTS:

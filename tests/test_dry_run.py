@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -212,6 +213,7 @@ class TestDryRunMultiPart:
 class TestDryRunAlternateExtension:
     """.wav file when backend expects .mp3 → still cached."""
 
+    @patch.dict("os.environ", {"ELEVENLABS_API_KEY": "test-key"})
     def test_alternate_ext(self, tmp_path: Path) -> None:
         playlist = _setup_project(tmp_path, backend="elevenlabs")
 
@@ -294,11 +296,13 @@ class TestDryRunBackend:
         result = dry_run(playlist)
         assert result.tts_backend == "piper"
 
+    @patch.dict("os.environ", {"ELEVENLABS_API_KEY": "test-key"})
     def test_elevenlabs_backend(self, tmp_path: Path) -> None:
         playlist = _setup_project(tmp_path, backend="elevenlabs")
         result = dry_run(playlist)
         assert result.tts_backend == "elevenlabs"
 
+    @patch.dict("os.environ", {"ELEVENLABS_API_KEY": "test-key"})
     def test_tts_override(self, tmp_path: Path) -> None:
         playlist = _setup_project(tmp_path, backend="piper")
         result = dry_run(playlist, tts_override="elevenlabs")

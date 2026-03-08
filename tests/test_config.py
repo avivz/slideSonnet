@@ -228,7 +228,71 @@ def test_all_voice_ids() -> None:
     assert vc.all_voice_ids() == {"en_US-amy-medium", "abc123"}
 
 
-# -- Pronunciation per-backend format ----------------------------------------
+# -- voices.default inheritance into TTS config ------------------------------
+
+
+def test_voices_default_inherits_piper_model() -> None:
+    """voices.default.piper should set tts.piper_model when not explicitly configured."""
+    raw = {
+        "voices": {
+            "default": {"piper": "en_US-amy-medium", "elevenlabs": "voice123"},
+        }
+    }
+    config = load_config(raw, Path("."))
+    assert config.tts.piper_model == "en_US-amy-medium"
+    assert config.tts.elevenlabs_voice_id == "voice123"
+
+
+def test_voices_default_does_not_override_explicit_piper_model() -> None:
+    """Explicit tts.piper.model takes precedence over voices.default.piper."""
+    raw = {
+        "tts": {"piper": {"model": "en_US-joe-medium"}},
+        "voices": {
+            "default": {"piper": "en_US-amy-medium"},
+        },
+    }
+    config = load_config(raw, Path("."))
+    assert config.tts.piper_model == "en_US-joe-medium"
+
+
+def test_voices_default_does_not_override_explicit_elevenlabs_voice() -> None:
+    """Explicit tts.elevenlabs.voice_id takes precedence over voices.default.elevenlabs."""
+    raw = {
+        "tts": {"elevenlabs": {"voice_id": "explicit123"}},
+        "voices": {
+            "default": {"elevenlabs": "default456"},
+        },
+    }
+    config = load_config(raw, Path("."))
+    assert config.tts.elevenlabs_voice_id == "explicit123"
+
+
+def test_voices_default_string_format_inherits() -> None:
+    """voices.default as a plain string should set both backend defaults."""
+    raw = {"voices": {"default": "universal-voice"}}
+    config = load_config(raw, Path("."))
+    assert config.tts.piper_model == "universal-voice"
+    assert config.tts.elevenlabs_voice_id == "universal-voice"
+
+
+def test_voices_default_partial_mapping() -> None:
+    """voices.default with only piper mapping should only affect piper."""
+    raw = {
+        "voices": {
+            "default": {"piper": "en_US-amy-medium"},
+        }
+    }
+    config = load_config(raw, Path("."))
+    assert config.tts.piper_model == "en_US-amy-medium"
+    assert config.tts.elevenlabs_voice_id == ""  # unchanged from default
+
+
+def test_no_voices_default_keeps_hardcoded_defaults() -> None:
+    """Without voices.default, TTS config keeps hardcoded defaults."""
+    raw = {"voices": {"alice": {"piper": "en_US-amy-medium"}}}
+    config = load_config(raw, Path("."))
+    assert config.tts.piper_model == "en_US-lessac-medium"
+    assert config.tts.elevenlabs_voice_id == ""
 
 
 # -- TTS speed parsing ------------------------------------------------------
