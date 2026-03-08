@@ -60,6 +60,14 @@ cd myproject
 slidesonnet build
 ```
 
+## Example: The Basel Problem
+
+A 10-minute narrated lecture on the Basel Problem, built entirely from a single `slides.md` file:
+
+[![The Basel Problem — slideSonnet example](https://img.youtube.com/vi/IkzeCoDuU5o/maxresdefault.jpg)](https://youtu.be/IkzeCoDuU5o)
+
+Source: [`examples/basel-problem/`](examples/basel-problem/)
+
 ## Showcase example
 
 The `examples/showcase/` directory is a single-file MARP presentation introducing slideSonnet through a dialog between two voices. It demonstrates narration, fragment animation, voice switching, silent/skipped slides, math, code, and images — all in one `slides.md` file.
