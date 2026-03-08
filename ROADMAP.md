@@ -4,11 +4,9 @@ Current version: 0.1.0 (alpha)
 
 ## Now — ship first release
 
-1. **Rewrite showcase example from scratch** — The showcase is the project's demo reel and must reflect current capabilities. Rewrite all slide modules with better narrative, rename config to `slidesonnet.yaml`, and cover all current features (subtitles, dry-run, preview, utterances, auto-discovery, `--output`, pronunciation, voice presets, skip, nonarration durations, fragment animation). Must build with `--tts piper` (no API key required). Human approves the final video. Upload to YouTube. **Blocks v0.1.0a1.**
+1. **Finalize and record Basel problem example** — Polish the existing Basel problem lesson into a publishable state. Must build from `examples/` with `--tts piper`. Human approves the final video. Upload to YouTube. **Blocks v0.1.0a1.**
 
-2. **Finalize and record Basel problem example** — Polish the existing Basel problem lesson into a publishable state. Must build from `examples/` with `--tts piper`. Human approves the final video. Upload to YouTube. **Blocks v0.1.0a1.**
-
-3. **Tag and publish v0.1.0a1** — Blocked by showcase + Basel videos. CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
+2. **Tag and publish v0.1.0a1** — Blocked by Basel video. CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
 
 ## Next — before beta
 
@@ -69,3 +67,4 @@ Current version: 0.1.0 (alpha)
 - [x] Purge large files from git history; binary assets moved to Git LFS
 - [x] `--output` flag and `slidesonnet.yaml` config rename with auto-discovery
 - [x] `--quiet` mode covers all CLI commands (init, clean now respect `-q`)
+- [x] Showcase example rewritten from scratch (covers all current features, builds with `--tts piper`)

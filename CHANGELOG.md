@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- Showcase example rewritten from scratch — covers subtitles, dry-run, preview, utterances, auto-discovery, pronunciation, voice presets, fragment animation, and more
 - Default config renamed to `slidesonnet.yaml` (auto-discovered in cwd; `lecture.yaml` fallback)
 - `output:` config field and `--output` / `-o` CLI flag for custom video naming
 - Output video defaults to directory name (e.g., `my-lecture/` produces `my-lecture.mp4`)
