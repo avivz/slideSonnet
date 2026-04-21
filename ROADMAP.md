@@ -4,7 +4,50 @@ Current version: 0.1.0 (alpha)
 
 ## Now — ship alpha
 
-1. **Tag and publish v0.1.0a1** — CI publish workflow is ready (`publish.yml`). Remaining steps: set version to `0.1.0a1` in `__init__.py`, cut CHANGELOG, configure `TEST_PYPI_API_TOKEN` and `PYPI_API_TOKEN` secrets in GitHub, then `git tag v0.1.0a1 && git push origin v0.1.0a1`. Verify install from PyPI afterward.
+### Pre-alpha consistency checklist
+
+Version & metadata:
+- [ ] `__version__` in `src/slidesonnet/__init__.py` set to `"0.1.0a1"`
+- [ ] `CHANGELOG.md`: move `[Unreleased]` content into `[0.1.0a1] — <date>`, leave `[Unreleased]` empty
+- [ ] `CHANGELOG.md`: remove or merge the stub `[0.1.0] — Unreleased` entry at the bottom
+- [ ] `ROADMAP.md` header matches version (`0.1.0a1`)
+- [ ] `pyproject.toml` classifier is `Development Status :: 3 - Alpha`
+
+README & docs:
+- [ ] `README.md` installation section says `pip install slidesonnet` (matches PyPI name)
+- [ ] `README.md` feature list matches Done items in ROADMAP and CHANGELOG Added section
+- [ ] `README.md` CLI command table matches actual `slidesonnet --help` output
+- [ ] `README.md` YouTube video links are live and correct
+- [ ] `docs/marp.md` annotation syntax matches what the parser actually accepts
+- [ ] `docs/beamer.md` annotation syntax matches what the parser actually accepts
+- [ ] CLI `--help` text for every command is accurate (run `slidesonnet <cmd> --help` for each)
+
+Build & packaging:
+- [ ] `pyproject.toml` entry point `slidesonnet = "slidesonnet.cli:main"` works after `pip install .`
+- [ ] `pyproject.toml` project URLs point to correct GitHub repo
+- [ ] `pyproject.toml` dependencies are complete (no missing runtime deps)
+- [ ] `pyproject.toml` optional extras (`piper`, `elevenlabs`, `dev`) install cleanly
+- [ ] `LICENSE` file present and referenced in `pyproject.toml`
+
+CI & release pipeline:
+- [ ] CI passes: `make lint`, `make typecheck`, `make test-unit` all green
+- [ ] `publish.yml` workflow: `TEST_PYPI_API_TOKEN` secret configured in GitHub
+- [ ] `publish.yml` workflow: `PYPI_API_TOKEN` secret configured in GitHub
+- [ ] Integration tests pass locally: `make test` (requires ffmpeg, marp, pdflatex, piper)
+
+Examples:
+- [ ] `examples/showcase/` builds with `make showcase-piper`
+- [ ] `examples/basel-problem/` builds with `make basel-piper`
+- [ ] Example videos on GitHub Releases (`v0.0.0`) match current builds
+- [ ] Example config files use `slidesonnet.yaml` (not old `lecture.yaml` name)
+
+Post-tag verification:
+- [ ] `git tag v0.1.0a1 && git push origin v0.1.0a1` triggers publish workflow
+- [ ] Package appears on TestPyPI, then PyPI
+- [ ] `pip install slidesonnet` in a fresh venv works
+- [ ] `slidesonnet --version` prints `0.1.0a1`
+- [ ] `slidesonnet doctor` runs in a fresh install
+- [ ] GitHub Release created with correct tag and notes
 
 ## Next — before beta
 
