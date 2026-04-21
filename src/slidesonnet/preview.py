@@ -7,12 +7,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from slidesonnet.actions import get_module_handlers
 from slidesonnet.config import load_config
 from slidesonnet.exceptions import SlideSonnetError
-from slidesonnet.models import EXTENSION_TO_TYPE, ModuleType
-from slidesonnet.parsers.base import SlideParser
-from slidesonnet.parsers.beamer import BeamerParser
-from slidesonnet.parsers.marp import MarpParser
+from slidesonnet.models import EXTENSION_TO_TYPE
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.piper import PiperTTS
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_dict
@@ -31,13 +29,13 @@ def preview_single_slide(
     # Determine parser from extension
     suffix = slides_path.suffix.lower()
     module_type = EXTENSION_TO_TYPE.get(suffix)
-    parser: SlideParser
-    if module_type == ModuleType.MARP:
-        parser = MarpParser()
-    elif module_type == ModuleType.BEAMER:
-        parser = BeamerParser()
-    else:
+    if module_type is None:
         raise SlideSonnetError(f"Unsupported file type '{suffix}'")
+    try:
+        handlers = get_module_handlers(module_type)
+    except ValueError as exc:
+        raise SlideSonnetError(str(exc)) from exc
+    parser = handlers.parser_cls()
 
     # Parse slides
     with tempfile.TemporaryDirectory() as tmp:

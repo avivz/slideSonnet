@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -18,7 +19,14 @@ from typing import Literal
 from slidesonnet.actions import get_parser_and_extractor
 from slidesonnet.config import load_config
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
-from slidesonnet.models import API_BACKENDS, ModuleType, resolve_voice
+from slidesonnet.models import (
+    API_BACKENDS,
+    ModuleType,
+    PlaylistEntry,
+    ProjectConfig,
+    SlideNarration,
+    resolve_voice,
+)
 from slidesonnet.playlist import parse_playlist
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_dict
 
@@ -176,60 +184,66 @@ def _remove_empty_dir(path: Path) -> None:
         pass
 
 
+def _iter_narrated_slides(
+    entries: list[PlaylistEntry],
+    build_dir: Path,
+    playlist_dir: Path,
+) -> Iterator[SlideNarration]:
+    """Parse every non-video entry and yield each slide that has narration."""
+    for entry in entries:
+        if entry.module_type == ModuleType.VIDEO:
+            continue
+        source_path = playlist_dir / entry.path
+        module_dir = build_dir / entry.path.parent / entry.path.stem
+        slides_dir = module_dir / "slides"
+        parser_cls, _ = get_parser_and_extractor(entry.module_type)
+        parser = parser_cls()
+        for slide in parser.parse(source_path, slides_dir):
+            if slide.has_narration:
+                yield slide
+
+
+def _load_playlist_and_config(
+    playlist_path: Path,
+) -> tuple[Path, Path, ProjectConfig, list[PlaylistEntry]]:
+    """Shared setup: resolve paths, parse playlist, load config with pronunciation."""
+    playlist_path = playlist_path.resolve()
+    playlist_dir = playlist_path.parent
+    build_dir = playlist_dir / "cache"
+    raw_config, entries = parse_playlist(playlist_path)
+    config = load_config(raw_config, playlist_dir)
+    config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
+    return playlist_dir, build_dir, config, entries
+
+
 def _collect_current_text_hashes(playlist_path: Path) -> set[str]:
     """Parse the playlist and return text_hashes for all current utterances.
 
     Resolves voice presets across ALL backends so that audio from any engine
     is preserved if its utterance content matches.
     """
-    playlist_path = playlist_path.resolve()
-    playlist_dir = playlist_path.parent
-    build_dir = playlist_dir / "cache"
-
-    raw_config, entries = parse_playlist(playlist_path)
-    config = load_config(raw_config, playlist_dir)
-    config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
+    playlist_dir, build_dir, config, entries = _load_playlist_and_config(playlist_path)
 
     # Collect pronunciation dicts for all backends so audio from any engine is preserved
-    all_backends = {"piper", "elevenlabs"}
-    backend_prons = {b: config.pronunciation_for(b) for b in all_backends}
+    all_backends = ("piper", "elevenlabs")
+    backend_prons = [config.pronunciation_for(b) for b in all_backends]
 
     text_hashes: set[str] = set()
+    for slide in _iter_narrated_slides(entries, build_dir, playlist_dir):
+        # Collect all possible voice resolutions across all backends
+        voices: set[str | None] = {None}  # always include default (no voice)
+        if slide.voice:
+            voice_cfg = config.voices.get(slide.voice)
+            if voice_cfg:
+                voices |= voice_cfg.all_voice_ids()
 
-    for entry in entries:
-        if entry.module_type == ModuleType.VIDEO:
-            continue
-
-        source_path = playlist_dir / entry.path
-        parser_cls, _ = get_parser_and_extractor(entry.module_type)
-        module_dir = build_dir / entry.path.parent / entry.path.stem
-        slides_dir = module_dir / "slides"
-
-        parser = parser_cls()
-        slides = parser.parse(source_path, slides_dir)
-
-        for slide in slides:
-            if not slide.has_narration:
-                continue
-
-            # Collect all possible voice resolutions across all backends
-            voices: set[str | None] = {None}  # always include default (no voice)
-            if slide.voice:
-                voice_cfg = config.voices.get(slide.voice)
-                if voice_cfg:
-                    voices |= voice_cfg.all_voice_ids()
-
-            # Apply each backend's pronunciation and collect text_hashes
-            for pron in backend_prons.values():
-                processed = apply_pronunciation(slide.narration_raw, pron)
-                parts_processed = [
-                    apply_pronunciation(part, pron) for part in slide.narration_parts
-                ]
-
-                texts = parts_processed if len(parts_processed) > 1 else [processed]
-                for utterance_text in texts:
-                    for voice in voices:
-                        text_hashes.add(text_hash(utterance_text, voice))
+        for pron in backend_prons:
+            processed = apply_pronunciation(slide.narration_raw, pron)
+            parts_processed = [apply_pronunciation(part, pron) for part in slide.narration_parts]
+            texts = parts_processed if len(parts_processed) > 1 else [processed]
+            for utterance_text in texts:
+                for voice in voices:
+                    text_hashes.add(text_hash(utterance_text, voice))
 
     return text_hashes
 
@@ -240,50 +254,26 @@ def _collect_current_audio_filenames(playlist_path: Path) -> set[str]:
     Only considers the currently configured backend, unlike _collect_current_text_hashes
     which considers all backends.
     """
-    from slidesonnet.tts import create_tts
-
     from dotenv import load_dotenv
 
-    playlist_path = playlist_path.resolve()
-    playlist_dir = playlist_path.parent
-    build_dir = playlist_dir / "cache"
+    from slidesonnet.tts import create_tts
 
+    playlist_dir, build_dir, config, entries = _load_playlist_and_config(playlist_path.resolve())
     load_dotenv(playlist_dir / ".env")
-
-    raw_config, entries = parse_playlist(playlist_path)
-    config = load_config(raw_config, playlist_dir)
-    config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
     tts = create_tts(config)
 
     pron = config.pronunciation_for(config.tts.backend)
     filenames: set[str] = set()
 
-    for entry in entries:
-        if entry.module_type == ModuleType.VIDEO:
-            continue
-
-        source_path = playlist_dir / entry.path
-        parser_cls, _ = get_parser_and_extractor(entry.module_type)
-        module_dir = build_dir / entry.path.parent / entry.path.stem
-        slides_dir = module_dir / "slides"
-
-        parser = parser_cls()
-        slides = parser.parse(source_path, slides_dir)
-
-        for slide in slides:
-            if not slide.has_narration:
-                continue
-
-            slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
-            slide.narration_parts_processed = [
-                apply_pronunciation(part, pron) for part in slide.narration_parts
-            ]
-
-            voice = resolve_voice(slide.voice, config.voices, config.tts.backend)
-
-            parts = slide.narration_parts_processed
-            texts = parts if len(parts) > 1 else [slide.narration_processed]
-            for utterance_text in texts:
-                filenames.add(audio_filename(utterance_text, tts.name(), tts.cache_key(), voice))
+    for slide in _iter_narrated_slides(entries, build_dir, playlist_dir):
+        slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
+        slide.narration_parts_processed = [
+            apply_pronunciation(part, pron) for part in slide.narration_parts
+        ]
+        voice = resolve_voice(slide.voice, config.voices, config.tts.backend)
+        parts = slide.narration_parts_processed
+        texts = parts if len(parts) > 1 else [slide.narration_processed]
+        for utterance_text in texts:
+            filenames.add(audio_filename(utterance_text, tts.name(), tts.cache_key(), voice))
 
     return filenames

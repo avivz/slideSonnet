@@ -10,6 +10,7 @@ import json
 import logging
 import shutil
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from slidesonnet.models import ModuleType, ProjectConfig
@@ -199,19 +200,48 @@ def action_concat_pdfs(pdf_paths: list[Path], output_path: Path) -> None:
         subprocess.run(cmd, check=True, capture_output=True)
 
 
+@dataclass(frozen=True)
+class _ModuleHandlers:
+    """Registry entry: parser + extractor + visual hash for one slide module type."""
+
+    parser_cls: type[SlideParser]
+    extract_fn: Callable[[Path, Path], list[Path]]
+    visual_hash_fn: Callable[[str], str]
+
+
+def _load_marp_handlers() -> _ModuleHandlers:
+    from slidesonnet.parsers.marp import MarpParser, extract_images, visual_hash
+
+    return _ModuleHandlers(
+        parser_cls=MarpParser, extract_fn=extract_images, visual_hash_fn=visual_hash
+    )
+
+
+def _load_beamer_handlers() -> _ModuleHandlers:
+    from slidesonnet.parsers.beamer import BeamerParser, extract_images, visual_hash
+
+    return _ModuleHandlers(
+        parser_cls=BeamerParser, extract_fn=extract_images, visual_hash_fn=visual_hash
+    )
+
+
+_MODULE_LOADERS: dict[ModuleType, Callable[[], _ModuleHandlers]] = {
+    ModuleType.MARP: _load_marp_handlers,
+    ModuleType.BEAMER: _load_beamer_handlers,
+}
+
+
+def get_module_handlers(module_type: ModuleType) -> _ModuleHandlers:
+    """Return parser class, image extractor, and visual-hash function for *module_type*."""
+    loader = _MODULE_LOADERS.get(module_type)
+    if loader is None:
+        raise ValueError(f"No parser for module type: {module_type}")
+    return loader()
+
+
 def get_parser_and_extractor(
     module_type: ModuleType,
 ) -> tuple[type[SlideParser], Callable[[Path, Path], list[Path]]]:
     """Get parser class and image extraction function for a module type."""
-    if module_type == ModuleType.MARP:
-        from slidesonnet.parsers.marp import MarpParser
-        from slidesonnet.parsers.marp import extract_images as marp_extract
-
-        return MarpParser, marp_extract
-    elif module_type == ModuleType.BEAMER:
-        from slidesonnet.parsers.beamer import BeamerParser
-        from slidesonnet.parsers.beamer import extract_images as beamer_extract
-
-        return BeamerParser, beamer_extract
-    else:
-        raise ValueError(f"No parser for module type: {module_type}")
+    handlers = get_module_handlers(module_type)
+    return handlers.parser_cls, handlers.extract_fn

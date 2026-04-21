@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import click
@@ -44,6 +44,95 @@ def _get_cli_version(
         return None
 
 
+@dataclass(frozen=True)
+class ToolCheck:
+    """Definition of a CLI-tool dependency check.
+
+    The doctor runs each declaration to produce a :class:`CheckResult`.
+    Keeping these as data rather than one function per tool means adding
+    a new dependency is a one-line change.
+    """
+
+    name: str
+    command: str  # binary looked up via shutil.which
+    hint: str
+    context: str
+    version_args: list[str] = field(default_factory=list)  # e.g. ["-version"]
+    version_pattern: str = ""  # regex with one capture group
+    version_on_stderr: bool = False
+
+
+_CLI_CHECKS: list[ToolCheck] = [
+    ToolCheck(
+        name="ffmpeg",
+        command="ffmpeg",
+        hint="sudo apt install ffmpeg",
+        context="Video compositing",
+        version_args=["-version"],
+        version_pattern=r"version\s+(\S+)",
+    ),
+    ToolCheck(
+        name="ffprobe",
+        command="ffprobe",
+        hint="sudo apt install ffmpeg",
+        context="Audio/video duration detection",
+        version_args=["-version"],
+        version_pattern=r"version\s+(\S+)",
+    ),
+    ToolCheck(
+        name="marp-cli",
+        command="marp",
+        hint="npm install -g @marp-team/marp-cli",
+        context="MARP slide rendering",
+        version_args=["--version"],
+        version_pattern=r"v(\d+\.\d+\.\d+)",
+    ),
+    ToolCheck(
+        name="pdflatex",
+        command="pdflatex",
+        hint="sudo apt install texlive-latex-base",
+        context="Beamer slide compilation",
+        version_args=["--version"],
+        version_pattern=r"\((.+?)\)",
+    ),
+    ToolCheck(
+        name="pdftoppm",
+        command="pdftoppm",
+        hint="sudo apt install poppler-utils",
+        context="PDF to image conversion",
+        version_args=["-v"],
+        version_pattern=r"version\s+(\S+)",
+        version_on_stderr=True,
+    ),
+    ToolCheck(
+        name="pdfunite",
+        command="pdfunite",
+        hint="sudo apt install poppler-utils",
+        context="PDF concatenation",
+        version_args=["-v"],
+        version_pattern=r"version\s+(\S+)",
+        version_on_stderr=True,
+    ),
+]
+
+_CHECKS_BY_NAME: dict[str, ToolCheck] = {c.name: c for c in _CLI_CHECKS}
+
+
+def _run_cli_check(check: ToolCheck) -> CheckResult:
+    """Run a single declarative CLI check."""
+    if not shutil.which(check.command):
+        return CheckResult(check.name, "missing", "", check.hint, check.context)
+    version = (
+        _get_cli_version(
+            [check.command, *check.version_args],
+            check.version_pattern,
+            stderr=check.version_on_stderr,
+        )
+        or "unknown"
+    )
+    return CheckResult(check.name, "ok", version, "", check.context)
+
+
 def check_python() -> CheckResult:
     """Check Python version."""
     version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
@@ -59,76 +148,32 @@ def check_python() -> CheckResult:
 
 def check_ffmpeg() -> CheckResult:
     """Check for ffmpeg."""
-    if not shutil.which("ffmpeg"):
-        return CheckResult("ffmpeg", "missing", "", "sudo apt install ffmpeg", "Video compositing")
-    version = _get_cli_version(["ffmpeg", "-version"], r"version\s+(\S+)") or "unknown"
-    return CheckResult("ffmpeg", "ok", version, "", "Video compositing")
+    return _run_cli_check(_CHECKS_BY_NAME["ffmpeg"])
 
 
 def check_ffprobe() -> CheckResult:
     """Check for ffprobe."""
-    if not shutil.which("ffprobe"):
-        return CheckResult(
-            "ffprobe", "missing", "", "sudo apt install ffmpeg", "Audio/video duration detection"
-        )
-    version = _get_cli_version(["ffprobe", "-version"], r"version\s+(\S+)") or "unknown"
-    return CheckResult("ffprobe", "ok", version, "", "Audio/video duration detection")
+    return _run_cli_check(_CHECKS_BY_NAME["ffprobe"])
 
 
 def check_marp() -> CheckResult:
     """Check for marp-cli."""
-    if not shutil.which("marp"):
-        return CheckResult(
-            "marp-cli",
-            "missing",
-            "",
-            "npm install -g @marp-team/marp-cli",
-            "MARP slide rendering",
-        )
-    version = _get_cli_version(["marp", "--version"], r"v(\d+\.\d+\.\d+)") or "unknown"
-    return CheckResult("marp-cli", "ok", version, "", "MARP slide rendering")
+    return _run_cli_check(_CHECKS_BY_NAME["marp-cli"])
 
 
 def check_pdflatex() -> CheckResult:
     """Check for pdflatex."""
-    if not shutil.which("pdflatex"):
-        return CheckResult(
-            "pdflatex",
-            "missing",
-            "",
-            "sudo apt install texlive-latex-base",
-            "Beamer slide compilation",
-        )
-    version = _get_cli_version(["pdflatex", "--version"], r"\((.+?)\)") or "unknown"
-    return CheckResult("pdflatex", "ok", version, "", "Beamer slide compilation")
+    return _run_cli_check(_CHECKS_BY_NAME["pdflatex"])
 
 
 def check_pdftoppm() -> CheckResult:
     """Check for pdftoppm."""
-    if not shutil.which("pdftoppm"):
-        return CheckResult(
-            "pdftoppm",
-            "missing",
-            "",
-            "sudo apt install poppler-utils",
-            "PDF to image conversion",
-        )
-    version = _get_cli_version(["pdftoppm", "-v"], r"version\s+(\S+)", stderr=True) or "unknown"
-    return CheckResult("pdftoppm", "ok", version, "", "PDF to image conversion")
+    return _run_cli_check(_CHECKS_BY_NAME["pdftoppm"])
 
 
 def check_pdfunite() -> CheckResult:
     """Check for pdfunite."""
-    if not shutil.which("pdfunite"):
-        return CheckResult(
-            "pdfunite",
-            "missing",
-            "",
-            "sudo apt install poppler-utils",
-            "PDF concatenation",
-        )
-    version = _get_cli_version(["pdfunite", "-v"], r"version\s+(\S+)", stderr=True) or "unknown"
-    return CheckResult("pdfunite", "ok", version, "", "PDF concatenation")
+    return _run_cli_check(_CHECKS_BY_NAME["pdfunite"])
 
 
 def check_piper() -> CheckResult:

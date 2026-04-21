@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import difflib
+import functools
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import click
 
@@ -74,6 +76,53 @@ def _discover_playlist(playlist: Path | None) -> Path:
         "No playlist file found. Create slidesonnet.yaml in the current directory,\n"
         "or pass the path explicitly: slidesonnet build <playlist.yaml>"
     )
+
+
+def _resolve_playlist_arg(playlist: Path | None) -> Path:
+    """Auto-discover a playlist and validate that the path exists.
+
+    Combines the two checks that almost every CLI command repeats:
+    call :func:`_discover_playlist` then raise a Click BadParameter if
+    the resolved path is missing.
+    """
+    playlist = _discover_playlist(playlist)
+    if not playlist.exists():
+        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
+    return playlist
+
+
+F = Callable[..., Any]
+
+
+def _handle_pipeline_errors(
+    *, doctor_hint_on: tuple[type[Exception], ...] = ()
+) -> Callable[[F], F]:
+    """Decorator: translate slideSonnet exceptions into Click exit codes.
+
+    - ``APINotAllowedError`` is printed verbatim to stderr (not logged) and
+      exits 1.
+    - ``SlideSonnetError`` is logged at ERROR, then when it's one of the
+      types in *doctor_hint_on* an extra hint pointing at ``doctor`` is
+      logged, and exits 1.
+    """
+
+    def decorator(fn: F) -> F:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return fn(*args, **kwargs)
+            except APINotAllowedError as e:
+                click.echo(str(e), err=True)
+                raise SystemExit(1)
+            except SlideSonnetError as e:
+                logger.error("%s", e)
+                if doctor_hint_on and isinstance(e, doctor_hint_on):
+                    logger.error("%s", _DOCTOR_HINT)
+                raise SystemExit(1)
+
+        return cast(F, wrapper)
+
+    return decorator
 
 
 def _print_build_result(result: BuildResult) -> None:
@@ -185,6 +234,7 @@ def _print_dry_run(result: DryRunResult) -> None:
 @click.option("--allow-api", is_flag=True, help="Allow paid API calls (e.g. ElevenLabs TTS)")
 @click.option("-o", "--output", type=click.Path(path_type=Path), help="Output video path")
 @click.pass_context
+@_handle_pipeline_errors(doctor_hint_on=(ParserError, FFmpegError, TTSError))
 def build(
     ctx: click.Context,
     playlist: Path | None,
@@ -218,42 +268,31 @@ def build(
       slidesonnet build --until tts             # stop after audio
       slidesonnet build -o my-lecture.mp4        # custom output name
     """
-    playlist = _discover_playlist(playlist)
-    if not playlist.exists():
-        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
+    playlist = _resolve_playlist_arg(playlist)
     quiet: bool = ctx.obj.get("quiet", False)
     # Explicit --tts elevenlabs implies opt-in to paid API calls
     effective_allow_api = allow_api or tts == "elevenlabs"
-    try:
-        if dry_run:
-            if preview:
-                logger.warning("--preview has no effect with --dry-run")
-            result = run_dry_run(
-                playlist,
-                tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
-            )
-            _print_dry_run(result)
-        else:
-            build_result = run_build(
-                playlist,
-                tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
-                preview=preview,
-                until=until,
-                quiet=quiet,
-                no_srt=no_srt,
-                allow_api=effective_allow_api,
-                output_override=output,
-            )
-            if not quiet:
-                _print_build_result(build_result)
-    except APINotAllowedError as e:
-        click.echo(str(e), err=True)
-        raise SystemExit(1)
-    except SlideSonnetError as e:
-        logger.error("%s", e)
-        if isinstance(e, (ParserError, FFmpegError, TTSError)):
-            logger.error("%s", _DOCTOR_HINT)
-        raise SystemExit(1)
+    if dry_run:
+        if preview:
+            logger.warning("--preview has no effect with --dry-run")
+        result = run_dry_run(
+            playlist,
+            tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+        )
+        _print_dry_run(result)
+    else:
+        build_result = run_build(
+            playlist,
+            tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+            preview=preview,
+            until=until,
+            quiet=quiet,
+            no_srt=no_srt,
+            allow_api=effective_allow_api,
+            output_override=output,
+        )
+        if not quiet:
+            _print_build_result(build_result)
 
 
 @main.command()
@@ -267,6 +306,7 @@ def build(
 @click.option("--no-srt", is_flag=True, help="Skip SRT subtitle generation")
 @click.option("-o", "--output", type=click.Path(path_type=Path), help="Output video path")
 @click.pass_context
+@_handle_pipeline_errors(doctor_hint_on=(ParserError, FFmpegError, TTSError))
 def preview(
     ctx: click.Context,
     playlist: Path | None,
@@ -279,31 +319,23 @@ def preview(
 
     Shorthand for: slidesonnet build --tts piper --preview
     """
-    playlist = _discover_playlist(playlist)
-    if not playlist.exists():
-        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
+    playlist = _resolve_playlist_arg(playlist)
     quiet: bool = ctx.obj.get("quiet", False)
-    try:
-        if dry_run:
-            result = run_dry_run(playlist, tts_override="piper")
-            _print_dry_run(result)
-        else:
-            build_result = run_build(
-                playlist,
-                tts_override="piper",
-                preview=True,
-                until=until,
-                quiet=quiet,
-                no_srt=no_srt,
-                output_override=output,
-            )
-            if not quiet:
-                _print_build_result(build_result)
-    except SlideSonnetError as e:
-        logger.error("%s", e)
-        if isinstance(e, (ParserError, FFmpegError, TTSError)):
-            logger.error("%s", _DOCTOR_HINT)
-        raise SystemExit(1)
+    if dry_run:
+        result = run_dry_run(playlist, tts_override="piper")
+        _print_dry_run(result)
+    else:
+        build_result = run_build(
+            playlist,
+            tts_override="piper",
+            preview=True,
+            until=until,
+            quiet=quiet,
+            no_srt=no_srt,
+            output_override=output,
+        )
+        if not quiet:
+            _print_build_result(build_result)
 
 
 @main.command("preview-slide")
@@ -315,6 +347,7 @@ def preview(
     type=click.Path(exists=True, path_type=Path),
     help="Playlist file for config (pronunciation, voice settings)",
 )
+@_handle_pipeline_errors(doctor_hint_on=(ParserError, FFmpegError, TTSError))
 def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> None:
     """Synthesize and play one slide's narration via Piper TTS.
 
@@ -331,13 +364,7 @@ def preview_slide(slides: Path, slide_number: int, playlist: Path | None) -> Non
       slidesonnet preview-slide 01-intro/slides.md 3
       slidesonnet preview-slide slides.tex 1 -p lecture.yaml
     """
-    try:
-        preview_single_slide(slides, slide_number, playlist_path=playlist)
-    except SlideSonnetError as e:
-        logger.error("%s", e)
-        if isinstance(e, (ParserError, FFmpegError, TTSError)):
-            logger.error("%s", _DOCTOR_HINT)
-        raise SystemExit(1)
+    preview_single_slide(slides, slide_number, playlist_path=playlist)
 
 
 @main.command()
@@ -365,9 +392,7 @@ def subtitles(playlist: Path | None, output: Path | None, tts: str | None) -> No
       slidesonnet subtitles
       slidesonnet subtitles -o lecture_en.srt
     """
-    playlist = _discover_playlist(playlist)
-    if not playlist.exists():
-        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
+    playlist = _resolve_playlist_arg(playlist)
     try:
         srt_path = run_generate_srt(
             playlist,
@@ -396,6 +421,7 @@ def subtitles(playlist: Path | None, output: Path | None, tts: str | None) -> No
     type=click.Choice(["piper", "elevenlabs"]),
     help="TTS backend for pronunciation rules (default: from playlist config)",
 )
+@_handle_pipeline_errors()
 def utterances(playlist: Path | None, output: Path | None, tts: str | None) -> None:
     """Export narration text for proofreading.
 
@@ -416,42 +442,37 @@ def utterances(playlist: Path | None, output: Path | None, tts: str | None) -> N
       slidesonnet utterances -o narration.txt
       slidesonnet utterances --tts piper
     """
-    playlist = _discover_playlist(playlist)
-    if not playlist.exists():
-        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
-    try:
-        modules = run_export_utterances(
-            playlist,
-            tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
-        )
-        lines: list[str] = []
-        for i, mod in enumerate(modules):
-            if i > 0:
-                lines.append("")
-            lines.append(f"# {mod.module_path}")
+    playlist = _resolve_playlist_arg(playlist)
+    modules = run_export_utterances(
+        playlist,
+        tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+    )
+    lines: list[str] = []
+    for i, mod in enumerate(modules):
+        if i > 0:
             lines.append("")
-            for slide in mod.slides:
-                prefix = f"[{slide.slide_index}]"
-                if slide.text == "[silent]":
-                    lines.append(f"{prefix} [silent]")
-                else:
-                    voice_prefix = f"(voice: {slide.voice}) " if slide.voice else ""
-                    lines.append(f"{prefix} {voice_prefix}{slide.text}")
-        text = "\n".join(lines) + "\n"
-        if output:
-            output.write_text(text, encoding="utf-8")
-            click.echo(str(output))
-        else:
-            click.echo(text, nl=False)
-    except SlideSonnetError as e:
-        logger.error("%s", e)
-        raise SystemExit(1)
+        lines.append(f"# {mod.module_path}")
+        lines.append("")
+        for slide in mod.slides:
+            prefix = f"[{slide.slide_index}]"
+            if slide.text == "[silent]":
+                lines.append(f"{prefix} [silent]")
+            else:
+                voice_prefix = f"(voice: {slide.voice}) " if slide.voice else ""
+                lines.append(f"{prefix} {voice_prefix}{slide.text}")
+    text = "\n".join(lines) + "\n"
+    if output:
+        output.write_text(text, encoding="utf-8")
+        click.echo(str(output))
+    else:
+        click.echo(text, nl=False)
 
 
 @main.command()
 @click.argument("fmt", type=click.Choice(["md", "tex"]))
 @click.argument("target", type=click.Path(path_type=Path), default=".")
 @click.pass_context
+@_handle_pipeline_errors()
 def init(ctx: click.Context, fmt: str, target: Path) -> None:
     """Create a new slideSonnet project.
 
@@ -476,16 +497,12 @@ def init(ctx: click.Context, fmt: str, target: Path) -> None:
     Refuses to overwrite — if TARGET already contains project files,
     remove them first or choose a different directory.
     """
-    try:
-        init_project(target, fmt=cast(Literal["md", "tex"], fmt))
-        if not ctx.obj.get("quiet", False):
-            click.echo(f"Project created at {target}")
-            if str(target) != ".":
-                click.echo(f"\n  cd {target}")
-            click.echo("  slidesonnet preview")
-    except SlideSonnetError as e:
-        logger.error("%s", e)
-        raise SystemExit(1)
+    init_project(target, fmt=cast(Literal["md", "tex"], fmt))
+    if not ctx.obj.get("quiet", False):
+        click.echo(f"Project created at {target}")
+        if str(target) != ".":
+            click.echo(f"\n  cd {target}")
+        click.echo("  slidesonnet preview")
 
 
 @main.command()
@@ -516,9 +533,7 @@ def clean(ctx: click.Context, playlist: Path | None, keep: str, yes: bool) -> No
       slidesonnet clean --keep current               # keep matching audio
       slidesonnet clean --keep nothing -y            # nuke everything
     """
-    playlist = _discover_playlist(playlist)
-    if not playlist.exists():
-        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
+    playlist = _resolve_playlist_arg(playlist)
     quiet: bool = ctx.obj.get("quiet", False)
     build_dir = playlist.resolve().parent / "cache"
     if not build_dir.exists():
@@ -548,6 +563,7 @@ def clean(ctx: click.Context, playlist: Path | None, keep: str, yes: bool) -> No
 
 @main.command()
 @click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
+@_handle_pipeline_errors(doctor_hint_on=(ParserError, FFmpegError))
 def pdf(playlist: Path | None) -> None:
     """Export a concatenated PDF for all slide modules in a playlist.
 
@@ -559,17 +575,9 @@ def pdf(playlist: Path | None) -> None:
     Examples:
       slidesonnet pdf
     """
-    playlist = _discover_playlist(playlist)
-    if not playlist.exists():
-        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
-    try:
-        pdf_path = run_export_pdfs(playlist)
-        click.echo(str(pdf_path))
-    except SlideSonnetError as e:
-        logger.error("%s", e)
-        if isinstance(e, (ParserError, FFmpegError)):
-            logger.error("%s", _DOCTOR_HINT)
-        raise SystemExit(1)
+    playlist = _resolve_playlist_arg(playlist)
+    pdf_path = run_export_pdfs(playlist)
+    click.echo(str(pdf_path))
 
 
 def _truncate(text: str, width: int) -> str:
@@ -579,6 +587,49 @@ def _truncate(text: str, width: int) -> str:
     return text[: width - 1] + "\u2026"
 
 
+def _render_slide_table(results: list[Any]) -> None:
+    """Print the header + per-slide rows for ``list_cmd`` output."""
+    narrated = [r for r in results if r.cached is not None]
+    w_idx = max(max(len(str(r.slide_index)) for r in results), 1)
+    w_file = max(max(len(r.module_path) for r in results), 4)
+    w_voice = max(max(len(r.voice) for r in results), 5)
+    w_chars = max(max((len(str(r.chars)) for r in narrated), default=0), 5)
+
+    header = (
+        f"{'#':<{w_idx}}   {'File':<{w_file}}   {'Voice':<{w_voice}}"
+        f"   {'Chars':>{w_chars}}   Narration"
+    )
+    click.echo(header)
+    for r in results:
+        if r.cached is None:
+            symbol = ""
+            chars_str = "\u2013"
+        else:
+            symbol = "\u25cf " if r.cached else "\u25cb "
+            chars_str = str(r.chars)
+        narration = _truncate(r.text, 60)
+        click.echo(
+            f"{r.slide_index:<{w_idx}}   {r.module_path:<{w_file}}   {r.voice:<{w_voice}}"
+            f"   {chars_str:>{w_chars}}   {symbol}{narration}"
+        )
+
+
+def _render_list_summary(results: list[Any], tts_backend: str) -> None:
+    """Print the totals line + legend beneath the slide table."""
+    narrated = [r for r in results if r.cached is not None]
+    if not narrated:
+        return
+    n_cached = sum(1 for r in narrated if r.cached is True)
+    n_needs_tts = sum(1 for r in narrated if r.cached is False)
+    parts = [f"{len(results)} slides", f"{n_cached} cached"]
+    if n_needs_tts > 0:
+        uncached_chars = sum(r.chars for r in results if r.cached is False)
+        verb = "needs" if n_needs_tts == 1 else "need"
+        parts.append(f"{n_needs_tts} {verb} TTS (~{uncached_chars:,} characters via {tts_backend})")
+    click.echo("\n" + ", ".join(parts))
+    click.echo("\u25cf cached  \u25cb needs TTS")
+
+
 @main.command("list")
 @click.argument("playlist", required=False, default=None, type=click.Path(path_type=Path))
 @click.option(
@@ -586,6 +637,7 @@ def _truncate(text: str, width: int) -> str:
     type=click.Choice(["piper", "elevenlabs"]),
     help="TTS backend for pronunciation rules (default: from playlist config)",
 )
+@_handle_pipeline_errors()
 def list_cmd(playlist: Path | None, tts: str | None) -> None:
     """List slides with voice and narration text.
 
@@ -599,66 +651,18 @@ def list_cmd(playlist: Path | None, tts: str | None) -> None:
       slidesonnet list
       slidesonnet list --tts piper
     """
-    playlist = _discover_playlist(playlist)
-    if not playlist.exists():
-        raise click.BadParameter(f"Path '{playlist}' does not exist.", param_hint="'PLAYLIST'")
-    try:
-        list_result = run_list_slides(
-            playlist,
-            tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
-        )
-        results = list_result.slides
-        if not results:
-            click.echo("No slides found.")
-            return
+    playlist = _resolve_playlist_arg(playlist)
+    list_result = run_list_slides(
+        playlist,
+        tts_override=cast(Literal["piper", "elevenlabs"] | None, tts),
+    )
+    results = list_result.slides
+    if not results:
+        click.echo("No slides found.")
+        return
 
-        # Compute column widths
-        narrated = [r for r in results if r.cached is not None]
-        max_idx = max(len(str(r.slide_index)) for r in results)
-        max_file = max(len(r.module_path) for r in results)
-        max_voice = max(len(r.voice) for r in results)
-        max_chars = max(len(str(r.chars)) for r in narrated) if narrated else 0
-        w_idx = max(max_idx, 1)
-        w_file = max(max_file, 4)
-        w_voice = max(max_voice, 5)
-        w_chars = max(max_chars, 5)  # "Chars" header
-
-        header = (
-            f"{'#':<{w_idx}}   {'File':<{w_file}}   {'Voice':<{w_voice}}"
-            f"   {'Chars':>{w_chars}}   Narration"
-        )
-        click.echo(header)
-        for r in results:
-            if r.cached is not None:
-                symbol = "\u25cf " if r.cached else "\u25cb "
-                chars_str = str(r.chars)
-            else:
-                symbol = ""
-                chars_str = "\u2013"
-            narration = _truncate(r.text, 60)
-            click.echo(
-                f"{r.slide_index:<{w_idx}}   {r.module_path:<{w_file}}   {r.voice:<{w_voice}}"
-                f"   {chars_str:>{w_chars}}   {symbol}{narration}"
-            )
-
-        # Summary line (only when narrated slides exist)
-        if narrated:
-            n_cached = sum(1 for r in narrated if r.cached is True)
-            n_needs_tts = sum(1 for r in narrated if r.cached is False)
-            total_slides = len(results)
-            parts = [f"{total_slides} slides", f"{n_cached} cached"]
-            if n_needs_tts > 0:
-                uncached_chars = sum(r.chars for r in results if r.cached is False)
-                verb = "needs" if n_needs_tts == 1 else "need"
-                parts.append(
-                    f"{n_needs_tts} {verb} TTS"
-                    f" (~{uncached_chars:,} characters via {list_result.tts_backend})"
-                )
-            click.echo("\n" + ", ".join(parts))
-            click.echo("\u25cf cached  \u25cb needs TTS")
-    except SlideSonnetError as e:
-        logger.error("%s", e)
-        raise SystemExit(1)
+    _render_slide_table(results)
+    _render_list_summary(results, list_result.tts_backend)
 
 
 @main.command()

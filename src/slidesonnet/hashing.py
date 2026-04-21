@@ -15,7 +15,10 @@ Concat files keep the format: {hash}_concat.wav
 from __future__ import annotations
 
 import hashlib
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _BACKEND_EXTENSIONS: dict[str, str] = {
     "piper": ".wav",
@@ -74,6 +77,59 @@ def concat_filename(part_paths: list[Path]) -> str:
     concat_hash_input = "\0".join(str(p) for p in part_paths)
     h = hashlib.sha256(concat_hash_input.encode("utf-8")).hexdigest()[:16]
     return f"{h}_concat.wav"
+
+
+def _alternate_extensions(suffix: str) -> list[str]:
+    """Return the other backend extensions besides *suffix*."""
+    return [ext for ext in _BACKEND_EXTENSIONS.values() if ext != suffix]
+
+
+def audio_cache_is_fresh(path: Path) -> bool:
+    """Return True if *path* or a same-stem alternate extension exists and is non-empty.
+
+    Read-only: never renames anything. Used for cache existence checks where
+    we just want to know whether audio is available.
+    """
+    if path.exists() and path.stat().st_size > 0:
+        return True
+    for ext in _alternate_extensions(path.suffix):
+        alt = path.with_suffix(ext)
+        if alt.exists() and alt.stat().st_size > 0:
+            return True
+    return False
+
+
+def audio_cache_path_or_alt(path: Path) -> Path | None:
+    """Return *path* or a same-stem alternate extension if either exists.
+
+    Read-only. Returns the actual path on disk (not a synthesized one)
+    so callers can probe its duration. Returns None if nothing is cached.
+    """
+    if path.exists() and path.stat().st_size > 0:
+        return path
+    for ext in _alternate_extensions(path.suffix):
+        alt = path.with_suffix(ext)
+        if alt.exists() and alt.stat().st_size > 0:
+            return alt
+    return None
+
+
+def migrate_and_check_audio_cache(path: Path) -> bool:
+    """Return True if *path* exists (migrating from an alternate extension if needed).
+
+    If *path* is missing but a same-stem alternate-extension file exists,
+    rename the alternate to *path*. Used by doit's uptodate check so
+    engine-switches (.wav ↔ .mp3) don't re-synthesize.
+    """
+    if path.exists() and path.stat().st_size > 0:
+        return True
+    for ext in _alternate_extensions(path.suffix):
+        alt = path.with_suffix(ext)
+        if alt.exists() and alt.stat().st_size > 0:
+            alt.rename(path)
+            logger.info("Migrated cache: %s → %s", alt.name, path.name)
+            return True
+    return False
 
 
 def parse_audio_filename(filename: str) -> tuple[str, str, str] | None:

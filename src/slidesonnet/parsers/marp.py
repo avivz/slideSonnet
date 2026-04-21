@@ -7,7 +7,7 @@ import logging
 import re
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -288,9 +288,13 @@ def _split_slides(text: str) -> list[str]:
     return slides
 
 
-def _find_separator_indices(lines: list[str]) -> list[int]:
-    """Find line indices of ``---`` separators, ignoring those inside code fences."""
-    separator_indices: list[int] = []
+def _walk_non_fenced_lines(lines: list[str]) -> Iterator[tuple[int, str]]:
+    r"""Yield (index, line) pairs for lines outside fenced code blocks.
+
+    Tracks opening/closing of ```...``` and ~~~...~~~ fences following
+    CommonMark rules (a closing fence must use the same character and
+    at least as many of them as the opening, with no trailing content).
+    """
     fence_char: str | None = None
     fence_len: int = 0
 
@@ -299,44 +303,25 @@ def _find_separator_indices(lines: list[str]) -> list[int]:
         if stripped.startswith("```") or stripped.startswith("~~~"):
             char = stripped[0]
             length = len(stripped) - len(stripped.lstrip(char))
-            if fence_char is not None:
-                # Inside fence: close only with same char, >= length, no trailing content
-                if char == fence_char and length >= fence_len and stripped.rstrip(char) == "":
-                    fence_char = None
-            else:
+            if fence_char is None:
                 fence_char = char
                 fence_len = length
+            elif char == fence_char and length >= fence_len and stripped.rstrip(char) == "":
+                fence_char = None
+            # Fence lines themselves are never yielded.
             continue
-        if fence_char is None and stripped == "---":
-            separator_indices.append(i)
+        if fence_char is None:
+            yield i, line
 
-    return separator_indices
+
+def _find_separator_indices(lines: list[str]) -> list[int]:
+    """Find line indices of ``---`` separators, ignoring those inside code fences."""
+    return [i for i, line in _walk_non_fenced_lines(lines) if line.strip() == "---"]
 
 
 def _strip_fences(text: str) -> str:
     """Remove fenced code blocks from text, respecting CommonMark rules."""
-    lines = text.split("\n")
-    result: list[str] = []
-    fence_char: str | None = None
-    fence_len: int = 0
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            char = stripped[0]
-            length = len(stripped) - len(stripped.lstrip(char))
-            if fence_char is not None:
-                if char == fence_char and length >= fence_len and stripped.rstrip(char) == "":
-                    fence_char = None
-                continue
-            else:
-                fence_char = char
-                fence_len = length
-                continue
-        if fence_char is None:
-            result.append(line)
-
-    return "\n".join(result)
+    return "\n".join(line for _, line in _walk_non_fenced_lines(text.split("\n")))
 
 
 def _count_fragments(text: str) -> int:

@@ -8,12 +8,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from slidesonnet.actions import get_parser_and_extractor
+from slidesonnet.hashing import audio_cache_path_or_alt
 from slidesonnet.hashing import audio_path as _audio_path
 from slidesonnet.hashing import concat_filename as _concat_filename
 from slidesonnet.models import (
     ModuleType,
     PlaylistEntry,
     ProjectConfig,
+    SlideNarration,
     resolve_voice,
 )
 from slidesonnet.tts.base import TTSEngine
@@ -168,33 +170,90 @@ def _find_audio_path(
     tts: TTSEngine,
 ) -> Path | None:
     """Locate the audio file for a narrated slide, checking alternate extensions."""
-    from slidesonnet.hashing import _BACKEND_EXTENSIONS
     from slidesonnet.models import SlideNarration
 
     assert isinstance(slide, SlideNarration)
     parts = slide.narration_parts_processed
 
     if len(parts) > 1:
-        part_paths: list[Path] = []
-        for part_text in parts:
-            p = _audio_path(audio_cache_dir, part_text, tts.name(), tts.cache_key(), slide.voice)
-            part_paths.append(p)
+        part_paths = [
+            _audio_path(audio_cache_dir, part_text, tts.name(), tts.cache_key(), slide.voice)
+            for part_text in parts
+        ]
         target = audio_cache_dir / _concat_filename(part_paths)
     else:
         target = _audio_path(
             audio_cache_dir, slide.narration_processed, tts.name(), tts.cache_key(), slide.voice
         )
 
-    # Check target and alternate extensions
-    if target.exists() and target.stat().st_size > 0:
-        return target
-    suffix = target.suffix
-    for ext in _BACKEND_EXTENSIONS.values():
-        if ext != suffix:
-            alt = target.with_suffix(ext)
-            if alt.exists() and alt.stat().st_size > 0:
-                return alt
-    return None
+    return audio_cache_path_or_alt(target)
+
+
+def _prepare_slides_for_entry(
+    entry: PlaylistEntry,
+    config: ProjectConfig,
+    build_dir: Path,
+    playlist_dir: Path,
+) -> list[SlideNarration]:
+    """Parse an entry's slides and apply pronunciation + voice resolution."""
+    source_path = playlist_dir / entry.path
+    module_dir = build_dir / entry.path.parent / entry.path.stem
+    slides_dir = module_dir / "slides"
+
+    parser_cls, _ = get_parser_and_extractor(entry.module_type)
+    parser = parser_cls()
+    slides = parser.parse(source_path, slides_dir)
+
+    pron = config.pronunciation_for(config.tts.backend)
+    for slide in slides:
+        if slide.has_narration:
+            slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
+            slide.narration_parts_processed = [
+                apply_pronunciation(part, pron) for part in slide.narration_parts
+            ]
+            if slide.voice:
+                resolved = resolve_voice(slide.voice, config.voices, config.tts.backend)
+                slide.voice = resolved if resolved else None
+    return slides
+
+
+def _slide_subtitles(
+    slide: SlideNarration,
+    offset: float,
+    audio_duration: float,
+    pre_silence: float,
+    max_chars: int,
+    start_index: int,
+) -> list[SubtitleEntry]:
+    """Build subtitle entries for one narrated slide.
+
+    Returns zero or more cues starting at index *start_index* and covering
+    the slide's audio window ``[offset + pre_silence, offset + pre_silence + audio_duration]``.
+    """
+    sub_start = offset + pre_silence
+    sub_end = sub_start + audio_duration
+    chunks = split_text(slide.narration_raw, max_chars)
+
+    if len(chunks) <= 1:
+        text = chunks[0] if chunks else slide.narration_raw
+        return [SubtitleEntry(index=start_index, start=sub_start, end=sub_end, text=text)]
+
+    total_chars = sum(len(c) for c in chunks)
+    results: list[SubtitleEntry] = []
+    chunk_start = sub_start
+    for i, chunk in enumerate(chunks):
+        proportion = len(chunk) / total_chars if total_chars > 0 else 1.0
+        chunk_end = chunk_start + audio_duration * proportion
+        results.append(
+            SubtitleEntry(
+                index=start_index + i,
+                start=chunk_start,
+                end=chunk_end,
+                text=chunk,
+            )
+        )
+        chunk_start = chunk_end
+    return results
 
 
 def generate_subtitles(
@@ -236,28 +295,7 @@ def generate_subtitles(
             segment_index += 1
             continue
 
-        source_path = playlist_dir / entry.path
-        module_dir = build_dir / entry.path.parent / entry.path.stem
-        slides_dir = module_dir / "slides"
-
-        parser_cls, _ = get_parser_and_extractor(entry.module_type)
-        parser = parser_cls()
-        slides = parser.parse(source_path, slides_dir)
-
-        # Apply pronunciation and resolve voices (same as dry_run / tasks)
-        pron = config.pronunciation_for(config.tts.backend)
-        for slide in slides:
-            if slide.has_narration:
-                slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
-                slide.narration_parts_processed = [
-                    apply_pronunciation(part, pron) for part in slide.narration_parts
-                ]
-                if slide.voice:
-                    resolved = resolve_voice(slide.voice, config.voices, config.tts.backend)
-                    if resolved:
-                        slide.voice = resolved
-                    else:
-                        slide.voice = None
+        slides = _prepare_slides_for_entry(entry, config, build_dir, playlist_dir)
 
         for slide in slides:
             if slide.is_skip:
@@ -266,71 +304,7 @@ def generate_subtitles(
             if segment_index > 0:
                 cumulative_offset -= crossfade
 
-            if slide.has_narration:
-                # Find audio and get its duration
-                audio_path = _find_audio_path(audio_cache_dir, slide, tts)
-                if audio_path is None:
-                    logger.warning(
-                        "Audio not found for slide %d of %s — skipping subtitle",
-                        slide.index,
-                        entry.path,
-                    )
-                    # Still advance offset with estimated duration
-                    cumulative_offset += pre_silence + pad_seconds
-                    segment_index += 1
-                    continue
-
-                try:
-                    audio_duration = get_duration(audio_path)
-                except RuntimeError:
-                    logger.warning(
-                        "Cannot probe audio duration for slide %d of %s",
-                        slide.index,
-                        entry.path,
-                    )
-                    cumulative_offset += pre_silence + pad_seconds
-                    segment_index += 1
-                    continue
-
-                segment_duration = pre_silence + audio_duration + pad_seconds
-
-                # Create subtitle entries from narration_raw text
-                sub_start = cumulative_offset + pre_silence
-                sub_end = cumulative_offset + pre_silence + audio_duration
-                chunks = split_text(slide.narration_raw, max_chars)
-
-                if len(chunks) <= 1:
-                    # Single subtitle for this slide
-                    subtitles.append(
-                        SubtitleEntry(
-                            index=subtitle_index,
-                            start=sub_start,
-                            end=sub_end,
-                            text=chunks[0] if chunks else slide.narration_raw,
-                        )
-                    )
-                    subtitle_index += 1
-                else:
-                    # Distribute duration proportionally by character count
-                    total_chars = sum(len(c) for c in chunks)
-                    chunk_start = sub_start
-                    for chunk in chunks:
-                        proportion = len(chunk) / total_chars if total_chars > 0 else 1.0
-                        chunk_duration = audio_duration * proportion
-                        chunk_end = chunk_start + chunk_duration
-                        subtitles.append(
-                            SubtitleEntry(
-                                index=subtitle_index,
-                                start=chunk_start,
-                                end=chunk_end,
-                                text=chunk,
-                            )
-                        )
-                        subtitle_index += 1
-                        chunk_start = chunk_end
-
-                cumulative_offset += segment_duration
-            else:
+            if not slide.has_narration:
                 # Silent or unannotated slide — advance offset, no subtitle
                 duration = (
                     slide.silence_override
@@ -338,7 +312,43 @@ def generate_subtitles(
                     else silence_duration
                 )
                 cumulative_offset += duration
+                segment_index += 1
+                continue
 
+            audio_path = _find_audio_path(audio_cache_dir, slide, tts)
+            if audio_path is None:
+                logger.warning(
+                    "Audio not found for slide %d of %s — skipping subtitle",
+                    slide.index,
+                    entry.path,
+                )
+                cumulative_offset += pre_silence + pad_seconds
+                segment_index += 1
+                continue
+
+            try:
+                audio_duration = get_duration(audio_path)
+            except RuntimeError:
+                logger.warning(
+                    "Cannot probe audio duration for slide %d of %s",
+                    slide.index,
+                    entry.path,
+                )
+                cumulative_offset += pre_silence + pad_seconds
+                segment_index += 1
+                continue
+
+            cues = _slide_subtitles(
+                slide,
+                cumulative_offset,
+                audio_duration,
+                pre_silence,
+                max_chars,
+                subtitle_index,
+            )
+            subtitles.extend(cues)
+            subtitle_index += len(cues)
+            cumulative_offset += pre_silence + audio_duration + pad_seconds
             segment_index += 1
 
     return subtitles

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -46,51 +47,45 @@ def load_config(raw: dict[str, Any], playlist_dir: Path) -> ProjectConfig:
     )
 
 
+def _pick(
+    raw: dict[str, Any],
+    source_key: str,
+    kwargs: dict[str, Any],
+    target_key: str,
+    cast: Callable[[Any], Any] = lambda x: x,
+) -> None:
+    """If *source_key* is in *raw*, copy its casted value into *kwargs[target_key]*."""
+    if source_key in raw:
+        kwargs[target_key] = cast(raw[source_key])
+
+
 def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     piper = raw.get("piper", {})
     el = raw.get("elevenlabs", {})
 
     kwargs: dict[str, Any] = {}
-    if "backend" in raw:
-        kwargs["backend"] = raw["backend"]
-    if "model" in piper:
-        kwargs["piper_model"] = piper["model"]
-    if "speed" in piper:
-        kwargs["piper_speed"] = float(piper["speed"])
-    if "api_key_env" in el:
-        kwargs["elevenlabs_api_key_env"] = el["api_key_env"]
-    if "voice_id" in el:
-        kwargs["elevenlabs_voice_id"] = el["voice_id"]
-    if "model_id" in el:
-        kwargs["elevenlabs_model_id"] = el["model_id"]
-    if "stability" in el:
-        kwargs["elevenlabs_stability"] = float(el["stability"])
-    if "similarity_boost" in el:
-        kwargs["elevenlabs_similarity_boost"] = float(el["similarity_boost"])
-    if "speed" in el:
-        kwargs["elevenlabs_speed"] = float(el["speed"])
-
+    _pick(raw, "backend", kwargs, "backend")
+    _pick(piper, "model", kwargs, "piper_model")
+    _pick(piper, "speed", kwargs, "piper_speed", float)
+    _pick(el, "api_key_env", kwargs, "elevenlabs_api_key_env")
+    _pick(el, "voice_id", kwargs, "elevenlabs_voice_id")
+    _pick(el, "model_id", kwargs, "elevenlabs_model_id")
+    _pick(el, "stability", kwargs, "elevenlabs_stability", float)
+    _pick(el, "similarity_boost", kwargs, "elevenlabs_similarity_boost", float)
+    _pick(el, "speed", kwargs, "elevenlabs_speed", float)
     return TTSConfig(**kwargs)
 
 
 def _parse_video(raw: dict[str, Any]) -> VideoConfig:
     kwargs: dict[str, Any] = {}
-    if "resolution" in raw:
-        kwargs["resolution"] = raw["resolution"]
-    if "fps" in raw:
-        kwargs["fps"] = int(raw["fps"])
-    if "crf" in raw:
-        kwargs["crf"] = int(raw["crf"])
-    if "pad_seconds" in raw:
-        kwargs["pad_seconds"] = float(raw["pad_seconds"])
-    if "pre_silence" in raw:
-        kwargs["pre_silence"] = float(raw["pre_silence"])
-    if "silence_duration" in raw:
-        kwargs["silence_duration"] = float(raw["silence_duration"])
-    if "preset" in raw:
-        kwargs["preset"] = str(raw["preset"])
-    if "crossfade" in raw:
-        kwargs["crossfade"] = float(raw["crossfade"])
+    _pick(raw, "resolution", kwargs, "resolution")
+    _pick(raw, "fps", kwargs, "fps", int)
+    _pick(raw, "crf", kwargs, "crf", int)
+    _pick(raw, "pad_seconds", kwargs, "pad_seconds", float)
+    _pick(raw, "pre_silence", kwargs, "pre_silence", float)
+    _pick(raw, "silence_duration", kwargs, "silence_duration", float)
+    _pick(raw, "preset", kwargs, "preset", str)
+    _pick(raw, "crossfade", kwargs, "crossfade", float)
     return VideoConfig(**kwargs)
 
 

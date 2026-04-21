@@ -1,10 +1,22 @@
-"""Build pipeline: orchestrates doit-based incremental builds."""
+"""Build pipeline: orchestrates doit-based incremental builds.
+
+Logical sections (search for ``# --- ``):
+  - Preparation (``_prepare``, ``_PreparedBuild``, ``iter_prepared_slides``)
+  - Query result types (``SlideInfo``, ``ListResult``, ``BuildResult``, ``DryRunResult``)
+  - Preflight & dry-run (``_preflight_api_check``, ``dry_run``)
+  - Build orchestration (``_filter_tasks_until``, ``_apply_preview_overrides``, ``build``)
+  - SRT integration (``_generate_srt``, ``generate_srt_file``)
+  - doit reporters (``_categorize_task``, ``_make_*_reporter_class``, ``_run_doit``)
+  - PDF export (``_export_module_pdf``, ``export_pdfs``)
+  - Read-only queries (``export_utterances``, ``list_slides``)
+"""
 
 from __future__ import annotations
 
 import logging
 import os
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -22,7 +34,7 @@ from dotenv import load_dotenv
 from slidesonnet.actions import get_parser_and_extractor
 from slidesonnet.config import load_config
 from slidesonnet.exceptions import APINotAllowedError, SlideSonnetError
-from slidesonnet.hashing import _BACKEND_EXTENSIONS
+from slidesonnet.hashing import audio_cache_is_fresh
 from slidesonnet.hashing import audio_path as _audio_path
 from slidesonnet.models import (
     API_BACKENDS,
@@ -30,6 +42,7 @@ from slidesonnet.models import (
     PlaylistEntry,
     ProjectConfig,
     SlideAnnotation,
+    SlideNarration,
     resolve_voice,
 )
 from slidesonnet.playlist import parse_playlist
@@ -39,6 +52,9 @@ from slidesonnet.tts.base import TTSEngine
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_dict
 
 logger = logging.getLogger(__name__)
+
+
+# --- Preparation ---------------------------------------------------------------
 
 
 @dataclass
@@ -142,6 +158,96 @@ def _prepare(
 
 
 @dataclass
+class PreparedSlide:
+    """A single slide with pronunciation applied and voice resolved.
+
+    Shared shape used by all read-only traversals (dry_run, list_slides,
+    export_utterances, _preflight_api_check, subtitles). Mutates
+    ``slide.narration_processed``, ``narration_parts_processed``, and
+    ``voice`` in place (same side effects the callers had inline before).
+    """
+
+    entry: PlaylistEntry
+    slide: SlideNarration
+    voice_preset: str | None  # original voice name before resolution (for display)
+
+    @property
+    def parts(self) -> list[str]:
+        """Narration parts (after pronunciation)."""
+        return self.slide.narration_parts_processed
+
+
+def iter_prepared_slides(prep: _PreparedBuild) -> Iterator[PreparedSlide]:
+    """Yield every (entry, slide) pair with pronunciation + voice resolved.
+
+    Skips VIDEO entries entirely. For non-narrated slides the slide is
+    still yielded (unchanged) so callers can decide whether to handle them
+    (e.g. list_slides includes silent/unannotated slides).
+
+    Side effects: mutates each narrated slide's ``narration_processed``,
+    ``narration_parts_processed``, and ``voice`` fields — matching the
+    behavior the callers performed inline previously.
+    """
+    pron = prep.config.pronunciation_for(prep.config.tts.backend)
+
+    for entry in prep.entries:
+        if entry.module_type == ModuleType.VIDEO:
+            continue
+
+        source_path = prep.playlist_dir / entry.path
+        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
+        slides_dir = module_dir / "slides"
+
+        parser_cls, _ = get_parser_and_extractor(entry.module_type)
+        parser = parser_cls()
+        slides = parser.parse(source_path, slides_dir)
+
+        for slide in slides:
+            voice_preset = slide.voice
+            if slide.has_narration:
+                slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
+                slide.narration_parts_processed = [
+                    apply_pronunciation(part, pron) for part in slide.narration_parts
+                ]
+                if slide.voice:
+                    resolved = resolve_voice(
+                        slide.voice, prep.config.voices, prep.config.tts.backend
+                    )
+                    slide.voice = resolved if resolved else None
+            yield PreparedSlide(entry=entry, slide=slide, voice_preset=voice_preset)
+
+
+def _audio_paths_for_slide(
+    slide: SlideNarration,
+    audio_cache_dir: Path,
+    tts: TTSEngine,
+) -> list[Path]:
+    """Return the per-part audio cache paths for a narrated slide.
+
+    Multi-part slides get one path per part; single-part slides get a
+    one-element list for ``narration_processed``.
+    """
+    parts = slide.narration_parts_processed
+    if len(parts) > 1:
+        return [
+            _audio_path(audio_cache_dir, part, tts.name(), tts.cache_key(), slide.voice)
+            for part in parts
+        ]
+    return [
+        _audio_path(
+            audio_cache_dir,
+            slide.narration_processed,
+            tts.name(),
+            tts.cache_key(),
+            slide.voice,
+        )
+    ]
+
+
+# --- Query result types --------------------------------------------------------
+
+
+@dataclass
 class SlideInfo:
     """Per-slide metadata returned by list_slides()."""
 
@@ -182,21 +288,16 @@ class DryRunResult:
     tts_backend: str
 
 
+# --- Preflight & dry-run -------------------------------------------------------
+
+
 def _audio_cache_exists(path: Path) -> bool:
     """Check if an audio cache file exists (read-only, no side effects).
 
-    Unlike tasks._audio_cache_valid, this never renames files.
-    Checks the given path and alternate extensions (.wav ↔ .mp3).
+    Thin wrapper around :func:`hashing.audio_cache_is_fresh` kept for
+    backwards compatibility with test mocks.
     """
-    if path.exists() and path.stat().st_size > 0:
-        return True
-    suffix = path.suffix
-    for ext in _BACKEND_EXTENSIONS.values():
-        if ext != suffix:
-            alt = path.with_suffix(ext)
-            if alt.exists() and alt.stat().st_size > 0:
-                return True
-    return False
+    return audio_cache_is_fresh(path)
 
 
 @dataclass
@@ -221,80 +322,29 @@ def _preflight_api_check(prep: _PreparedBuild) -> None:
     uncached: list[_UncachedSlide] = []
     total_chars = 0
 
-    for entry in prep.entries:
-        if entry.module_type == ModuleType.VIDEO:
+    for prepared in iter_prepared_slides(prep):
+        slide = prepared.slide
+        if not slide.has_narration:
             continue
 
-        source_path = prep.playlist_dir / entry.path
-        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
-        slides_dir = module_dir / "slides"
+        paths = _audio_paths_for_slide(slide, audio_cache_dir, prep.tts)
+        parts = prepared.parts
+        # Per-part texts: multi-part uses the parts list; single-part uses processed text.
+        texts = parts if len(parts) > 1 else [slide.narration_processed]
 
-        parser_cls, _ = get_parser_and_extractor(entry.module_type)
-        parser = parser_cls()
-        slides = parser.parse(source_path, slides_dir)
-
-        for slide in slides:
-            if not slide.has_narration:
-                continue
-
-            pron = prep.config.pronunciation_for(prep.config.tts.backend)
-            slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
-            slide.narration_parts_processed = [
-                apply_pronunciation(part, pron) for part in slide.narration_parts
-            ]
-
-            if slide.voice:
-                resolved = resolve_voice(slide.voice, prep.config.voices, prep.config.tts.backend)
-                if resolved:
-                    slide.voice = resolved
-                else:
-                    slide.voice = None
-
-            parts = slide.narration_parts_processed
-
-            if len(parts) > 1:
-                slide_uncached_chars = 0
-                all_cached = True
-                for part_text in parts:
-                    p = _audio_path(
-                        audio_cache_dir,
-                        part_text,
-                        prep.tts.name(),
-                        prep.tts.cache_key(),
-                        slide.voice,
-                    )
-                    if not _audio_cache_exists(p):
-                        all_cached = False
-                        slide_uncached_chars += len(part_text)
-                if not all_cached:
-                    uncached.append(
-                        _UncachedSlide(
-                            module_path=str(entry.path),
-                            slide_index=slide.index,
-                            text=slide.narration_processed,
-                            chars=slide_uncached_chars,
-                        )
-                    )
-                    total_chars += slide_uncached_chars
-            else:
-                p = _audio_path(
-                    audio_cache_dir,
-                    slide.narration_processed,
-                    prep.tts.name(),
-                    prep.tts.cache_key(),
-                    slide.voice,
+        slide_uncached_chars = sum(
+            len(text) for text, p in zip(texts, paths) if not _audio_cache_exists(p)
+        )
+        if slide_uncached_chars > 0:
+            uncached.append(
+                _UncachedSlide(
+                    module_path=str(prepared.entry.path),
+                    slide_index=slide.index,
+                    text=slide.narration_processed,
+                    chars=slide_uncached_chars,
                 )
-                if not _audio_cache_exists(p):
-                    chars = len(slide.narration_processed)
-                    uncached.append(
-                        _UncachedSlide(
-                            module_path=str(entry.path),
-                            slide_index=slide.index,
-                            text=slide.narration_processed,
-                            chars=chars,
-                        )
-                    )
-                    total_chars += chars
+            )
+            total_chars += slide_uncached_chars
 
     if not uncached:
         return
@@ -306,9 +356,7 @@ def _preflight_api_check(prep: _PreparedBuild) -> None:
         "",
     ]
     for s in uncached:
-        preview = s.text
-        if len(s.text) > 80:
-            preview = s.text[:77] + "..."
+        preview = s.text if len(s.text) <= 80 else s.text[:77] + "..."
         lines.append(f'  {s.module_path} slide {s.slide_index}: "{preview}"')
     lines.append("")
     lines.append("Pass --allow-api to allow paid API calls, or use --tts piper for free local TTS.")
@@ -332,75 +380,24 @@ def dry_run(
     needs_tts = 0
     uncached_chars = 0
 
-    for entry in prep.entries:
-        if entry.module_type == ModuleType.VIDEO:
+    for prepared in iter_prepared_slides(prep):
+        slide = prepared.slide
+        if not slide.has_narration:
             continue
 
-        source_path = prep.playlist_dir / entry.path
-        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
-        slides_dir = module_dir / "slides"
+        total_narrated += 1
+        paths = _audio_paths_for_slide(slide, audio_cache_dir, prep.tts)
+        parts = prepared.parts
+        texts = parts if len(parts) > 1 else [slide.narration_processed]
 
-        parser_cls, _ = get_parser_and_extractor(entry.module_type)
-        parser = parser_cls()
-        slides = parser.parse(source_path, slides_dir)
-
-        for slide in slides:
-            if not slide.has_narration:
-                continue
-
-            # Apply pronunciation (same as generate_tasks)
-            pron = prep.config.pronunciation_for(prep.config.tts.backend)
-            slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
-            slide.narration_parts_processed = [
-                apply_pronunciation(part, pron) for part in slide.narration_parts
-            ]
-
-            # Resolve voice preset (same as generate_tasks)
-            if slide.voice:
-                resolved = resolve_voice(slide.voice, prep.config.voices, prep.config.tts.backend)
-                if resolved:
-                    slide.voice = resolved
-                else:
-                    slide.voice = None
-
-            total_narrated += 1
-            parts = slide.narration_parts_processed
-
-            if len(parts) > 1:
-                # Multi-part: check each part independently
-                slide_uncached_chars = 0
-                slide_all_cached = True
-                for part_text in parts:
-                    p = _audio_path(
-                        audio_cache_dir,
-                        part_text,
-                        prep.tts.name(),
-                        prep.tts.cache_key(),
-                        slide.voice,
-                    )
-                    if not _audio_cache_exists(p):
-                        slide_all_cached = False
-                        slide_uncached_chars += len(part_text)
-
-                if slide_all_cached:
-                    cached += 1
-                else:
-                    needs_tts += 1
-                    uncached_chars += slide_uncached_chars
-            else:
-                # Single part
-                p = _audio_path(
-                    audio_cache_dir,
-                    slide.narration_processed,
-                    prep.tts.name(),
-                    prep.tts.cache_key(),
-                    slide.voice,
-                )
-                if _audio_cache_exists(p):
-                    cached += 1
-                else:
-                    needs_tts += 1
-                    uncached_chars += len(slide.narration_processed)
+        slide_uncached_chars = sum(
+            len(text) for text, p in zip(texts, paths) if not _audio_cache_exists(p)
+        )
+        if slide_uncached_chars == 0:
+            cached += 1
+        else:
+            needs_tts += 1
+            uncached_chars += slide_uncached_chars
 
     return DryRunResult(
         total_narrated=total_narrated,
@@ -409,6 +406,9 @@ def dry_run(
         uncached_chars=uncached_chars,
         tts_backend=prep.config.tts.backend,
     )
+
+
+# --- Build orchestration -------------------------------------------------------
 
 
 _STAGE_PREFIXES: dict[str, tuple[str, ...]] = {
@@ -447,6 +447,21 @@ def _filter_tasks_until(
     return [t for t in task_list if t["name"].startswith(prefixes)]
 
 
+def _apply_preview_overrides(config: ProjectConfig, output_path: Path) -> Path:
+    """Mutate *config* for preview mode and return the renamed output path.
+
+    Quarter resolution, half fps, ultrafast x264 preset, higher CRF, no
+    crossfade — all aimed at fast iteration, not final quality.
+    """
+    w, h = config.video.resolution.split("x")
+    config.video.resolution = f"{int(w) // 4}x{int(h) // 4}"
+    config.video.fps = config.video.fps // 2
+    config.video.preset = "ultrafast"
+    config.video.crf = 32
+    config.video.crossfade = 0.0
+    return output_path.with_name(output_path.stem + "_preview.mp4")
+
+
 def build(
     playlist_path: Path,
     tts_override: Literal["piper", "elevenlabs"] | None = None,
@@ -468,16 +483,8 @@ def build(
     if not allow_api and until != "slides":
         _preflight_api_check(prep)
 
-    # Apply preview overrides: quarter resolution, half fps, ultrafast preset, high CRF
     if preview:
-        w, h = prep.config.video.resolution.split("x")
-        prep.config.video.resolution = f"{int(w) // 4}x{int(h) // 4}"
-        prep.config.video.fps = prep.config.video.fps // 2
-        prep.config.video.preset = "ultrafast"
-        prep.config.video.crf = 32
-        prep.config.video.crossfade = 0.0
-        stem = prep.output_path.stem
-        prep.output_path = prep.output_path.with_name(stem + "_preview.mp4")
+        prep.output_path = _apply_preview_overrides(prep.config, prep.output_path)
 
     # Create directories
     prep.build_dir.mkdir(parents=True, exist_ok=True)
@@ -512,6 +519,9 @@ def build(
         until=until,
         srt_path=srt_path,
     )
+
+
+# --- SRT integration -----------------------------------------------------------
 
 
 def _generate_srt(prep: _PreparedBuild, quiet: bool = False) -> Path | None:
@@ -565,51 +575,50 @@ def generate_srt_file(
     return srt_path
 
 
-def _run_doit(
-    task_list: list[dict[str, Any]],
-    build_dir: Path,
-    quiet: bool = False,
-) -> float:
-    """Run doit programmatically with the given tasks.
+# --- doit reporters ------------------------------------------------------------
 
-    Returns elapsed time in seconds.
+
+_SLIDE_PREFIXES = ("compile_beamer:", "extract_images:", "export_pdf:")
+_AUDIO_PREFIXES = ("tts:", "concat_audio:")
+_VIDEO_PREFIXES = ("compose:",)
+
+
+def _categorize_task(name: str) -> str | None:
+    """Map a task name to a progress-bar category, or None to ignore it."""
+    if name.startswith(_SLIDE_PREFIXES):
+        return "slides"
+    if name.startswith(_AUDIO_PREFIXES):
+        return "audio"
+    if name.startswith(_VIDEO_PREFIXES):
+        return "video"
+    if name == "assemble":
+        return "assemble"
+    return None
+
+
+class _WarningBuffer(logging.Handler):
+    """Buffer WARNING+ records for replay after progress bars finish."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+def _make_progress_reporter_class() -> type:
+    """Build and return the _ProgressReporter class.
+
+    Factory so we can import ConsoleReporter lazily (doit is optional until
+    you actually run a build).
     """
-    from doit.cmd_base import TaskLoader2
-    from doit.doit_cmd import DoitMain
     from doit.reporter import ConsoleReporter
-    from doit.task import dict_to_task
-
-    db_file = str(build_dir / ".doit.db")
-    tasks = [dict_to_task(t) for t in task_list]
-    start_time = time.monotonic()
-
-    _SLIDE_PREFIXES = ("compile_beamer:", "extract_images:", "export_pdf:")
-    _AUDIO_PREFIXES = ("tts:", "concat_audio:")
-    _VIDEO_PREFIXES = ("compose:",)
-
-    def _categorize_task(name: str) -> str | None:
-        if name.startswith(_SLIDE_PREFIXES):
-            return "slides"
-        if name.startswith(_AUDIO_PREFIXES):
-            return "audio"
-        if name.startswith(_VIDEO_PREFIXES):
-            return "video"
-        if name == "assemble":
-            return "assemble"
-        return None
-
-    class _WarningBuffer(logging.Handler):
-        """Buffer WARNING+ records for replay after progress bars finish."""
-
-        def __init__(self) -> None:
-            super().__init__(level=logging.WARNING)
-            self.records: list[logging.LogRecord] = []
-
-        def emit(self, record: logging.LogRecord) -> None:
-            self.records.append(record)
 
     class _ProgressReporter(ConsoleReporter):  # type: ignore[misc]
         """Reporter that shows grouped progress bars for slides/audio/video."""
+
+        _LABELS = {"slides": "Slides", "audio": "Audio", "video": "Video"}
 
         def initialize(self, tasks: Any, selected_tasks: Any) -> None:
             super().initialize(tasks, selected_tasks)
@@ -644,17 +653,13 @@ def _run_doit(
                 TaskProgressColumn(),
             )
             self._bar_ids: dict[str, Any] = {}
-            for cat, label in [
-                ("slides", "Slides"),
-                ("audio", "Audio"),
-                ("video", "Video"),
-            ]:
+            for cat, label in (("slides", "Slides"), ("audio", "Audio"), ("video", "Video")):
                 if counts[cat] > 0:
-                    tid = self._progress.add_task(label, total=counts[cat])
-                    self._bar_ids[cat] = tid
+                    self._bar_ids[cat] = self._progress.add_task(label, total=counts[cat])
             if counts["assemble"] > 0:
-                tid = self._progress.add_task("Assemble", total=None, visible=False)
-                self._bar_ids["assemble"] = tid
+                self._bar_ids["assemble"] = self._progress.add_task(
+                    "Assemble", total=None, visible=False
+                )
             self._progress.start()
 
         def execute_task(self, task: Any) -> None:
@@ -666,8 +671,6 @@ def _run_doit(
                     visible=True,
                     refresh=True,
                 )
-
-        _LABELS = {"slides": "Slides", "audio": "Audio", "video": "Video"}
 
         def _description(self, cat: str) -> str:
             cached = self._cached.get(cat, 0)
@@ -691,19 +694,22 @@ def _run_doit(
                 refresh=True,
             )
 
+        def _advance(self, cat: str, bucket: dict[str, int]) -> None:
+            bucket[cat] = bucket.get(cat, 0) + 1
+            self._progress.update(
+                self._bar_ids[cat],
+                advance=1,
+                description=self._description(cat),
+                refresh=True,
+            )
+
         def add_success(self, task: Any) -> None:
             cat = _categorize_task(task.name)
             if cat and cat in self._bar_ids:
                 if cat == "assemble":
                     self._finish_assemble()
                 else:
-                    self._ran[cat] = self._ran.get(cat, 0) + 1
-                    self._progress.update(
-                        self._bar_ids[cat],
-                        advance=1,
-                        description=self._description(cat),
-                        refresh=True,
-                    )
+                    self._advance(cat, self._ran)
 
         def skip_uptodate(self, task: Any) -> None:
             cat = _categorize_task(task.name)
@@ -711,13 +717,7 @@ def _run_doit(
                 if cat == "assemble":
                     self._finish_assemble()
                 else:
-                    self._cached[cat] = self._cached.get(cat, 0) + 1
-                    self._progress.update(
-                        self._bar_ids[cat],
-                        advance=1,
-                        description=self._description(cat),
-                        refresh=True,
-                    )
+                    self._advance(cat, self._cached)
 
         def complete_run(self) -> None:
             self._progress.stop()
@@ -731,6 +731,13 @@ def _run_doit(
             # Show failures via parent
             if self.failures or self.runtime_errors:
                 super().complete_run()
+
+    return _ProgressReporter
+
+
+def _make_quiet_reporter_class() -> type:
+    """Build and return the _QuietReporter class."""
+    from doit.reporter import ConsoleReporter
 
     class _QuietReporter(ConsoleReporter):  # type: ignore[misc]
         """Silent reporter that only shows failures."""
@@ -753,7 +760,27 @@ def _run_doit(
             if self.failures or self.runtime_errors:
                 super().complete_run()
 
-    reporter = _QuietReporter if quiet else _ProgressReporter
+    return _QuietReporter
+
+
+def _run_doit(
+    task_list: list[dict[str, Any]],
+    build_dir: Path,
+    quiet: bool = False,
+) -> float:
+    """Run doit programmatically with the given tasks.
+
+    Returns elapsed time in seconds.
+    """
+    from doit.cmd_base import TaskLoader2
+    from doit.doit_cmd import DoitMain
+    from doit.task import dict_to_task
+
+    db_file = str(build_dir / ".doit.db")
+    tasks = [dict_to_task(t) for t in task_list]
+    start_time = time.monotonic()
+
+    reporter = _make_quiet_reporter_class() if quiet else _make_progress_reporter_class()
     doit_config: dict[str, Any] = {
         "backend": "sqlite3",
         "dep_file": db_file,
@@ -775,6 +802,37 @@ def _run_doit(
     return elapsed
 
 
+# --- PDF export ----------------------------------------------------------------
+
+
+def _export_module_pdf(
+    playlist_dir: Path,
+    entry: PlaylistEntry,
+    module_dir: Path,
+    cache_pdf: Path,
+) -> None:
+    """Export a single module's slides to *cache_pdf*."""
+    from slidesonnet.actions import (
+        action_compile_beamer,
+        action_export_pdf_beamer,
+        action_export_pdf_marp,
+    )
+
+    source_path = playlist_dir / entry.path
+
+    if entry.module_type == ModuleType.BEAMER:
+        slides_dir = module_dir / "slides"
+        slides_dir.mkdir(parents=True, exist_ok=True)
+        compiled_pdf = slides_dir / f"{source_path.stem}.pdf"
+        action_compile_beamer(source_path, slides_dir, compiled_pdf)
+        action_export_pdf_beamer(compiled_pdf, cache_pdf)
+    elif entry.module_type == ModuleType.MARP:
+        module_dir.mkdir(parents=True, exist_ok=True)
+        action_export_pdf_marp(source_path, cache_pdf)
+    else:
+        raise SlideSonnetError(f"No PDF exporter for module type: {entry.module_type}")
+
+
 def export_pdfs(
     playlist_path: Path,
     output_override: Path | None = None,
@@ -785,12 +843,7 @@ def export_pdfs(
     then concatenates into a single output PDF.
     Returns the output PDF path.
     """
-    from slidesonnet.actions import (
-        action_compile_beamer,
-        action_concat_pdfs,
-        action_export_pdf_beamer,
-        action_export_pdf_marp,
-    )
+    from slidesonnet.actions import action_concat_pdfs
 
     prep = _prepare(playlist_path, output_override=output_override)
     per_module_pdfs: list[Path] = []
@@ -799,20 +852,9 @@ def export_pdfs(
         if entry.module_type == ModuleType.VIDEO:
             continue
 
-        source_path = prep.playlist_dir / entry.path
         module_dir = prep.build_dir / entry.path.parent / entry.path.stem
         cache_pdf = module_dir / f"{i:02d}_{entry.path.stem}.pdf"
-
-        if entry.module_type == ModuleType.BEAMER:
-            slides_dir = module_dir / "slides"
-            slides_dir.mkdir(parents=True, exist_ok=True)
-            compiled_pdf = slides_dir / f"{source_path.stem}.pdf"
-            action_compile_beamer(source_path, slides_dir, compiled_pdf)
-            action_export_pdf_beamer(compiled_pdf, cache_pdf)
-        else:
-            module_dir.mkdir(parents=True, exist_ok=True)
-            action_export_pdf_marp(source_path, cache_pdf)
-
+        _export_module_pdf(prep.playlist_dir, entry, module_dir, cache_pdf)
         per_module_pdfs.append(cache_pdf)
 
     if not per_module_pdfs:
@@ -820,6 +862,9 @@ def export_pdfs(
 
     action_concat_pdfs(per_module_pdfs, prep.pdf_output_path)
     return prep.pdf_output_path
+
+
+# --- Read-only queries ---------------------------------------------------------
 
 
 @dataclass
@@ -852,41 +897,38 @@ def export_utterances(
     """
     prep = _prepare(playlist_path, tts_override)
     modules: list[UtteranceModule] = []
+    slides_by_module: dict[str, list[UtteranceSlide]] = {}
 
+    for prepared in iter_prepared_slides(prep):
+        slide = prepared.slide
+        if slide.is_skip:
+            continue
+
+        module_path = str(prepared.entry.path)
+        bucket = slides_by_module.setdefault(module_path, [])
+
+        if slide.has_narration:
+            bucket.append(
+                UtteranceSlide(
+                    slide_index=slide.index,
+                    text=slide.narration_processed,
+                    voice=prepared.voice_preset,
+                )
+            )
+        elif slide.annotation == SlideAnnotation.SILENT:
+            bucket.append(UtteranceSlide(slide_index=slide.index, text="[silent]", voice=None))
+
+    # Preserve original module order from the playlist.
     for entry in prep.entries:
         if entry.module_type == ModuleType.VIDEO:
             continue
-
-        source_path = prep.playlist_dir / entry.path
-        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
-        slides_dir = module_dir / "slides"
-
-        parser_cls, _ = get_parser_and_extractor(entry.module_type)
-        parser = parser_cls()
-        slides = parser.parse(source_path, slides_dir)
-
-        pron = prep.config.pronunciation_for(prep.config.tts.backend)
-        utterance_slides: list[UtteranceSlide] = []
-
-        for slide in slides:
-            if slide.is_skip:
-                continue
-
-            if slide.has_narration:
-                text = apply_pronunciation(slide.narration_raw, pron)
-                # Determine non-default voice
-                voice: str | None = None
-                if slide.voice:
-                    voice = slide.voice
-                utterance_slides.append(
-                    UtteranceSlide(slide_index=slide.index, text=text, voice=voice)
-                )
-            elif slide.annotation == SlideAnnotation.SILENT:
-                utterance_slides.append(
-                    UtteranceSlide(slide_index=slide.index, text="[silent]", voice=None)
-                )
-
-        modules.append(UtteranceModule(module_path=str(entry.path), slides=utterance_slides))
+        module_path = str(entry.path)
+        modules.append(
+            UtteranceModule(
+                module_path=module_path,
+                slides=slides_by_module.get(module_path, []),
+            )
+        )
 
     return modules
 
@@ -905,78 +947,41 @@ def list_slides(
     audio_cache_dir = prep.build_dir / "audio"
     results: list[SlideInfo] = []
 
-    for entry in prep.entries:
-        if entry.module_type == ModuleType.VIDEO:
+    for prepared in iter_prepared_slides(prep):
+        slide = prepared.slide
+        if slide.is_skip:
             continue
 
-        source_path = prep.playlist_dir / entry.path
-        module_dir = prep.build_dir / entry.path.parent / entry.path.stem
-        slides_dir = module_dir / "slides"
+        # Display voice is the original preset name (before resolution), or "default".
+        display_voice = prepared.voice_preset or "default"
 
-        parser_cls, _ = get_parser_and_extractor(entry.module_type)
-        parser = parser_cls()
-        slides = parser.parse(source_path, slides_dir)
-
-        pron = prep.config.pronunciation_for(prep.config.tts.backend)
-        for slide in slides:
-            if slide.is_skip:
-                continue
-            voice = slide.voice or "default"
-            if slide.has_narration:
-                text = apply_pronunciation(slide.narration_raw, pron)
-
-                # Apply pronunciation to parts (same as dry_run)
-                slide.narration_processed = text
-                slide.narration_parts_processed = [
-                    apply_pronunciation(part, pron) for part in slide.narration_parts
-                ]
-
-                # Resolve voice preset (same as dry_run)
-                resolved_voice = slide.voice
-                if resolved_voice:
-                    rv = resolve_voice(resolved_voice, prep.config.voices, prep.config.tts.backend)
-                    resolved_voice = rv if rv else None
-
-                # Check cache for all parts
-                parts = slide.narration_parts_processed
-                all_cached = True
-                total_chars = 0
-                for part_text in parts:
-                    total_chars += len(part_text)
-                    p = _audio_path(
-                        audio_cache_dir,
-                        part_text,
-                        prep.tts.name(),
-                        prep.tts.cache_key(),
-                        resolved_voice,
-                    )
-                    if not _audio_cache_exists(p):
-                        all_cached = False
-
-                results.append(
-                    SlideInfo(
-                        module_path=str(entry.path),
-                        slide_index=slide.index,
-                        voice=voice,
-                        text=text,
-                        cached=all_cached,
-                        chars=total_chars,
-                    )
+        if slide.has_narration:
+            parts = prepared.parts
+            texts = parts if len(parts) > 1 else [slide.narration_processed]
+            paths = _audio_paths_for_slide(slide, audio_cache_dir, prep.tts)
+            total_chars = sum(len(t) for t in texts)
+            all_cached = all(_audio_cache_exists(p) for p in paths)
+            results.append(
+                SlideInfo(
+                    module_path=str(prepared.entry.path),
+                    slide_index=slide.index,
+                    voice=display_voice,
+                    text=slide.narration_processed,
+                    cached=all_cached,
+                    chars=total_chars,
                 )
-            else:
-                if slide.annotation == SlideAnnotation.SILENT:
-                    text = "[silent]"
-                else:
-                    text = "[no annotation]"
-                results.append(
-                    SlideInfo(
-                        module_path=str(entry.path),
-                        slide_index=slide.index,
-                        voice=voice,
-                        text=text,
-                        cached=None,
-                        chars=0,
-                    )
+            )
+        else:
+            text = "[silent]" if slide.annotation == SlideAnnotation.SILENT else "[no annotation]"
+            results.append(
+                SlideInfo(
+                    module_path=str(prepared.entry.path),
+                    slide_index=slide.index,
+                    voice=display_voice,
+                    text=text,
+                    cached=None,
+                    chars=0,
                 )
+            )
 
     return ListResult(slides=results, tts_backend=prep.config.tts.backend)

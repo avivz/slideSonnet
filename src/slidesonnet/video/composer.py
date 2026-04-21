@@ -13,6 +13,67 @@ from slidesonnet.exceptions import FFmpegError
 logger = logging.getLogger(__name__)
 
 
+def _scale_pad_filter(resolution: str) -> str:
+    """Return an ffmpeg -vf filter: scale to fit + pad to exact size with black bars."""
+    w, h = resolution.split("x")
+    return (
+        f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,"
+        f"format=yuv420p"
+    )
+
+
+def _compose_ffmpeg_cmd(
+    image: Path,
+    audio_args: list[str],
+    output: Path,
+    duration: float,
+    resolution: str,
+    fps: int,
+    crf: int,
+    preset: str,
+    audio_filter: str | None = None,
+) -> list[str]:
+    """Build the shared ffmpeg invocation for a per-slide segment.
+
+    *audio_args* are the ``-f/-i`` args that introduce the audio input
+    (either a real file or ``anullsrc`` for silent slides).
+    """
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-loop",
+        "1",
+        "-i",
+        str(image),
+        *audio_args,
+        "-c:v",
+        "libx264",
+        "-tune",
+        "stillimage",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-vf",
+        _scale_pad_filter(resolution),
+    ]
+    if audio_filter:
+        cmd += ["-af", audio_filter]
+    cmd += [
+        "-r",
+        str(fps),
+        "-preset",
+        preset,
+        "-crf",
+        str(crf),
+        "-t",
+        str(duration),
+        str(output),
+    ]
+    return cmd
+
+
 def compose_segment(
     image: Path,
     audio: Path,
@@ -40,49 +101,21 @@ def compose_segment(
         total_duration,
     )
 
-    # Scale filter: fit to resolution, pad to exact size with black bars
-    w, h = resolution.split("x")
-    scale_filter = (
-        f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
-        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,"
-        f"format=yuv420p"
-    )
-
     # Delay audio by pre_silence (adelay takes milliseconds, all channels)
     delay_ms = int(pre_silence * 1000)
     audio_filter = f"adelay={delay_ms}|{delay_ms},apad"
 
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-loop",
-        "1",
-        "-i",
-        str(image),
-        "-i",
-        str(audio),
-        "-c:v",
-        "libx264",
-        "-tune",
-        "stillimage",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-vf",
-        scale_filter,
-        "-af",
-        audio_filter,
-        "-r",
-        str(fps),
-        "-preset",
-        preset,
-        "-crf",
-        str(crf),
-        "-t",
-        str(total_duration),
-        str(output),
-    ]
+    cmd = _compose_ffmpeg_cmd(
+        image=image,
+        audio_args=["-i", str(audio)],
+        output=output,
+        duration=total_duration,
+        resolution=resolution,
+        fps=fps,
+        crf=crf,
+        preset=preset,
+        audio_filter=audio_filter,
+    )
     _run_ffmpeg(cmd)
 
     # Check for stream duration mismatch.
@@ -118,44 +151,16 @@ def compose_silent_segment(
     output.parent.mkdir(parents=True, exist_ok=True)
     logger.debug("compose_silent: %s duration=%.3fs", output.name, duration)
 
-    w, h = resolution.split("x")
-    scale_filter = (
-        f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
-        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,"
-        f"format=yuv420p"
+    cmd = _compose_ffmpeg_cmd(
+        image=image,
+        audio_args=["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"],
+        output=output,
+        duration=duration,
+        resolution=resolution,
+        fps=fps,
+        crf=crf,
+        preset=preset,
     )
-
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-loop",
-        "1",
-        "-i",
-        str(image),
-        "-f",
-        "lavfi",
-        "-i",
-        "anullsrc=r=44100:cl=stereo",
-        "-c:v",
-        "libx264",
-        "-tune",
-        "stillimage",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-vf",
-        scale_filter,
-        "-r",
-        str(fps),
-        "-preset",
-        preset,
-        "-crf",
-        str(crf),
-        "-t",
-        str(duration),
-        str(output),
-    ]
     _run_ffmpeg(cmd)
 
 
@@ -263,13 +268,7 @@ def concatenate_segments_xfade(
     # fps mixed with preview segments).
     normalize_video: str = ""
     if resolution:
-        w, h = resolution.split("x")
-        normalize_video = (
-            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
-            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black,"
-            f"format=yuv420p,"
-            f"setsar=1"
-        )
+        normalize_video = f"{_scale_pad_filter(resolution)},setsar=1"
     if fps:
         fps_filter = f"fps={fps}"
         normalize_video = f"{normalize_video},{fps_filter}" if normalize_video else fps_filter
