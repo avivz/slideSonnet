@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.1.0a1] — 2026-04-21
+
 ### Added
 - Showcase example rewritten from scratch — covers subtitles, dry-run, preview, utterances, auto-discovery, pronunciation, voice presets, fragment animation, and more
 - Default config renamed to `slidesonnet.yaml` (auto-discovered in cwd; `lecture.yaml` fallback)
@@ -58,6 +60,3 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Video config changes tracked in compose and assemble tasks
 - 21 CLI UX issues (error messages, help text, output formatting, consistency)
 
-## [0.1.0] — Unreleased
-
-Initial alpha. Core pipeline working for MARP Markdown and LaTeX Beamer inputs with Piper (local) and ElevenLabs (cloud) TTS backends.

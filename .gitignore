@@ -16,6 +16,7 @@ htmlcov/
 
 # Claude Code local settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Editor / IDE
 .vscode/
@@ -31,4 +32,7 @@ htmlcov/
 
 # Built videos (hosted on GitHub Releases)
 examples/**/*.mp4
+
+# Locally-regenerated Piper audio (cheap to rebuild; only ElevenLabs mp3s are tracked)
+examples/**/cache/audio/*.piper.*.wav
 

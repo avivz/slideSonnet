@@ -7,11 +7,11 @@ Current version: 0.1.0 (alpha)
 ### Pre-alpha consistency checklist
 
 Version & metadata:
-- [ ] `__version__` in `src/slidesonnet/__init__.py` set to `"0.1.0a1"`
-- [ ] `CHANGELOG.md`: move `[Unreleased]` content into `[0.1.0a1] — <date>`, leave `[Unreleased]` empty
-- [ ] `CHANGELOG.md`: remove or merge the stub `[0.1.0] — Unreleased` entry at the bottom
+- [x] `__version__` in `src/slidesonnet/__init__.py` set to `"0.1.0a1"`
+- [x] `CHANGELOG.md`: move `[Unreleased]` content into `[0.1.0a1] — <date>`, leave `[Unreleased]` empty
+- [x] `CHANGELOG.md`: remove or merge the stub `[0.1.0] — Unreleased` entry at the bottom
 - [ ] `ROADMAP.md` header matches version (`0.1.0a1`)
-- [ ] `pyproject.toml` classifier is `Development Status :: 3 - Alpha`
+- [x] `pyproject.toml` classifier is `Development Status :: 3 - Alpha`
 
 README & docs:
 - [ ] `README.md` installation section says `pip install slidesonnet` (matches PyPI name)
@@ -30,14 +30,14 @@ Build & packaging:
 - [ ] `LICENSE` file present and referenced in `pyproject.toml`
 
 CI & release pipeline:
-- [ ] CI passes: `make lint`, `make typecheck`, `make test-unit` all green
-- [ ] `publish.yml` workflow: `TEST_PYPI_API_TOKEN` secret configured in GitHub
-- [ ] `publish.yml` workflow: `PYPI_API_TOKEN` secret configured in GitHub
-- [ ] Integration tests pass locally: `make test` (requires ffmpeg, marp, pdflatex, piper)
+- [x] CI passes: `make lint`, `make typecheck`, `make test-unit` all green (full `make test`: 854 passed in 5m34s on 2026-04-21)
+- [x] `publish.yml` workflow: `TEST_PYPI_API_TOKEN` secret configured in GitHub
+- [x] `publish.yml` workflow: `PYPI_API_TOKEN` secret configured in GitHub
+- [x] Integration tests pass locally: `make test` (requires ffmpeg, marp, pdflatex, piper)
 
 Examples:
-- [ ] `examples/showcase/` builds with `make showcase-piper`
-- [ ] `examples/basel-problem/` builds with `make basel-piper`
+- [x] `examples/showcase/` builds with `make showcase-piper` (8.5 MB, 284.3s; non-blocking overflow warnings on slides 5 & 10)
+- [ ] `examples/basel-problem/` builds with `make basel-piper` (paused mid-run during ffmpeg assemble — resume when work continues)
 - [ ] Example videos on GitHub Releases (`v0.0.0`) match current builds
 - [ ] Example config files use `slidesonnet.yaml` (not old `lecture.yaml` name)
 
