@@ -1,0 +1,247 @@
+"""Action functions executed by doit tasks.
+
+These are the actual build steps (image extraction, TTS synthesis,
+video composition, concatenation, assembly) that doit invokes.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import shutil
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+
+from slidesonnet.models import ModuleType, ProjectConfig
+from slidesonnet.parsers.base import SlideParser
+from slidesonnet.tts.base import TTSEngine
+from slidesonnet.video import composer
+
+logger = logging.getLogger(__name__)
+
+
+def action_extract_images(
+    source: Path,
+    slides_dir: Path,
+    extract_fn: Callable[[Path, Path], list[Path]],
+    manifest_path: Path,
+) -> None:
+    """Run image extraction and write manifest."""
+    slides_dir.mkdir(parents=True, exist_ok=True)
+    images = extract_fn(source, slides_dir)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps([str(p) for p in images]),
+        encoding="utf-8",
+    )
+
+
+def action_tts(
+    text: str,
+    output_path: Path,
+    tts: TTSEngine,
+    utterance_path: Path,
+    voice: str | None = None,
+) -> None:
+    """Synthesize TTS audio.
+
+    Caching is handled by doit's uptodate/targets mechanism.
+    """
+    utterance_path.parent.mkdir(parents=True, exist_ok=True)
+    utterance_path.write_text(text, encoding="utf-8")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("  slide synthesizing...")
+    tts.synthesize(text, output_path, voice=voice)
+
+
+def action_concat_audio(audio_paths: list[Path], output_path: Path) -> None:
+    """Concatenate multiple audio files into a single file."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    composer.concatenate_audio(audio_paths, output_path)
+
+
+def action_compose_narrated(
+    manifest_path: Path,
+    slide_index: int,
+    audio_path: Path,
+    output: Path,
+    config: ProjectConfig,
+) -> None:
+    """Compose a narrated slide segment."""
+    images = json.loads(manifest_path.read_text(encoding="utf-8"))
+    image = Path(images[slide_index - 1])
+    duration = composer.get_duration(audio_path)
+    logger.debug("slide %d: audio=%.3fs image=%s", slide_index, duration, image.name)
+    composer.compose_segment(
+        image=image,
+        audio=audio_path,
+        output=output,
+        duration=duration,
+        pad_seconds=config.video.pad_seconds,
+        pre_silence=config.video.pre_silence,
+        resolution=config.video.resolution,
+        fps=config.video.fps,
+        crf=config.video.crf,
+        preset=config.video.preset,
+    )
+
+
+def action_compose_silent(
+    manifest_path: Path,
+    slide_index: int,
+    output: Path,
+    config: ProjectConfig,
+    silence_override: float | None = None,
+) -> None:
+    """Compose a silent slide segment."""
+    images = json.loads(manifest_path.read_text(encoding="utf-8"))
+    image = Path(images[slide_index - 1])
+    duration = silence_override if silence_override is not None else config.video.silence_duration
+    composer.compose_silent_segment(
+        image=image,
+        output=output,
+        duration=duration,
+        resolution=config.video.resolution,
+        fps=config.video.fps,
+        crf=config.video.crf,
+        preset=config.video.preset,
+    )
+
+
+def action_assemble(segments: list[Path], output: Path, config: ProjectConfig) -> None:
+    """Assemble all segments into final output."""
+    if not segments:
+        raise RuntimeError("No segments to assemble — the playlist may be empty.")
+    _merge_videos(segments, output, config)
+
+
+def _merge_videos(inputs: list[Path], output: Path, config: ProjectConfig) -> None:
+    """Merge one or more video files into a single output."""
+    if len(inputs) == 1:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(inputs[0], output)
+    else:
+        if config.video.crossfade > 0:
+            composer.concatenate_segments_xfade(
+                inputs,
+                output,
+                crossfade=config.video.crossfade,
+                crf=config.video.crf,
+                preset=config.video.preset,
+                resolution=config.video.resolution,
+                fps=config.video.fps,
+            )
+        else:
+            composer.concatenate_segments(inputs, output)
+
+
+def action_compile_beamer(
+    source: Path,
+    slides_dir: Path,
+    pdf_path: Path,
+) -> None:
+    """Compile Beamer source to PDF."""
+    from slidesonnet.parsers.beamer import compile_pdf
+
+    compile_pdf(source, slides_dir)
+    if not pdf_path.exists():
+        raise RuntimeError(f"Expected PDF not produced: {pdf_path}")
+
+
+def action_extract_images_beamer(
+    pdf_path: Path,
+    slides_dir: Path,
+    manifest_path: Path,
+) -> None:
+    """Extract images from a compiled Beamer PDF."""
+    from slidesonnet.parsers.beamer import extract_images_from_pdf
+
+    images = extract_images_from_pdf(pdf_path, slides_dir)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps([str(p) for p in images]),
+        encoding="utf-8",
+    )
+
+
+def action_export_pdf_marp(
+    source: Path,
+    output_path: Path,
+) -> None:
+    """Export a MARP presentation to PDF."""
+    from slidesonnet.parsers.marp import export_pdf
+
+    export_pdf(source, output_path)
+
+
+def action_export_pdf_beamer(
+    cache_pdf: Path,
+    output_path: Path,
+) -> None:
+    """Copy compiled Beamer PDF to the output directory."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(cache_pdf, output_path)
+
+
+def action_concat_pdfs(pdf_paths: list[Path], output_path: Path) -> None:
+    """Concatenate multiple PDFs into one, or copy if single.
+
+    Uses ``pdfunite`` (from poppler-utils, ships with pdftoppm).
+    """
+    import subprocess
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if len(pdf_paths) == 1:
+        shutil.copy2(pdf_paths[0], output_path)
+    else:
+        cmd = ["pdfunite", *[str(p) for p in pdf_paths], str(output_path)]
+        subprocess.run(cmd, check=True, capture_output=True)
+
+
+@dataclass(frozen=True)
+class _ModuleHandlers:
+    """Registry entry: parser + extractor + visual hash for one slide module type."""
+
+    parser_cls: type[SlideParser]
+    extract_fn: Callable[[Path, Path], list[Path]]
+    visual_hash_fn: Callable[[str], str]
+
+
+def _load_marp_handlers() -> _ModuleHandlers:
+    from slidesonnet.parsers.marp import MarpParser, extract_images, visual_hash
+
+    return _ModuleHandlers(
+        parser_cls=MarpParser, extract_fn=extract_images, visual_hash_fn=visual_hash
+    )
+
+
+def _load_beamer_handlers() -> _ModuleHandlers:
+    from slidesonnet.parsers.beamer import BeamerParser, extract_images, visual_hash
+
+    return _ModuleHandlers(
+        parser_cls=BeamerParser, extract_fn=extract_images, visual_hash_fn=visual_hash
+    )
+
+
+_MODULE_LOADERS: dict[ModuleType, Callable[[], _ModuleHandlers]] = {
+    ModuleType.MARP: _load_marp_handlers,
+    ModuleType.BEAMER: _load_beamer_handlers,
+}
+
+
+def get_module_handlers(module_type: ModuleType) -> _ModuleHandlers:
+    """Return parser class, image extractor, and visual-hash function for *module_type*."""
+    loader = _MODULE_LOADERS.get(module_type)
+    if loader is None:
+        raise ValueError(f"No parser for module type: {module_type}")
+    return loader()
+
+
+def get_parser_and_extractor(
+    module_type: ModuleType,
+) -> tuple[type[SlideParser], Callable[[Path, Path], list[Path]]]:
+    """Get parser class and image extraction function for a module type."""
+    handlers = get_module_handlers(module_type)
+    return handlers.parser_cls, handlers.extract_fn
