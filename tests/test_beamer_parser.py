@@ -19,6 +19,7 @@ from slidesonnet.parsers.beamer import (
     compile_pdf,
     extract_images,
     extract_images_from_pdf,
+    read_frame_pages,
 )
 from slidesonnet.parsers.expansion import parse_say_params
 
@@ -107,19 +108,28 @@ def test_extract_braced_deeply_nested():
 
 
 def test_find_say_commands():
+    text = r"\say<1>{Hello} and \say<2>[voice=bob]{World}"
+    matches = _find_say_commands(text)
+    assert len(matches) == 2
+    assert matches[0] == ("1", "", "Hello")
+    assert matches[1] == ("2", "voice=bob", "World")
+
+
+def test_find_say_commands_no_overlay():
+    r"""\say without <...> reports overlay=None; legacy [params] still captured."""
     text = r"\say{Hello} and \say[voice=bob]{World}"
     matches = _find_say_commands(text)
     assert len(matches) == 2
-    assert matches[0] == ("", "Hello")
-    assert matches[1] == ("voice=bob", "World")
+    assert matches[0] == (None, "", "Hello")
+    assert matches[1] == (None, "voice=bob", "World")
 
 
 def test_find_say_commands_comment_with_brace():
     r"""A \say{} whose body contains a % comment with } should not be truncated."""
-    text = "\\say{Hello % } comment\nworld}"
+    text = "\\say<1>{Hello % } comment\nworld}"
     matches = _find_say_commands(text)
     assert len(matches) == 1
-    assert matches[0] == ("", "Hello % } comment\nworld")
+    assert matches[0] == ("1", "", "Hello % } comment\nworld")
 
 
 def test_strip_latex():
@@ -153,10 +163,22 @@ def test_strip_latex_deeply_nested():
 
 
 def test_empty_say_warns(caplog):
-    slides, _ = _parse_frame(1, r"\say{}", Path("test.tex"), 1)
+    slides, _ = _parse_frame(1, r"\say<1>{}", Path("test.tex"), 1)
     assert len(slides) == 1
     assert slides[0].annotation == SlideAnnotation.SILENT
     assert "did you mean" in caplog.text
+
+
+def test_bare_say_without_step_raises():
+    r"""A bare \say{} with no overlay step is rejected."""
+    with pytest.raises(ParserError, match="needs an overlay step"):
+        _parse_frame(1, r"\say{No step here.}", Path("test.tex"), 1)
+
+
+def test_say_with_options_but_no_step_raises():
+    r"""\say[voice=alice]{} carries options but no step number → rejected."""
+    with pytest.raises(ParserError, match="needs an overlay step"):
+        _parse_frame(1, r"\say[voice=alice]{Still no step.}", Path("test.tex"), 1)
 
 
 # ---- Mocked tests for extract_images and edge cases ----
@@ -171,64 +193,64 @@ class TestExtractImages:
         source.write_text(r"\documentclass{beamer}")
         output_dir = tmp_path / "out"
 
-        # After pdflatex + pdftoppm, create fake PNGs
+        # After latexmk + pdftoppm, create fake PNGs
         def side_effect(cmd, **kwargs):
+            if cmd[0] == "latexmk":
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "slides.pdf").touch()
             if cmd[0] == "pdftoppm":
                 output_dir.mkdir(parents=True, exist_ok=True)
                 (output_dir / "slide-1.png").touch()
                 (output_dir / "slide-2.png").touch()
-            return MagicMock()
+            return MagicMock(returncode=0, stdout="", stderr="")
 
         mock_run.side_effect = side_effect
 
         result = extract_images(source, output_dir)
 
-        assert mock_run.call_count == 3
-        # First two calls: pdflatex (run twice for cross-references)
-        assert mock_run.call_args_list[0][0][0][0] == "pdflatex"
-        assert mock_run.call_args_list[1][0][0][0] == "pdflatex"
-        # Third call: pdftoppm
-        assert mock_run.call_args_list[2][0][0][0] == "pdftoppm"
+        assert mock_run.call_count == 2
+        # First call: latexmk (runs as many passes as needed internally)
+        assert mock_run.call_args_list[0][0][0][0] == "latexmk"
+        # Second call: pdftoppm
+        assert mock_run.call_args_list[1][0][0][0] == "pdftoppm"
         assert len(result) == 2
 
     @patch(
         "slidesonnet.parsers.beamer.subprocess.run",
         side_effect=FileNotFoundError,
     )
-    def test_pdflatex_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    def test_latexmk_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
-        with pytest.raises(ParserError):
+        with pytest.raises(ParserError, match="latexmk"):
             extract_images(source, tmp_path / "out")
 
-    @patch(
-        "slidesonnet.parsers.beamer.subprocess.run",
-        side_effect=subprocess.CalledProcessError(1, "pdflatex", stderr="latex error log"),
-    )
-    def test_pdflatex_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_latexmk_error_no_pdf(self, mock_run: MagicMock, tmp_path: Path) -> None:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
+        mock_run.return_value = MagicMock(returncode=12, stdout="", stderr="latex error log")
         with pytest.raises(ParserError, match="latex error log"):
             extract_images(source, tmp_path / "out")
 
     @patch("slidesonnet.parsers.beamer.subprocess.run")
-    def test_pdflatex_error_with_pdf_warns(
+    def test_latexmk_error_with_pdf_warns(
         self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """When pdflatex fails but a PDF was produced, warn with stderr."""
+        """When latexmk fails but a PDF was produced, warn with stderr."""
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
         output_dir = tmp_path / "out"
 
         def side_effect(cmd, **kwargs):
-            if cmd[0] == "pdflatex":
-                # Create a partial PDF before raising
+            if cmd[0] == "latexmk":
+                # Create a partial PDF despite the non-zero exit
                 output_dir.mkdir(parents=True, exist_ok=True)
                 (output_dir / f"{source.stem}.pdf").touch()
-                raise subprocess.CalledProcessError(1, "pdflatex", stderr="Overfull hbox")
+                return MagicMock(returncode=12, stdout="", stderr="Overfull hbox")
             if cmd[0] == "pdftoppm":
                 (output_dir / "slide-1.png").touch()
-            return MagicMock()
+            return MagicMock(returncode=0, stdout="", stderr="")
 
         mock_run.side_effect = side_effect
 
@@ -278,35 +300,45 @@ class TestCompilePdf:
         source.write_text(r"\documentclass{beamer}")
         output_dir = tmp_path / "out"
 
+        def side_effect(cmd, **kwargs):
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "slides.pdf").touch()
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+
         result = compile_pdf(source, output_dir)
 
         assert result == output_dir / "slides.pdf"
-        assert mock_run.call_count == 2  # pdflatex runs twice for cross-references
-        assert mock_run.call_args_list[0][0][0][0] == "pdflatex"
-        assert mock_run.call_args_list[1][0][0][0] == "pdflatex"
+        # A single latexmk call handles all passes internally.
+        assert mock_run.call_count == 1
+        cmd = mock_run.call_args_list[0][0][0]
+        assert cmd[0] == "latexmk"
+        assert f"-outdir={output_dir}" in cmd
+        assert f"-auxdir={output_dir}" in cmd
+        # Run from the source directory so relative \input{} paths resolve.
+        assert mock_run.call_args_list[0][1]["cwd"] == source.parent
 
     @patch(
         "slidesonnet.parsers.beamer.subprocess.run",
         side_effect=FileNotFoundError,
     )
-    def test_pdflatex_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    def test_latexmk_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
-        with pytest.raises(ParserError, match="pdflatex"):
+        with pytest.raises(ParserError, match="latexmk"):
             compile_pdf(source, tmp_path / "out")
 
-    @patch(
-        "slidesonnet.parsers.beamer.subprocess.run",
-        side_effect=subprocess.CalledProcessError(1, "pdflatex", stderr="latex error"),
-    )
-    def test_pdflatex_error_no_pdf(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    @patch("slidesonnet.parsers.beamer.subprocess.run")
+    def test_latexmk_error_no_pdf(self, mock_run: MagicMock, tmp_path: Path) -> None:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
+        mock_run.return_value = MagicMock(returncode=12, stdout="", stderr="latex error")
         with pytest.raises(ParserError, match="latex error"):
             compile_pdf(source, tmp_path / "out")
 
     @patch("slidesonnet.parsers.beamer.subprocess.run")
-    def test_pdflatex_error_with_pdf_warns(
+    def test_latexmk_error_with_pdf_warns(
         self, mock_run: MagicMock, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         source = tmp_path / "slides.tex"
@@ -316,7 +348,7 @@ class TestCompilePdf:
         def side_effect(cmd, **kwargs):
             output_dir.mkdir(parents=True, exist_ok=True)
             (output_dir / "slides.pdf").touch()
-            raise subprocess.CalledProcessError(1, "pdflatex", stderr="Overfull hbox")
+            return MagicMock(returncode=12, stdout="", stderr="Overfull hbox")
 
         mock_run.side_effect = side_effect
 
@@ -330,6 +362,7 @@ class TestCompilePdf:
         source = tmp_path / "slides.tex"
         source.write_text("dummy")
         output_dir = tmp_path / "deep" / "nested" / "out"
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         compile_pdf(source, output_dir)
 
@@ -523,10 +556,10 @@ class TestOverlayParsing:
         """Frame with \\pause and \\say targeting each sub-slide."""
         text = r"""
         First point.
-        \say{First sub-slide narration.}
+        \say<1>{First sub-slide narration.}
         \pause
         Second point.
-        \say[2]{Second sub-slide narration.}
+        \say<2>{Second sub-slide narration.}
         """
         slides, n_vis = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
@@ -541,33 +574,37 @@ class TestOverlayParsing:
         assert "Second sub-slide" in slides[1].narration_raw
 
     def test_bare_number_syntax(self) -> None:
-        """\\say[2]{text} bare number targets sub-slide 2."""
+        """\\say<2>{text} overlay number targets sub-slide 2."""
         text = r"""
-        \say{First.}
+        \say<1>{First.}
         \pause
-        \say[2]{Second.}
+        \say<2>{Second.}
         """
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
         assert slides[1].narration_raw == "Second."
 
-    def test_explicit_slide_key_syntax(self) -> None:
-        """\\say[slide=2]{text} explicit key targets sub-slide 2."""
-        text = r"""
-        \say{First.}
-        \pause
-        \say[slide=2]{Second.}
-        """
-        slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
-        assert len(slides) == 2
-        assert slides[1].narration_raw == "Second."
+    def test_bracket_step_number_rejected(self) -> None:
+        """\\say[2]{text} — a step number in brackets is rejected."""
+        with pytest.raises(ParserError, match="goes in <>, not"):
+            _parse_frame(1, r"\say[2]{Second.}", Path("test.tex"), 1)
 
-    def test_combined_syntax_with_voice(self) -> None:
-        """\\say[2, voice=alice]{text} targets sub-slide 2 with voice."""
+    def test_bracket_slide_key_rejected(self) -> None:
+        """\\say[slide=2]{text} — the slide= key is rejected too."""
+        with pytest.raises(ParserError, match="goes in <>, not"):
+            _parse_frame(1, r"\say[slide=2]{Second.}", Path("test.tex"), 1)
+
+    def test_bracket_number_with_voice_rejected(self) -> None:
+        """\\say[2, voice=alice]{text} — bracket step rejected even alongside a voice."""
+        with pytest.raises(ParserError, match="goes in <>, not"):
+            _parse_frame(1, r"\say[2, voice=alice]{Second.}", Path("test.tex"), 1)
+
+    def test_overlay_with_voice(self) -> None:
+        """\\say<2>[voice=alice]{text} targets step 2 with a voice override."""
         text = r"""
-        \say{Intro.}
+        \say<1>{Intro.}
         \pause
-        \say[2, voice=alice]{Alice speaks.}
+        \say<2>[voice=alice]{Alice speaks.}
         """
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
@@ -577,7 +614,7 @@ class TestOverlayParsing:
     def test_missing_sub_slide_narration_warns(self, caplog: pytest.LogCaptureFixture) -> None:
         """Sub-slide with no \\say → SILENT + warning."""
         text = r"""
-        \say{Only first sub-slide.}
+        \say<1>{Only first sub-slide.}
         \pause
         Nothing for second.
         """
@@ -588,10 +625,10 @@ class TestOverlayParsing:
         assert "no narration" in caplog.text
 
     def test_say_target_beyond_pause_count_extends(self, caplog: pytest.LogCaptureFixture) -> None:
-        """\\say targeting beyond \\pause count extends sub-slide count + warns."""
+        """\\say targeting beyond the overlay-step count extends + warns."""
         text = r"""
-        \say{First.}
-        \say[3]{Third.}
+        \say<1>{First.}
+        \say<3>{Third.}
         """
         # No \pause → n_sub would be 1, but \say[3] extends to 3
         slides, n_vis = _parse_frame(1, text, Path("test.tex"), 1)
@@ -604,11 +641,11 @@ class TestOverlayParsing:
         assert slides[2].image_index == 1
         assert "extending" in caplog.text
 
-    def test_backward_compat_no_pause_multiple_say_concatenate(self) -> None:
-        """Without \\pause, multiple \\say still concatenate on sub-slide 1."""
+    def test_multiple_say_same_step_concatenate(self) -> None:
+        """Multiple \\say<1> on the same step concatenate."""
         text = r"""
-        \say{First sentence.}
-        \say{Second sentence.}
+        \say<1>{First sentence.}
+        \say<1>{Second sentence.}
         """
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
@@ -644,15 +681,15 @@ class TestOverlayParsing:
         # Build a small document: frame1 (1 sub), frame2 (2 subs), frame3 (1 sub)
         tex = r"""
         \begin{frame}
-          \say{Frame one.}
+          \say<1>{Frame one.}
         \end{frame}
         \begin{frame}
-          \say{Frame two, slide one.}
+          \say<1>{Frame two, slide one.}
           \pause
-          \say[2]{Frame two, slide two.}
+          \say<2>{Frame two, slide two.}
         \end{frame}
         \begin{frame}
-          \say{Frame three.}
+          \say<1>{Frame three.}
         \end{frame}
         """
         from unittest.mock import patch
@@ -667,11 +704,11 @@ class TestOverlayParsing:
     def test_three_pauses_three_say(self) -> None:
         """Frame with two \\pause producing three sub-slides, all narrated."""
         text = r"""
-        \say{First.}
+        \say<1>{First.}
         \pause
-        \say[2]{Second.}
+        \say<2>{Second.}
         \pause
-        \say[slide=3]{Third.}
+        \say<3>{Third.}
         """
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 3
@@ -682,14 +719,14 @@ class TestOverlayParsing:
 
     def test_narration_parts_single_say(self) -> None:
         """Single \\say populates narration_parts with one element."""
-        text = r"\say{Just one say.}"
+        text = r"\say<1>{Just one say.}"
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
         assert slides[0].narration_parts == ["Just one say."]
 
     def test_narration_parts_multiple_says_same_sub_slide(self) -> None:
         """Multiple \\say on same sub-slide produce multiple parts."""
-        text = r"\say{First part.}" + "\n" + r"\say{Second part.}"
+        text = r"\say<1>{First part.}" + "\n" + r"\say<1>{Second part.}"
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
         assert slides[0].narration_parts == ["First part.", "Second part."]
@@ -697,7 +734,7 @@ class TestOverlayParsing:
 
     def test_narration_parts_per_sub_slide(self) -> None:
         """Each sub-slide has its own narration_parts."""
-        text = r"\say{First.}" + "\n" + r"\pause" + "\n" + r"\say[2]{Second.}"
+        text = r"\say<1>{First.}" + "\n" + r"\pause" + "\n" + r"\say<2>{Second.}"
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 2
         assert slides[0].narration_parts == ["First."]
@@ -774,7 +811,7 @@ class TestOverlayParsing:
     def test_nonarration_must_be_own_line(self) -> None:
         r"""\\nonarration embedded in \\say{} text does NOT trigger silent."""
         text = r"""
-        \say{This text mentions \nonarration but should still be narrated.}
+        \say<1>{This text mentions \nonarration but should still be narrated.}
         """
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
@@ -861,10 +898,10 @@ class TestBeamerEdgeCases:
 
     def test_deeply_nested_braces(self) -> None:
         r"""\\say with 5+ levels of nested braces."""
-        text = r"\say{a{b{c{d{e}d}c}b}a}"
+        text = r"\say<1>{a{b{c{d{e}d}c}b}a}"
         matches = _find_say_commands(text)
         assert len(matches) == 1
-        body = matches[0][1]
+        body = matches[0][2]
         assert "a" in body
         assert "e" in body
         # Verify _extract_braced handles it directly
@@ -875,11 +912,11 @@ class TestBeamerEdgeCases:
     def test_escaped_backslash_before_brace(self) -> None:
         r"""\\say{text \\\{ more} — \\\\ is escaped backslash, then \{ is escaped brace."""
         # \\\{ means: escaped-backslash followed by escaped-brace
-        text = r"\say{text \\\{ more}"
+        text = r"\say<1>{text \\\{ more}"
         matches = _find_say_commands(text)
         assert len(matches) == 1
-        assert "text" in matches[0][1]
-        assert "more" in matches[0][1]
+        assert "text" in matches[0][2]
+        assert "more" in matches[0][2]
 
     def test_unmatched_opening_brace_in_say_body(self) -> None:
         r"""\\say{text { more} — extra opening brace, brace counting finds outer match."""
@@ -892,11 +929,11 @@ class TestBeamerEdgeCases:
         assert len(matches) == 0
 
     def test_say_with_empty_optional_params(self) -> None:
-        r"""\\say[]{text} — empty brackets."""
+        r"""\\say[]{text} — empty brackets, no overlay."""
         text = r"\say[]{Hello world}"
         matches = _find_say_commands(text)
         assert len(matches) == 1
-        assert matches[0] == ("", "Hello world")
+        assert matches[0] == (None, "", "Hello world")
 
     def test_multiple_nonarration_first_wins(self) -> None:
         r"""Multiple \\nonarration — first match wins for duration."""
@@ -911,13 +948,13 @@ class TestBeamerEdgeCases:
         assert slides[0].silence_override == 3.0
 
     def test_consecutive_say_commands(self) -> None:
-        r"""\\say{first}\\say{second} — both found, concatenated on sub-slide 1."""
-        text = r"\say{first}\say{second}"
+        r"""\\say<1>{first}\\say<1>{second} — both found, concatenated on step 1."""
+        text = r"\say<1>{first}\say<1>{second}"
         matches = _find_say_commands(text)
         assert len(matches) == 2
-        assert matches[0][1] == "first"
-        assert matches[1][1] == "second"
-        # Parse as frame: both on sub-slide 1
+        assert matches[0][2] == "first"
+        assert matches[1][2] == "second"
+        # Parse as frame: both on step 1
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
         assert "first" in slides[0].narration_raw
@@ -925,25 +962,25 @@ class TestBeamerEdgeCases:
 
     def test_say_with_latex_math(self) -> None:
         r"""\\say{The formula $x^{2}$ is quadratic} — braces inside math mode."""
-        text = r"\say{The formula $x^{2}$ is quadratic}"
+        text = r"\say<1>{The formula $x^{2}$ is quadratic}"
         matches = _find_say_commands(text)
         assert len(matches) == 1
-        assert "formula" in matches[0][1]
-        assert "quadratic" in matches[0][1]
+        assert "formula" in matches[0][2]
+        assert "quadratic" in matches[0][2]
 
     def test_special_chars_in_say_body(self) -> None:
         r"""\\say{100\% done \& finished} — escaped percent and ampersand."""
-        text = r"\say{100\% done \& finished}"
+        text = r"\say<1>{100\% done \& finished}"
         matches = _find_say_commands(text)
         assert len(matches) == 1
-        body = matches[0][1]
+        body = matches[0][2]
         assert "100" in body
         assert "done" in body
         assert "finished" in body
 
     def test_frame_with_no_content_just_say(self) -> None:
-        r"""Frame with only \\say{text} and nothing else."""
-        text = r"\say{Just narration, no content.}"
+        r"""Frame with only \\say<1>{text} and nothing else."""
+        text = r"\say<1>{Just narration, no content.}"
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert len(slides) == 1
         assert slides[0].annotation == SlideAnnotation.SAY
@@ -965,11 +1002,11 @@ class TestBeamerEdgeCases:
 
     def test_say_body_with_newlines(self) -> None:
         r"""\\say{line one\nline two} — multi-line content normalized."""
-        text = "\\say{line one\nline two}"
+        text = "\\say<1>{line one\nline two}"
         matches = _find_say_commands(text)
         assert len(matches) == 1
-        assert "line one" in matches[0][1]
-        assert "line two" in matches[0][1]
+        assert "line one" in matches[0][2]
+        assert "line two" in matches[0][2]
         # After _parse_frame, whitespace is normalized
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert "line one line two" in slides[0].narration_raw
@@ -977,9 +1014,96 @@ class TestBeamerEdgeCases:
     def test_very_long_narration_text(self) -> None:
         """Stress test with 10KB of text in a single \\say{}."""
         long_text = "word " * 2000  # ~10KB
-        text = f"\\say{{{long_text.strip()}}}"
+        text = f"\\say<1>{{{long_text.strip()}}}"
         matches = _find_say_commands(text)
         assert len(matches) == 1
         slides, _ = _parse_frame(1, text, Path("test.tex"), 1)
         assert slides[0].annotation == SlideAnnotation.SAY
         assert len(slides[0].narration_raw) > 5000
+
+
+class TestReadFramePages:
+    r"""Tests for read_frame_pages() — parsing beamer's .nav file."""
+
+    def test_reads_framepages(self, tmp_path: Path) -> None:
+        nav = tmp_path / "deck.nav"
+        nav.write_text(
+            "\\headcommand {\\beamer@framepages {1}{1}}\n"
+            "\\headcommand {\\beamer@framepages {2}{2}}\n"
+            "\\headcommand {\\beamer@framepages {3}{7}}\n"
+        )
+        assert read_frame_pages(nav) == [(1, 1), (2, 2), (3, 7)]
+
+    def test_missing_file_returns_empty(self, tmp_path: Path) -> None:
+        assert read_frame_pages(tmp_path / "nope.nav") == []
+
+    def test_ignores_other_headcommands(self, tmp_path: Path) -> None:
+        nav = tmp_path / "deck.nav"
+        nav.write_text(
+            "\\headcommand {\\slideentry {0}{0}{1}{1/1}{}{0}}\n"
+            "\\headcommand {\\beamer@framepages {1}{5}}\n"
+            "\\headcommand {\\beamer@partpages {1}{5}}\n"
+        )
+        assert read_frame_pages(nav) == [(1, 5)]
+
+
+class TestNavDrivenParse:
+    r"""parse() uses .nav page counts (overlays beyond \pause) when present."""
+
+    def _write(self, tmp_path: Path, tex: str, nav: str) -> Path:
+        source = tmp_path / "deck.tex"
+        source.write_text(tex)
+        (tmp_path / "deck.nav").write_text(nav)
+        return source
+
+    def test_onslide_overlays_counted_from_nav(self, tmp_path: Path) -> None:
+        r"""A frame with \onslide overlays (no \pause) gets its page count from .nav."""
+        tex = (
+            r"\begin{frame}"
+            r"\say<1>{step one}\say<3>{step three}"
+            r"\onslide<2->{b}\onslide<3->{c}"
+            r"\end{frame}"
+            r"\begin{frame}\say<1>{second frame}\end{frame}"
+        )
+        nav = (
+            "\\headcommand {\\beamer@framepages {1}{3}}\n"
+            "\\headcommand {\\beamer@framepages {4}{4}}\n"
+        )
+        source = self._write(tmp_path, tex, nav)
+
+        slides = BeamerParser().parse(source, tmp_path)
+
+        # Frame 1 → 3 states even though it has zero \pause
+        assert [s.index for s in slides] == [1, 2, 3, 4]
+        assert [s.image_index for s in slides] == [1, 2, 3, 4]
+        assert slides[0].annotation == SlideAnnotation.SAY
+        assert slides[0].narration_raw == "step one"
+        assert slides[1].annotation == SlideAnnotation.SILENT  # step 2 unnarrated
+        assert slides[2].annotation == SlideAnnotation.SAY
+        assert slides[2].narration_raw == "step three"
+        # Frame 2 starts at global page 4
+        assert slides[3].image_index == 4
+        assert slides[3].narration_raw == "second frame"
+
+    def test_falls_back_to_pause_count_without_nav(self, tmp_path: Path) -> None:
+        """With no .nav present, parse() falls back to counting \\pause."""
+        tex = r"\begin{frame}\say<1>{a}\pause\say<2>{b}\end{frame}"
+        source = tmp_path / "deck.tex"
+        source.write_text(tex)
+        # No .nav written.
+
+        slides = BeamerParser().parse(source, tmp_path)
+
+        assert [s.index for s in slides] == [1, 2]
+        assert [s.image_index for s in slides] == [1, 2]
+        assert slides[1].narration_raw == "b"
+
+    @patch("slidesonnet.parsers.beamer.compile_pdf")
+    def test_prepare_compiles(self, mock_compile: MagicMock, tmp_path: Path) -> None:
+        """prepare() compiles the deck so parse() can read .nav."""
+        source = tmp_path / "deck.tex"
+        source.write_text(r"\documentclass{beamer}")
+
+        BeamerParser().prepare(source, tmp_path)
+
+        mock_compile.assert_called_once_with(source, tmp_path)

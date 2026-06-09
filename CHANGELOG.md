@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- Beamer `\say<N>{}` overlay-step syntax mirroring beamer's own overlay specs (`\onslide<N>`, `\item<N->`); options go in `\say<N>[voice=…, pace=…]{}`
+
+### Changed
+- Beamer decks now compile with `latexmk` (runs the engine to convergence) instead of a fixed two-pass `pdflatex`; honors a deck's `.latexmkrc` while forcing output into the cache. `slidesonnet doctor` now checks for `latexmk`.
+- Beamer overlay-step counts are read from beamer's compiled `.nav` (`\beamer@framepages`), so **every** overlay mechanism — `\onslide<>`, `\item<>`, `+`/`.`, not just `\pause` — produces correctly aligned video segments
+
+### Removed
+- **Breaking:** Beamer `\say` now *requires* an overlay step. A bare `\say{}` is rejected, and the legacy `\say[N]` / `\say[slide=N]` bracket-number forms are no longer supported — use `\say<N>{}` (brackets are for `voice`/`pace` only)
+
 ## [0.1.0a1] — 2026-04-21
 
 ### Added

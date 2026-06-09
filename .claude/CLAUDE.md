@@ -26,7 +26,7 @@ Items flow from inbox → roadmap during `/pm` triage. The `/pm` skill reads bot
 
 ```bash
 make install                           # Install with local TTS + dev tools
-make test                              # All tests (requires ffmpeg, marp, pdflatex, piper)
+make test                              # All tests (requires ffmpeg, marp, latexmk, piper)
 make test-unit                         # Unit tests only (fast, no external deps)
 make lint                              # Ruff check + format
 make typecheck                         # mypy --strict on src/
@@ -78,4 +78,4 @@ Version is set in `src/slidesonnet/__init__.py`. Update it before tagging.
 - Python 3.12+, line length 100 (Ruff)
 - `mypy --strict` must pass on all source files. Untyped external libraries (doit, elevenlabs, dotenv) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
 - Integration tests marked with `@pytest.mark.integration` (in test_composer.py)
-- External tool dependencies: ffmpeg, ffprobe, marp-cli, piper, pdflatex, pdftoppm (use `slidesonnet doctor` to check)
+- External tool dependencies: ffmpeg, ffprobe, marp-cli, piper, latexmk, pdflatex, pdftoppm (use `slidesonnet doctor` to check)

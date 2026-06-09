@@ -17,6 +17,7 @@ from slidesonnet.doctor import (
     check_elevenlabs,
     check_ffmpeg,
     check_ffprobe,
+    check_latexmk,
     check_marp,
     check_pdflatex,
     check_pdftoppm,
@@ -135,6 +136,29 @@ def test_check_marp_missing():
         result = check_marp()
         assert result.status == "missing"
         assert "npm install" in result.hint
+
+
+# ---- check_latexmk ----
+
+
+def test_check_latexmk_found():
+    with (
+        patch("slidesonnet.doctor.shutil.which", return_value="/usr/bin/latexmk"),
+        patch("slidesonnet.doctor.subprocess.run") as mock_run,
+    ):
+        mock_run.return_value = MagicMock(
+            stdout="Latexmk, John Collins, 31 Jan. 2024. Version 4.83\n", stderr=""
+        )
+        result = check_latexmk()
+        assert result.status == "ok"
+        assert "4.83" in result.version
+
+
+def test_check_latexmk_missing():
+    with patch("slidesonnet.doctor.shutil.which", return_value=None):
+        result = check_latexmk()
+        assert result.status == "missing"
+        assert "latexmk" in result.hint
 
 
 # ---- check_pdflatex ----

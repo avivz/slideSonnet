@@ -88,10 +88,18 @@ _CLI_CHECKS: list[ToolCheck] = [
         version_pattern=r"v(\d+\.\d+\.\d+)",
     ),
     ToolCheck(
+        name="latexmk",
+        command="latexmk",
+        hint="sudo apt install latexmk",
+        context="Beamer compilation driver (runs pdflatex to convergence)",
+        version_args=["--version"],
+        version_pattern=r"Version\s+(\S+)",
+    ),
+    ToolCheck(
         name="pdflatex",
         command="pdflatex",
         hint="sudo apt install texlive-latex-base",
-        context="Beamer slide compilation",
+        context="LaTeX engine invoked by latexmk",
         version_args=["--version"],
         version_pattern=r"\((.+?)\)",
     ),
@@ -159,6 +167,11 @@ def check_ffprobe() -> CheckResult:
 def check_marp() -> CheckResult:
     """Check for marp-cli."""
     return _run_cli_check(_CHECKS_BY_NAME["marp-cli"])
+
+
+def check_latexmk() -> CheckResult:
+    """Check for latexmk."""
+    return _run_cli_check(_CHECKS_BY_NAME["latexmk"])
 
 
 def check_pdflatex() -> CheckResult:
@@ -237,7 +250,7 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
         ("MARP toolchain (for .md slides)", [check_marp()]),
         (
             "Beamer toolchain (for .tex slides)",
-            [check_pdflatex(), check_pdftoppm(), check_pdfunite()],
+            [check_latexmk(), check_pdflatex(), check_pdftoppm(), check_pdfunite()],
         ),
         ("TTS backends (at least one required)", [check_piper(), check_elevenlabs()]),
         ("API keys", [check_api_key()]),

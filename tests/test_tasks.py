@@ -26,6 +26,19 @@ from slidesonnet.tasks import generate_tasks
 from slidesonnet.tts.base import TTSEngine
 
 
+@pytest.fixture(autouse=True)
+def _stub_beamer_compile():
+    """Stop Beamer task generation from shelling out to latexmk.
+
+    ``generate_tasks`` now calls ``BeamerParser.prepare`` (which compiles the
+    deck so page counts can be read from ``.nav``). These task-graph tests only
+    care about the generated tasks, not the compile, so we stub the compile out
+    to keep the unit suite fast and free of a LaTeX toolchain dependency.
+    """
+    with patch("slidesonnet.parsers.beamer.compile_pdf"):
+        yield
+
+
 class MockTTS(TTSEngine):
     def synthesize(self, text, output_path, voice=None):
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -938,7 +951,7 @@ def test_mixed_type_playlist(tmp_path):
 
         \begin{frame}
         \frametitle{Frame One}
-        \say{This is the theory section.}
+        \say<1>{This is the theory section.}
         \end{frame}
 
         \begin{frame}
@@ -1152,7 +1165,7 @@ def test_beamer_compile_and_export_pdf_tasks(tmp_path: Path) -> None:
         \documentclass{beamer}
         \begin{document}
         \begin{frame}
-        \say{Hello world.}
+        \say<1>{Hello world.}
         \end{frame}
         \end{document}
     """).lstrip()
@@ -1273,7 +1286,7 @@ def test_beamer_extract_images_depends_on_cache_pdf(tmp_path: Path) -> None:
         \documentclass{beamer}
         \begin{document}
         \begin{frame}
-        \say{Test.}
+        \say<1>{Test.}
         \end{frame}
         \end{document}
     """).lstrip()
@@ -1350,7 +1363,7 @@ def test_beamer_compile_uses_visual_hash(tmp_path: Path) -> None:
         \documentclass{beamer}
         \begin{document}
         \begin{frame}
-        \say{Hello world.}
+        \say<1>{Hello world.}
         \end{frame}
         \end{document}
     """).lstrip()

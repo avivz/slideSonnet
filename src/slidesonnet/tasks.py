@@ -142,6 +142,7 @@ def _build_module_context(
 
     handlers = get_module_handlers(entry.module_type)
     parser = handlers.parser_cls()
+    parser.prepare(source_path, slides_dir)
     slides = parser.parse(source_path, slides_dir)
     _apply_pronunciation_and_voices(slides, config, source_path)
 

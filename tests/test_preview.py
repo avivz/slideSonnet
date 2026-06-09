@@ -150,7 +150,7 @@ class TestPreviewSingleSlide:
         tex.write_text(
             textwrap.dedent(r"""
             \begin{frame}
-            \say{Hello from Beamer.}
+            \say<1>{Hello from Beamer.}
             \end{frame}
         """)
         )

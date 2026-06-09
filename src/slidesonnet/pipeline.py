@@ -200,6 +200,7 @@ def iter_prepared_slides(prep: _PreparedBuild) -> Iterator[PreparedSlide]:
 
         parser_cls, _ = get_parser_and_extractor(entry.module_type)
         parser = parser_cls()
+        parser.prepare(source_path, slides_dir)
         slides = parser.parse(source_path, slides_dir)
 
         for slide in slides:

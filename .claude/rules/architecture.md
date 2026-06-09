@@ -33,7 +33,7 @@ Playlist (.yaml)
 - **preview.py** — Single-slide audio preview (preview-slide command)
 - **parsers/base.py** — Abstract base class for slide parsers
 - **parsers/marp.py** — Regex-based MARP parser; uses marp-cli + Playwright for image extraction
-- **parsers/beamer.py** — Regex-based Beamer parser; uses pdflatex + pdftoppm; handles nested braces manually
+- **parsers/beamer.py** — Regex-based Beamer parser; uses latexmk (pdflatex) + pdftoppm, reads page counts from beamer .nav; handles nested braces manually
 - **parsers/expansion.py** — Fragment expansion: splits multi-say slides into sub-slides
 - **tts/base.py** — Abstract base class for TTS backends
 - **tts/piper.py** — Subprocess calls to `piper` CLI, outputs WAV

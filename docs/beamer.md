@@ -15,43 +15,57 @@ Your Beamer document should include the `slidesonnet` package, which defines `\s
 \end{document}
 ```
 
-The `slidesonnet.sty` file is included in the repository root. Place it where pdflatex can find it — either in the same directory as your `.tex` file or in your local `texmf` tree.
+The `slidesonnet.sty` file is included in the repository root. Place it where LaTeX can find it — either in the same directory as your `.tex` file or in your local `texmf` tree.
 
 ## Narration commands
 
-### `\say{text}`
+### `\say<N>{text}`
 
-Narrate the slide with the given text:
+Narrate a frame's overlay **step** `N` with the given text. The `<N>` is the same overlay number you already use for beamer's `\onslide<N>`, `\item<N->`, etc. — it selects which built-up page of the frame the narration plays on:
 
 ```latex
 \begin{frame}
   \frametitle{Introduction}
-  \say{Welcome to this lecture on graph theory.}
+  \say<1>{Welcome to this lecture on graph theory.}
 \end{frame}
 ```
 
-Multiple `\say` commands in the same frame are concatenated:
+**Every `\say` must carry a step number.** A bare `\say{...}` (no `<N>` and no bracket number) is an error — slideSonnet rejects it so the target step is never ambiguous. Use `\say<1>{...}` for a single-step frame.
+
+Multiple `\say` commands targeting the **same** step are concatenated:
 
 ```latex
 \begin{frame}
-  \say{First sentence.}
-  \say{Second sentence.}
+  \say<1>{First sentence.}
+  \say<1>{Second sentence.}
   % TTS receives: "First sentence. Second sentence."
 \end{frame}
 ```
 
-An empty `\say{}` triggers a warning ("did you mean `\nonarration`?") and is treated as silent.
+An empty `\say<1>{}` triggers a warning ("did you mean `\nonarration`?") and is treated as silent.
 
-### `\say[params]{text}`
+### Voice and pace: `\say<N>[params]{text}`
 
-Optional bracket parameters control voice and pace:
+Optional bracket parameters control voice and pace. They follow the overlay step, mirroring beamer's `\cmd<overlay>[options]{arg}` ordering:
 
 ```latex
-\say[voice=alice]{Alice narrates this slide.}
-\say[voice=bob, pace=slow]{Bob speaks slowly here.}
+\say<1>[voice=alice]{Alice narrates step 1.}
+\say<2>[voice=bob, pace=slow]{Bob speaks slowly on step 2.}
 ```
 
-Voice names reference presets defined in the playlist YAML `voices:` section. When multiple `\say` commands in the same frame (or sub-slide) specify conflicting voice or pace, the last one wins.
+Voice names reference presets defined in the playlist YAML `voices:` section. When multiple `\say` commands on the same step specify conflicting voice or pace, the last one wins.
+
+### Legacy bracket-number form
+
+Before angle-bracket overlays, the step was written as a bare number (or `slide=N`) inside the brackets. These still work and are exact synonyms for `<N>`:
+
+```latex
+\say[2]{text}                 % same as \say<2>{text}
+\say[slide=2]{text}           % same as \say<2>{text}
+\say[2, voice=alice]{text}    % step 2 + voice
+```
+
+If both forms are given and disagree (e.g. `\say<2>[3]{}`), the `<N>` overlay wins and a warning is logged. New decks should prefer `\say<N>{}` — it reads parallel to the beamer overlay specs around it.
 
 ### `\nonarration` / `\nonarration[duration]`
 
@@ -89,51 +103,37 @@ Omit the slide from the video entirely:
 
 Note: `\skip` is a TeX primitive (a length register) and is **not** used by slideSonnet. Always use `\slidesonnetskip` to skip frames.
 
-## Overlay frames (`\pause`)
+## Overlay frames
 
-Beamer frames with `\pause` produce multiple PDF pages (sub-slides). slideSonnet lets you narrate each sub-slide independently using a sub-slide number in the `\say` bracket params.
+Beamer frames that build up over multiple overlay steps produce multiple PDF pages. This happens with `\pause`, with overlay specs like `\onslide<2->`, `\item<2->`, `\node<2->`, with `+`/`.` increments — any beamer overlay mechanism. slideSonnet creates **one video segment per overlay step** and lets you narrate each step independently with `\say<N>{}`.
 
-### Syntax
-
-```latex
-\say{text}                        % sub-slide 1 (default)
-\say[2]{text}                     % sub-slide 2 (bare number)
-\say[slide=2]{text}               % sub-slide 2 (explicit key)
-\say[2, voice=alice]{text}        % sub-slide 2 + voice
-\say[slide=3, pace=slow]{text}    % sub-slide 3 + pace
-```
+slideSonnet learns how many steps each frame has by compiling the deck and reading beamer's own `.nav` file (the `\beamer@framepages` records). Because beamer computes that itself, **every** overlay mechanism is counted correctly — not just `\pause`.
 
 ### Example
 
 ```latex
 \begin{frame}
   \frametitle{Step by Step}
-  First point.
-  \say{Let's start with the first point.}
-  \pause
-  Second point.
-  \say[2]{Now here's the second point.}
-  \pause
-  Third point.
-  \say[slide=3, voice=alice]{And Alice explains the third.}
+  \onslide<1->{First point.}
+  \say<1>{Let's start with the first point.}
+  \onslide<2->{Second point.}
+  \say<2>{Now here's the second point.}
+  \onslide<3->{Third point.}
+  \say<3>[voice=alice]{And Alice explains the third.}
 \end{frame}
 ```
 
-This frame produces 3 PDF pages and 3 video segments, each with its own narration.
+This frame builds over 3 overlay steps → 3 video segments, each with its own narration. (`\pause` between the points instead of `\onslide` would produce the same three steps.)
 
 ### Rules
 
-- **Sub-slide count** is determined by `\pause` commands: `N pauses → N+1 sub-slides`
-- **Default target** is sub-slide 1 — `\say{text}` without a number always targets the first sub-slide
-- **Multiple `\say` for the same sub-slide** are concatenated in file order
-- **Missing narration** — sub-slides with no `\say` targeting them become silent (with a warning)
-- **Target beyond pause count** — if `\say[5]{text}` appears in a frame with only 2 pauses, the sub-slide count is extended to 5 (with a warning); the image index clamps to the last available PDF page
-- **`\slidesonnetskip` / `\nonarration` on overlay frames** — applies to all sub-slides in the frame (duration override, if given, applies to every sub-slide)
-- **Unannotated frames** — frames with no `\say`, `\nonarration`, or `\slidesonnetskip` produce a warning and are treated as having no annotation
-
-### Backward compatibility
-
-Frames without `\pause` behave exactly as before: multiple `\say` commands concatenate onto a single slide. Frames with `\pause` but only unnumbered `\say` commands put all narration on sub-slide 1; remaining sub-slides are silent.
+- **Step count** comes from beamer's `.nav` — every `\pause`, `\onslide<>`, `\item<>`, etc. is accounted for. (If the deck hasn't been compiled, slideSonnet falls back to counting `\pause`.)
+- **Every `\say` is numbered** — `\say<N>{}` (or the legacy `[N]` / `[slide=N]`). A bare `\say{}` is rejected.
+- **Multiple `\say` for the same step** are concatenated in file order.
+- **Unnarrated steps** — steps with no `\say` are held silently for the configured `silence_duration` (or `\nonarration[secs]`). The whole build-up still appears in the video.
+- **Target beyond the step count** — if `\say<5>{text}` appears in a frame with only 2 steps, the step count is extended to 5 (with a warning); the image index clamps to the last available PDF page.
+- **`\slidesonnetskip` / `\nonarration` on overlay frames** — applies to all steps in the frame (a duration override, if given, applies to every step).
+- **Unannotated frames** — frames with no `\say`, `\nonarration`, or `\slidesonnetskip` produce a warning and are treated as having no annotation.
 
 ## Braces and special characters
 
@@ -177,13 +177,16 @@ Supported: `\textbf`, `\textit`, `\emph`, `\underline`, `\text`. Nested markup i
 
 Other LaTeX commands (e.g., `\item`, `\newline`) are removed as well. Whitespace is normalized to single spaces.
 
-## Image extraction
+## Compilation and image extraction
 
-slideSonnet compiles Beamer documents with `pdflatex` and extracts slide images with `pdftoppm`. Requirements:
+slideSonnet compiles Beamer documents with `latexmk` and extracts slide images with `pdftoppm`. Requirements:
 
-- **pdflatex** — from TeX Live (`sudo apt install texlive-latex-base`)
+- **latexmk** — from TeX Live (`sudo apt install latexmk`)
+- **pdflatex** — from TeX Live (`sudo apt install texlive-latex-base`); invoked by latexmk
 - **pdftoppm** — from poppler-utils (`sudo apt install poppler-utils`)
 
 Images are extracted at 300 DPI as PNG files.
 
-pdflatex runs in the source file's parent directory, so relative paths in `\input`, `\includegraphics`, and `TEXINPUTS` resolve naturally. If pdflatex exits with errors but still produces a PDF, slideSonnet logs a warning and continues.
+latexmk runs the LaTeX engine **as many times as needed** for cross-references, the table of contents, and the `.nav` file to converge — so the per-frame page counts slideSonnet reads from `.nav` always match the final PDF. It runs in the source file's parent directory, so relative paths in `\input`, `\includegraphics`, and `TEXINPUTS` resolve naturally.
+
+A deck's own `.latexmkrc` is still read (so author build settings like `-shell-escape` or biber keep working), but slideSonnet forces the PDF and all aux files into its cache directory via `-outdir`/`-auxdir`, so a deck that routes output elsewhere won't hide the `.nav` from slideSonnet. If latexmk exits with errors but still produces a PDF, slideSonnet logs a warning and continues.

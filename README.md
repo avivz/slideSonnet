@@ -29,7 +29,7 @@ Install these system packages first:
 |---|---|---|---|
 | **ffmpeg** | Yes | Video composition and concatenation | `sudo apt install ffmpeg` |
 | **marp-cli** | Yes (for MARP slides) | Converts Markdown slides to PNG images | `npm install -g @marp-team/marp-cli` |
-| **pdflatex + pdftoppm** | Only for Beamer | Compiles LaTeX and extracts slide images | `sudo apt install texlive-latex-base poppler-utils` |
+| **latexmk + pdflatex + pdftoppm** | Only for Beamer | Compiles LaTeX (latexmk drives pdflatex to convergence) and extracts slide images | `sudo apt install latexmk texlive-latex-base poppler-utils` |
 
 After installing, run `slidesonnet doctor` to verify everything is set up correctly.
 
@@ -123,19 +123,19 @@ Multi-line narration is supported. Slides with multiple `<!-- say: -->` directiv
 
 ### Beamer LaTeX
 
-Use the `\say` command (defined as a no-op by `slidesonnet.sty` so LaTeX compiles normally):
+Use the `\say` command (defined as a no-op by `slidesonnet.sty` so LaTeX compiles normally). The `<N>` mirrors beamer's own overlay specs — it picks which built-up step of the frame the narration plays on:
 
 ```latex
 \usepackage{slidesonnet}
 
 \begin{frame}
   \frametitle{Euler's Theorem}
-  \say{The sum of all vertex degrees equals twice the number of edges.}
-  \say[voice=alice]{Let me explain more carefully.}
+  \say<1>{The sum of all vertex degrees equals twice the number of edges.}
+  \onslide<2->{\say<2>[voice=alice]{Now watch what happens as the graph grows.}}
 \end{frame}
 ```
 
-Beamer equivalents: `\say{}`, `\say[voice=alice]{}`, `\nonarration`, `\nonarration[5]` (per-slide duration override), `\slidesonnetskip`. Frames with `\pause` produce multiple sub-slides that can be narrated independently — see [Beamer documentation](docs/beamer.md) for details.
+Beamer forms: `\say<N>{}`, `\say<N>[voice=alice]{}`, `\nonarration`, `\nonarration[5]` (per-slide duration override), `\slidesonnetskip`. Every `\say` must carry a step number — `<N>` (recommended) or the legacy `[N]` / `[slide=N]` bracket form; a bare `\say{}` is rejected. Each frame is split into one video segment per beamer overlay step (counted from the compiled `.nav`, so `\pause`, `\onslide<>`, `\item<>` all work); steps without a `\say` are held silently — see [Beamer documentation](docs/beamer.md) for details.
 
 ## Playlist format
 
@@ -338,7 +338,7 @@ source .venv/bin/activate
 pip install -e ".[piper,dev]"
 
 make test-unit     # unit tests only (fast, no external tools)
-make test          # all tests (requires ffmpeg, marp, pdflatex, piper)
+make test          # all tests (requires ffmpeg, marp, latexmk, piper)
 make lint          # ruff check + format
 make typecheck     # mypy --strict
 ```
