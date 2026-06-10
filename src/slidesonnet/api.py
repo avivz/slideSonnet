@@ -223,21 +223,31 @@ def export(
     if audible:
         results = _synth(deck, config, audio_dir=audio_dir(pdf_path), progress=progress)
         timeline = build_timeline(
-            deck, mode, video=config.video,
+            deck,
+            mode,
+            video=config.video,
             speech_durations_by_page=page_speech_durations(deck, results),
         )
         _, page_audios = render_audio_track(
             timeline, page_speech_clips(deck, results), render_dir=rdir
         )
         compose_video(
-            timeline, _images(pdf_path, rdir), output,
-            config=config, page_audios=page_audios, render_dir=rdir,
+            timeline,
+            _images(pdf_path, rdir),
+            output,
+            config=config,
+            page_audios=page_audios,
+            render_dir=rdir,
         )
     else:
         timeline = build_timeline(deck, mode, video=config.video)
         compose_video(
-            timeline, _images(pdf_path, rdir), output,
-            config=config, page_audios=None, render_dir=rdir,
+            timeline,
+            _images(pdf_path, rdir),
+            output,
+            config=config,
+            page_audios=None,
+            render_dir=rdir,
         )
 
     subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)
@@ -268,7 +278,9 @@ def write_subs(
     mode = parse_timing(timing, wpm=wpm)
     if mode.kind == "tts":
         durations = cached_durations(deck, config, audio_dir(pdf_path), fallback_wpm=wpm)
-        timeline = build_timeline(deck, mode, video=config.video, speech_durations_by_page=durations)
+        timeline = build_timeline(
+            deck, mode, video=config.video, speech_durations_by_page=durations
+        )
     else:
         timeline = build_timeline(deck, mode, video=config.video)
 
@@ -346,7 +358,9 @@ def build_preview(
     )
     rdir = render_dir(pdf_path)
     timeline = build_timeline(
-        deck, TimingMode("tts"), video=config.video,
+        deck,
+        TimingMode("tts"),
+        video=config.video,
         speech_durations_by_page=page_speech_durations(deck, results),
     )
     track, _ = render_audio_track(timeline, page_speech_clips(deck, results), render_dir=rdir)

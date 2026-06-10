@@ -60,7 +60,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             id_label = ui.label().classes("text-base font-mono font-bold")
             body = ui.textarea(label="Narration").classes("w-full ss-mono").props("autogrow rows=8")
             voice = ui.input(label="Voice (optional)").classes("w-full")
-            pace = ui.select(["normal", "slow", "fast"], label="Pace", value="normal").classes("w-full")
+            pace = ui.select(["normal", "slow", "fast"], label="Pace", value="normal").classes(
+                "w-full"
+            )
             diag_box = ui.column().classes("w-full")
 
     # --- nav + action bar ---
@@ -95,7 +97,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         diag_box.clear()
         with diag_box:
             for d in state.diagnostics_for_current():
-                color = {"error": "text-red-600", "warning": "text-amber-600"}.get(d.severity, "text-sky-600")
+                color = {"error": "text-red-600", "warning": "text-amber-600"}.get(
+                    d.severity, "text-sky-600"
+                )
                 ui.label(f"{d.severity}: {d.message}").classes(f"text-xs {color}")
 
     def save_current() -> None:

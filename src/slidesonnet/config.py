@@ -128,10 +128,14 @@ def _parse_voices(raw: dict[str, Any]) -> dict[str, VoiceConfig]:
     voices: dict[str, VoiceConfig] = {}
     for name, value in raw.items():
         if isinstance(value, str):
-            voices[name] = VoiceConfig(name=name, backend_voices=dict.fromkeys(_KNOWN_BACKENDS, value))
+            voices[name] = VoiceConfig(
+                name=name, backend_voices=dict.fromkeys(_KNOWN_BACKENDS, value)
+            )
         elif isinstance(value, dict):
             mapping = {k: str(v) for k, v in value.items() if k in _KNOWN_BACKENDS}
             voices[name] = VoiceConfig(name=name, backend_voices=mapping)
         else:
-            raise ConfigError(f"voice '{name}' must be a string or table, got {type(value).__name__}")
+            raise ConfigError(
+                f"voice '{name}' must be a string or table, got {type(value).__name__}"
+            )
     return voices

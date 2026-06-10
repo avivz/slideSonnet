@@ -63,19 +63,18 @@ jobs:
           python-version: "3.13"
       - run: pip install build
       - run: python -m build
-      - name: Verify wheel contains templates
+      - name: Verify wheel ships the LaTeX macro
         run: |
           python -c "
-          import zipfile, sys
+          import zipfile
           whl = list(__import__('pathlib').Path('dist').glob('*.whl'))[0]
           names = zipfile.ZipFile(whl).namelist()
-          templates = [n for n in names if 'templates/' in n and not n.endswith('.py')]
-          assert len(templates) >= 9, f'Expected >=9 template files, got {len(templates)}: {templates}'
-          assert any(n.endswith('.txt') for n in templates), 'No .txt templates found'
-          assert any(n.endswith('.md') for n in templates), 'No .md templates found'
-          print(f'Wheel OK: {len(names)} files, {len(templates)} templates')
+          assert any(n.endswith('templates/slidesonnet.sty') for n in names), \
+              f'slidesonnet.sty not packaged: {[n for n in names if n.endswith(\".sty\")]}'
+          print(f'Wheel OK: {len(names)} files, macro packaged')
           "
       - name: Smoke-test wheel install
         run: |
           pip install dist/slidesonnet-*.whl
           slidesonnet --version
+          slidesonnet doctor || true

@@ -5,59 +5,67 @@ paths:
 
 # Architecture
 
-## Pipeline Data Flow
+slideSonnet v1 is a PDF + narration-sidecar editor. There is **no** source→video
+compile pipeline, no doit graph, no parsers.
+
+## Data flow
 
 ```
-Playlist (.yaml)
-  → parse_playlist() → PlaylistEntry[] + config dict
-  → load_config() → ProjectConfig
-  → Per module: SlideParser.parse() → SlideNarration[]
-  → apply_pronunciation() on narration text
-  → generate_tasks() → doit task graph
-  → _run_doit(): extract_images → tts → compose → concat → assemble
-  → cache/output.mp4
-  → subtitles → output.srt
+deck.pdf  ──► pdf/reader.read_page_ids  ──► [slide-ids, in page order]
+deck.narration ──► narration/format.parse_sidecar ──► [PageNarration blocks]
+                         │
+              deck.load_deck  ──►  Deck + diagnostics.diagnose (id-only)
+                         │
+        ┌────────────────┼─────────────────────────────┐
+   audio/synth      timing/render                  subtitles
+ (cache-aware TTS)  (DeckTimeline:                (SRT/VTT from the
+        │            page durations,               same timeline)
+  audio/track        cue sheet)
+ (per-page audio          │
+  + deck track)     render.compose_video ──► video/composer (FFmpeg) ──► deck.mp4
 ```
 
-## Key Modules
+## Key modules
 
-- **cli.py** — Click CLI entry point (build, preview, preview-slide, init, clean, doctor, list, utterances, subtitles, pdf)
-- **pipeline.py** — Build orchestrator; `_prepare()` shared setup, `build()` runs doit, `dry_run()` reports cache status without executing
-- **tasks.py** — doit task generation for incremental builds
-- **hashing.py** — Audio filename computation (text_hash, config_hash, parse_audio_filename)
-- **clean.py** — Selective cache cleanup with graduated `--keep` levels
-- **doctor.py** — Dependency checker; verifies external tools (ffmpeg, marp, pdflatex, etc.) and Python packages
-- **models.py** — Dataclasses: SlideAnnotation, SlideNarration, PlaylistEntry, ProjectConfig, TTSConfig, VideoConfig, VoiceConfig
-- **config.py** — Loads ProjectConfig from playlist YAML
-- **playlist.py** — Parses playlist YAML into PlaylistEntry list
-- **preview.py** — Single-slide audio preview (preview-slide command)
-- **parsers/base.py** — Abstract base class for slide parsers
-- **parsers/marp.py** — Regex-based MARP parser; uses marp-cli + Playwright for image extraction
-- **parsers/beamer.py** — Regex-based Beamer parser; uses latexmk (pdflatex) + pdftoppm, reads page counts from beamer .nav; handles nested braces manually
-- **parsers/expansion.py** — Fragment expansion: splits multi-say slides into sub-slides
-- **tts/base.py** — Abstract base class for TTS backends
-- **tts/piper.py** — Subprocess calls to `piper` CLI, outputs WAV
-- **tts/elevenlabs.py** — Uses ElevenLabs SDK, outputs MP3
-- **tts/pronunciation.py** — Loads `**word**: replacement` dictionaries, applies substitutions before TTS
-- **subtitles.py** — SRT subtitle generation from narration text and cached audio durations
-- **video/composer.py** — FFmpeg subprocess calls: compose_segment, compose_silent_segment, concatenate_segments, get_duration
+- **pdf/reader.py** — `read_page_ids` (PyMuPDF, extracts invisible `SSID:` markers),
+  `rasterize` (pdftoppm → page PNGs).
+- **narration/model.py** — `Segment` (speech|pause), `PageNarration`, `Deck`.
+- **narration/format.py** — parse/serialize the sidecar grammar (round-trip stable);
+  `parse_segments`, `serialize_body`, `pace_to_speed`.
+- **diagnostics.py** — id-only reconciliation (duplicate/auto/missing/orphan/order).
+- **deck.py** — `load_deck`, `save_deck`, `blank_blocks_for`, default sidecar path.
+- **timing.py** — `TimingMode` (tts/estimate/fixed), `compute_page_timing` → `PageTiming`.
+- **render.py** — `build_timeline` (`DeckTimeline`), `subtitle_entries`,
+  `render_audio_track`, `compose_video`.
+- **audio/synth.py** — cache-aware per-segment TTS; pace→speed; `page_speech_durations`,
+  `cached_durations`.
+- **audio/track.py** — `make_silence`, `build_page_audio`, `assemble_track`, `cue_sheet`.
+- **subtitles.py** — `format_srt`, `format_vtt`, `split_text`, `SubtitleEntry`.
+- **config.py** — optional `slidesonnet.toml`: `Config` (tts/video/voices/pronunciation).
+- **cache.py** — `<deck-dir>/.slidesonnet/{audio,render}/` layout.
+- **hashing.py** — content-addressed audio filenames (`{text_hash}.{backend}.{config_hash}.ext`).
+- **tts/** — `create_tts`, `TTSEngine` base, Piper, ElevenLabs, pronunciation.
+- **video/composer.py** — FFmpeg: `compose_segment`, `compose_silent_segment`,
+  `concatenate_segments`, `concatenate_audio`, `get_duration`.
+- **gui/state.py** — UI-free `EditorState` (nav, edit→sidecar, save, TTS, preview, export).
+- **gui/app.py** — NiceGUI view; `build_editor`, `run_editor`. Whole-deck preview plays
+  one assembled track and flips the page image on cue-sheet boundaries.
+- **api.py** — typed entry points mirroring the CLI: `sty_text`/`write_sty`,
+  `init_sidecar`, `check_deck`, `synthesize_deck`, `export`, `write_subs`, `build_preview`.
+- **cli.py** — Click commands: `sty`, `init`, `check`, `tts`, `export`, `subs`, `edit`,
+  `clean`, `doctor`.
+- **doctor.py** / **clean.py** — dependency checks; graduated cache cleanup.
 
-## Build System (doit)
+## The `\ssid` macro
 
-The pipeline programmatically generates doit task graphs (not a `dodo.py` file). Task hierarchy per module:
-1. `compile_beamer:{module}` — Compile Beamer LaTeX to PDF (Beamer only)
-2. `extract_images:{module}` — Parse slides → PNGs (marp-cli + Playwright for MARP, pdftoppm for Beamer)
-3. `export_pdf:{module}` — Export presentation to PDF
-4. `tts:{slide_id}` — Synthesize audio (content-hash cached; voice is part of hash)
-5. `concat_audio:{slide_id}` — Concatenate multi-part audio (for slides with multiple narration parts)
-6. `compose:{slide_id}` — Image + audio → MP4 segment
-7. `assemble` — Merge segments into final output video
+`slidesonnet.sty` (also at `src/slidesonnet/templates/slidesonnet.sty`, shipped as
+package data; `slidesonnet sty` writes it out). It stamps each emitted page with an
+invisible `SSID:<id>` marker via PDF text rendering mode 3 (`\pdfliteral{3 Tr}`),
+keyed by absolute page number so overlay steps each get their own id. The repo-root
+copy and the packaged copy must stay identical (guarded by `test_api.py`).
 
-State tracked in `cache/.doit.db` (SQLite3 format).
+## The timeline is the single source of truth
 
-## Playlist Modules
-
-Playlists support three module types distinguished by file extension:
-- `.md` → MARP Markdown slides
-- `.tex` → Beamer LaTeX slides
-- `.mp4` / `.mkv` / `.webm` / `.mov` → Video passthrough (no parsing/TTS)
+`DeckTimeline` (per-page `PageTiming` with lead/tail) drives the export, the preview
+cue sheet, and the subtitles — so what you preview is what you export. tts mode uses
+real audio durations; estimate/fixed use the model.

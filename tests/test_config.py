@@ -50,9 +50,7 @@ elevenlabs = "abc123"
 
 def test_pronunciation_loaded_and_applied(tmp_path: Path) -> None:
     (tmp_path / "pron.md").write_text("**Euler**: OY-ler\n", encoding="utf-8")
-    (tmp_path / "slidesonnet.toml").write_text(
-        'pronunciation = ["pron.md"]\n', encoding="utf-8"
-    )
+    (tmp_path / "slidesonnet.toml").write_text('pronunciation = ["pron.md"]\n', encoding="utf-8")
     cfg = load_config(tmp_path / "deck.pdf")
     assert cfg.apply_pronunciation("Euler summed") == "OY-ler summed"
 

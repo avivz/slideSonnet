@@ -1,11 +1,11 @@
 VENV := .venv/bin
 SLIDESONNET := $(VENV)/slidesonnet
 
-.PHONY: install test test-unit lint typecheck clean \
-	showcase showcase-piper \
-	basel basel-piper \
-	clean-showcase clean-basel clean-examples \
-	purge-showcase purge-basel purge-examples
+.PHONY: install test test-unit lint fmt typecheck clean \
+	demos basel showcase \
+	check-basel check-showcase \
+	clean-basel clean-showcase clean-examples \
+	purge-examples
 
 install:
 	$(VENV)/pip install -e ".[piper,dev]"
@@ -20,40 +20,54 @@ lint:
 	$(VENV)/ruff check src/ tests/
 	$(VENV)/ruff format --check src/ tests/
 
+fmt:
+	$(VENV)/ruff format src/ tests/
+
 typecheck:
 	$(VENV)/mypy src/slidesonnet/
 
-# --- Examples: showcase ---
-showcase:
-	cd examples/showcase && ../../$(SLIDESONNET) build
+# --- Demos: compile the Beamer PDF, then render with Piper ---
+# Each example ships a committed PDF, so rendering works without recompiling;
+# these targets recompile from source for a from-scratch rebuild.
 
-showcase-piper:
-	cd examples/showcase && ../../$(SLIDESONNET) build --tts piper
+examples/basel-problem/basel-problem.pdf: examples/basel-problem/basel-problem.tex
+	$(SLIDESONNET) sty -o examples/basel-problem/slidesonnet.sty
+	cd examples/basel-problem && latexmk -pdf -interaction=nonstopmode basel-problem.tex
+
+basel: examples/basel-problem/basel-problem.pdf
+	$(SLIDESONNET) export examples/basel-problem/basel-problem.pdf \
+		-o examples/basel-problem/basel-problem.mp4 --engine piper
+
+check-basel:
+	$(SLIDESONNET) check examples/basel-problem/basel-problem.pdf
+
+examples/showcase/showcase.pdf: examples/showcase/showcase.tex
+	$(SLIDESONNET) sty -o examples/showcase/slidesonnet.sty
+	cd examples/showcase && latexmk -pdf -interaction=nonstopmode showcase.tex
+
+showcase: examples/showcase/showcase.pdf
+	$(SLIDESONNET) export examples/showcase/showcase.pdf \
+		-o examples/showcase/showcase.mp4 --engine piper
+
+check-showcase:
+	$(SLIDESONNET) check examples/showcase/showcase.pdf
+
+demos: basel showcase
+
+# --- Cleanup ---
+clean-basel:
+	$(SLIDESONNET) clean examples/basel-problem/basel-problem.pdf
 
 clean-showcase:
-	cd examples/showcase && ../../$(SLIDESONNET) clean
+	$(SLIDESONNET) clean examples/showcase/showcase.pdf
 
-# --- Examples: basel-problem ---
-basel:
-	cd examples/basel-problem && ../../$(SLIDESONNET) build
+clean-examples: clean-basel clean-showcase
 
-basel-piper:
-	cd examples/basel-problem && ../../$(SLIDESONNET) build --tts piper
-
-clean-basel:
-	cd examples/basel-problem && ../../$(SLIDESONNET) clean
-
-purge-showcase:
-	cd examples/showcase && ../../$(SLIDESONNET) clean --keep nothing
-
-purge-basel:
-	cd examples/basel-problem && ../../$(SLIDESONNET) clean --keep nothing
-
-# --- Aggregate ---
-clean-examples: clean-showcase clean-basel
-
-purge-examples: purge-showcase purge-basel
+purge-examples:
+	$(SLIDESONNET) clean examples/basel-problem/basel-problem.pdf --keep nothing -y
+	$(SLIDESONNET) clean examples/showcase/showcase.pdf --keep nothing -y
 
 clean:
-	rm -rf cache/ dist/ *.egg-info/
+	rm -rf dist/ *.egg-info/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .slidesonnet -exec rm -rf {} + 2>/dev/null || true

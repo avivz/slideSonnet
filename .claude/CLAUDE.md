@@ -4,7 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-slideSonnet compiles text-based slide presentations (MARP Markdown or LaTeX Beamer) into narrated MP4 videos. It parses slide annotations (`<!-- say: ... -->` in MARP, `\say{}` in Beamer), synthesizes speech via TTS engines (Piper local or ElevenLabs cloud), and composites video segments using FFmpeg — all orchestrated by a doit-based incremental build system.
+slideSonnet (v1.x) is a **PDF + narration-sidecar editor**. You bring a finished
+PDF whose Beamer source stamped a stable `\ssid` slide-id onto every page; the
+spoken narration lives in a human-readable, git-diffable `<deck>.narration`
+sidecar keyed to those ids. The tool synthesizes speech (Piper local / ElevenLabs
+cloud, content-addressed cache), composites video with FFmpeg, writes SRT/VTT
+subtitles, and ships a NiceGUI editor (`slidesonnet edit`) with a silence-aware
+whole-deck preview. The CLI/`slidesonnet.api` make the whole pipeline scriptable.
+
+> The pre-1.0 source→video pipeline (MARP/Beamer parsers, doit build graph,
+> playlists, inline `\say`/`<!-- say -->`) was **removed** in the v1 rewrite.
+> Don't reintroduce it. See `dev/DESIGN-narration-editor.md`.
 
 ## Development Environment
 
@@ -25,25 +35,24 @@ Items flow from inbox → roadmap during `/pm` triage. The `/pm` skill reads bot
 ## Development Commands
 
 ```bash
-make install                           # Install with local TTS + dev tools
-make test                              # All tests (requires ffmpeg, marp, latexmk, piper)
+make install                           # Editable install with Piper + dev tools
+make test                              # All tests (needs ffmpeg, pdftoppm, piper)
 make test-unit                         # Unit tests only (fast, no external deps)
-make lint                              # Ruff check + format
+make lint                              # Ruff check + format --check
+make fmt                               # Ruff format
 make typecheck                         # mypy --strict on src/
-make showcase-piper                    # Build showcase example with local Piper TTS
-make showcase                          # Build showcase example with configured TTS
-make basel-piper                       # Build basel-problem example with Piper
-make clean-showcase                    # Clean showcase (keeps API audio)
-make clean-basel                       # Clean basel-problem (keeps API audio)
-make clean-examples                    # Clean all examples (keeps API audio)
-make purge-showcase                    # Nuke entire showcase cache
-make purge-examples                    # Nuke all example caches
-make clean                             # Remove project build artifacts + __pycache__
-slidesonnet clean                                  # Default: --keep api
-slidesonnet clean --keep nothing                   # Nuke entire cache
-slidesonnet clean --keep current                   # Keep audio for current slide text (any engine)
-.venv/bin/pytest tests/test_config.py -v         # Single test file
-.venv/bin/pytest tests/test_cli.py::test_version # Single test function
+make basel                             # Compile + render basel-problem (Piper)
+make showcase                          # Compile + render showcase (Piper)
+make demos                             # Both demos
+make check-basel / make check-showcase # Run id reconciliation on a demo
+make clean-basel / make clean-showcase # slidesonnet clean (keeps API audio)
+make purge-examples                    # clean --keep nothing on both demos
+make clean                             # Remove build artifacts + __pycache__ + .slidesonnet/
+slidesonnet clean <deck.pdf>                       # Default: --keep api
+slidesonnet clean <deck.pdf> --keep nothing        # Nuke the deck's cache
+.venv/bin/pytest tests/test_narration_format.py -v # Single test file
+.venv/bin/pytest tests/test_cli.py::test_version   # Single test function
+.venv/bin/pytest -m "not integration"              # Unit tier only
 ```
 
 ## Testing Rules
@@ -61,21 +70,22 @@ Example videos are **not** stored in the repo. They are hosted as GitHub Release
 gh release upload v0.0.0 examples/showcase/showcase.mp4 --clobber
 
 # Upload all example videos
-gh release upload v0.0.0 examples/showcase/showcase.mp4 examples/basel-problem/basel-problem.mp4 examples/basel-problem-he/basel-problem-he.mp4 --clobber
+gh release upload v0.0.0 examples/showcase/showcase.mp4 examples/basel-problem/basel-problem.mp4 --clobber
 ```
 
 ## Releasing
 
 ```bash
-git tag v0.1.0a1                       # Version tag triggers publish workflow
-git push origin v0.1.0a1               # CI → TestPyPI → PyPI → GitHub Release
+git tag v1.0.0a0                       # Version tag triggers publish workflow
+git push origin v1.0.0a0               # CI → TestPyPI → PyPI → GitHub Release
 ```
 
-Version is set in `src/slidesonnet/__init__.py`. Update it before tagging.
+Version is set in `src/slidesonnet/__init__.py`. Update it before tagging. The
+v1 rewrite lives on the `v2-narration-editor` branch until merged to `main`.
 
 ## Code Conventions
 
 - Python 3.12+, line length 100 (Ruff)
-- `mypy --strict` must pass on all source files. Untyped external libraries (doit, elevenlabs, dotenv) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
-- Integration tests marked with `@pytest.mark.integration` (in test_composer.py)
-- External tool dependencies: ffmpeg, ffprobe, marp-cli, piper, latexmk, pdflatex, pdftoppm (use `slidesonnet doctor` to check)
+- `mypy --strict` must pass on all source files. Untyped external libraries (elevenlabs, dotenv, piper, fitz, nicegui) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
+- Integration tests marked with `@pytest.mark.integration` (export/render and GUI-with-Piper tests). GUI logic is unit-tested via NiceGUI's in-process `user` simulation (selenium-free `nicegui.testing.user_plugin`, loaded in `tests/conftest.py`).
+- External tool dependencies: ffmpeg, ffprobe, pdftoppm, piper; latexmk + pdflatex to compile your own deck (use `slidesonnet doctor` to check)

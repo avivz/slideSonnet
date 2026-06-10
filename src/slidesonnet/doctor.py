@@ -117,7 +117,9 @@ def _run_cli_check(check: ToolCheck) -> CheckResult:
 def check_python() -> CheckResult:
     version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     ok = sys.version_info >= (3, 12)
-    return CheckResult("python", "ok" if ok else "missing", version, "Requires Python 3.12+", "Runtime")
+    return CheckResult(
+        "python", "ok" if ok else "missing", version, "Requires Python 3.12+", "Runtime"
+    )
 
 
 def _check_python_package(dist: str, import_name: str, hint: str, context: str) -> CheckResult:
@@ -131,7 +133,9 @@ def _check_python_package(dist: str, import_name: str, hint: str, context: str) 
 
 
 def check_pymupdf() -> CheckResult:
-    return _check_python_package("PyMuPDF", "fitz", "pip install pymupdf", "PDF slide-id extraction")
+    return _check_python_package(
+        "PyMuPDF", "fitz", "pip install pymupdf", "PDF slide-id extraction"
+    )
 
 
 def check_nicegui() -> CheckResult:
@@ -145,7 +149,9 @@ def check_piper() -> CheckResult:
         if os.path.isfile(venv_piper):
             found = venv_piper
     if not found:
-        return CheckResult("piper", "missing", "", "pip install slidesonnet[piper]", "Local TTS (free)")
+        return CheckResult(
+            "piper", "missing", "", "pip install slidesonnet[piper]", "Local TTS (free)"
+        )
     try:
         version = importlib.metadata.version("piper-tts")
     except importlib.metadata.PackageNotFoundError:
@@ -170,7 +176,11 @@ def check_api_key() -> CheckResult:
     if key:
         return CheckResult("ELEVENLABS_API_KEY", "ok", "set", "", "Only needed for elevenlabs TTS")
     return CheckResult(
-        "ELEVENLABS_API_KEY", "missing", "", "Add to .env or export in shell", "Only for elevenlabs TTS"
+        "ELEVENLABS_API_KEY",
+        "missing",
+        "",
+        "Add to .env or export in shell",
+        "Only for elevenlabs TTS",
     )
 
 
@@ -178,7 +188,10 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
     """Run all checks and return named groups of results."""
     return [
         ("Python", [check_python()]),
-        ("Core (always required)", [check_ffmpeg(), check_ffprobe(), check_pdftoppm(), check_pymupdf()]),
+        (
+            "Core (always required)",
+            [check_ffmpeg(), check_ffprobe(), check_pdftoppm(), check_pymupdf()],
+        ),
         ("Editor GUI", [check_nicegui()]),
         ("Beamer toolchain (for compiling your deck)", [check_latexmk(), check_pdflatex()]),
         ("TTS backends (at least one required)", [check_piper(), check_elevenlabs()]),

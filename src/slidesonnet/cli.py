@@ -42,7 +42,9 @@ class _SuggestGroup(click.Group):
             return super().resolve_command(ctx, args)
         except click.UsageError as e:
             if args:
-                matches = difflib.get_close_matches(args[0], self.list_commands(ctx), n=1, cutoff=0.6)
+                matches = difflib.get_close_matches(
+                    args[0], self.list_commands(ctx), n=1, cutoff=0.6
+                )
                 if matches:
                     raise click.UsageError(
                         f"No such command '{args[0]}'. Did you mean '{matches[0]}'?"
@@ -97,8 +99,14 @@ def _print_diagnostics(diags: list[Diagnostic]) -> None:
 
 
 @main.command()
-@click.option("-o", "--output", type=click.Path(path_type=Path), default=Path("slidesonnet.sty"),
-              show_default=True, help="Where to write the macro (file or directory)")
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    default=Path("slidesonnet.sty"),
+    show_default=True,
+    help="Where to write the macro (file or directory)",
+)
 def sty(output: Path) -> None:
     """Write the slidesonnet.sty LaTeX macro for your Beamer project."""
     from slidesonnet.api import write_sty
@@ -109,8 +117,12 @@ def sty(output: Path) -> None:
 
 @main.command()
 @click.argument("pdf", type=click.Path(exists=True, path_type=Path))
-@click.option("--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)")
-@click.option("--merge", is_flag=True, help="Append blocks for ids missing from an existing sidecar")
+@click.option(
+    "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
+)
+@click.option(
+    "--merge", is_flag=True, help="Append blocks for ids missing from an existing sidecar"
+)
 @click.option("--force", is_flag=True, help="Overwrite an existing sidecar")
 @click.pass_context
 def init(ctx: click.Context, pdf: Path, narration: Path | None, merge: bool, force: bool) -> None:
@@ -129,7 +141,9 @@ def init(ctx: click.Context, pdf: Path, narration: Path | None, merge: bool, for
 
 @main.command()
 @click.argument("pdf", type=click.Path(exists=True, path_type=Path))
-@click.option("--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)")
+@click.option(
+    "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
+)
 def check(pdf: Path, narration: Path | None) -> None:
     """Reconcile the sidecar against the PDF; exit non-zero on errors."""
     from slidesonnet.api import check_deck
@@ -150,7 +164,8 @@ _NARRATION_OPT = click.option(
     "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
 )
 _ENGINE_OPT = click.option(
-    "--engine", type=click.Choice(["piper", "elevenlabs"]),
+    "--engine",
+    type=click.Choice(["piper", "elevenlabs"]),
     help="TTS backend (default: config; piper = free/local)",
 )
 
@@ -170,9 +185,11 @@ def tts(pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, .
 
     try:
         n = synthesize_deck(
-            pdf, sidecar_path=narration,
+            pdf,
+            sidecar_path=narration,
             engine=engine,  # type: ignore[arg-type]
-            only_ids=set(ids) or None, progress=_progress,
+            only_ids=set(ids) or None,
+            progress=_progress,
         )
     except SlideSonnetError as e:
         raise click.ClickException(str(e))
@@ -187,24 +204,46 @@ def tts(pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, .
 @click.option("--silent", is_flag=True, help="No TTS: silent video, timing from the model")
 @click.option("--timing", default="tts", show_default=True, help="tts | estimate | fixed:N")
 @click.option("--wpm", default=150.0, show_default=True, help="Words/minute for --timing estimate")
-@click.option("--subtitles", type=click.Choice(["srt", "vtt", "both", "none"]), default="srt",
-              show_default=True, help="Subtitle files beside the video")
-@click.option("--sub-granularity", type=click.Choice(["segment", "slide"]), default="segment",
-              show_default=True, help="One cue per speech segment, or per slide")
+@click.option(
+    "--subtitles",
+    type=click.Choice(["srt", "vtt", "both", "none"]),
+    default="srt",
+    show_default=True,
+    help="Subtitle files beside the video",
+)
+@click.option(
+    "--sub-granularity",
+    type=click.Choice(["segment", "slide"]),
+    default="segment",
+    show_default=True,
+    help="One cue per speech segment, or per slide",
+)
 def export(
-    pdf: Path, output: Path, narration: Path | None, engine: str | None, silent: bool,
-    timing: str, wpm: float, subtitles: str, sub_granularity: str,
+    pdf: Path,
+    output: Path,
+    narration: Path | None,
+    engine: str | None,
+    silent: bool,
+    timing: str,
+    wpm: float,
+    subtitles: str,
+    sub_granularity: str,
 ) -> None:
     """Render the narrated (or silent) video with optional subtitles."""
     from slidesonnet.api import export as run_export
 
     try:
         result = run_export(
-            pdf, output, sidecar_path=narration,
+            pdf,
+            output,
+            sidecar_path=narration,
             engine=engine,  # type: ignore[arg-type]
-            silent=silent, timing=timing, wpm=wpm,
+            silent=silent,
+            timing=timing,
+            wpm=wpm,
             subtitles=subtitles,  # type: ignore[arg-type]
-            sub_granularity=sub_granularity, progress=_progress,
+            sub_granularity=sub_granularity,
+            progress=_progress,
         )
     except (SlideSonnetError, ValueError) as e:
         raise click.ClickException(str(e))
@@ -215,24 +254,42 @@ def export(
 
 @main.command()
 @click.argument("pdf", type=click.Path(exists=True, path_type=Path))
-@click.option("-o", "--output", required=True, type=click.Path(path_type=Path), help="Output subtitle file")
+@click.option(
+    "-o", "--output", required=True, type=click.Path(path_type=Path), help="Output subtitle file"
+)
 @_NARRATION_OPT
-@click.option("--format", "fmt", type=click.Choice(["srt", "vtt"]), default="srt", show_default=True)
-@click.option("--sub-granularity", type=click.Choice(["segment", "slide"]), default="segment",
-              show_default=True)
+@click.option(
+    "--format", "fmt", type=click.Choice(["srt", "vtt"]), default="srt", show_default=True
+)
+@click.option(
+    "--sub-granularity",
+    type=click.Choice(["segment", "slide"]),
+    default="segment",
+    show_default=True,
+)
 @click.option("--timing", default="tts", show_default=True, help="tts | estimate | fixed:N")
 @click.option("--wpm", default=150.0, show_default=True)
 def subs(
-    pdf: Path, output: Path, narration: Path | None, fmt: str, sub_granularity: str,
-    timing: str, wpm: float,
+    pdf: Path,
+    output: Path,
+    narration: Path | None,
+    fmt: str,
+    sub_granularity: str,
+    timing: str,
+    wpm: float,
 ) -> None:
     """Write subtitles without rendering video (cached audio durations, else timing model)."""
     from slidesonnet.api import write_subs
 
     try:
         path = write_subs(
-            pdf, output, fmt=fmt,  # type: ignore[arg-type]
-            sub_granularity=sub_granularity, timing=timing, wpm=wpm, sidecar_path=narration,
+            pdf,
+            output,
+            fmt=fmt,  # type: ignore[arg-type]
+            sub_granularity=sub_granularity,
+            timing=timing,
+            wpm=wpm,
+            sidecar_path=narration,
         )
     except (SlideSonnetError, ValueError) as e:
         raise click.ClickException(str(e))
@@ -241,8 +298,13 @@ def subs(
 
 @main.command()
 @click.argument("pdf", type=click.Path(exists=True, path_type=Path))
-@click.option("--keep", type=click.Choice(["nothing", "api", "current", "exact"]), default="api",
-              show_default=True, help="What cached audio to preserve")
+@click.option(
+    "--keep",
+    type=click.Choice(["nothing", "api", "current", "exact"]),
+    default="api",
+    show_default=True,
+    help="What cached audio to preserve",
+)
 @click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt for --keep nothing")
 def clean(pdf: Path, keep: str, yes: bool) -> None:
     """Prune the deck's audio/render cache."""
@@ -253,7 +315,9 @@ def clean(pdf: Path, keep: str, yes: bool) -> None:
         click.echo("Nothing to clean.")
         return
     if keep == "nothing" and not yes:
-        click.confirm("Delete ALL cached audio (including paid API audio)?", default=False, abort=True)
+        click.confirm(
+            "Delete ALL cached audio (including paid API audio)?", default=False, abort=True
+        )
     result = run_clean(pdf, keep=keep)  # type: ignore[arg-type]
     if result.removed_files == 0:
         click.echo("Nothing to remove.")

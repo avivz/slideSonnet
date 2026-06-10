@@ -1,347 +1,186 @@
 <p align="center">
-  <img src="assets/logo/slidesonnet-logo.png" alt="SlideSonnet — Text → Video" width="500">
+  <img src="assets/logo/slidesonnet-logo.png" alt="slideSonnet" width="500">
 </p>
 
-Compile text-based slide presentations into narrated MP4 videos.
+Write, preview, and render narration for a finished slide **PDF** — keeping the
+spoken words in a plain-text **sidecar** file next to the deck.
 
-Write your slides in [MARP](https://marp.app/) Markdown or LaTeX Beamer, add narration with `<!-- say: -->` comments, and slideSonnet handles TTS synthesis, video composition, and assembly — with incremental builds that only re-synthesize changed slides.
+slideSonnet inverts the usual flow. Your PDF is the frozen artifact; the
+narration lives in a human-readable, git-diffable file keyed to slides by stable
+ids. Edit a line, hit re-render, and only that line is re-synthesized — no
+recompiling slides, no re-recording a microphone. A local GUI gives you
+subtitle-style editing synced to each slide; an LLM can write the first draft;
+the CLI scripts the whole pipeline.
+
+> **v1 is a rewrite.** Earlier 0.x releases compiled MARP/Beamer *source* into
+> video with narration embedded inline (`<!-- say: -->`, `\say{}`). v1 works
+> from a **PDF + narration sidecar** instead. See `CHANGELOG.md`.
 
 ## How it works
 
 ```
-slidesonnet.yaml (playlist)
-    |
-    ├── 01-intro/slides.md   → [parse → TTS → compose] → module_01.mp4
-    ├── animations/euler.mp4  → [passthrough]            → module_02.mp4
-    ├── 02-proofs/slides.tex  → [parse → TTS → compose] → module_03.mp4
-    └── [assemble] ─────────────────────────────────────→ my-course.mp4
+deck.pdf  ──(invisible \ssid markers)──┐
+                                        ├──►  slidesonnet  ──►  deck.mp4 + deck.srt
+deck.narration  ──(@slide-id blocks)────┘                       (preview in the GUI)
 ```
 
-A **playlist** file chains modules together — MARP slides, Beamer slides, and pre-existing video files. Each module is built independently, then concatenated into the final video. [pydoit](https://pydoit.org/) manages the build graph with content-hash caching, so only changed slides trigger TTS.
+1. **Mark** every slide in your Beamer source with a stable id (`\ssid{...}`),
+   compile to PDF.
+2. **Scaffold** a sidecar from the PDF's ids (`slidesonnet init`).
+3. **Write** narration — by hand, by an LLM, or in the GUI (`slidesonnet edit`).
+4. **Render** a narrated (or silent) MP4 with subtitles (`slidesonnet export`).
 
 ## Installation
 
 ### External dependencies
 
-Install these system packages first:
-
 | Tool | Required? | What it does | Install |
 |---|---|---|---|
-| **ffmpeg** | Yes | Video composition and concatenation | `sudo apt install ffmpeg` |
-| **marp-cli** | Yes (for MARP slides) | Converts Markdown slides to PNG images | `npm install -g @marp-team/marp-cli` |
-| **latexmk + pdflatex + pdftoppm** | Only for Beamer | Compiles LaTeX (latexmk drives pdflatex to convergence) and extracts slide images | `sudo apt install latexmk texlive-latex-base poppler-utils` |
+| **ffmpeg / ffprobe** | Yes | Audio + video composition | `sudo apt install ffmpeg` |
+| **pdftoppm** | Yes | Rasterize PDF pages to images | `sudo apt install poppler-utils` |
+| **latexmk + pdflatex** | To compile your deck | Build the Beamer PDF (your job, not the tool's) | `sudo apt install latexmk texlive-latex-base` |
 
-After installing, run `slidesonnet doctor` to verify everything is set up correctly.
+PyMuPDF (PDF id extraction) and NiceGUI (the editor) install as Python
+dependencies. After installing, run `slidesonnet doctor`.
 
 ### Install slideSonnet
 
-With [uv](https://docs.astral.sh/uv/) (recommended):
-
 ```bash
-uv tool install slidesonnet[piper]
+uv tool install "slidesonnet[piper]"     # or: pipx install "slidesonnet[piper]"
 ```
 
-With [pipx](https://pipx.pypa.io/):
-
-```bash
-pipx install slidesonnet[piper]
-```
-
-The `[piper]` extra includes [Piper TTS](https://github.com/rhasspy/piper) for free local speech synthesis. Omit it if you plan to use ElevenLabs instead.
+The `[piper]` extra adds [Piper](https://github.com/rhasspy/piper) for free,
+local speech. Use `[elevenlabs]` for cloud voices (needs `ELEVENLABS_API_KEY`).
 
 ## Quick start
 
 ```bash
-# Create an example project (MARP Markdown)
-slidesonnet init md myproject
+# 1. Drop the LaTeX macro next to your Beamer source and \usepackage it
+slidesonnet sty                      # writes slidesonnet.sty
 
-# Build the video
-cd myproject
-slidesonnet build
+# 2. In your .tex: \usepackage{slidesonnet} and \ssid{...} on every frame,
+#    then compile however you like:
+latexmk -pdf deck.tex
+
+# 3. Scaffold the narration sidecar from the PDF's slide-ids
+slidesonnet init deck.pdf            # writes deck.narration
+
+# 4. Write narration (edit deck.narration, or open the editor)
+slidesonnet edit deck.pdf
+
+# 5. Render — narrated MP4 + subtitles
+slidesonnet export deck.pdf -o deck.mp4 --engine piper
 ```
 
-## Example: The Basel Problem
+## Marking slides — the `\ssid` macro
 
-A 10-minute narrated lecture on the Basel Problem, built entirely from a single `slides.md` file:
-
-[![The Basel Problem — slideSonnet example](https://img.youtube.com/vi/IkzeCoDuU5o/maxresdefault.jpg)](https://youtu.be/IkzeCoDuU5o)
-
-Source: [`examples/basel-problem/`](examples/basel-problem/)
-
-## Showcase example
-
-The `examples/showcase/` directory is a single-file MARP presentation introducing slideSonnet through a dialog between two voices. It demonstrates narration, fragment animation, voice switching, silent/skipped slides, math, code, and images — all in one `slides.md` file.
-
-[![slideSonnet Showcase](https://img.youtube.com/vi/u6yOFujj_f0/maxresdefault.jpg)](https://youtu.be/u6yOFujj_f0)
-
-Source: [`examples/showcase/`](examples/showcase/) — includes pronunciation dictionaries and a playlist with ElevenLabs and Piper voice configuration.
-
-## Writing slides
-
-### MARP Markdown
-
-Add narration with `<!-- say: -->` HTML comments:
-
-```markdown
----
-marp: true
----
-
-# Introduction
-
-<!-- say: Welcome to the lecture. Today we cover graph theory basics. -->
-
----
-
-# Euler's Theorem
-
-<!-- say(voice=alice): Let me explain this theorem carefully. -->
-
----
-
-# Diagram
-
-<!-- nonarration -->
-
----
-
-# Hidden Notes
-
-<!-- skip -->
-```
-
-| Annotation | Effect |
-|---|---|
-| `<!-- say: text -->` | Narrate with default voice |
-| `<!-- say(voice=alice): text -->` | Narrate with a named voice preset |
-| `<!-- nonarration -->` | Show slide with silence (uses global `silence_duration`) |
-| `<!-- nonarration(5) -->` | Show slide with silence for 5 seconds (per-slide override) |
-| `<!-- skip -->` | Omit slide from video entirely |
-| *(none)* | Treated as silent, emits a warning |
-
-Multi-line narration is supported. Slides with multiple `<!-- say: -->` directives are expanded into animated sub-slides with progressive fragment reveal — see [MARP documentation](docs/marp.md) for details.
-
-### Beamer LaTeX
-
-Use the `\say` command (defined as a no-op by `slidesonnet.sty` so LaTeX compiles normally). The `<N>` mirrors beamer's own overlay specs — it picks which built-up step of the frame the narration plays on:
+`slidesonnet sty` writes `slidesonnet.sty`. In your Beamer preamble add
+`\usepackage{slidesonnet}`, then give each emitted page an id:
 
 ```latex
-\usepackage{slidesonnet}
+\begin{frame}
+  \ssid<1>{euler-setup}     % id for overlay step 1
+  \ssid<2>{euler-trick}     % id for overlay step 2  (ranges work: \ssid<2-3>{...})
+  \only<1->{...}\onslide<2->{...}
+\end{frame}
 
 \begin{frame}
-  \frametitle{Euler's Theorem}
-  \say<1>{The sum of all vertex degrees equals twice the number of edges.}
-  \onslide<2->{\say<2>[voice=alice]{Now watch what happens as the graph grows.}}
+  \ssid{intro-title}        % non-overlay frame: one id for its single page
+  ...
 \end{frame}
 ```
 
-Beamer forms: `\say<N>{}`, `\say<N>[voice=alice]{}`, `\nonarration`, `\nonarration[5]` (per-slide duration override), `\slidesonnetskip`. Every `\say` must carry a step number — `<N>` (recommended) or the legacy `[N]` / `[slide=N]` bracket form; a bare `\say{}` is rejected. Each frame is split into one video segment per beamer overlay step (counted from the compiled `.nav`, so `\pause`, `\onslide<>`, `\item<>` all work); steps without a `\say` are held silently — see [Beamer documentation](docs/beamer.md) for details.
+The id is stamped as **invisible** text (PDF rendering mode 3 — like an OCR
+layer): never shown, on any background, but reliably recovered from the text
+layer. Any page you forget to name gets a positional `auto-…` default and a
+warning, so it gets a real name.
 
-## Playlist format
+## The narration sidecar
 
-A single `.yaml` file per presentation. Configuration and module list in pure YAML:
-
-```yaml
-title: Graph Theory Lecture 1
-tts:
-  backend: piper
-  piper:
-    model: en_US-lessac-medium
-  elevenlabs:
-    api_key_env: ELEVENLABS_API_KEY
-    voice_id: pNInz6obpgDQGcFmaJgB
-voices:
-  alice:
-    piper: en_US-amy-medium
-    elevenlabs: 21m00Tcm4TlvDq8ikWAM
-pronunciation:
-  shared:
-    - pronunciation/cs-terms.md
-    - pronunciation/math-terms.md
-  # piper:
-  #   - pronunciation/piper-hacks.md
-  # elevenlabs:
-  #   - pronunciation/elevenlabs-hacks.md
-video:
-  resolution: 1920x1080
-  fps: 24
-  crf: 23
-  pad_seconds: 1.5
-  pre_silence: 1.0
-  silence_duration: 3.0
-  crossfade: 0.5
-modules:
-  - 01-intro/slides.md
-  - animations/euler.mp4
-  - 02-proofs/slides.tex
-  - 03-summary/slides.md
-```
-
-- Module type is auto-detected from extension (`.md` → MARP, `.tex` → Beamer, `.mp4` / `.mkv` / `.webm` / `.mov` → video passthrough)
-- Lines starting with `//` are comments (filtered before YAML parsing)
-- Video files are used as-is
-
-## Pronunciation files
-
-Reusable `.md` files with `**word**: replacement` pairs:
-
-```markdown
-# CS Pronunciation Guide
-
-## People
-**Dijkstra**: DYKE-struh
-**Euler**: OY-ler
-
-## Terms
-**adjacency**: uh-JAY-suhn-see
-```
-
-Replacements are word-boundary aware (won't change "Eulerian") and case-insensitive. Reference them in the playlist under `pronunciation:`.
-
-### Per-backend pronunciation
-
-Pronunciation workarounds that fix one TTS engine often break another. You can specify separate files per backend:
-
-```yaml
-pronunciation:
-  shared:
-    - pronunciation/names.md
-  piper:
-    - pronunciation/piper-hacks.md
-  elevenlabs:
-    - pronunciation/elevenlabs-hacks.md
-```
-
-When building with `--tts piper`, the effective dictionary is `shared + piper`. With `--tts elevenlabs`, it's `shared + elevenlabs`. Backend-specific entries override shared entries for the same word.
-
-The flat list format still works and is treated as `shared`:
-
-```yaml
-pronunciation:
-  - pronunciation/names.md
-```
-
-## Voice presets
-
-Define named voices in the playlist. Each preset can map to different voice IDs per TTS backend, so `--tts piper` and `--tts elevenlabs` both resolve correctly:
-
-```yaml
-voices:
-  alice:
-    piper: en_US-amy-medium
-    elevenlabs: 21m00Tcm4TlvDq8ikWAM
-  bob:
-    piper: en_US-joe-medium
-    elevenlabs: pNInz6obpgDQGcFmaJgB
-```
-
-A simple string value is also supported — it is used as-is regardless of backend:
-
-```yaml
-voices:
-  alice: en_US-amy-medium
-```
-
-Then use presets per-slide: `<!-- say(voice=alice): ... -->`. If a preset has no mapping for the active backend, the slide falls back to the default voice with a warning.
-
-## API keys
-
-For ElevenLabs, store keys in a `.env` file at the project root (auto-loaded at build time):
+A flat, line-oriented file (`deck.narration`):
 
 ```
-ELEVENLABS_API_KEY=sk-xxx-your-key
+# comment
+@intro-title
+Welcome to the course on the Basel problem. [pause 1.5]
+Today we'll see how Euler summed the reciprocals of the squares.
+
+@intro-overview
+[pause 3]            # silent slide — held 3s while they read
+
+@euler-setup
+:voice narrator
+Here is the setup. [pause 0.8]
+
+@euler-trick
+:pace slow
+Watch the denominators carefully. [pause 1] This is the trick.
 ```
 
-The playlist references env var names, never values: `api_key_env: ELEVENLABS_API_KEY`.
+- `@<slide-id>` starts a block. `:voice` / `:pace` are optional directives.
+- `[pause N]` is the single timing primitive: a mid-sentence pause, an
+  end-of-slide hold, or — as the only content — a silent slide.
 
-## CLI reference
+## The editor
 
-```
-slidesonnet build                          # build video + SRT subtitles
-slidesonnet build --tts piper              # override TTS backend
-slidesonnet build --no-srt                 # build without generating subtitles
-slidesonnet build --dry-run                # show what would be built (no TTS/FFmpeg)
-slidesonnet preview                        # quick build with local Piper TTS
-slidesonnet subtitles                      # regenerate SRT from cached audio
-slidesonnet preview-slide slides.md 3       # play one slide's audio
-slidesonnet preview-slide slides.md 3 -p slidesonnet.yaml  # with playlist config
-slidesonnet init md myproject               # MARP Markdown project
-slidesonnet init tex myproject              # Beamer LaTeX project
-slidesonnet list                           # list slides with cache status per slide
-slidesonnet utterances                     # export narration text for proofreading
-slidesonnet clean                          # clean cache (keeps API audio by default)
-slidesonnet doctor                         # check installed dependencies
-```
+`slidesonnet edit deck.pdf` opens a local [NiceGUI](https://nicegui.io/) app:
+page through the deck, edit narration beside each slide, set voice/pace, generate
+per-slide TTS, and **preview the whole deck**. The preview plays one pre-rendered
+track with the pauses baked in and flips the slide image on cue — so the preview
+is sample-accurate to the exported video. A diagnostics panel flags duplicate,
+missing, orphan, or `auto-…` ids.
 
-## Incremental builds
-
-TTS audio is cached by content hash of the narration text, not by slide number. This means:
-
-- **No changes** → entire build is skipped
-- **Edit one slide** → only that slide's audio is re-synthesized
-- **Insert a slide** → existing slides hit the cache, only the new slide triggers TTS
-- **Change voice preset** → affected slides rebuild (voice is part of the hash)
-
-Use `--dry-run` (or `-n`) to see what a build would do without making any API calls:
+## CLI
 
 ```
-$ slidesonnet build --dry-run
-8 narrated slides: 5 cached, 3 need TTS (~1,200 characters via elevenlabs)
+slidesonnet sty    [-o PATH]                       write the LaTeX macro
+slidesonnet init   deck.pdf [--merge|--force]      scaffold a blank sidecar
+slidesonnet check  deck.pdf                         reconcile ids (exit≠0 on errors)
+slidesonnet tts    deck.pdf [--engine ...] [--id ID ...]   synthesize into the cache
+slidesonnet export deck.pdf -o OUT.mp4
+        [--engine piper|elevenlabs]   [--silent]
+        [--timing tts|estimate|fixed:N] [--wpm N]
+        [--subtitles srt|vtt|both|none] [--sub-granularity segment|slide]
+slidesonnet subs   deck.pdf -o OUT.srt [--format srt|vtt] [--timing ...]
+slidesonnet edit   deck.pdf                         launch the editor
+slidesonnet clean  deck.pdf [--keep nothing|api|current|exact]
+slidesonnet doctor
 ```
 
-This is especially useful before ElevenLabs builds to estimate API usage and cost.
+Every operation is also a typed Python function in `slidesonnet.api`
+(`init_sidecar`, `synthesize_deck`, `export`, `write_subs`, …) so an LLM/CI loop
+can drive the pipeline without the GUI.
 
-Build artifacts live in `cache/` next to the playlist file. Add it to `.gitignore`.
+### Timing & silent renders
 
-## Subtitles
+`--timing tts` (default) uses real synthesized audio. `--timing estimate`
+approximates from word count at `--wpm` for a fast rough cut with no TTS;
+`--timing fixed:N` holds every page N seconds. `--silent` renders with no
+narration (timing falls back to `estimate`) — pair it with subtitles for a
+captioned silent cut.
 
-Every build automatically generates an SRT subtitle file alongside the video (e.g., `my-course.srt` next to `my-course.mp4`). The subtitles use the original narration text (before pronunciation substitutions) and are timed to match the audio.
+## Examples
 
-Long narrations are split into subtitle-sized chunks at sentence boundaries, then clause boundaries, then word boundaries — each chunk timed proportionally by character count.
+- [`examples/basel-problem/`](examples/basel-problem/) — a 22-page Euler proof
+  with overlay steps and a second voice for the Bernoulli quote.
+- [`examples/showcase/`](examples/showcase/) — a self-narrated tour that teaches
+  the workflow as a two-voice dialog (written in this very format).
 
-Use the SRT file as a starting point for translation or editing with any subtitle tool. To skip generation, pass `--no-srt`. To regenerate from cache without rebuilding:
-
-```
-slidesonnet subtitles
-```
-
-## Project layout
-
-```
-my-course/
-├── slidesonnet.yaml           # playlist + config
-├── pronunciation/
-│   └── cs-terms.md
-├── 01-intro/slides.md        # MARP module
-├── 02-proofs/slides.tex      # Beamer module
-├── animations/euler.mp4      # video module
-├── .env                      # API keys (gitignored)
-├── my-course.mp4             # final output video
-├── my-course.srt             # auto-generated subtitles
-├── cache/                    # build artifacts (gitignored)
-│   ├── audio/                # TTS cache (content-addressed)
-│   ├── 01-intro/
-│   │   ├── slides/           # extracted PNGs + manifest
-│   │   ├── utterances/       # text sent to TTS (for debugging)
-│   │   └── segments/         # per-slide video segments
-│   └── .doit.db
-└── .gitignore
-```
+Build them from source with `make basel` / `make showcase` (Piper). Videos are
+hosted as GitHub Release assets, not committed.
 
 ## Development
 
 ```bash
-git clone https://github.com/avivz/slideSonnet.git
-cd slideSonnet
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[piper,dev]"
-
-make test-unit     # unit tests only (fast, no external tools)
-make test          # all tests (requires ffmpeg, marp, latexmk, piper)
-make lint          # ruff check + format
-make typecheck     # mypy --strict
+make install      # editable install with Piper + dev tools
+make test-unit    # fast unit tests (no external tools)
+make test         # full suite (needs ffmpeg, pdftoppm, piper)
+make lint         # ruff
+make typecheck    # mypy --strict
 ```
+
+All source is fully typed (`mypy --strict`); ElevenLabs is never exercised in
+tests (it costs money) — Piper and mocks only.
 
 ## License
 

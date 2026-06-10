@@ -5,6 +5,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.0.0a0] — 2026-06-09
+
+A ground-up rewrite. slideSonnet is now a **PDF + narration sidecar editor**
+rather than a source→video compile pipeline.
+
+### Added
+- **PDF-first workflow.** Work from a finished PDF; narration lives in a
+  human-readable, git-diffable `<deck>.narration` sidecar keyed to slides by
+  stable ids.
+- **`\ssid` LaTeX macro** (`slidesonnet.sty`, written by `slidesonnet sty`) that
+  stamps an invisible, per-page slide-id (overlay-step aware: `\ssid<2>{...}`)
+  into the PDF text layer; unnamed pages get an `auto-…` default + warning.
+- **Sidecar grammar:** `@slide-id` blocks, `:voice`/`:pace` directives, and
+  `[pause N]` as the single timing primitive (mid-pause / end-hold / silent
+  slide). Round-trip stable.
+- **NiceGUI editor** (`slidesonnet edit`): page nav, narration editing,
+  per-slide TTS, diagnostics panel, and a whole-deck preview that bakes in
+  silences and flips the slide on cue — sample-accurate to the export.
+- **id-only reconciliation** (`slidesonnet check`): duplicate / auto / missing /
+  orphan / order diagnostics; exits non-zero on errors.
+- **CLI:** `sty`, `init` (`--merge`/`--force`), `check`, `tts`, `export`
+  (`--silent`, `--timing tts|estimate|fixed:N`, `--subtitles`,
+  `--sub-granularity`), `subs`, `edit`, `clean`, `doctor`.
+- **Timing model:** real-audio / WPM-estimate / fixed-seconds; silent renders.
+- **Subtitles:** SRT **and** WebVTT, per-segment or per-slide granularity.
+- **Typed Python API** (`slidesonnet.api`) mirroring every CLI operation.
+- **TOML config** (`slidesonnet.toml`, optional) for engine, voices, video, and
+  pronunciation.
+- Demos rebuilt in the new format: `basel-problem` and a self-narrated
+  `showcase` (both Beamer + sidecar, rendered with Piper).
+
+### Changed
+- Audio cache moved to `<deck-dir>/.slidesonnet/`; still content-addressed, so
+  editing one block re-synthesizes only that block.
+- `doctor` checks the new toolchain (PyMuPDF, NiceGUI, pdftoppm); dependencies
+  add **PyMuPDF** + **NiceGUI**, drop **doit**, **playwright**, **PyYAML**.
+
+### Removed
+- **Breaking:** the MARP/Beamer source parsers, the doit build graph, playlists,
+  inline `<!-- say: -->` / `\say{}` narration, and the multi-module concat
+  pipeline. The tool no longer compiles slides — you bring the PDF.
+
 ## [0.2.0] — 2026-06-09
 
 ### Added

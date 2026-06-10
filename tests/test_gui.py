@@ -51,7 +51,9 @@ async def test_edit_persists(user: User, tmp_path: Path, monkeypatch: pytest.Mon
     assert "[pause 1]" in sidecar
 
 
-async def test_diagnostics_visible(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_diagnostics_visible(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")

@@ -176,17 +176,28 @@ def compose_video(
         seg = seg_dir / f"seg-{i + 1:04d}.mp4"
         if page_audios is None:
             compose_silent_segment(
-                page_images[i], seg, duration=page.duration,
-                resolution=v.resolution, fps=v.fps, crf=v.crf, preset=v.preset,
+                page_images[i],
+                seg,
+                duration=page.duration,
+                resolution=v.resolution,
+                fps=v.fps,
+                crf=v.crf,
+                preset=v.preset,
             )
         else:
             from slidesonnet.video.composer import get_duration
 
             compose_segment(
-                page_images[i], page_audios[i], seg,
+                page_images[i],
+                page_audios[i],
+                seg,
                 duration=get_duration(page_audios[i]),
-                pre_silence=0.0, pad_seconds=0.0,
-                resolution=v.resolution, fps=v.fps, crf=v.crf, preset=v.preset,
+                pre_silence=0.0,
+                pad_seconds=0.0,
+                resolution=v.resolution,
+                fps=v.fps,
+                crf=v.crf,
+                preset=v.preset,
             )
         segments.append(seg)
     output.parent.mkdir(parents=True, exist_ok=True)

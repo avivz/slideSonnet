@@ -99,8 +99,10 @@ class EditorState:
     # ---- actions -------------------------------------------------------
     def synth_current(self) -> int:
         return api.synthesize_deck(
-            self.pdf_path, sidecar_path=self.sidecar_path,
-            engine=self.config.tts.backend, only_ids={self.current_id},
+            self.pdf_path,
+            sidecar_path=self.sidecar_path,
+            engine=self.config.tts.backend,
+            only_ids={self.current_id},
         )
 
     def synth_all(self) -> int:
@@ -110,8 +112,10 @@ class EditorState:
 
     def preview_current(self) -> api.Preview:
         return api.build_preview(
-            self.pdf_path, sidecar_path=self.sidecar_path,
-            engine=self.config.tts.backend, only_id=self.current_id,
+            self.pdf_path,
+            sidecar_path=self.sidecar_path,
+            engine=self.config.tts.backend,
+            only_id=self.current_id,
         )
 
     def preview_deck(self) -> api.Preview:
@@ -121,8 +125,11 @@ class EditorState:
 
     def export(self, output: Path, *, silent: bool = False) -> api.ExportResult:
         return api.export(
-            self.pdf_path, output, sidecar_path=self.sidecar_path,
-            engine=None if silent else self.config.tts.backend, silent=silent,
+            self.pdf_path,
+            output,
+            sidecar_path=self.sidecar_path,
+            engine=None if silent else self.config.tts.backend,
+            silent=silent,
         )
 
     @property
