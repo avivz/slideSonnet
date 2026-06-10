@@ -1,0 +1,26 @@
+# slideSonnet config for the showcase demo.
+# Two Piper voices for the dialog; ElevenLabs ids kept for a later HQ re-render.
+
+[tts]
+backend = "piper"
+
+[tts.piper]
+model = "en_US-amy-medium"
+
+[tts.elevenlabs]
+voice_id = "qBDvhofpxp92JgXJxDjB"
+model_id = "eleven_v3"
+
+[video]
+resolution = "1920x1080"
+fps = 24
+crf = 23
+pre_silence = 0.3
+tail_seconds = 0.6
+
+# Alex's questions use a distinct voice (:voice alex in the sidecar).
+[voices.alex]
+piper = "en_US-joe-medium"
+elevenlabs = "yr43K8H5LoTp6S1QFSGg"
+
+pronunciation = ["pronunciation/general.md", "pronunciation/names.md"]

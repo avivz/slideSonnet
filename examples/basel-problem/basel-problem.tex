@@ -1,0 +1,143 @@
+% The Basel Problem — a slideSonnet demo deck.
+%
+% Compile:  slidesonnet sty           (drops slidesonnet.sty next to this file)
+%           latexmk -pdf basel-problem.tex
+% Narrate:  edit basel-problem.narration  (or: slidesonnet edit basel-problem.pdf)
+% Render:   slidesonnet export basel-problem.pdf -o basel-problem.mp4 --engine piper
+%
+% Every emitted page carries a stable \ssid slide-id; the narration lives in
+% basel-problem.narration, keyed by those ids.
+\documentclass[aspectratio=169]{beamer}
+\usepackage{slidesonnet}
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\definecolor{accent}{HTML}{E94560}
+
+\title{The Basel Problem}
+\subtitle{An impossible sum, a young genius, and a surprise visit from $\pi$}
+\author{A slideSonnet demo}
+\date{}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \ssid{intro-title}
+  \titlepage
+\end{frame}
+
+\begin{frame}{A simple question}
+  \ssid{simple-question}
+  What happens when you add the reciprocals of the perfect squares?
+  \[ \frac{1}{1} + \frac{1}{4} + \frac{1}{9} + \frac{1}{16} + \frac{1}{25} + \cdots \]
+  In modern notation:
+  \[ \sum_{n=1}^{\infty} \frac{1}{n^2} = \ ? \]
+\end{frame}
+
+\begin{frame}{The challenge (1650)}
+  \ssid<1>{challenge-mengoli}
+  \ssid<2>{challenge-bernoulli-intro}
+  \ssid<3>{challenge-bernoulli-quote}
+  \textbf{Pietro Mengoli} posed this problem in Bologna in 1650.
+  The sum converges to something near \textbf{1.6449}\ldots\ but \emph{what} is it?
+  \onslide<2->{\medskip Even \textbf{Jakob Bernoulli} admitted defeat in 1689:}
+  \onslide<3->{%
+    \begin{quote}\color{accent}\itshape
+      ``If anyone finds and communicates to us that which thus far has eluded
+      our efforts, great will be our gratitude.''
+    \end{quote}}
+\end{frame}
+
+\begin{frame}{Enter Leonhard Euler}
+  \ssid<1>{enter-euler}
+  \ssid<2>{euler-answer}
+  The problem stayed open for \textbf{85 years}. Then, in 1734 in Saint
+  Petersburg, a young mathematician from Basel named \textbf{Leonhard Euler}
+  found the answer.
+  \onslide<2->{%
+    \[ \sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6} \]
+    $\pi$? In a sum that has nothing to do with circles?}
+\end{frame}
+
+\begin{frame}{Step 1: start with $\sin x$}
+  \ssid<1>{step1-series}
+  \ssid<2>{step1-divide}
+  \ssid<3>{step1-coeff}
+  The Taylor series for sine:
+  \[ \sin x = x - \frac{x^3}{3!} + \frac{x^5}{5!} - \frac{x^7}{7!} + \cdots \]
+  \onslide<2->{Divide both sides by $x$:
+    \[ \frac{\sin x}{x} = 1 - \frac{x^2}{6} + \frac{x^4}{120} - \cdots \]}
+  \onslide<3->{The coefficient of $x^2$ is $\color{accent}-\tfrac{1}{6}$ --- hold onto it.}
+\end{frame}
+
+\begin{frame}{Step 2: factor by the roots}
+  \ssid<1>{step2-zeros}
+  \ssid<2>{step2-factor}
+  $\dfrac{\sin x}{x}$ has zeros at $x = \pm\pi, \pm 2\pi, \pm 3\pi, \ldots$
+  \onslide<2->{Euler treated it like a polynomial and factored by its roots:
+    \[ \frac{\sin x}{x} = \left(1 - \frac{x^2}{\pi^2}\right)
+       \left(1 - \frac{x^2}{4\pi^2}\right)
+       \left(1 - \frac{x^2}{9\pi^2}\right)\cdots \]
+    \footnotesize (Justified much later by the Weierstrass factorization theorem, 1876.)}
+\end{frame}
+
+\begin{frame}{Step 3a: reading the $x^2$ coefficient}
+  \ssid{step3a-finite}
+  With $a_k = \frac{1}{k^2\pi^2}$, three factors give
+  \[ (1 - a_1 x^2)(1 - a_2 x^2)(1 - a_3 x^2)
+     = 1 - (a_1 + a_2 + a_3)\,x^2 + \cdots \]
+  Each $x^2$ term picks $-a_k x^2$ from \emph{one} factor and $1$ from the rest.
+\end{frame}
+
+\begin{frame}{Step 3b: the infinite product}
+  \ssid{step3b-infinite}
+  \[ \prod_{n=1}^{\infty}\left(1 - \frac{x^2}{n^2\pi^2}\right)
+     = 1 - \left(\frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2}\right)x^2 + \cdots \]
+  So the $x^2$ coefficient is $-\dfrac{1}{\pi^2}\displaystyle\sum_{n=1}^{\infty}\frac{1}{n^2}$.
+\end{frame}
+
+\begin{frame}{Step 4: the punchline}
+  \ssid<1>{punchline-taylor}
+  \ssid<2>{punchline-product}
+  \ssid<3>{punchline-equate}
+  From the Taylor series: $\dfrac{\sin x}{x} = 1 \color{accent}- \tfrac{1}{6}\color{black}\,x^2 + \cdots$
+  \onslide<2->{\medskip From the product:
+    $\dfrac{\sin x}{x} = 1 \color{accent}- \tfrac{1}{\pi^2}\sum \tfrac{1}{n^2}\color{black}\,x^2 + \cdots$}
+  \onslide<3->{\medskip Coefficients must agree:
+    \[ \frac{1}{\pi^2}\sum_{n=1}^{\infty}\frac{1}{n^2} = \frac{1}{6} \]}
+\end{frame}
+
+\begin{frame}{The result}
+  \ssid{final-result}
+  Multiply both sides by $\pi^2$:
+  \[ 1 + \frac{1}{4} + \frac{1}{9} + \frac{1}{16} + \cdots
+     = \frac{\pi^2}{6} \approx 1.6449\ldots \]
+  The circle constant was hiding in the sum all along.
+\end{frame}
+
+\begin{frame}{Why it matters}
+  \ssid<1>{why-rigor}
+  \ssid<2>{why-zeta}
+  Euler's proof was not rigorous by modern standards --- but the answer was
+  never in doubt.
+  \onslide<2->{\medskip The sum is $\zeta(2)$, a value of the Riemann zeta function
+    $\zeta(s) = \sum_{n=1}^{\infty} n^{-s}$. Even values are rational multiples of
+    powers of $\pi$; the odd values remain mysterious.}
+\end{frame}
+
+\begin{frame}{What we learned}
+  \ssid{what-learned}
+  \[ 1 + \frac{1}{4} + \frac{1}{9} + \frac{1}{16} + \cdots = \frac{\pi^2}{6} \]
+  \begin{itemize}
+    \item A simple question can hide a profound answer.
+    \item The boldness to treat $\sin x / x$ as a polynomial was the key.
+    \item $\pi$ connects geometry and number theory in ways we still explore.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[plain]
+  \ssid{sources}
+  \centering \large Thanks for watching.
+\end{frame}
+
+\end{document}

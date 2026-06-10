@@ -1,0 +1,139 @@
+% slideSonnet showcase — teaches the tool, in the tool's own format.
+%
+% Compile:  slidesonnet sty && latexmk -pdf showcase.tex
+% Render:   slidesonnet export showcase.pdf -o showcase.mp4 --engine piper
+%
+% A two-voice dialog: ALEX asks (overlay step 1), the NARRATOR answers
+% (overlay step 2). Each step is its own \ssid page with its own narration —
+% and, in the sidecar, its own :voice.
+\documentclass[aspectratio=169]{beamer}
+\usepackage{slidesonnet}
+\usepackage{listings}
+\usetheme{Madrid}
+\usecolortheme{whale}
+\setbeamertemplate{navigation symbols}{}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,
+        backgroundcolor=\color{black!4},keepspaces=true}
+
+\title{slideSonnet}
+\subtitle{Narration for your slides --- as editable text}
+\author{A self-narrated tour}
+\date{}
+
+\begin{document}
+
+\begin{frame}[plain]
+  \ssid{title}
+  \titlepage
+\end{frame}
+
+\begin{frame}{What is this?}
+  \ssid<1>{intro-q}
+  \ssid<2>{intro-a}
+  \onslide<1->{\textbf{Alex:} So what does slideSonnet actually do?}
+  \onslide<2->{\medskip\textbf{Narrator:} You bring a finished PDF of your slides.
+    slideSonnet turns it into a narrated video --- and the narration you're
+    hearing right now lives in a plain text file next to that PDF.}
+\end{frame}
+
+\begin{frame}{Why a sidecar file?}
+  \ssid<1>{why-q}
+  \ssid<2>{why-a}
+  \onslide<1->{\textbf{Alex:} Why not just put the narration inside the slides?}
+  \onslide<2->{\medskip\textbf{Narrator:} Because the PDF is your frozen artifact.
+    Keeping narration in a separate, git-diffable file means you can rewrite a
+    line and re-render in seconds --- no recompiling, no re-recording.}
+\end{frame}
+
+\begin{frame}[fragile]{Step 1 --- mark your slides}
+  \ssid{markers}
+  Add the macro to your Beamer source and give every slide a stable id:
+  \begin{lstlisting}
+\usepackage{slidesonnet}
+   ...
+   \ssid<1>{euler-setup}    % overlay step 1
+   \ssid<2>{euler-trick}    % overlay step 2
+   ...
+  \end{lstlisting}
+  The id is stamped invisibly onto each page --- narration binds to it, not to a
+  page number.
+\end{frame}
+
+\begin{frame}[fragile]{Step 2 --- scaffold the sidecar}
+  \ssid{init}
+  One command reads the ids straight out of the PDF:
+  \begin{lstlisting}
+slidesonnet init deck.pdf
+  \end{lstlisting}
+  You get a blank \texttt{deck.narration} with one block per slide, ready to
+  fill in --- by hand, or by an LLM.
+\end{frame}
+
+\begin{frame}[fragile]{The sidecar format}
+  \ssid{format}
+  \begin{lstlisting}
+@euler-setup
+:voice narrator
+We want the sum of one over n squared. [pause 0.8]
+
+@euler-trick
+:pace slow
+Watch the denominators. [pause 1] This is the trick.
+  \end{lstlisting}
+  \texttt{@id} headers, optional \texttt{:voice}/\texttt{:pace}, and
+  \texttt{[pause N]} --- the one timing primitive.
+\end{frame}
+
+\begin{frame}{Step 3 --- edit and preview}
+  \ssid<1>{edit-q}
+  \ssid<2>{edit-a}
+  \onslide<1->{\textbf{Alex:} Do I have to write that text file by hand?}
+  \onslide<2->{\medskip\textbf{Narrator:} You can --- or run
+    \texttt{slidesonnet edit deck.pdf} for a local editor. Page through the
+    deck, type narration beside each slide, and preview the whole thing. The
+    preview bakes in your pauses, so it plays exactly like the final video.}
+\end{frame}
+
+\begin{frame}[fragile]{Step 4 --- render}
+  \ssid{export}
+  \begin{lstlisting}
+slidesonnet export deck.pdf -o deck.mp4 --engine piper
+  \end{lstlisting}
+  \begin{itemize}
+    \item \texttt{--engine piper} --- free, local. \texttt{elevenlabs} --- cloud, high quality.
+    \item \texttt{--silent} or \texttt{--timing estimate} --- a fast rough cut, no TTS.
+    \item Subtitles (\texttt{.srt}/\texttt{.vtt}) are written alongside the video.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Only what changed}
+  \ssid<1>{cache-q}
+  \ssid<2>{cache-a}
+  \onslide<1->{\textbf{Alex:} Doesn't re-rendering get slow?}
+  \onslide<2->{\medskip\textbf{Narrator:} Audio is cached by content. Edit one
+    block and only that line is re-synthesized; everything else is reused. And
+    swapping Piper for ElevenLabs never throws away the audio you already paid
+    for.}
+\end{frame}
+
+\begin{frame}[fragile]{The whole workflow}
+  \ssid{recap}
+  \begin{lstlisting}
+slidesonnet sty                 # drop the LaTeX macro
+slidesonnet init   deck.pdf     # scaffold narration
+slidesonnet check  deck.pdf     # reconcile ids
+slidesonnet edit   deck.pdf     # write & preview
+slidesonnet export deck.pdf -o deck.mp4
+  \end{lstlisting}
+  Every step is scriptable --- an LLM or a Makefile can drive the whole pipeline.
+\end{frame}
+
+\begin{frame}[plain]
+  \ssid{closing}
+  \centering
+  {\Large \textbf{slideSonnet}}\\[0.4em]
+  Mark your slides. Write narration. Render.\\[1em]
+  \texttt{pip install slidesonnet}
+\end{frame}
+
+\end{document}
