@@ -22,11 +22,10 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0",
-    "pyyaml>=6.0",
-    "doit>=0.36",
     "python-dotenv>=1.0",
-    "playwright>=1.40",
     "rich>=13.0",
+    "pymupdf>=1.24",
+    "nicegui>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -35,9 +34,9 @@ elevenlabs = ["elevenlabs>=1.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
+    "pytest-asyncio",
     "ruff",
     "mypy",
-    "types-PyYAML",
 ]
 
 [project.urls]
@@ -51,7 +50,8 @@ slidesonnet = "slidesonnet.cli:main"
 version = {attr = "slidesonnet.__version__"}
 
 [tool.setuptools.package-data]
-"slidesonnet.templates" = ["*.md", "*.txt", "*.tex", "*.yaml"]
+"slidesonnet" = ["*.sty"]
+"slidesonnet.templates" = ["*.tex", "*.narration", "*.sty", "*.toml"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -64,15 +64,16 @@ strict = true
 
 [[tool.mypy.overrides]]
 module = [
-    "doit.*",
     "elevenlabs.*",
     "dotenv.*",
     "piper.*",
-    "playwright.*",
+    "fitz.*",
+    "nicegui.*",
 ]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 markers = [
-    "integration: requires external tools (ffmpeg, marp, etc.)",
+    "integration: requires external tools (ffmpeg, pdftoppm, latexmk, piper)",
 ]

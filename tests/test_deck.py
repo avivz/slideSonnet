@@ -1,0 +1,70 @@
+"""Tests for deck loading and sidecar save (PDF + narration join)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from slidesonnet.deck import (
+    blank_blocks_for,
+    default_sidecar_path,
+    load_deck,
+    save_deck,
+)
+from slidesonnet.narration.format import serialize_sidecar
+from slidesonnet.narration.model import PageNarration, Segment
+
+FIXTURES = Path(__file__).parent / "fixtures"
+MARKED = FIXTURES / "marked.pdf"
+
+
+def test_default_sidecar_path() -> None:
+    assert default_sidecar_path(Path("/x/deck.pdf")).name == "deck.narration"
+
+
+def test_load_deck_without_sidecar_warns_all_missing() -> None:
+    deck, diags = load_deck(MARKED)
+    assert deck.pages[0] == "intro-title"
+    assert deck.narration == {}
+    assert any(d.code == "missing-narration" for d in diags)
+
+
+def test_load_deck_with_sidecar(tmp_path: Path) -> None:
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    sidecar = tmp_path / "marked.narration"
+    blocks = [PageNarration("intro-title", [Segment.speech("Hello.")])]
+    sidecar.write_text(serialize_sidecar(blocks), encoding="utf-8")
+
+    deck, diags = load_deck(pdf)
+    assert deck.narration["intro-title"].speech_text == "Hello."
+    assert not any(d.code == "orphan-narration" for d in diags)
+
+
+def test_blank_blocks_for_dedups_and_orders() -> None:
+    blocks = blank_blocks_for(["a", "b", "a", "", "c"])
+    assert [b.slide_id for b in blocks] == ["a", "b", "c"]
+    assert all(b.segments == [] for b in blocks)
+
+
+def test_save_deck_round_trips(tmp_path: Path) -> None:
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    deck, _ = load_deck(pdf)
+    deck.narration["intro-title"] = PageNarration("intro-title", [Segment.speech("Hi there.")])
+    save_deck(deck)
+
+    deck2, _ = load_deck(pdf)
+    assert deck2.narration["intro-title"].speech_text == "Hi there."
+
+
+def test_save_deck_orders_by_pdf(tmp_path: Path) -> None:
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    deck, _ = load_deck(pdf)
+    for pid in deck.pages:
+        if pid:
+            deck.narration[pid] = PageNarration(pid, [Segment.speech(pid)])
+    save_deck(deck)
+    text = deck.sidecar_path.read_text(encoding="utf-8")
+    # intro-title block precedes euler-setup in the file
+    assert text.index("@intro-title") < text.index("@euler-setup")

@@ -1,0 +1,27 @@
+\documentclass{beamer}
+\usepackage{slidesonnet}
+\begin{document}
+
+\begin{frame}
+  \ssid{intro-title}
+  \frametitle{Intro}
+  Hello, single page.
+\end{frame}
+
+\begin{frame}
+  \ssid<1>{euler-setup}
+  \ssid<2>{euler-trick}
+  \ssid<3>{euler-result}
+  \frametitle{Euler}
+  \only<1->{Setup.}\par
+  \only<2->{Trick.}\par
+  \only<3->{Result.}
+\end{frame}
+
+\begin{frame}
+  % deliberately unnamed -> should get auto-p<page>-s<sub>
+  \frametitle{Unnamed}
+  \only<1->{A}\par\only<2->{B}
+\end{frame}
+
+\end{document}

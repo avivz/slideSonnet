@@ -1,46 +1,33 @@
 """Selective cache cleanup with graduated preservation levels.
 
-Four --keep levels, each progressively more aggressive:
-  nothing — nuke entire cache directory
-  api     — keep all API-generated audio, remove build artifacts + piper audio
-  current — keep audio for current slide text (any engine), remove orphans
-  exact   — keep only audio matching current text + current TTS config
+  nothing — remove the entire .slidesonnet cache
+  api     — keep cloud (ElevenLabs) audio, drop local Piper audio + renders
+  current — keep audio for the current sidecar text (any engine), drop orphans + renders
+  exact   — keep only audio matching the current text + active TTS config
 """
 
 from __future__ import annotations
 
 import logging
 import shutil
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from slidesonnet.actions import get_parser_and_extractor
+from slidesonnet.cache import audio_dir, cache_root, render_dir
 from slidesonnet.config import load_config
+from slidesonnet.deck import load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
-from slidesonnet.models import (
-    API_BACKENDS,
-    ModuleType,
-    PlaylistEntry,
-    ProjectConfig,
-    SlideNarration,
-    resolve_voice,
-)
-from slidesonnet.playlist import parse_playlist
-from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_dict
+from slidesonnet.models import API_BACKENDS, resolve_voice
+from slidesonnet.tts import create_tts
 
 logger = logging.getLogger(__name__)
 
 KeepLevel = Literal["nothing", "api", "current", "exact"]
 
-_API_BACKENDS = API_BACKENDS
-
 
 @dataclass
 class CleanResult:
-    """Summary of what was removed/kept during cleanup."""
-
     removed_files: int = 0
     removed_bytes: int = 0
     kept_files: int = 0
@@ -51,7 +38,6 @@ class CleanResult:
 
 
 def _count_dir(path: Path) -> tuple[int, int]:
-    """Count files and total bytes in a directory tree."""
     count = 0
     total = 0
     if not path.exists():
@@ -63,217 +49,104 @@ def _count_dir(path: Path) -> tuple[int, int]:
     return count, total
 
 
-def clean(playlist_path: Path, keep: KeepLevel = "api") -> CleanResult:
-    """Clean build artifacts with the given preservation level."""
-    build_dir = playlist_path.resolve().parent / "cache"
-    if not build_dir.exists():
+def clean(pdf_path: Path, keep: KeepLevel = "api") -> CleanResult:
+    """Clean the deck's cache with the given preservation level."""
+    root = cache_root(pdf_path)
+    if not root.exists():
         return CleanResult()
 
-    # Count files before
-    files_before, bytes_before = _count_dir(build_dir)
+    files_before, bytes_before = _count_dir(root)
 
     if keep == "nothing":
-        _clean_all(build_dir)
-    elif keep == "api":
-        _clean_keep_api(build_dir)
-    elif keep == "current":
-        _clean_keep_current(build_dir, playlist_path)
-    elif keep == "exact":
-        _clean_keep_exact(build_dir, playlist_path)
+        shutil.rmtree(root)
+    else:
+        _remove_renders(pdf_path)
+        if keep == "api":
+            _keep_api(pdf_path)
+        elif keep == "current":
+            _keep_hashes(pdf_path, _current_text_hashes(pdf_path))
+        elif keep == "exact":
+            _keep_filenames(pdf_path, _current_filenames(pdf_path))
 
-    # Count files after
-    files_after, _ = _count_dir(build_dir)
-    removed_files = files_before - files_after
-    _, bytes_after = _count_dir(build_dir)
-
+    files_after, bytes_after = _count_dir(root)
     return CleanResult(
-        removed_files=removed_files,
+        removed_files=files_before - files_after,
         removed_bytes=bytes_before - bytes_after,
         kept_files=files_after,
     )
 
 
-def _clean_all(build_dir: Path) -> None:
-    """Remove the entire cache directory."""
-    shutil.rmtree(build_dir)
+def _remove_renders(pdf_path: Path) -> None:
+    rd = render_dir(pdf_path)
+    if rd.exists():
+        shutil.rmtree(rd)
 
 
-def _clean_keep_api(build_dir: Path) -> None:
-    """Remove build artifacts + piper audio + concat + old-format. Keep API audio."""
-    _remove_build_artifacts(build_dir)
-
-    audio_dir = build_dir / "audio"
-    if not audio_dir.exists():
+def _keep_api(pdf_path: Path) -> None:
+    ad = audio_dir(pdf_path)
+    if not ad.exists():
         return
-
-    for f in audio_dir.iterdir():
+    for f in ad.iterdir():
         if not f.is_file():
             continue
         parsed = parse_audio_filename(f.name)
-        if parsed is not None:
-            _, backend, _ = parsed
-            if backend in _API_BACKENDS:
-                continue  # keep API audio
-        # Remove: piper audio, concat files, old-format files
+        if parsed and parsed[1] in API_BACKENDS:
+            continue
         f.unlink()
 
-    _remove_empty_dir(audio_dir)
 
-
-def _clean_keep_current(build_dir: Path, playlist_path: Path) -> None:
-    """Remove build artifacts + orphaned audio. Keep current slide text audio (any engine)."""
-    _remove_build_artifacts(build_dir)
-
-    audio_dir = build_dir / "audio"
-    if not audio_dir.exists():
+def _keep_hashes(pdf_path: Path, hashes: set[str]) -> None:
+    ad = audio_dir(pdf_path)
+    if not ad.exists():
         return
-
-    current_hashes = _collect_current_text_hashes(playlist_path)
-
-    for f in audio_dir.iterdir():
+    for f in ad.iterdir():
         if not f.is_file():
             continue
         parsed = parse_audio_filename(f.name)
-        if parsed is not None:
-            th, _, _ = parsed
-            if th in current_hashes:
-                continue  # keep: matches a current utterance
-        # Remove: orphaned audio, concat files, old-format files
+        if parsed and parsed[0] in hashes:
+            continue
         f.unlink()
 
-    _remove_empty_dir(audio_dir)
 
-
-def _clean_keep_exact(build_dir: Path, playlist_path: Path) -> None:
-    """Remove build artifacts + orphaned + stale-config audio. Keep exact matches only."""
-    _remove_build_artifacts(build_dir)
-
-    audio_dir = build_dir / "audio"
-    if not audio_dir.exists():
+def _keep_filenames(pdf_path: Path, filenames: set[str]) -> None:
+    ad = audio_dir(pdf_path)
+    if not ad.exists():
         return
-
-    current_filenames = _collect_current_audio_filenames(playlist_path)
-
-    for f in audio_dir.iterdir():
-        if not f.is_file():
-            continue
-        if f.name in current_filenames:
-            continue  # keep: exact match
-        f.unlink()
-
-    _remove_empty_dir(audio_dir)
+    for f in ad.iterdir():
+        if f.is_file() and f.name not in filenames:
+            f.unlink()
 
 
-def _remove_build_artifacts(build_dir: Path) -> None:
-    """Remove everything in build_dir except the audio/ directory."""
-    for child in build_dir.iterdir():
-        if child.name == "audio":
-            continue
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            # .doit.db, .doit.db.bak, etc.
-            child.unlink()
+def _iter_speech(pdf_path: Path) -> list[tuple[str, str | None]]:
+    """Return (text, voice_preset) for every speech segment in the sidecar."""
+    config = load_config(pdf_path)
+    deck, _ = load_deck(pdf_path)
+    out: list[tuple[str, str | None]] = []
+    for block in deck.narration.values():
+        for seg in block.speech_segments:
+            out.append((config.apply_pronunciation(seg.text), block.voice))
+    return out
 
 
-def _remove_empty_dir(path: Path) -> None:
-    """Remove directory if it's empty."""
-    try:
-        path.rmdir()  # only succeeds if empty
-    except OSError:
-        pass
+def _current_text_hashes(pdf_path: Path) -> set[str]:
+    """text_hashes for current utterances across all backends (engine-agnostic)."""
+    config = load_config(pdf_path)
+    hashes: set[str] = set()
+    for text, voice_preset in _iter_speech(pdf_path):
+        voices: set[str | None] = {None}
+        if voice_preset and voice_preset in config.voices:
+            voices |= config.voices[voice_preset].all_voice_ids()
+        for voice in voices:
+            hashes.add(text_hash(text, voice))
+    return hashes
 
 
-def _iter_narrated_slides(
-    entries: list[PlaylistEntry],
-    build_dir: Path,
-    playlist_dir: Path,
-) -> Iterator[SlideNarration]:
-    """Parse every non-video entry and yield each slide that has narration."""
-    for entry in entries:
-        if entry.module_type == ModuleType.VIDEO:
-            continue
-        source_path = playlist_dir / entry.path
-        module_dir = build_dir / entry.path.parent / entry.path.stem
-        slides_dir = module_dir / "slides"
-        parser_cls, _ = get_parser_and_extractor(entry.module_type)
-        parser = parser_cls()
-        for slide in parser.parse(source_path, slides_dir):
-            if slide.has_narration:
-                yield slide
-
-
-def _load_playlist_and_config(
-    playlist_path: Path,
-) -> tuple[Path, Path, ProjectConfig, list[PlaylistEntry]]:
-    """Shared setup: resolve paths, parse playlist, load config with pronunciation."""
-    playlist_path = playlist_path.resolve()
-    playlist_dir = playlist_path.parent
-    build_dir = playlist_dir / "cache"
-    raw_config, entries = parse_playlist(playlist_path)
-    config = load_config(raw_config, playlist_dir)
-    config.pronunciation = load_pronunciation_dict(config.pronunciation_files)
-    return playlist_dir, build_dir, config, entries
-
-
-def _collect_current_text_hashes(playlist_path: Path) -> set[str]:
-    """Parse the playlist and return text_hashes for all current utterances.
-
-    Resolves voice presets across ALL backends so that audio from any engine
-    is preserved if its utterance content matches.
-    """
-    playlist_dir, build_dir, config, entries = _load_playlist_and_config(playlist_path)
-
-    # Collect pronunciation dicts for all backends so audio from any engine is preserved
-    all_backends = ("piper", "elevenlabs")
-    backend_prons = [config.pronunciation_for(b) for b in all_backends]
-
-    text_hashes: set[str] = set()
-    for slide in _iter_narrated_slides(entries, build_dir, playlist_dir):
-        # Collect all possible voice resolutions across all backends
-        voices: set[str | None] = {None}  # always include default (no voice)
-        if slide.voice:
-            voice_cfg = config.voices.get(slide.voice)
-            if voice_cfg:
-                voices |= voice_cfg.all_voice_ids()
-
-        for pron in backend_prons:
-            processed = apply_pronunciation(slide.narration_raw, pron)
-            parts_processed = [apply_pronunciation(part, pron) for part in slide.narration_parts]
-            texts = parts_processed if len(parts_processed) > 1 else [processed]
-            for utterance_text in texts:
-                for voice in voices:
-                    text_hashes.add(text_hash(utterance_text, voice))
-
-    return text_hashes
-
-
-def _collect_current_audio_filenames(playlist_path: Path) -> set[str]:
-    """Parse the playlist and return expected audio filenames for the current TTS config.
-
-    Only considers the currently configured backend, unlike _collect_current_text_hashes
-    which considers all backends.
-    """
-    from dotenv import load_dotenv
-
-    from slidesonnet.tts import create_tts
-
-    playlist_dir, build_dir, config, entries = _load_playlist_and_config(playlist_path.resolve())
-    load_dotenv(playlist_dir / ".env")
-    tts = create_tts(config)
-
-    pron = config.pronunciation_for(config.tts.backend)
-    filenames: set[str] = set()
-
-    for slide in _iter_narrated_slides(entries, build_dir, playlist_dir):
-        slide.narration_processed = apply_pronunciation(slide.narration_raw, pron)
-        slide.narration_parts_processed = [
-            apply_pronunciation(part, pron) for part in slide.narration_parts
-        ]
-        voice = resolve_voice(slide.voice, config.voices, config.tts.backend)
-        parts = slide.narration_parts_processed
-        texts = parts if len(parts) > 1 else [slide.narration_processed]
-        for utterance_text in texts:
-            filenames.add(audio_filename(utterance_text, tts.name(), tts.cache_key(), voice))
-
-    return filenames
+def _current_filenames(pdf_path: Path) -> set[str]:
+    """Expected audio filenames for the current text + active engine config."""
+    config = load_config(pdf_path)
+    tts = create_tts(config.tts)
+    names: set[str] = set()
+    for text, voice_preset in _iter_speech(pdf_path):
+        voice = resolve_voice(voice_preset, config.voices, config.tts.backend)
+        names.add(audio_filename(text, tts.name(), tts.cache_key(), voice))
+    return names

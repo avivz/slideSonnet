@@ -37,13 +37,6 @@ def test_gitignore_excludes_dotenv():
     assert ".env" in lines, ".env not found in .gitignore"
 
 
-def test_template_gitignore_excludes_dotenv():
-    """The scaffolded .gitignore template must also exclude .env."""
-    with open("src/slidesonnet/templates/gitignore.txt") as f:
-        lines = [line.strip() for line in f if not line.startswith("#")]
-    assert ".env" in lines, ".env not found in template gitignore"
-
-
 # ---- No real API key values in tracked files ----
 
 # ElevenLabs keys look like: sk_<40+ hex chars>
@@ -101,21 +94,3 @@ def test_env_example_has_only_placeholders():
                 assert value in _SAFE_VALUES or value == "", (
                     f"{path}: suspicious value in env example: {line}"
                 )
-
-
-# ---- env.txt template must not contain real keys ----
-
-
-def test_env_template_has_only_placeholders():
-    """The env.txt template shipped in the package must use placeholders."""
-    content = _read_text_safe("src/slidesonnet/templates/env.txt")
-    assert content is not None
-    for line in content.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            _key, value = line.split("=", 1)
-            assert value in _SAFE_VALUES or value == "", (
-                f"env.txt template has suspicious value: {line}"
-            )

@@ -1,147 +1,137 @@
-"""Configuration loading and validation from playlist YAML."""
+"""Optional project configuration for the narration editor.
+
+Unlike the old playlist-driven pipeline, the editor needs no config to run —
+sensible defaults (Piper, 1080p) apply out of the box. A ``slidesonnet.toml``
+next to the deck can override the TTS backend, voices, video settings, and
+pronunciation files.
+
+Example ``slidesonnet.toml``::
+
+    [tts]
+    backend = "piper"
+
+    [tts.piper]
+    model = "en_US-lessac-medium"
+
+    [video]
+    resolution = "1920x1080"
+    fps = 24
+
+    [voices.narrator]
+    piper = "en_US-lessac-medium"
+    elevenlabs = "EXAVITQu4vr4xnSDxMaL"
+
+    pronunciation = ["pronunciation.md"]
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import tomllib
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from slidesonnet.exceptions import ConfigError
-from slidesonnet.models import ProjectConfig, TTSConfig, VideoConfig, VoiceConfig
+from slidesonnet.models import TTSConfig, VideoConfig, VoiceConfig
+from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
+
+CONFIG_FILENAME = "slidesonnet.toml"
+_KNOWN_BACKENDS = {"piper", "elevenlabs"}
 
 
-def load_config(raw: dict[str, Any], playlist_dir: Path) -> ProjectConfig:
-    """Build a validated ProjectConfig from a raw YAML dict.
+@dataclass
+class Config:
+    """Resolved editor configuration."""
 
-    Args:
-        raw: Parsed YAML config dict.
-        playlist_dir: Directory containing the playlist file (for resolving paths).
+    tts: TTSConfig = field(default_factory=TTSConfig)
+    video: VideoConfig = field(default_factory=VideoConfig)
+    voices: dict[str, VoiceConfig] = field(default_factory=dict)
+    pronunciation_files: list[Path] = field(default_factory=list)
+    pronunciation: dict[str, str] = field(default_factory=dict)
+
+    def apply_pronunciation(self, text: str) -> str:
+        """Apply the merged pronunciation dictionary to *text*."""
+        return apply_pronunciation(text, self.pronunciation)
+
+
+def default_config_path(deck_path: Path) -> Path:
+    """Where the config for *deck_path* would live (its directory)."""
+    return deck_path.resolve().parent / CONFIG_FILENAME
+
+
+def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
+    """Load config for *deck_path*.
+
+    Uses *config_path* if given, else ``slidesonnet.toml`` beside the deck if it
+    exists, else all-defaults. Pronunciation files are loaded and merged.
     """
-    raw_tts = raw.get("tts", {})
-    tts = _parse_tts(raw_tts)
-    video = _parse_video(raw.get("video", {}))
-    voices = _parse_voices(raw.get("voices", {}))
-    pronunciation_files = _parse_pronunciation_paths(raw.get("pronunciation", []), playlist_dir)
+    path = config_path or default_config_path(deck_path)
+    if not path.exists():
+        return Config()
 
-    # Inherit engine defaults from voices.default when not explicitly set in YAML
-    if "default" in voices:
-        default_voice = voices["default"]
-        piper_explicitly_set = "model" in raw_tts.get("piper", {})
-        if not piper_explicitly_set:
-            resolved = default_voice.resolve("piper")
-            if resolved:
-                tts.piper_model = resolved
-        el_explicitly_set = "voice_id" in raw_tts.get("elevenlabs", {})
-        if not el_explicitly_set:
-            resolved = default_voice.resolve("elevenlabs")
-            if resolved:
-                tts.elevenlabs_voice_id = resolved
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"Invalid TOML in {path}: {e}") from e
 
-    return ProjectConfig(
-        title=raw.get("title", ""),
-        output=raw.get("output", ""),
-        tts=tts,
-        video=video,
-        voices=voices,
-        pronunciation_files=pronunciation_files,
+    cfg_dir = path.resolve().parent
+    config = Config(
+        tts=_parse_tts(raw.get("tts", {})),
+        video=_parse_video(raw.get("video", {})),
+        voices=_parse_voices(raw.get("voices", {})),
+        pronunciation_files=[cfg_dir / p for p in raw.get("pronunciation", [])],
     )
-
-
-def _pick(
-    raw: dict[str, Any],
-    source_key: str,
-    kwargs: dict[str, Any],
-    target_key: str,
-    cast: Callable[[Any], Any] = lambda x: x,
-) -> None:
-    """If *source_key* is in *raw*, copy its casted value into *kwargs[target_key]*."""
-    if source_key in raw:
-        kwargs[target_key] = cast(raw[source_key])
+    config.pronunciation = load_pronunciation_files(config.pronunciation_files)
+    return config
 
 
 def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     piper = raw.get("piper", {})
     el = raw.get("elevenlabs", {})
-
     kwargs: dict[str, Any] = {}
-    _pick(raw, "backend", kwargs, "backend")
-    _pick(piper, "model", kwargs, "piper_model")
-    _pick(piper, "speed", kwargs, "piper_speed", float)
-    _pick(el, "api_key_env", kwargs, "elevenlabs_api_key_env")
-    _pick(el, "voice_id", kwargs, "elevenlabs_voice_id")
-    _pick(el, "model_id", kwargs, "elevenlabs_model_id")
-    _pick(el, "stability", kwargs, "elevenlabs_stability", float)
-    _pick(el, "similarity_boost", kwargs, "elevenlabs_similarity_boost", float)
-    _pick(el, "speed", kwargs, "elevenlabs_speed", float)
+    if "backend" in raw:
+        kwargs["backend"] = raw["backend"]
+    if "model" in piper:
+        kwargs["piper_model"] = str(piper["model"])
+    if "speed" in piper:
+        kwargs["piper_speed"] = float(piper["speed"])
+    for key, target, cast in (
+        ("api_key_env", "elevenlabs_api_key_env", str),
+        ("voice_id", "elevenlabs_voice_id", str),
+        ("model_id", "elevenlabs_model_id", str),
+        ("stability", "elevenlabs_stability", float),
+        ("similarity_boost", "elevenlabs_similarity_boost", float),
+        ("speed", "elevenlabs_speed", float),
+    ):
+        if key in el:
+            kwargs[target] = cast(el[key])
     return TTSConfig(**kwargs)
 
 
 def _parse_video(raw: dict[str, Any]) -> VideoConfig:
     kwargs: dict[str, Any] = {}
-    _pick(raw, "resolution", kwargs, "resolution")
-    _pick(raw, "fps", kwargs, "fps", int)
-    _pick(raw, "crf", kwargs, "crf", int)
-    _pick(raw, "pad_seconds", kwargs, "pad_seconds", float)
-    _pick(raw, "pre_silence", kwargs, "pre_silence", float)
-    _pick(raw, "silence_duration", kwargs, "silence_duration", float)
-    _pick(raw, "preset", kwargs, "preset", str)
-    _pick(raw, "crossfade", kwargs, "crossfade", float)
+    for key, cast in (
+        ("resolution", str),
+        ("fps", int),
+        ("crf", int),
+        ("preset", str),
+        ("pad_seconds", float),
+        ("pre_silence", float),
+        ("tail_seconds", float),
+    ):
+        if key in raw:
+            kwargs[key] = cast(raw[key])
     return VideoConfig(**kwargs)
-
-
-_KNOWN_BACKENDS = {"piper", "elevenlabs"}
 
 
 def _parse_voices(raw: dict[str, Any]) -> dict[str, VoiceConfig]:
     voices: dict[str, VoiceConfig] = {}
     for name, value in raw.items():
         if isinstance(value, str):
-            # Flat string → use for all backends
-            voices[name] = VoiceConfig(
-                name=name,
-                backend_voices={b: value for b in _KNOWN_BACKENDS},
-            )
+            voices[name] = VoiceConfig(name=name, backend_voices=dict.fromkeys(_KNOWN_BACKENDS, value))
         elif isinstance(value, dict):
-            if set(value.keys()) & _KNOWN_BACKENDS:
-                # Per-backend mapping: {piper: ..., elevenlabs: ...}
-                voices[name] = VoiceConfig(
-                    name=name,
-                    backend_voices={k: str(v) for k, v in value.items() if k in _KNOWN_BACKENDS},
-                )
-            else:
-                # Legacy dict format: {backend_voice: ..., model: ...}
-                backend_voice = str(value.get("backend_voice", value.get("model", "")))
-                voices[name] = VoiceConfig(
-                    name=name,
-                    backend_voices={b: backend_voice for b in _KNOWN_BACKENDS},
-                )
+            mapping = {k: str(v) for k, v in value.items() if k in _KNOWN_BACKENDS}
+            voices[name] = VoiceConfig(name=name, backend_voices=mapping)
+        else:
+            raise ConfigError(f"voice '{name}' must be a string or table, got {type(value).__name__}")
     return voices
-
-
-_PRONUNCIATION_KEYS = {"shared"} | _KNOWN_BACKENDS
-
-
-def _parse_pronunciation_paths(
-    raw: list[Any] | dict[str, Any] | None, playlist_dir: Path
-) -> dict[str, list[Path]]:
-    if not raw:
-        return {}
-    if isinstance(raw, list):
-        # Old flat format → treat as shared
-        return {"shared": [playlist_dir / p for p in raw]}
-    if isinstance(raw, dict):
-        unknown = set(raw.keys()) - _PRONUNCIATION_KEYS
-        if unknown:
-            raise ConfigError(
-                f"Unknown pronunciation keys: {sorted(unknown)}. "
-                f"Allowed keys: {sorted(_PRONUNCIATION_KEYS)}"
-            )
-        result: dict[str, list[Path]] = {}
-        for key, paths in raw.items():
-            if not isinstance(paths, list):
-                raise ConfigError(
-                    f"pronunciation.{key} must be a list of paths, got {type(paths).__name__}"
-                )
-            result[key] = [playlist_dir / p for p in paths]
-        return result
-    raise ConfigError(f"pronunciation must be a list or dict, got {type(raw).__name__}")
