@@ -44,6 +44,14 @@ changes.
 3. **Hebrew / RTL TTS** — research in `dev/hebrew-tts-research.md`.
 4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
    interface).
+5. **Qwen3-TTS backend with own-voice cloning** — narrate decks in the user's
+   own voice from a ~10 s reference clip. Qwen3-TTS (Apache 2.0) clones via a
+   tiny reusable prompt artifact (~100 KB `.pt`: codec tokens + speaker
+   embedding); quality clearly above Piper. Runs three ways: local GPU (works
+   on Intel iGPU via XPU, ~4× slower than real-time — fine for cached
+   re-renders), serverless GPU (Modal/RunPod, ~$0.01/10 min), or the official
+   DashScope API (~$0.13/10 min, no infra, but voice leaves the machine).
+   Evaluated 2026-06-10; assets + lessons in `dev/voice-profile/`.
 5. **Multi-deck playlists** — concatenate several PDFs into one video.
 6. **Crossfade / transitions** between slides in the export.
 7. **`--json` output** for CI/automation.
