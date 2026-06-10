@@ -4,6 +4,10 @@ from pathlib import Path
 
 import pytest
 
+# NiceGUI's in-process `user` fixture (no selenium). The combined plugin pulls
+# in selenium for the `screen` fixture, so load only the user plugin.
+pytest_plugins = ["nicegui.testing.user_plugin"]
+
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
@@ -13,13 +17,8 @@ def fixtures_dir():
 
 
 @pytest.fixture
-def simple_md(fixtures_dir):
-    return fixtures_dir / "simple.md"
-
-
-@pytest.fixture
-def playlist_basic(fixtures_dir):
-    return fixtures_dir / "playlist_basic.yaml"
+def marked_pdf(fixtures_dir):
+    return fixtures_dir / "marked.pdf"
 
 
 @pytest.fixture

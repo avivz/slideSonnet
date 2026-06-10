@@ -144,6 +144,20 @@ def serialize_block(block: PageNarration) -> str:
     return "\n".join(lines)
 
 
+def serialize_body(block: PageNarration) -> str:
+    """Serialize just a block's body (speech + ``[pause N]``), no header/directives.
+
+    Inverse of :func:`parse_segments` for editor round-tripping.
+    """
+    parts: list[str] = []
+    for seg in block.segments:
+        if seg.is_pause:
+            parts.append(f"[pause {_format_seconds(seg.seconds)}]")
+        elif seg.text.strip():
+            parts.append(seg.text.strip())
+    return " ".join(parts)
+
+
 def serialize_sidecar(
     blocks: Iterable[PageNarration],
     *,

@@ -1,0 +1,76 @@
+"""GUI editor tests via NiceGUI's in-process user simulation."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from nicegui import ui
+from nicegui.testing import User
+
+FIXTURES = Path(__file__).parent / "fixtures"
+MARKED = FIXTURES / "marked.pdf"
+
+pytestmark = pytest.mark.nicegui_main_file("tests/gui_main.py")
+
+
+def _prep(tmp_path: Path, sidecar: str = "") -> Path:
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    if sidecar:
+        (tmp_path / "marked.narration").write_text(sidecar, encoding="utf-8")
+    return pdf
+
+
+async def test_editor_loads(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf = _prep(tmp_path)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("intro-title")
+    await user.should_see("Slide 1 / 6")
+
+
+async def test_navigation(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf = _prep(tmp_path)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find("Next").click()
+    await user.should_see("euler-setup")
+    await user.should_see("Slide 2 / 6")
+
+
+async def test_edit_persists(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf = _prep(tmp_path)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(ui.textarea).clear().type("Hello deck. [pause 1] Bye.")
+    user.find("Next").click()  # nav saves the current slide first
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "@intro-title" in sidecar
+    assert "Hello deck." in sidecar
+    assert "[pause 1]" in sidecar
+
+
+async def test_diagnostics_visible(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    # page 5/6 are auto-* -> warnings; navigate there
+    for _ in range(4):
+        user.find("Next").click()
+    await user.should_see("auto-")
+
+
+@pytest.mark.integration
+async def test_generate_and_preview(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nWelcome to the deck.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find("Generate").click()
+    await user.should_see("Synthesized")
+    # audio cache now exists for intro-title
+    from slidesonnet.cache import audio_dir
+
+    assert any(audio_dir(pdf).glob("*.wav"))
