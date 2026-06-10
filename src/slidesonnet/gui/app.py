@@ -48,7 +48,8 @@ def browser_invocation(
 
     Returns ``(opener, use_nicegui_show)``:
     - ``opener`` is a command (argv list) we launch ourselves with the URL
-      appended, or ``None`` if we won't open a browser ourselves.
+      (substituted for ``{url}`` if present, else appended), or ``None`` if we
+      won't open a browser ourselves.
     - ``use_nicegui_show`` is whether to let NiceGUI open its default browser.
 
     An explicit ``--browser`` / ``SLIDESONNET_BROWSER`` wins. Under WSL we prefer
@@ -62,6 +63,70 @@ def browser_invocation(
     if wsl:
         return ([wslview] if wslview else None), False
     return None, True
+
+
+def apply_url(cmd: list[str], url: str) -> list[str]:
+    """Substitute *url* for a ``{url}`` token in *cmd*, or append it if absent."""
+    if any("{url}" in tok for tok in cmd):
+        return [tok.replace("{url}", url) for tok in cmd]
+    return [*cmd, url]
+
+
+# Common Windows install paths for Chromium browsers (seen from WSL under /mnt/c).
+_WINDOWS_CHROMIUM = [
+    "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+    "/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe",
+    "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+    "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+]
+# Linux/native Chromium executables (for --app on a non-WSL desktop).
+_LINUX_CHROMIUM = ["google-chrome", "chromium", "chromium-browser", "microsoft-edge", "brave"]
+
+
+def find_chromium(
+    *,
+    wsl: bool,
+    exists: Callable[[str], bool],
+    which: Callable[[str], str | None],
+) -> str | None:
+    """Locate a Chromium-based browser executable for app-window mode.
+
+    Under WSL, look for Edge/Chrome under ``/mnt/c``; otherwise search PATH.
+    Returns the executable path, or ``None`` if none is found.
+    """
+    if wsl:
+        return next((p for p in _WINDOWS_CHROMIUM if exists(p)), None)
+    for name in _LINUX_CHROMIUM:
+        found = which(name)
+        if found:
+            return found
+    return None
+
+
+def app_invocation(
+    browser: str | None,
+    *,
+    env_browser: str | None = None,
+    wsl: bool = False,
+    exists: Callable[[str], bool] = os.path.exists,
+    which: Callable[[str], str | None] = shutil.which,
+) -> list[str] | None:
+    """Build a chromeless app-window command (`<chromium> --app={url}`).
+
+    Uses an explicit ``--browser``/env executable if given (shlex-split, so it
+    may carry args), else auto-detects Edge/Chrome (kept as a single token since
+    Windows paths contain spaces). Returns the argv (with a ``{url}`` placeholder)
+    or ``None`` if no Chromium browser could be found.
+    """
+    explicit = browser or env_browser
+    if explicit:
+        base = shlex.split(explicit)
+    else:
+        exe = find_chromium(wsl=wsl, exists=exists, which=which)
+        if not exe:
+            return None
+        base = [exe]
+    return [*base, "--app={url}"]
 
 
 def _media_url(state: EditorState, path: Path) -> str:
@@ -219,35 +284,49 @@ def run_editor(
     port: int = 8080,
     open_browser: bool = True,
     browser: str | None = None,
+    app_window: bool = False,
 ) -> None:
     """Launch the NiceGUI editor for *pdf_path* (blocking).
 
     *browser* (or the ``SLIDESONNET_BROWSER`` env var) is a command used to open
-    the URL — e.g. ``wslview``, ``"cmd.exe /c start"``, or a path to a Windows
-    browser. Under WSL, ``wslview`` (if installed) is used by default so the
-    editor opens in your Windows browser instead of a Linux one.
+    the URL — e.g. ``wslview``, ``"cmd.exe /c start"``, or a browser path; a
+    ``{url}`` token in it is replaced with the URL (else the URL is appended).
+    Under WSL, ``wslview`` (if installed) is used by default.
+
+    *app_window* opens a chromeless app window via a Chromium browser
+    (``<edge|chrome> --app=URL``) — auto-detecting Edge/Chrome (Windows-side
+    under WSL). Note: Firefox has no app-window mode.
     """
     pdf_path = pdf_path.resolve()
     url = f"http://{host}:{port}"
+    env_browser = os.environ.get("SLIDESONNET_BROWSER")
+    wsl = is_wsl()
 
     @ui.page("/")
     def _index() -> None:
         build_editor(pdf_path, sidecar_path)
 
     show = False
-    if open_browser:
+    if open_browser and app_window:
+        app_opener = app_invocation(browser, env_browser=env_browser, wsl=wsl)
+        if app_opener is not None:
+            app.on_startup(lambda o=app_opener: _launch_browser(o, url))
+        else:
+            logger.warning(
+                "--app needs a Chromium browser (Edge/Chrome) and none was found. "
+                "Pass --browser with its path, or drop --app. Open %s manually.",
+                url,
+            )
+    elif open_browser:
         opener, show = browser_invocation(
-            browser,
-            env_browser=os.environ.get("SLIDESONNET_BROWSER"),
-            wsl=is_wsl(),
-            wslview=shutil.which("wslview"),
+            browser, env_browser=env_browser, wsl=wsl, wslview=shutil.which("wslview")
         )
         if opener is not None:
-            app.on_startup(lambda: _launch_browser(opener, url))
-        elif not show and is_wsl():
+            app.on_startup(lambda o=opener: _launch_browser(o, url))
+        elif not show and wsl:
             logger.info(
                 "WSL detected and no browser configured — open %s in your Windows browser "
-                "(install 'wslview' or pass --browser to auto-open).",
+                "(install 'wslview', or pass --browser / --app to auto-open).",
                 url,
             )
 
@@ -257,7 +336,8 @@ def run_editor(
 
 def _launch_browser(opener: list[str], url: str) -> None:
     """Open *url* with the configured command, swallowing launch errors."""
+    cmd = apply_url(opener, url)
     try:
-        subprocess.Popen([*opener, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError as exc:
-        logger.warning("Could not launch browser %r: %s — open %s manually.", opener, exc, url)
+        logger.warning("Could not launch browser %r: %s — open %s manually.", cmd, exc, url)

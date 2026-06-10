@@ -131,9 +131,13 @@ is sample-accurate to the exported video. A diagnostics panel flags duplicate,
 missing, orphan, or `auto-…` ids.
 
 **WSL note:** to open the editor in your *Windows* browser instead of a Linux
-one, install `wslview` (`sudo apt install wslu`) — it's used automatically — or
-pass a command: `slidesonnet edit deck.pdf --browser "cmd.exe /c start"`
-(also settable via `SLIDESONNET_BROWSER`).
+one:
+- `slidesonnet edit deck.pdf --app` — a chromeless app window via Edge/Chrome
+  (auto-detected on the Windows side; Firefox has no app-window mode).
+- install `wslview` (`sudo apt install wslu`) — used automatically — for a normal
+  tab in your default browser.
+- `--browser CMD` for full control (e.g. `"cmd.exe /c start"`, or a browser path;
+  a `{url}` token is substituted). Also settable via `SLIDESONNET_BROWSER`.
 
 ## CLI
 

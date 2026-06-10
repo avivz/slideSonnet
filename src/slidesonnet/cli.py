@@ -337,19 +337,33 @@ def clean(pdf: Path, keep: str, yes: bool) -> None:
 @click.option(
     "--browser",
     metavar="CMD",
-    help="Command to open the URL (e.g. 'wslview', 'cmd.exe /c start', or a browser path). "
-    "Also via SLIDESONNET_BROWSER. Under WSL, 'wslview' is used by default.",
+    help="Command to open the URL (e.g. 'wslview', 'cmd.exe /c start', or a browser path; "
+    "a '{url}' token is substituted). Also via SLIDESONNET_BROWSER. Under WSL, 'wslview' default.",
+)
+@click.option(
+    "--app",
+    "app_window",
+    is_flag=True,
+    help="Open a chromeless app window via Edge/Chrome (auto-detected; Windows-side under WSL). "
+    "Firefox has no app-window mode.",
 )
 def edit(
-    pdf: Path, narration: Path | None, host: str, port: int, no_browser: bool, browser: str | None
+    pdf: Path,
+    narration: Path | None,
+    host: str,
+    port: int,
+    no_browser: bool,
+    browser: str | None,
+    app_window: bool,
 ) -> None:
     """Launch the NiceGUI narration editor.
 
     \b
     On WSL the editor opens in your Windows browser via `wslview` if installed
-    (apt install wslu). Otherwise pass --browser, e.g.:
-      slidesonnet edit deck.pdf --browser wslview
+    (apt install wslu). Other ways to open it:
+      slidesonnet edit deck.pdf --app                    # chromeless Edge/Chrome window
       slidesonnet edit deck.pdf --browser "cmd.exe /c start"
+      slidesonnet edit deck.pdf --browser '/mnt/c/.../msedge.exe --app={url}'
     """
     from slidesonnet.gui.app import run_editor
 
@@ -360,6 +374,7 @@ def edit(
         port=port,
         open_browser=not no_browser,
         browser=browser,
+        app_window=app_window,
     )
 
 
