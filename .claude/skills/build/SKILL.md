@@ -1,96 +1,100 @@
 ---
 name: build
-description: Build slideSonnet presentations into narrated MP4 videos. Use when the user asks to "build", "compile", "render", "preview", "clean", or "doctor" a lecture or presentation, or wants to check build status, export PDFs, check dependencies, or review utterances.
-argument-hint: [playlist path or command]
+description: Run the slideSonnet CLI — scaffold, check, synthesize, export, and preview narrated videos from a PDF + narration sidecar. Use when the user asks to "render", "export", "build", "check", "synthesize", "preview", "clean", or "doctor" a slideSonnet deck.
+argument-hint: [deck.pdf or command]
 ---
 
-# slideSonnet Build Skill
+# slideSonnet CLI Skill
 
-Build, preview, clean, and inspect slideSonnet presentations.
+slideSonnet renders a finished **PDF** (with invisible `\ssid` slide-ids) plus a
+plain-text **`<deck>.narration`** sidecar into a narrated MP4 with subtitles.
+There is no playlist, no `build` command, no MARP — you bring the PDF.
 
-## Commands Reference
+## Command reference
 
-### `slidesonnet build` — compile playlist to MP4
+### `slidesonnet sty` — write the LaTeX macro
 
 ```bash
-slidesonnet build [PLAYLIST] [OPTIONS]
+slidesonnet sty [-o PATH]      # default: ./slidesonnet.sty
+```
+
+Drops `slidesonnet.sty` next to your Beamer source. `\usepackage{slidesonnet}`
+and mark pages with `\ssid<step>{id}` / `\ssid{id}`, then compile (`latexmk -pdf`).
+
+### `slidesonnet init` — scaffold the narration sidecar
+
+```bash
+slidesonnet init deck.pdf [--narration PATH] [--merge] [--force]
+```
+
+Reads the slide-ids from the PDF and writes a blank `deck.narration` (one `@id`
+block per page). `--merge` appends blocks for ids missing from an existing
+sidecar (safe to re-run after the deck drifts); `--force` overwrites.
+
+### `slidesonnet check` — reconcile ids
+
+```bash
+slidesonnet check deck.pdf [--narration PATH]
+```
+
+Reports duplicate / `auto-…` / missing / orphan / order issues. **Exits non-zero
+on errors** — use it in an LLM/CI loop after editing slides or narration.
+
+### `slidesonnet tts` — synthesize into the cache
+
+```bash
+slidesonnet tts deck.pdf [--engine piper|elevenlabs] [--id ID ...]
+```
+
+Synthesizes narration into the content-addressed cache (only missing/changed
+clips). `--id` restricts to specific slides. Cache lives in `<deck-dir>/.slidesonnet/`.
+
+### `slidesonnet export` — render the video
+
+```bash
+slidesonnet export deck.pdf -o OUT.mp4 [OPTIONS]
 ```
 
 | Flag | Effect |
 |------|--------|
-| `--tts piper` | Use local Piper TTS (free) |
-| `--tts elevenlabs` | Use ElevenLabs cloud TTS (costs money!) |
-| `-n, --dry-run` | Report cache status without building |
-| `--preview` | Fast low-res build (1/4 resolution, half FPS, ultrafast preset) |
-| `--no-srt` | Skip SRT subtitle generation |
-| `--until slides` | Extract images only (no TTS or video) |
-| `--until tts` | Generate audio only (no video composition) |
-| `--until segments` | Compose segments only (no final assembly) |
+| `--engine piper` | Local Piper TTS (free) |
+| `--engine elevenlabs` | ElevenLabs cloud TTS (**costs money!**) |
+| `--silent` | No TTS: silent video; timing from the model below |
+| `--timing tts` | Real synthesized audio (default) |
+| `--timing estimate [--wpm N]` | Approximate from word count — fast rough cut, no TTS |
+| `--timing fixed:N` | Hold every page N seconds |
+| `--subtitles srt\|vtt\|both\|none` | Subtitle files beside the video (default srt) |
+| `--sub-granularity segment\|slide` | One cue per speech segment (default) or per slide |
 
-Output goes to `{playlist_dir}/{dir_name}.mp4` (or custom with `--output`; `_preview.mp4` with `--preview`).
-
-### `slidesonnet preview` — quick preview with Piper
+### `slidesonnet subs` — subtitles without rendering video
 
 ```bash
-slidesonnet preview [PLAYLIST] [--until STAGE]
+slidesonnet subs deck.pdf -o OUT.srt [--format srt|vtt] [--sub-granularity ...] [--timing ...]
 ```
 
-Shortcut for `slidesonnet build --tts piper --preview`. Always free, always fast. Supports `--no-srt` to skip subtitle generation.
+Uses cached audio durations where available, else the timing model. Never triggers TTS.
 
-### `slidesonnet preview-slide` — listen to one slide's narration
+### `slidesonnet edit` — launch the GUI editor
 
 ```bash
-slidesonnet preview-slide SLIDES SLIDE_NUMBER [-p PLAYLIST]
+slidesonnet edit deck.pdf [--narration PATH] [--host H] [--port P] [--no-browser]
 ```
 
-Synthesizes and plays audio for a single slide (1-based index). Uses Piper TTS. Pass `-p PLAYLIST` to apply pronunciation rules and voice settings.
+Local NiceGUI app: page nav, narration editing, per-slide TTS, whole-deck preview
+(silence-respecting), diagnostics panel.
 
-### `slidesonnet pdf` — export PDFs
-
-```bash
-slidesonnet pdf [PLAYLIST]
-```
-
-Exports all slide modules to PDF (pdflatex for Beamer, marp --pdf for MARP). Skips video passthrough modules.
-
-### `slidesonnet list` — list slides with cache status
+### `slidesonnet clean` — prune the cache
 
 ```bash
-slidesonnet list [PLAYLIST] [--tts BACKEND]
-```
-
-Prints a table of all slides showing slide number, source file, voice preset, character count, and narration text (after pronunciation substitutions). Each narrated slide is prefixed with a cache symbol: `●` = cached, `○` = needs TTS. A summary line shows totals. Useful for per-slide cache visibility and discovering slide numbers before using preview-slide.
-
-### `slidesonnet subtitles` — generate SRT subtitles
-
-```bash
-slidesonnet subtitles [PLAYLIST] [-o OUTPUT] [--tts BACKEND]
-```
-
-Generates an SRT subtitle file from cached audio durations and narration text. Requires a prior build (audio files must exist in cache). Output defaults to `{playlist_stem}.srt` alongside the playlist.
-
-### `slidesonnet utterances` — export narration text
-
-```bash
-slidesonnet utterances [PLAYLIST] [-o OUTPUT] [--tts BACKEND]
-```
-
-Exports all narration text (after pronunciation substitutions) for proofreading. Output defaults to stdout. Use `-o FILE` to write to a file. Useful for reviewing what TTS will actually say before building.
-
-### `slidesonnet clean` — remove cached artifacts
-
-```bash
-slidesonnet clean [PLAYLIST] [--keep LEVEL]
+slidesonnet clean deck.pdf [--keep nothing|api|current|exact] [-y]
 ```
 
 | Level | Keeps | Removes |
 |-------|-------|---------|
-| `api` (default) | All cloud TTS audio | Piper audio, images, segments, build state |
-| `current` | Audio matching current slide text (any engine) | Orphaned audio, build artifacts |
-| `exact` | Audio matching current text + current backend + voice | Everything else |
-| `nothing` | Nothing | Entire cache directory |
-
-All levels remove: slide images, video segments, `.doit.db`, concat audio.
+| `api` (default) | All cloud (ElevenLabs) audio | Piper audio + renders |
+| `current` | Audio matching current sidecar text (any engine) | Orphans + renders |
+| `exact` | Audio matching current text + active engine config | Everything else |
+| `nothing` | Nothing | The entire `.slidesonnet/` cache |
 
 ### `slidesonnet doctor` — check dependencies
 
@@ -98,74 +102,50 @@ All levels remove: slide images, video segments, `.doit.db`, concat audio.
 slidesonnet doctor
 ```
 
-Verifies that all external tools and Python packages are installed. Reports version info for each, grouped by category:
+Checks ffmpeg/ffprobe/pdftoppm/PyMuPDF (core), NiceGUI, latexmk/pdflatex (to
+compile your deck), piper/elevenlabs, and `ELEVENLABS_API_KEY`. Exit 1 if a core
+dependency is missing.
 
-- **Core** (ffmpeg, ffprobe) — always required, affects exit code
-- **MARP toolchain** (marp-cli) — needed for `.md` slides
-- **Beamer toolchain** (pdflatex, pdftoppm) — needed for `.tex` slides
-- **TTS backends** (piper, elevenlabs) — at least one required
-- **API keys** (ELEVENLABS_API_KEY) — only for elevenlabs TTS
+## Common workflows
 
-Exit code 0 if all core dependencies are found, 1 if any are missing. Optional tools are reported but don't affect the exit code.
-
-### `slidesonnet init` — scaffold a new project
-
+**From a marked Beamer source to a video:**
 ```bash
-slidesonnet init FMT [TARGET]
+slidesonnet sty                              # drop the macro
+latexmk -pdf deck.tex                         # compile (your job)
+slidesonnet init  deck.pdf                    # scaffold narration
+# ...write deck.narration...
+slidesonnet check deck.pdf                     # reconcile ids
+slidesonnet export deck.pdf -o deck.mp4 --engine piper
 ```
 
-Creates a new project directory with a playlist, sample slides, pronunciation files, `.gitignore`, and `.env`. FMT is `md` (MARP) or `tex` (Beamer). TARGET defaults to the current directory.
-
-## Common Workflows
-
-**Full build with Piper (free):**
+**Fast visual rough cut (no TTS):**
 ```bash
-slidesonnet build --tts piper
+slidesonnet export deck.pdf -o deck.mp4 --silent
 ```
 
-**Quick preview iteration:**
+**Iterate on one slide's narration:**
 ```bash
-slidesonnet preview
+slidesonnet tts deck.pdf --id euler-setup --engine piper
+slidesonnet edit deck.pdf            # or preview the whole deck in the GUI
 ```
 
-**Check what needs rebuilding:**
+**Rebuild audio from scratch:**
 ```bash
-slidesonnet build -n                     # aggregate summary
-slidesonnet list                         # per-slide cache detail
+slidesonnet clean deck.pdf --keep nothing -y && slidesonnet export deck.pdf -o deck.mp4 --engine piper
 ```
 
-**Rebuild from scratch:**
-```bash
-slidesonnet clean && slidesonnet build --tts piper
-```
+Every command is also a typed function in `slidesonnet.api` (`init_sidecar`,
+`check_deck`, `synthesize_deck`, `export`, `write_subs`, `build_preview`).
 
-**Test just the TTS without composing video:**
-```bash
-slidesonnet build --tts piper --until tts
-```
+## Critical rules
 
-**Listen to a specific slide's narration:**
-```bash
-slidesonnet preview-slide slides.md 3 -p slidesonnet.yaml
-```
-
-**Regenerate subtitles from cache (e.g. after editing SRT):**
-```bash
-slidesonnet subtitles
-slidesonnet subtitles -o lecture_en.srt
-```
-
-**Build without subtitles:**
-```bash
-slidesonnet build --tts piper --no-srt
-```
-
-## Critical Rules
-
-- **NEVER use `--tts elevenlabs` for testing** — it costs real money. Always use `--tts piper` unless the user explicitly asks for ElevenLabs.
-- **Prefer `slidesonnet clean --keep api`** (the default) over `--keep nothing` to preserve expensive cloud audio.
-- **Use `--dry-run` first** when unsure about cache state — it shows what would be rebuilt without doing anything.
-- **Use `--preview` for iteration** — 4x faster than full-quality builds.
-- **Example videos are hosted on GitHub Releases** (`v0.0.0`), not in the repo. After rebuilding an example, upload with `gh release upload v0.0.0 path/to/video.mp4 --clobber`.
+- **NEVER use `--engine elevenlabs` for testing** — it costs real money. Use
+  `--engine piper` unless the user explicitly asks for ElevenLabs.
+- **Prefer `slidesonnet clean --keep api`** (default) over `--keep nothing` to
+  preserve paid cloud audio.
+- **`slidesonnet check` before rendering** — it catches duplicate/orphan ids that
+  would otherwise misbind narration.
+- **Example videos are hosted on GitHub Releases** (`v0.0.0`), not in the repo.
+  After rebuilding, upload with `gh release upload v0.0.0 path/to/video.mp4 --clobber`.
 
 $ARGUMENTS

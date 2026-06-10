@@ -57,7 +57,7 @@ slidesonnet clean <deck.pdf> --keep nothing        # Nuke the deck's cache
 
 ## Testing Rules
 
-- **NEVER run tests or builds against ElevenLabs** — it costs real money (API credits). Use `--tts piper` for integration testing, and mocked unit tests for ElevenLabs functionality.
+- **NEVER run tests or builds against ElevenLabs** — it costs real money (API credits). Use `--engine piper` for integration testing, and mocked unit tests (a fake `TTSEngine`) for ElevenLabs functionality.
 - **Prefer `make clean-*` over `make purge-*`** — clean keeps cached API audio (which costs money to regenerate), purge nukes everything. Only use purge when explicitly asked.
 - **No integration tests in CI** — GitHub Actions free tier has limited minutes. CI runs lint, typecheck, unit tests, and wheel build only. Integration tests (`make test`) are local-only.
 
