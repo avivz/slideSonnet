@@ -8,6 +8,10 @@ sample-accurate to the exported video.
 from __future__ import annotations
 
 import logging
+import os
+import shlex
+import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -21,6 +25,43 @@ logger = logging.getLogger(__name__)
 
 _MEDIA_URL = "/ssmedia"
 _served: set[str] = set()
+
+
+def is_wsl() -> bool:
+    """True when running under Windows Subsystem for Linux."""
+    if os.environ.get("WSL_DISTRO_NAME"):
+        return True
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8").lower()
+    except OSError:
+        return False
+
+
+def browser_invocation(
+    browser: str | None,
+    *,
+    env_browser: str | None = None,
+    wsl: bool = False,
+    wslview: str | None = None,
+) -> tuple[list[str] | None, bool]:
+    """Decide how to open the editor URL.
+
+    Returns ``(opener, use_nicegui_show)``:
+    - ``opener`` is a command (argv list) we launch ourselves with the URL
+      appended, or ``None`` if we won't open a browser ourselves.
+    - ``use_nicegui_show`` is whether to let NiceGUI open its default browser.
+
+    An explicit ``--browser`` / ``SLIDESONNET_BROWSER`` wins. Under WSL we prefer
+    ``wslview`` (opens the *Windows* default browser) and otherwise refuse to
+    launch a Linux browser — just print the URL. On a normal desktop we let
+    NiceGUI handle it.
+    """
+    chosen = browser or env_browser
+    if chosen:
+        return shlex.split(chosen), False
+    if wsl:
+        return ([wslview] if wslview else None), False
+    return None, True
 
 
 def _media_url(state: EditorState, path: Path) -> str:
@@ -177,12 +218,46 @@ def run_editor(
     host: str = "127.0.0.1",
     port: int = 8080,
     open_browser: bool = True,
+    browser: str | None = None,
 ) -> None:
-    """Launch the NiceGUI editor for *pdf_path* (blocking)."""
+    """Launch the NiceGUI editor for *pdf_path* (blocking).
+
+    *browser* (or the ``SLIDESONNET_BROWSER`` env var) is a command used to open
+    the URL — e.g. ``wslview``, ``"cmd.exe /c start"``, or a path to a Windows
+    browser. Under WSL, ``wslview`` (if installed) is used by default so the
+    editor opens in your Windows browser instead of a Linux one.
+    """
     pdf_path = pdf_path.resolve()
+    url = f"http://{host}:{port}"
 
     @ui.page("/")
     def _index() -> None:
         build_editor(pdf_path, sidecar_path)
 
-    ui.run(host=host, port=port, title="slideSonnet", reload=False, show=open_browser)
+    show = False
+    if open_browser:
+        opener, show = browser_invocation(
+            browser,
+            env_browser=os.environ.get("SLIDESONNET_BROWSER"),
+            wsl=is_wsl(),
+            wslview=shutil.which("wslview"),
+        )
+        if opener is not None:
+            app.on_startup(lambda: _launch_browser(opener, url))
+        elif not show and is_wsl():
+            logger.info(
+                "WSL detected and no browser configured — open %s in your Windows browser "
+                "(install 'wslview' or pass --browser to auto-open).",
+                url,
+            )
+
+    print(f"slideSonnet editor running at {url}  (Ctrl-C to stop)")
+    ui.run(host=host, port=port, title="slideSonnet", reload=False, show=show)
+
+
+def _launch_browser(opener: list[str], url: str) -> None:
+    """Open *url* with the configured command, swallowing launch errors."""
+    try:
+        subprocess.Popen([*opener, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as exc:
+        logger.warning("Could not launch browser %r: %s — open %s manually.", opener, exc, url)

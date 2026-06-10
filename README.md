@@ -130,6 +130,11 @@ track with the pauses baked in and flips the slide image on cue — so the previ
 is sample-accurate to the exported video. A diagnostics panel flags duplicate,
 missing, orphan, or `auto-…` ids.
 
+**WSL note:** to open the editor in your *Windows* browser instead of a Linux
+one, install `wslview` (`sudo apt install wslu`) — it's used automatically — or
+pass a command: `slidesonnet edit deck.pdf --browser "cmd.exe /c start"`
+(also settable via `SLIDESONNET_BROWSER`).
+
 ## CLI
 
 ```

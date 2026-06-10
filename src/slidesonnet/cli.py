@@ -334,11 +334,33 @@ def clean(pdf: Path, keep: str, yes: bool) -> None:
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8080, show_default=True, type=int)
 @click.option("--no-browser", is_flag=True, help="Do not auto-open a browser tab")
-def edit(pdf: Path, narration: Path | None, host: str, port: int, no_browser: bool) -> None:
-    """Launch the NiceGUI narration editor."""
+@click.option(
+    "--browser",
+    metavar="CMD",
+    help="Command to open the URL (e.g. 'wslview', 'cmd.exe /c start', or a browser path). "
+    "Also via SLIDESONNET_BROWSER. Under WSL, 'wslview' is used by default.",
+)
+def edit(
+    pdf: Path, narration: Path | None, host: str, port: int, no_browser: bool, browser: str | None
+) -> None:
+    """Launch the NiceGUI narration editor.
+
+    \b
+    On WSL the editor opens in your Windows browser via `wslview` if installed
+    (apt install wslu). Otherwise pass --browser, e.g.:
+      slidesonnet edit deck.pdf --browser wslview
+      slidesonnet edit deck.pdf --browser "cmd.exe /c start"
+    """
     from slidesonnet.gui.app import run_editor
 
-    run_editor(pdf, sidecar_path=narration, host=host, port=port, open_browser=not no_browser)
+    run_editor(
+        pdf,
+        sidecar_path=narration,
+        host=host,
+        port=port,
+        open_browser=not no_browser,
+        browser=browser,
+    )
 
 
 @main.command()
