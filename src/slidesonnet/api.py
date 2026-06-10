@@ -8,12 +8,23 @@ check, synthesize TTS, export video, write subtitles — is scriptable from Pyth
 from __future__ import annotations
 
 import importlib.resources
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 from slidesonnet.deck import default_sidecar_path
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
+
+if TYPE_CHECKING:
+    from slidesonnet.config import Config
+    from slidesonnet.narration.model import Deck
+    from slidesonnet.render import DeckTimeline
+
+Engine = Literal["piper", "elevenlabs"]
+ProgressFn = Callable[[str, int, int], None]
 
 __all__ = [
     "sty_text",
@@ -21,6 +32,12 @@ __all__ = [
     "scaffold_text",
     "init_sidecar",
     "check_deck",
+    "synthesize_deck",
+    "ExportResult",
+    "export",
+    "write_subs",
+    "Preview",
+    "build_preview",
 ]
 
 
@@ -120,3 +137,223 @@ def check_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> list[Diag
 
     _, diags = load_deck(pdf_path, sidecar_path=sidecar_path)
     return diags
+
+
+def _load(
+    pdf_path: Path,
+    sidecar_path: Path | None,
+    config_path: Path | None,
+    engine: Engine | None,
+) -> tuple[Deck, Config]:
+    from slidesonnet.config import load_config
+    from slidesonnet.deck import load_deck
+
+    config = load_config(pdf_path, config_path=config_path)
+    if engine is not None:
+        config.tts.backend = engine
+    deck, _ = load_deck(pdf_path, sidecar_path=sidecar_path)
+    return deck, config
+
+
+def synthesize_deck(
+    pdf_path: Path,
+    *,
+    sidecar_path: Path | None = None,
+    config_path: Path | None = None,
+    engine: Engine | None = None,
+    only_ids: set[str] | None = None,
+    progress: ProgressFn | None = None,
+) -> int:
+    """Synthesize narration into the content-addressed cache (cache-aware).
+
+    Returns the number of speech segments newly synthesized (not from cache).
+    """
+    from slidesonnet.audio.synth import synthesize as _synth
+    from slidesonnet.cache import audio_dir
+
+    deck, config = _load(pdf_path, sidecar_path, config_path, engine)
+    results = _synth(
+        deck, config, audio_dir=audio_dir(pdf_path), only_ids=only_ids, progress=progress
+    )
+    return sum(1 for r in results.values() if not r.from_cache)
+
+
+@dataclass
+class ExportResult:
+    """Outputs of an export run."""
+
+    video: Path
+    subtitles: list[Path] = field(default_factory=list)
+    duration: float = 0.0
+    silent: bool = False
+
+
+def export(
+    pdf_path: Path,
+    output: Path,
+    *,
+    sidecar_path: Path | None = None,
+    config_path: Path | None = None,
+    engine: Engine | None = None,
+    silent: bool = False,
+    timing: str = "tts",
+    wpm: float = 150.0,
+    subtitles: Literal["srt", "vtt", "both", "none"] = "srt",
+    sub_granularity: str = "segment",
+    progress: ProgressFn | None = None,
+) -> ExportResult:
+    """Render the deck to a narrated (or silent) MP4 with optional subtitles."""
+    from slidesonnet.audio.synth import (
+        page_speech_clips,
+        page_speech_durations,
+        synthesize as _synth,
+    )
+    from slidesonnet.cache import audio_dir, render_dir
+    from slidesonnet.render import build_timeline, compose_video, render_audio_track
+    from slidesonnet.timing import TimingMode, parse_timing
+
+    deck, config = _load(pdf_path, sidecar_path, config_path, engine)
+    mode = parse_timing(timing, wpm=wpm)
+
+    audible = (not silent) and mode.kind == "tts"
+    if silent and mode.kind == "tts":
+        mode = TimingMode("estimate", wpm=wpm)  # tts is meaningless without audio
+
+    rdir = render_dir(pdf_path)
+    if audible:
+        results = _synth(deck, config, audio_dir=audio_dir(pdf_path), progress=progress)
+        timeline = build_timeline(
+            deck, mode, video=config.video,
+            speech_durations_by_page=page_speech_durations(deck, results),
+        )
+        _, page_audios = render_audio_track(
+            timeline, page_speech_clips(deck, results), render_dir=rdir
+        )
+        compose_video(
+            timeline, _images(pdf_path, rdir), output,
+            config=config, page_audios=page_audios, render_dir=rdir,
+        )
+    else:
+        timeline = build_timeline(deck, mode, video=config.video)
+        compose_video(
+            timeline, _images(pdf_path, rdir), output,
+            config=config, page_audios=None, render_dir=rdir,
+        )
+
+    subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)
+    return ExportResult(
+        video=output, subtitles=subs_paths, duration=timeline.total_duration, silent=not audible
+    )
+
+
+def write_subs(
+    pdf_path: Path,
+    output: Path,
+    *,
+    fmt: Literal["srt", "vtt"] = "srt",
+    sub_granularity: str = "segment",
+    timing: str = "tts",
+    wpm: float = 150.0,
+    sidecar_path: Path | None = None,
+    config_path: Path | None = None,
+) -> Path:
+    """Write subtitles without rendering video (cached audio durations, else timing model)."""
+    from slidesonnet.audio.synth import cached_durations
+    from slidesonnet.cache import audio_dir
+    from slidesonnet.render import build_timeline, subtitle_entries
+    from slidesonnet.subtitles import format_srt, format_vtt
+    from slidesonnet.timing import parse_timing
+
+    deck, config = _load(pdf_path, sidecar_path, config_path, None)
+    mode = parse_timing(timing, wpm=wpm)
+    if mode.kind == "tts":
+        durations = cached_durations(deck, config, audio_dir(pdf_path), fallback_wpm=wpm)
+        timeline = build_timeline(deck, mode, video=config.video, speech_durations_by_page=durations)
+    else:
+        timeline = build_timeline(deck, mode, video=config.video)
+
+    entries = subtitle_entries(deck, timeline, granularity=sub_granularity)
+    text = format_srt(entries) if fmt == "srt" else format_vtt(entries)
+    output.write_text(text, encoding="utf-8")
+    return output
+
+
+def _write_subtitle_files(
+    deck: Deck,
+    timeline: DeckTimeline,
+    video_output: Path,
+    which: str,
+    granularity: str,
+) -> list[Path]:
+    from slidesonnet.render import subtitle_entries
+    from slidesonnet.subtitles import format_srt, format_vtt
+
+    if which == "none":
+        return []
+    entries = subtitle_entries(deck, timeline, granularity=granularity)
+    out: list[Path] = []
+    if which in {"srt", "both"}:
+        p = video_output.with_suffix(".srt")
+        p.write_text(format_srt(entries), encoding="utf-8")
+        out.append(p)
+    if which in {"vtt", "both"}:
+        p = video_output.with_suffix(".vtt")
+        p.write_text(format_vtt(entries), encoding="utf-8")
+        out.append(p)
+    return out
+
+
+def _images(pdf_path: Path, rdir: Path) -> list[Path]:
+    from slidesonnet.pdf.reader import rasterize
+
+    return rasterize(pdf_path, rdir / "pages")
+
+
+@dataclass
+class Preview:
+    """A whole-deck (or single-slide) preview: one track + a cue sheet + images."""
+
+    track: Path
+    cues: list[tuple[float, str]] = field(default_factory=list)
+    images: list[Path] = field(default_factory=list)
+    page_starts: list[float] = field(default_factory=list)
+    total_duration: float = 0.0
+
+
+def build_preview(
+    pdf_path: Path,
+    *,
+    sidecar_path: Path | None = None,
+    config_path: Path | None = None,
+    engine: Engine | None = None,
+    only_id: str | None = None,
+    progress: ProgressFn | None = None,
+) -> Preview:
+    """Build a sample-accurate preview track + cue sheet (whole deck or one slide)."""
+    from slidesonnet.audio.synth import (
+        page_speech_clips,
+        page_speech_durations,
+        synthesize as _synth,
+    )
+    from slidesonnet.cache import audio_dir, render_dir
+    from slidesonnet.render import build_timeline, render_audio_track
+    from slidesonnet.timing import TimingMode
+
+    deck, config = _load(pdf_path, sidecar_path, config_path, engine)
+    only_ids = {only_id} if only_id else None
+    results = _synth(
+        deck, config, audio_dir=audio_dir(pdf_path), only_ids=only_ids, progress=progress
+    )
+    rdir = render_dir(pdf_path)
+    timeline = build_timeline(
+        deck, TimingMode("tts"), video=config.video,
+        speech_durations_by_page=page_speech_durations(deck, results),
+    )
+    track, _ = render_audio_track(timeline, page_speech_clips(deck, results), render_dir=rdir)
+    return Preview(
+        track=track,
+        cues=timeline.cue_sheet(),
+        images=_images(pdf_path, rdir),
+        page_starts=timeline.page_starts,
+        total_duration=timeline.total_duration,
+    )

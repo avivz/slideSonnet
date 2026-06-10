@@ -146,6 +146,137 @@ def check(pdf: Path, narration: Path | None) -> None:
         raise SystemExit(1)
 
 
+_NARRATION_OPT = click.option(
+    "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
+)
+_ENGINE_OPT = click.option(
+    "--engine", type=click.Choice(["piper", "elevenlabs"]),
+    help="TTS backend (default: config; piper = free/local)",
+)
+
+
+def _progress(slide_id: str, done: int, total: int) -> None:
+    logger.info("  [%d/%d] %s", done, total, slide_id)
+
+
+@main.command()
+@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@_NARRATION_OPT
+@_ENGINE_OPT
+@click.option("--id", "ids", multiple=True, help="Synthesize only these slide-ids (repeatable)")
+def tts(pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, ...]) -> None:
+    """Synthesize narration into the content-addressed cache (cache-aware)."""
+    from slidesonnet.api import synthesize_deck
+
+    try:
+        n = synthesize_deck(
+            pdf, sidecar_path=narration,
+            engine=engine,  # type: ignore[arg-type]
+            only_ids=set(ids) or None, progress=_progress,
+        )
+    except SlideSonnetError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"Synthesized {n} new clip(s); rest from cache.")
+
+
+@main.command()
+@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@click.option("-o", "--output", required=True, type=click.Path(path_type=Path), help="Output MP4")
+@_NARRATION_OPT
+@_ENGINE_OPT
+@click.option("--silent", is_flag=True, help="No TTS: silent video, timing from the model")
+@click.option("--timing", default="tts", show_default=True, help="tts | estimate | fixed:N")
+@click.option("--wpm", default=150.0, show_default=True, help="Words/minute for --timing estimate")
+@click.option("--subtitles", type=click.Choice(["srt", "vtt", "both", "none"]), default="srt",
+              show_default=True, help="Subtitle files beside the video")
+@click.option("--sub-granularity", type=click.Choice(["segment", "slide"]), default="segment",
+              show_default=True, help="One cue per speech segment, or per slide")
+def export(
+    pdf: Path, output: Path, narration: Path | None, engine: str | None, silent: bool,
+    timing: str, wpm: float, subtitles: str, sub_granularity: str,
+) -> None:
+    """Render the narrated (or silent) video with optional subtitles."""
+    from slidesonnet.api import export as run_export
+
+    try:
+        result = run_export(
+            pdf, output, sidecar_path=narration,
+            engine=engine,  # type: ignore[arg-type]
+            silent=silent, timing=timing, wpm=wpm,
+            subtitles=subtitles,  # type: ignore[arg-type]
+            sub_granularity=sub_granularity, progress=_progress,
+        )
+    except (SlideSonnetError, ValueError) as e:
+        raise click.ClickException(str(e))
+    kind = "silent " if result.silent else ""
+    extras = f" + {', '.join(p.name for p in result.subtitles)}" if result.subtitles else ""
+    click.echo(f"Built {output.name} ({kind}{result.duration:.1f}s){extras}")
+
+
+@main.command()
+@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@click.option("-o", "--output", required=True, type=click.Path(path_type=Path), help="Output subtitle file")
+@_NARRATION_OPT
+@click.option("--format", "fmt", type=click.Choice(["srt", "vtt"]), default="srt", show_default=True)
+@click.option("--sub-granularity", type=click.Choice(["segment", "slide"]), default="segment",
+              show_default=True)
+@click.option("--timing", default="tts", show_default=True, help="tts | estimate | fixed:N")
+@click.option("--wpm", default=150.0, show_default=True)
+def subs(
+    pdf: Path, output: Path, narration: Path | None, fmt: str, sub_granularity: str,
+    timing: str, wpm: float,
+) -> None:
+    """Write subtitles without rendering video (cached audio durations, else timing model)."""
+    from slidesonnet.api import write_subs
+
+    try:
+        path = write_subs(
+            pdf, output, fmt=fmt,  # type: ignore[arg-type]
+            sub_granularity=sub_granularity, timing=timing, wpm=wpm, sidecar_path=narration,
+        )
+    except (SlideSonnetError, ValueError) as e:
+        raise click.ClickException(str(e))
+    click.echo(str(path))
+
+
+@main.command()
+@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@click.option("--keep", type=click.Choice(["nothing", "api", "current", "exact"]), default="api",
+              show_default=True, help="What cached audio to preserve")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt for --keep nothing")
+def clean(pdf: Path, keep: str, yes: bool) -> None:
+    """Prune the deck's audio/render cache."""
+    from slidesonnet.cache import cache_root
+    from slidesonnet.clean import clean as run_clean
+
+    if not cache_root(pdf).exists():
+        click.echo("Nothing to clean.")
+        return
+    if keep == "nothing" and not yes:
+        click.confirm("Delete ALL cached audio (including paid API audio)?", default=False, abort=True)
+    result = run_clean(pdf, keep=keep)  # type: ignore[arg-type]
+    if result.removed_files == 0:
+        click.echo("Nothing to remove.")
+    else:
+        msg = f"Removed {result.removed_files} files ({result.removed_mb:.1f} MB)"
+        if result.kept_files:
+            msg += f", kept {result.kept_files}"
+        click.echo(msg)
+
+
+@main.command()
+@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@_NARRATION_OPT
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8080, show_default=True, type=int)
+@click.option("--no-browser", is_flag=True, help="Do not auto-open a browser tab")
+def edit(pdf: Path, narration: Path | None, host: str, port: int, no_browser: bool) -> None:
+    """Launch the NiceGUI narration editor."""
+    from slidesonnet.gui.app import run_editor
+
+    run_editor(pdf, sidecar_path=narration, host=host, port=port, open_browser=not no_browser)
+
+
 @main.command()
 def doctor() -> None:
     """Check that required tools and dependencies are installed."""
