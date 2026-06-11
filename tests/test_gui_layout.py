@@ -64,33 +64,97 @@ def test_playback_new_request_supersedes_old() -> None:
     assert pc.may_start(new)
 
 
-def test_playback_nav_stops_single_slide_playback() -> None:
-    # slide A's audio must never keep playing over slide B
+def test_playback_nav_clears_single_slide_playback() -> None:
+    # slide A's audio must never keep playing (or linger paused) over slide B
     pc = PlaybackController()
     pc.begin(deck=False)
+    pc.mark_loaded("slide-a")
     pc.set_playing(True)
-    assert pc.nav_action() == "stop"
+    assert pc.nav_action() == "clear"
 
 
-def test_playback_nav_seeks_during_deck_playback() -> None:
+def test_playback_nav_clears_stopped_single_slide_track() -> None:
+    # paused track still belongs to its slide; leaving the slide resets the player
+    pc = PlaybackController()
+    pc.begin(deck=False)
+    pc.mark_loaded("slide-a")
+    pc.set_playing(True)
+    pc.set_playing(False)  # paused, not stopped
+    assert pc.nav_action() == "clear"
+
+
+def test_playback_nav_seeks_deck_track_playing_or_paused() -> None:
+    # the deck track spans every slide: navigation follows it instead of killing it
     pc = PlaybackController()
     pc.begin(deck=True)
+    pc.mark_loaded("deck")
     pc.set_playing(True)
+    assert pc.nav_action() == "seek"
+    pc.set_playing(False)
     assert pc.nav_action() == "seek"
 
 
 def test_playback_nav_is_plain_when_idle() -> None:
     pc = PlaybackController()
     assert pc.nav_action() == "none"
-    pc.begin(deck=False)  # built but browser never started playing
-    assert pc.nav_action() == "none"
 
 
-def test_playback_stop_clears_playing() -> None:
+def test_playback_nav_cancels_pending_single_slide_build() -> None:
+    # play pressed, build still running, user moves on: the build must not land
+    pc = PlaybackController()
+    token = pc.begin(deck=False)
+    assert pc.nav_action() == "clear"
+    pc.stop()
+    assert not pc.may_start(token)
+
+
+def test_playback_nav_leaves_pending_deck_build_alone() -> None:
+    # a deck track will cover the new slide anyway; let the build finish
     pc = PlaybackController()
     pc.begin(deck=True)
+    assert pc.nav_action() == "seek"  # no cues yet, so the seek is a no-op
+
+
+def test_playback_stop_unloads() -> None:
+    pc = PlaybackController()
+    pc.begin(deck=True)
+    pc.mark_loaded("deck")
     pc.set_playing(True)
     pc.stop()
+    assert pc.nav_action() == "none"  # player was reset; nothing to seek or clear
+
+
+def test_playback_press_builds_when_nothing_loaded() -> None:
+    pc = PlaybackController()
+    assert pc.press_action("slide-a") == "build"
+
+
+def test_playback_press_toggles_pause_and_resume_on_same_track() -> None:
+    pc = PlaybackController()
+    pc.begin(deck=False)
+    pc.mark_loaded("slide-a")
+    pc.set_playing(True)
+    assert pc.press_action("slide-a") == "pause"
+    pc.set_playing(False)
+    assert pc.press_action("slide-a") == "resume"
+
+
+def test_playback_press_rebuilds_for_a_different_track() -> None:
+    pc = PlaybackController()
+    pc.begin(deck=False)
+    pc.mark_loaded("slide-a")
+    pc.set_playing(True)
+    assert pc.press_action("slide-b") == "build"
+    assert pc.press_action("deck") == "build"
+
+
+def test_playback_unload_forgets_the_track() -> None:
+    pc = PlaybackController()
+    pc.begin(deck=False)
+    pc.mark_loaded("slide-a")
+    pc.set_playing(True)
+    pc.unload()
+    assert pc.press_action("slide-a") == "build"
     assert pc.nav_action() == "none"
 
 

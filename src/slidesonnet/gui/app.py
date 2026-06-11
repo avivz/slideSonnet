@@ -207,42 +207,65 @@ class ResponsivePanes:
 
 
 class PlaybackController:
-    """Defined behaviors for the preview player.
+    """Defined behaviors for the preview player (one transport, no extra widgets).
 
+    - The play buttons toggle: pressed for the loaded track they pause/resume,
+      pressed for anything else they build that track.
     - A play request supersedes whatever is rolling; the superseded track
       never starts (or stops) playing.
-    - Stop cancels a play request even while its track is still being built.
-    - Navigating during deck playback seeks the track; during single-slide
-      playback it stops it (slide A's audio never plays over slide B).
+    - Stop cancels a play request even while its track is still being built,
+      and resets the player (the next press rebuilds).
+    - A single-slide track belongs to its slide: navigating away clears the
+      player. The deck track spans every slide: navigating seeks it, playing
+      or paused.
     """
 
     def __init__(self) -> None:
         self._generation = 0
         self.playing = False
-        self.deck_mode = False
+        self.loaded_key: str | None = None  # "deck" or a slide id
+        self._pending_deck: bool | None = None  # a build is in flight (deck or single)
 
     def begin(self, *, deck: bool) -> int:
         """Register a new play request; returns its token."""
         self._generation += 1
-        self.deck_mode = deck
+        self._pending_deck = deck
         return self._generation
 
     def may_start(self, token: int) -> bool:
         """True if no stop/newer request arrived since *token* was issued."""
         return token == self._generation
 
+    def mark_loaded(self, key: str) -> None:
+        """The player now holds the track for *key* ("deck" or a slide id)."""
+        self.loaded_key = key
+        self._pending_deck = None
+
+    def unload(self) -> None:
+        self.loaded_key = None
+        self.playing = False
+        self._pending_deck = None
+
     def stop(self) -> None:
         self._generation += 1
-        self.playing = False
+        self.unload()
 
     def set_playing(self, value: bool) -> None:
         self.playing = value
 
-    def nav_action(self) -> Literal["seek", "stop", "none"]:
+    def press_action(self, key: str) -> Literal["build", "pause", "resume"]:
+        """What a play-button press for *key* should do right now."""
+        if self.loaded_key != key:
+            return "build"
+        return "pause" if self.playing else "resume"
+
+    def nav_action(self) -> Literal["seek", "clear", "none"]:
         """What slide navigation should do to the player right now."""
-        if not self.playing:
-            return "none"
-        return "seek" if self.deck_mode else "stop"
+        if self.loaded_key == "deck" or self._pending_deck is True:
+            return "seek"
+        if self.loaded_key is not None or self._pending_deck is False:
+            return "clear"  # a single-slide track (even mid-build) belongs to its slide
+        return "none"
 
 
 def nav_direction(key: Any) -> int:
@@ -393,7 +416,7 @@ body{
 .ss-stage-img img{border-radius:6px}
 .ss-counter{font-size:12px;color:var(--ss-dim);padding:0 8px;min-width:96px;text-align:center}
 .ss-vsep{width:1px;height:20px;background:var(--ss-line);margin:0 8px}
-.ss-audio{flex:1 1 0;min-width:0;height:36px;color-scheme:dark}
+.ss-audio{display:none}  /* invisible sound pipe — the transport buttons are the UI */
 .ss-console{
   width:100%;height:100%;overflow-y:auto;padding:16px;
   background:var(--ss-surface)}
@@ -576,9 +599,8 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     stop_btn = ui.button(icon="stop").props("flat round dense")
                     stop_btn.mark("stop").tooltip("Stop preview")
                     ui.element("div").classes("ss-vsep")
-                    audio = ui.audio("").props("controls").classes("ss-audio")
+                    audio = ui.audio("").classes("ss-audio")
                     audio.mark("preview-audio")
-                    audio.visible = False
 
         with console_split.after, ui.column().classes("ss-console gap-3 no-wrap"):
             with ui.row().classes("w-full items-center justify-between no-wrap"):
@@ -636,6 +658,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         _scroll_strip()
         _render_diagnostics()
         _render_audio_status()
+        _sync_transport()
 
     def _render_audio_status() -> None:
         total = len(state.current_block.speech_segments)
@@ -678,13 +701,14 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     # ---- navigation (each saves first) ----
     def _jump(index: int) -> None:
         save_current()
+        moved = max(0, min(index, state.page_count - 1)) != state.index
         state.go(index)
-        action = playback.nav_action()
-        if action == "seek" and cues:  # deck preview rolling: follow to this slide's cue
+        action = playback.nav_action() if moved else "none"
+        if action == "seek" and cues:  # deck track loaded: follow to this slide's cue
             start = cue_start(cues, state.current_id)
             if start is not None:
                 audio.seek(start)
-        elif action == "stop":  # single-slide audio must not play over another slide
+        elif action == "clear":  # a single-slide track belongs to its slide — reset
             _stop_playback()
         render()
 
@@ -816,9 +840,19 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 ui.button("Generate & play", on_click=lambda: dialog.submit(True)).props("no-caps")
         return bool(await dialog)
 
+    def _sync_transport() -> None:
+        """Play buttons mirror the player: the loaded track's button shows pause."""
+        one_active = playback.playing and playback.loaded_key == state.current_id
+        play_one.props(f"icon={'pause' if one_active else 'play_arrow'}")
+        deck_active = playback.playing and playback.loaded_key == "deck"
+        play_all.props(f"icon={'pause' if deck_active else 'playlist_play'}")
+
     def _stop_playback() -> None:
+        nonlocal cues
         playback.stop()  # cancels a pending play too — Stop always wins
         audio.pause()
+        cues = []
+        _sync_transport()
 
     def _request_preview(btn: Any, whole_deck: bool) -> None:
         """Claim the player synchronously at click time, then build off the loop.
@@ -827,11 +861,25 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         lands before the build even starts still cancels it.
         """
         nonlocal busy
+        key = "deck" if whole_deck else state.current_id
+        action = playback.press_action(key)
+        if action == "pause":
+            audio.pause()
+            playback.set_playing(False)  # optimistic; the browser event confirms
+            _sync_transport()
+            return
+        if action == "resume":
+            audio.play()
+            playback.set_playing(True)
+            _sync_transport()
+            return
         if busy:
             return
         busy = True
         token = playback.begin(deck=whole_deck)
         audio.pause()  # a rolling preview yields to the new request right away
+        playback.set_playing(False)
+        _sync_transport()
         background_tasks.create(_preview(btn, whole_deck, token))
 
     client = ui.context.client  # background tasks must re-enter the page's slot stack
@@ -860,8 +908,10 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 # every preview renders to the same track path — vary the URL so
                 # the browser refetches instead of replaying the previous audio
                 audio.set_source(f"{_media_url(state, preview.track)}?v={token}")
-                audio.visible = True
+                playback.mark_loaded("deck" if whole_deck else state.current_id)
                 audio.play()
+                playback.set_playing(True)  # optimistic; the browser event confirms
+                _sync_transport()
                 ui.notify(f"Preview ready ({preview.total_duration:.1f}s)", type="positive")
         except Exception as exc:
             logger.exception("preview failed")
@@ -891,10 +941,14 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 state.index = idx
                 render()
 
+    def _on_player_state(playing: bool) -> None:
+        playback.set_playing(playing)
+        _sync_transport()
+
     audio.on("timeupdate", _on_timeupdate, args=["target.currentTime"])
-    audio.on("play", lambda: playback.set_playing(True))
-    audio.on("pause", lambda: playback.set_playing(False))
-    audio.on("ended", lambda: playback.set_playing(False))
+    audio.on("play", lambda: _on_player_state(True))
+    audio.on("pause", lambda: _on_player_state(False))
+    audio.on("ended", lambda: _on_player_state(False))
     prev_btn.on_click(lambda: _go(-1))
     next_btn.on_click(lambda: _go(1))
     play_one.on_click(lambda: _request_preview(play_one, False))

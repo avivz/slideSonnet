@@ -42,6 +42,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   previews render to one track file, and the browser kept replaying the
   old audio because the URL never changed (now cache-busted per request).
 
+### Changed (editor transport)
+- One transport, no duplicate players: the native browser audio widget is
+  gone (it offered a second, stale play button). The play-slide /
+  play-deck buttons now toggle play/pause for their own track (icon
+  flips), Stop resets the player, and switching slides clears a
+  single-slide preview (even one still building) while deck previews
+  seek to the new slide — playing or paused.
+
 ### Changed
 - **Kokoro replaces Piper as the local TTS engine.** The default backend is
   now [Kokoro 82M](https://github.com/hexgrad/kokoro) (Apache-2.0): clearly

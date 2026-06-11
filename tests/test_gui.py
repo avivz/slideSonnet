@@ -250,6 +250,89 @@ async def test_replaying_preview_reloads_the_new_track(
     assert second != first  # same path, but the browser must see a fresh URL
 
 
+async def test_stop_then_switch_slides_resets_player(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """play slide 1 → stop → next slide: the player resets; play builds slide 2."""
+    import asyncio
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    play_btn = next(iter(user.find(marker="play-slide").elements))
+    audio = next(iter(user.find(marker="preview-audio").elements))
+
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    assert play_btn.props.get("icon") == "pause"  # transport mirrors the player
+
+    user.find(marker="stop").click()
+    assert play_btn.props.get("icon") == "play_arrow"  # reset, not lingering paused
+
+    first = str(audio.props.get("src"))
+    user.find("Next").click()
+    user.find(marker="play-slide").click()  # must build slide 2, not resume slide 1
+    for _ in range(100):
+        if str(audio.props.get("src")) != first:
+            break
+        await asyncio.sleep(0.05)
+    assert str(audio.props.get("src")) != first
+
+
+async def test_play_button_toggles_pause_and_resume(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One transport: the play button pauses/resumes its own track, no rebuild."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    play_btn = next(iter(user.find(marker="play-slide").elements))
+    audio = next(iter(user.find(marker="preview-audio").elements))
+
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    loaded = str(audio.props.get("src"))
+    assert play_btn.props.get("icon") == "pause"
+
+    user.find(marker="play-slide").click()  # pause
+    assert play_btn.props.get("icon") == "play_arrow"
+    assert str(audio.props.get("src")) == loaded  # same track, no rebuild
+
+    user.find(marker="play-slide").click()  # resume
+    assert play_btn.props.get("icon") == "pause"
+    assert str(audio.props.get("src")) == loaded
+
+
+async def test_nav_during_single_slide_build_cancels_it(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """play → immediately arrow on: slide 1's audio must not start over slide 2."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+
+    def slow_build(self: EditorState) -> api.Preview:
+        time.sleep(1.0)
+        return _fake_preview(self.pdf_path, [])
+
+    monkeypatch.setattr(EditorState, "preview_current", slow_build)
+    await user.open("/")
+    user.find(marker="play-slide").click()
+    user.find("Next").click()
+    await user.should_see("Preview stopped", retries=300)
+
+
 async def test_paid_engine_preview_asks_before_synthesis(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
