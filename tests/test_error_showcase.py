@@ -109,6 +109,26 @@ async def test_orphan_block_lands_in_tray(
     await user.should_see("@ghost-slide")
 
 
+async def test_freeze_shows_persistent_header_pill(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """While duplicate blocks freeze saving, the header must say so persistently."""
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
+    await user.open("/")
+    await user.should_see("not saving — duplicate blocks")
+
+
+async def test_no_freeze_pill_on_healthy_deck(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = write_pdf(tmp_path / "deck.pdf", ["alpha"])
+    (tmp_path / "deck.narration").write_text("@alpha\nHi.\n", encoding="utf-8")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Slide 1 / 1")
+    await user.should_not_see("not saving")
+
+
 # ---- player behavior on broken slides ---------------------------------------
 
 

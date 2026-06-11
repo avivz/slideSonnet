@@ -369,6 +369,11 @@ body{
 .ss-pill-err{
   color:var(--ss-err);border-color:rgba(255,101,82,.45);
   background:rgba(255,101,82,.08)}
+.ss-pill-warn{
+  color:var(--ss-warn);border-color:rgba(217,162,60,.45);
+  background:rgba(217,162,60,.08)}
+.ss-body textarea::placeholder{color:var(--ss-dim);opacity:.55;font-style:italic}
+.ss-frozen textarea{border-left:2px solid var(--ss-warn)}
 .ss-main{height:calc(100vh - 80px)}
 .ss-split{position:relative}
 .ss-split > .q-splitter__separator{background:var(--ss-line)}
@@ -510,6 +515,14 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             ui.label(pdf_path.name).classes("ss-chip ss-mono")
         with ui.row().classes("items-center gap-3 no-wrap"):
             saved_flash = ui.label("● saved").classes("ss-saved opacity-0")
+            freeze_pill = ui.label("⚠ not saving — duplicate blocks in file").classes(
+                "ss-pill ss-pill-warn"
+            )
+            freeze_pill.mark("freeze-pill").tooltip(
+                "The narration file has two blocks for one slide; rewriting it would "
+                "drop one. Resolve the duplicate @blocks in the file to resume saving."
+            )
+            freeze_pill.visible = False
             err_badge = ui.label().classes("ss-pill")
             # material's view_sidebar glyph puts the sidebar on the RIGHT; flip for the left pane
             strip_toggle = ui.button(icon="view_sidebar").props("flat round dense")
@@ -588,7 +601,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                         .props("no-caps dense unelevated toggle-color=primary")
                     )
                 body = (
-                    ui.textarea(placeholder="Speak this slide…  use [pause 1.5] for silence")
+                    ui.textarea(placeholder="(no narration yet — type here · [pause 1.5] adds silence)")
                     .classes("ss-mono ss-body")
                     .props("filled")
                 )
@@ -666,6 +679,11 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             body.enable()
         else:  # unmarked page: there is no id to key a narration block to
             body.disable()
+        freeze_pill.visible = state.writes_frozen
+        if state.writes_frozen:  # typed text is provisional until the file is fixed
+            body.classes(add="ss-frozen")
+        else:
+            body.classes(remove="ss-frozen")
         try:
             img = state.current_image()
             if img is not None:
