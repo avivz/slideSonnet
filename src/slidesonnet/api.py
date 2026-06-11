@@ -352,6 +352,8 @@ def build_preview(
     from slidesonnet.timing import TimingMode
 
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
+    if only_id:  # render a one-page track; other pages' clips aren't synthesized
+        deck = deck.restricted_to(only_id)
     only_ids = {only_id} if only_id else None
     results = _synth(
         deck, config, audio_dir=audio_dir(pdf_path), only_ids=only_ids, progress=progress

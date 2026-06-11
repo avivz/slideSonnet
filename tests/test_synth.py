@@ -79,3 +79,53 @@ def test_uncached_targets_only_ids(tmp_path: Path, monkeypatch) -> None:  # type
     deck = _deck()
     assert synth_mod.uncached_targets(deck, Config(), tmp_path, only_ids={"b"}) == []
     assert len(synth_mod.uncached_targets(deck, Config(), tmp_path, only_ids={"a"})) == 1
+
+
+def test_synthesize_second_run_hits_cache(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    engine = FakeEngine()
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: engine)
+    deck = _deck()
+    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)
+    monkeypatch.setattr(synth_mod, "get_duration", lambda path: 1.25)
+    results = synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)
+    assert results[("a", 0)].from_cache is True
+    assert engine.calls == 1  # second run did not re-synthesize
+
+
+def test_page_speech_clips_alignment(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    deck = _deck()
+    results = synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)
+    clips = synth_mod.page_speech_clips(deck, results)
+    assert clips == [[results[("a", 0)].path], []]  # page a has one clip, page b none
+    assert clips[0][0].exists()
+    # Un-synthesized segments are skipped (no placeholder paths).
+    assert synth_mod.page_speech_clips(deck, {}) == [[], []]
+
+
+def test_synthesize_reports_progress(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    calls: list[tuple[str, int, int]] = []
+    synth_mod.synthesize(
+        _deck(),
+        Config(),
+        audio_dir=tmp_path,
+        progress=lambda sid, done, total: calls.append((sid, done, total)),
+    )
+    assert calls == [("a", 1, 1)]  # one speech segment in the whole deck
+
+
+def test_cached_durations_estimates_when_uncached(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    # Nothing cached: "Hello there." is 2 words -> 2.0 s at 60 wpm; page b has no speech.
+    durations = synth_mod.cached_durations(_deck(), Config(), tmp_path, fallback_wpm=60.0)
+    assert durations == [[2.0], []]
+
+
+def test_cached_durations_probes_cached_audio(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    deck = _deck()
+    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)  # populate the cache
+    monkeypatch.setattr(synth_mod, "get_duration", lambda path: 9.9)
+    durations = synth_mod.cached_durations(deck, Config(), tmp_path, fallback_wpm=60.0)
+    assert durations == [[9.9], []]  # real (probed) duration, not the wpm estimate

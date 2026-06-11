@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 
 import pytest
 from nicegui import ui
 from nicegui.testing import User
+
+from slidesonnet import api
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -47,6 +51,26 @@ async def test_filmstrip_jump(user: User, tmp_path: Path, monkeypatch: pytest.Mo
     await user.should_see("Slide 3 / 6")
 
 
+async def test_in_panel_collapse_buttons(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    strip = next(iter(user.find(marker="split-strip").elements))
+    console = next(iter(user.find(marker="split-console").elements))
+    assert isinstance(strip, ui.splitter) and isinstance(console, ui.splitter)
+    assert strip.value > 0 and console.value > 0
+    user.find(marker="collapse-strip").click()
+    assert strip.value == 0
+    user.find(marker="collapse-console").click()
+    assert console.value == 0
+    # the persistent header toggles bring the panes back at their default widths
+    user.find(marker="toggle-strip").click()
+    user.find(marker="toggle-console").click()
+    assert strip.value > 0 and console.value > 0
+
+
 async def test_edit_persists(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pdf = _prep(tmp_path)
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
@@ -71,11 +95,58 @@ async def test_diagnostics_visible(
     await user.should_see("auto-")
 
 
+async def test_console_shows_audio_generation_status(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello. [pause 1] World.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("0 of 2 generated")  # two speech segments, nothing cached yet
+
+
+async def test_console_checks_are_per_slide(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("no issues on this slide")
+
+
+async def test_recompile_while_editing_updates_deck_live(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.conftest import write_pdf
+
+    pdf = write_pdf(tmp_path / "deck.pdf", ["alpha", "beta"])
+    (tmp_path / "deck.narration").write_text("@alpha\nHi.\n\n@beta\nBye.\n", encoding="utf-8")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Slide 1 / 2")
+    # "recompile": the deck gains a slide while the editor is open
+    write_pdf(pdf, ["alpha", "beta", "gamma"])
+    later = time.time() + 5
+    os.utime(pdf, (later, later))
+    await user.should_see("Deck files changed on disk — reloaded", retries=300)
+    await user.should_see("Slide 1 / 3")
+    # jumping to the new slide saves, which scaffolds its (empty) sidecar block
+    user.find(marker="thumb-2").click()
+    await user.should_see("Slide 3 / 3")
+    await user.should_see("no speech on this slide")
+    sidecar = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "@gamma" in sidecar
+
+
 @pytest.mark.integration
 async def test_generate_and_preview(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pdf = _prep(tmp_path, sidecar="@intro-title\nWelcome to the deck.\n")
+    # a SECOND narrated slide stays ungenerated: single-slide preview must not
+    # trip over its missing clips (regression: IndexError in page_pieces)
+    pdf = _prep(
+        tmp_path,
+        sidecar="@intro-title\nWelcome to the deck.\n\n@euler-setup\nNot generated yet.\n",
+    )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     user.find("Generate").click()
@@ -85,6 +156,63 @@ async def test_generate_and_preview(
     from slidesonnet.cache import audio_dir
 
     assert any(audio_dir(pdf).glob("*.wav"))
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+
+
+def _fake_preview(pdf: Path, cues: list[tuple[float, str]]) -> "api.Preview":
+    """A ready-made Preview backed by the silence fixture (no TTS, no ffmpeg)."""
+    from slidesonnet.cache import render_dir
+
+    rdir = render_dir(pdf)
+    rdir.mkdir(parents=True, exist_ok=True)
+    track = rdir / "preview.wav"
+    track.write_bytes((FIXTURES / "silence.wav").read_bytes())
+    return api.Preview(track=track, cues=cues, total_duration=4.0)
+
+
+async def test_stop_during_preview_build_cancels_playback(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stop pressed while the track is still building must win over the play."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+
+    def slow_build(self: EditorState) -> api.Preview:
+        time.sleep(1.0)  # the synthesis window the user interrupts
+        return _fake_preview(self.pdf_path, [])
+
+    monkeypatch.setattr(EditorState, "preview_current", slow_build)
+    await user.open("/")
+    user.find(marker="play-slide").click()
+    user.find(marker="stop").click()
+    await user.should_see("Preview stopped", retries=300)
+
+
+async def test_deck_playback_cue_flip_saves_pending_edits(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cue flip during deck preview must not clobber narration typed meanwhile."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+
+    def instant_build(self: EditorState) -> api.Preview:
+        return _fake_preview(self.pdf_path, [(0.0, "intro-title"), (2.0, "euler-setup")])
+
+    monkeypatch.setattr(EditorState, "preview_deck", instant_build)
+    await user.open("/")
+    user.find(marker="play-deck").click()
+    await user.should_see("Preview ready", retries=300)
+    user.find(ui.textarea).clear().type("Typed during playback.")
+    # the track reaches the second slide's cue: the editor flips the page
+    user.find(marker="preview-audio").trigger("timeupdate", args=2.5)
+    await user.should_see("Slide 2 / 6")
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "Typed during playback." in sidecar  # saved under @intro-title, not lost
 
 
 async def test_paid_engine_preview_asks_before_synthesis(

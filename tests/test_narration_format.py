@@ -126,3 +126,8 @@ def test_invalid_pace_errors() -> None:
 def test_pause_integer_formatting() -> None:
     block = PageNarration(slide_id="x", segments=[Segment.speech("Hi."), Segment.pause(1)])
     assert serialize_block(block) == "@x\nHi. [pause 1]"
+
+
+def test_negative_pause_rejected() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        Segment.pause(-0.5)

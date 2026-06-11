@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import difflib
 import logging
+import os
+import sys
 from pathlib import Path
 
 import click
@@ -347,6 +349,12 @@ def clean(pdf: Path, keep: str, yes: bool) -> None:
     help="Open a chromeless app window via Edge/Chrome (auto-detected; Windows-side under WSL). "
     "Firefox has no app-window mode.",
 )
+@click.option(
+    "--dev",
+    is_flag=True,
+    help="Auto-restart the editor when slideSonnet's own source code changes "
+    "(for hacking on slideSonnet itself).",
+)
 def edit(
     pdf: Path,
     narration: Path | None,
@@ -355,6 +363,7 @@ def edit(
     no_browser: bool,
     browser: str | None,
     app_window: bool,
+    dev: bool,
 ) -> None:
     """Launch the NiceGUI narration editor.
 
@@ -365,7 +374,19 @@ def edit(
       slidesonnet edit deck.pdf --browser "cmd.exe /c start"
       slidesonnet edit deck.pdf --browser '/mnt/c/.../msedge.exe --app={url}'
     """
-    from slidesonnet.gui.app import run_editor
+    from slidesonnet.gui.app import dev_invocation, run_editor
+
+    if dev:
+        argv, extra_env = dev_invocation(
+            pdf,
+            sidecar_path=narration,
+            host=host,
+            port=port,
+            browser=browser,
+            app_window=app_window,
+            no_browser=no_browser,
+        )
+        os.execve(sys.executable, argv, {**os.environ, **extra_env})
 
     run_editor(
         pdf,
