@@ -48,7 +48,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   play-deck buttons now toggle play/pause for their own track (icon
   flips), Stop resets the player, and switching slides clears a
   single-slide preview (even one still building) while deck previews
-  seek to the new slide — playing or paused.
+  seek to the new slide — playing or paused. A seek bar + elapsed/total
+  clock in the transport replaces the widget's scrubber (drag to jump
+  anywhere in the track).
 
 ### Changed
 - **Kokoro replaces Piper as the local TTS engine.** The default backend is

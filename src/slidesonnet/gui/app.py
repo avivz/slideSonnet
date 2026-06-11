@@ -417,6 +417,8 @@ body{
 .ss-counter{font-size:12px;color:var(--ss-dim);padding:0 8px;min-width:96px;text-align:center}
 .ss-vsep{width:1px;height:20px;background:var(--ss-line);margin:0 8px}
 .ss-audio{display:none}  /* invisible sound pipe — the transport buttons are the UI */
+.ss-seek{flex:1 1 0;min-width:60px}
+.ss-time{font-size:11px;color:var(--ss-dim);white-space:nowrap}
 .ss-console{
   width:100%;height:100%;overflow-y:auto;padding:16px;
   background:var(--ss-surface)}
@@ -601,6 +603,13 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     ui.element("div").classes("ss-vsep")
                     audio = ui.audio("").classes("ss-audio")
                     audio.mark("preview-audio")
+                    pos_slider = (
+                        ui.slider(min=0.0, max=1.0, step=0.001, value=0.0)
+                        .props("dense disable")
+                        .classes("ss-seek")
+                    )
+                    pos_slider.mark("seek")
+                    time_label = ui.label("").classes("ss-mono ss-time")
 
         with console_split.after, ui.column().classes("ss-console gap-3 no-wrap"):
             with ui.row().classes("w-full items-center justify-between no-wrap"):
@@ -630,6 +639,8 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     cues: list[tuple[float, str]] = []
     busy = False
     playback = PlaybackController()
+    track_duration = 0.0
+    scrubbing = False  # user is dragging the seek handle; don't fight them
 
     def render() -> None:
         page_label.set_text(f"Slide {state.index + 1} / {state.page_count}")
@@ -847,11 +858,26 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         deck_active = playback.playing and playback.loaded_key == "deck"
         play_all.props(f"icon={'pause' if deck_active else 'playlist_play'}")
 
+    def _fmt_clock(t: float) -> str:
+        s = max(0, int(t))
+        return f"{s // 60}:{s % 60:02d}"
+
+    def _sync_clock(t: float) -> None:
+        if track_duration <= 0:
+            return
+        if not scrubbing:
+            pos_slider.value = min(1.0, t / track_duration)
+        time_label.set_text(f"{_fmt_clock(t)} / {_fmt_clock(track_duration)}")
+
     def _stop_playback() -> None:
-        nonlocal cues
+        nonlocal cues, track_duration
         playback.stop()  # cancels a pending play too — Stop always wins
         audio.pause()
         cues = []
+        track_duration = 0.0
+        pos_slider.value = 0.0
+        pos_slider.props("disable")
+        time_label.set_text("")
         _sync_transport()
 
     def _request_preview(btn: Any, whole_deck: bool) -> None:
@@ -885,7 +911,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     client = ui.context.client  # background tasks must re-enter the page's slot stack
 
     async def _preview(btn: Any, whole_deck: bool, token: int) -> None:
-        nonlocal busy, cues
+        nonlocal busy, cues, track_duration
         with client:
             save_current()
             btn.props("loading")
@@ -909,6 +935,10 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 # the browser refetches instead of replaying the previous audio
                 audio.set_source(f"{_media_url(state, preview.track)}?v={token}")
                 playback.mark_loaded("deck" if whole_deck else state.current_id)
+                track_duration = preview.total_duration
+                pos_slider.value = 0.0
+                pos_slider.props(remove="disable")
+                _sync_clock(0.0)
                 audio.play()
                 playback.set_playing(True)  # optimistic; the browser event confirms
                 _sync_transport()
@@ -923,11 +953,12 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 btn.props(remove="loading")
                 render()
 
-    # cue-driven image flip during deck preview
+    # clock/scrubber sync + cue-driven image flip during deck preview
     def _on_timeupdate(e: Any) -> None:
+        t = float(e.args) if e.args is not None else 0.0
+        _sync_clock(t)
         if not cues:
             return
-        t = float(e.args) if e.args is not None else 0.0
         current = cues[0][1]
         for start, sid in cues:
             if t + 1e-6 >= start:
@@ -945,10 +976,20 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         playback.set_playing(playing)
         _sync_transport()
 
+    def _on_scrub_pan(e: Any) -> None:
+        nonlocal scrubbing
+        scrubbing = e.args == "start"
+
+    def _on_scrub(e: Any) -> None:
+        if track_duration > 0:
+            audio.seek(float(e.args) * track_duration)
+
     audio.on("timeupdate", _on_timeupdate, args=["target.currentTime"])
     audio.on("play", lambda: _on_player_state(True))
     audio.on("pause", lambda: _on_player_state(False))
     audio.on("ended", lambda: _on_player_state(False))
+    pos_slider.on("pan", _on_scrub_pan)
+    pos_slider.on("change", _on_scrub)  # fires on release: one seek per scrub
     prev_btn.on_click(lambda: _go(-1))
     next_btn.on_click(lambda: _go(1))
     play_one.on_click(lambda: _request_preview(play_one, False))

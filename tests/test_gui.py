@@ -333,6 +333,39 @@ async def test_nav_during_single_slide_build_cancels_it(
     await user.should_see("Preview stopped", retries=300)
 
 
+async def test_seek_bar_tracks_position_and_resets_on_stop(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The transport shows position/duration and a scrubber; Stop resets both."""
+    from nicegui import ui as ngui
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    seek = next(iter(user.find(marker="seek").elements))
+    assert isinstance(seek, ngui.slider)
+    assert "disable" in seek.props  # nothing loaded yet
+
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    await user.should_see("0:00 / 0:04")  # fake preview is 4 seconds long
+    assert "disable" not in seek.props
+
+    # the track advances: the scrubber and clock follow
+    user.find(marker="preview-audio").trigger("timeupdate", args=2.0)
+    await user.should_see("0:02 / 0:04")
+    assert seek.value == pytest.approx(0.5)
+
+    user.find(marker="stop").click()
+    assert seek.value == 0.0
+    assert "disable" in seek.props
+
+
 async def test_paid_engine_preview_asks_before_synthesis(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
