@@ -296,7 +296,7 @@ body{
 .ss-strip::-webkit-scrollbar{width:6px}
 .ss-strip::-webkit-scrollbar-thumb{background:var(--ss-line);border-radius:3px}
 .ss-thumb{
-  position:relative;width:100%;border:1px solid var(--ss-line);border-radius:8px;
+  position:relative;width:100%;flex-shrink:0;border:1px solid var(--ss-line);border-radius:8px;
   overflow:hidden;cursor:pointer;background:var(--ss-raised);
   transition:border-color .15s,transform .15s,box-shadow .15s}
 .ss-thumb:hover{border-color:var(--ss-accent-deep);transform:translateY(-1px)}
@@ -414,10 +414,11 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         with ui.row().classes("items-center gap-3 no-wrap"):
             saved_flash = ui.label("● saved").classes("ss-saved opacity-0")
             err_badge = ui.label().classes("ss-pill")
+            # material's view_sidebar glyph puts the sidebar on the RIGHT; flip for the left pane
             strip_toggle = ui.button(icon="view_sidebar").props("flat round dense")
-            strip_toggle.mark("toggle-strip").tooltip("Show/hide filmstrip")
+            strip_toggle.classes("ss-flip").mark("toggle-strip").tooltip("Show/hide filmstrip")
             console_toggle = ui.button(icon="view_sidebar").props("flat round dense")
-            console_toggle.classes("ss-flip").mark("toggle-console").tooltip("Show/hide console")
+            console_toggle.mark("toggle-console").tooltip("Show/hide console")
 
     # --- body: filmstrip | stage | console — draggable, collapsible panes ---
     strip_split = (
