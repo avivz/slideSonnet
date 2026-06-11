@@ -81,7 +81,7 @@ git push origin v1.0.0a0               # CI → TestPyPI → PyPI → GitHub Rel
 ```
 
 Version is set in `src/slidesonnet/__init__.py`. Update it before tagging. The
-v1 rewrite lives on the `v2-narration-editor` branch until merged to `main`.
+v1 rewrite lives on the `v2` branch until merged to `main`.
 
 ## Code Conventions
 
