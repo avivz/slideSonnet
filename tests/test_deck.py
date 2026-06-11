@@ -39,10 +39,10 @@ def test_dedupe_leaves_unique_and_unmarked_pages_alone() -> None:
 
 
 def test_load_deck_disambiguates_duplicate_ids(tmp_path: Path) -> None:
-    from tests.conftest import write_pdf
+    from tests.conftest import simple_narration, write_pdf
 
     pdf = write_pdf(tmp_path / "deck.pdf", ["twin", "twin"])
-    (tmp_path / "deck.narration").write_text("@twin\nHello.\n", encoding="utf-8")
+    (tmp_path / "deck.narration").write_text(simple_narration("@twin\nHello.\n"), encoding="utf-8")
     deck, diags = load_deck(pdf)
     assert deck.pages == ["twin", "twin-2"]
     assert deck.page_narration("twin").speech_text == "Hello."

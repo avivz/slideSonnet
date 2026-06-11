@@ -10,7 +10,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
-from slidesonnet.narration.model import PageNarration
+from slidesonnet.narration.model import PageNarration, Transition
 
 Severity = Literal["error", "warning", "info"]
 
@@ -114,7 +114,41 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
             )
         )
 
+    # Transition disagreement at a slide boundary (e.g. an LLM wrote both sides).
+    by_id = {b.slide_id: b for b in blocks}
+    for earlier, later in zip(real_pages, real_pages[1:], strict=False):
+        prev_block, next_block = by_id.get(earlier), by_id.get(later)
+        if prev_block is None or next_block is None:
+            continue
+        out_t, in_t = prev_block.transition_out, next_block.transition_in
+        if in_t.kind != "cut" and (out_t.kind, out_t.seconds) != (in_t.kind, in_t.seconds):
+            diags.append(
+                Diagnostic(
+                    "warning",
+                    "transition-conflict",
+                    f"transition out of '{earlier}' disagrees with transition into "
+                    f"'{later}' — the earlier slide's transition wins",
+                    earlier,
+                )
+            )
+
     return sort_diagnostics(diags)
+
+
+def boundary_transition(
+    prev_block: PageNarration | None, next_block: PageNarration | None
+) -> Transition:
+    """The effective transition between two consecutive slides.
+
+    The earlier slide's ``transition_out`` wins; if it is a plain cut, the next
+    slide's ``transition_in`` applies; absent any direction, the default is a
+    cut. This keeps rendering well-defined even when the two sides disagree.
+    """
+    if prev_block is not None and prev_block.transition_out.kind != "cut":
+        return prev_block.transition_out
+    if next_block is not None and next_block.transition_in.kind != "cut":
+        return next_block.transition_in
+    return Transition()
 
 
 def sort_diagnostics(diags: list[Diagnostic]) -> list[Diagnostic]:

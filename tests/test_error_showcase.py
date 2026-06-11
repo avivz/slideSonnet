@@ -15,7 +15,7 @@ from nicegui import ui
 from nicegui.testing import User
 
 from slidesonnet.cli import main
-from tests.conftest import write_pdf
+from tests.conftest import simple_narration, write_pdf
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "error-showcase"
 
@@ -123,7 +123,7 @@ async def test_no_freeze_pill_on_healthy_deck(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pdf = write_pdf(tmp_path / "deck.pdf", ["alpha"])
-    (tmp_path / "deck.narration").write_text("@alpha\nHi.\n", encoding="utf-8")
+    (tmp_path / "deck.narration").write_text(simple_narration("@alpha\nHi.\n"), encoding="utf-8")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     await user.should_see("Slide 1 / 1")
@@ -177,16 +177,14 @@ async def test_deck_preview_works_despite_all_errors(
 async def test_unmarked_page_disables_editing_with_hint(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No slide-id means no sidecar key: the editor must not eat typed text."""
+    """No slide-id means no sidecar key: the editor shows a hint, not edit fields."""
     pdf = write_pdf(tmp_path / "deck.pdf", ["alpha", "", "beta"])
-    (tmp_path / "deck.narration").write_text("@alpha\nHi.\n", encoding="utf-8")
+    (tmp_path / "deck.narration").write_text(simple_narration("@alpha\nHi.\n"), encoding="utf-8")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
+    user.find(ui.textarea)  # alpha has an editable utterance card
     user.find("Next").click()  # onto the unmarked page
-    await user.should_see("no slide-id marker")
-    body = next(iter(user.find(ui.textarea).elements))
-    assert isinstance(body, ui.textarea)
-    assert not body.enabled  # typing here could never be saved — don't pretend
-    # navigating onward re-enables editing
-    user.find("Next").click()
-    assert body.enabled
+    await user.should_see("no slide-id marker")  # a hint, not an edit field
+    # the add-line button is disabled (can't add narration to a keyless page)
+    add = next(iter(user.find(marker="add-utterance").elements))
+    assert isinstance(add, ui.button) and not add.enabled

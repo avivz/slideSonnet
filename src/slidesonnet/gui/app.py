@@ -22,6 +22,7 @@ from nicegui.events import KeyEventArguments
 
 from slidesonnet.cache import render_dir
 from slidesonnet.gui.state import EditorState, cue_start
+from slidesonnet.narration.model import Pace, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
 
 logger = logging.getLogger(__name__)
@@ -436,11 +437,24 @@ body{
   font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;
   color:var(--ss-dim);margin-top:4px}
 .ss-id{font-size:15px;font-weight:600;color:var(--ss-accent)}
-.ss-voice{width:200px}
-.ss-body{flex:1 1 0;min-height:0;width:100%;display:flex;flex-direction:column}
-.ss-body .q-field__inner,.ss-body .q-field__control,
-.ss-body .q-field__control-container{height:100%}
-.ss-body textarea{height:100%!important;resize:none;line-height:1.7;font-size:16.5px}
+/* structured block editor: a scrollable column of utterance + pause cards */
+.ss-blocks{flex:1 1 0;min-height:0;overflow-y:auto;padding-right:4px}
+.ss-card{
+  background:var(--ss-raised);border-radius:8px;padding:8px 10px;gap:4px;
+  box-shadow:none;border:1px solid var(--ss-line)}
+.ss-utext{flex:1 1 0;min-width:0}
+.ss-utext textarea{line-height:1.6;font-size:15.5px;resize:none}
+.ss-utt-opts{margin-top:2px}
+.ss-utt-opts .q-expansion-item__content{padding:6px 2px 2px;display:flex;
+  flex-direction:column;gap:8px}
+.ss-seg-controls{flex:0 0 auto}
+.ss-pause{border-style:dashed}
+.ss-pause-icon{color:var(--ss-dim)}
+.ss-pause-secs{width:96px}
+.ss-transition{padding:2px 2px}
+.ss-trans-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ss-dim);flex:0 0 auto}
+.ss-trans-secs{width:84px}
 .q-field--filled .q-field__control{background:var(--ss-raised)!important;border-radius:8px}
 .ss-diag{font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.4}
 .ss-diag-err{color:var(--ss-err)}
@@ -586,27 +600,17 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 with ui.row().classes("w-full items-center no-wrap gap-3"):
                     id_label = ui.label().classes("ss-id ss-mono")
                     ui.space()
-                    voice = (
-                        ui.input(
-                            label="Voice",
-                            placeholder="default",
-                            autocomplete=sorted(state.config.voices),
-                        )
-                        .classes("ss-voice ss-mono")
-                        .props("filled dense")
+                    add_line_btn = ui.button(
+                        "Line", icon="add", on_click=lambda: _add_segment("speech")
                     )
-                    pace = (
-                        ui.toggle(["slow", "normal", "fast"], value="normal")
-                        .classes("ss-pace")
-                        .props("no-caps dense unelevated toggle-color=primary")
+                    add_line_btn.props("flat dense no-caps").mark("add-utterance")
+                    add_line_btn.tooltip("Add a spoken line")
+                    add_pause_btn = ui.button(
+                        "Pause", icon="more_horiz", on_click=lambda: _add_segment("pause")
                     )
-                body = (
-                    ui.textarea(
-                        placeholder="(no narration yet — type here · [pause 1.5] adds silence)"
-                    )
-                    .classes("ss-mono ss-body")
-                    .props("filled")
-                )
+                    add_pause_btn.props("flat dense no-caps").mark("add-pause")
+                    add_pause_btn.tooltip("Add a silent pause")
+                blocks_col = ui.column().classes("ss-blocks no-wrap gap-2 w-full")
                 with ui.row().classes("w-full items-center no-wrap gap-1"):
                     prev_btn = ui.button(icon="chevron_left").props("flat round dense")
                     prev_btn.mark("Previous").tooltip("Back (←)")
@@ -664,8 +668,19 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     playback = PlaybackController()
     track_duration = 0.0
     scrubbing = False  # user is dragging the seek handle; don't fight them
+    # collectors for the structured block editor, refreshed by _render_blocks()
+    seg_collectors: list[Callable[[], Segment]] = []
+    transition_getters: dict[str, Callable[[], Transition]] = {}
+
+    def _pace_value(v: str | None) -> Pace | None:
+        return None if v in (None, "", "normal") else v  # type: ignore[return-value]
 
     def render() -> None:
+        _render_side()
+        _render_blocks()
+
+    def _render_side() -> None:
+        """Everything but the block editor — safe to call on a silent commit."""
         page_label.set_text(f"Slide {state.index + 1} / {state.page_count}")
         if state.error_count:
             err_badge.set_text(f"⛔ {state.error_count} errors")
@@ -674,18 +689,10 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             err_badge.set_text("✓ no errors")
             err_badge.classes(remove="ss-pill-err", add="ss-pill-ok")
         id_label.set_text(state.current_id or "(no slide id)")
-        body.value = state.body_text
-        voice.value = state.voice
-        pace.value = state.pace
-        if state.current_id:
-            body.enable()
-        else:  # unmarked page: there is no id to key a narration block to
-            body.disable()
         freeze_pill.visible = state.writes_frozen
-        if state.writes_frozen:  # typed text is provisional until the file is fixed
-            body.classes(add="ss-frozen")
-        else:
-            body.classes(remove="ss-frozen")
+        editable = bool(state.current_id) and not state.writes_frozen
+        add_line_btn.set_enabled(editable)
+        add_pause_btn.set_enabled(editable)
         try:
             img = state.current_image()
             if img is not None:
@@ -693,6 +700,8 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         except Exception as exc:  # rasterize may fail without pdftoppm
             logger.warning("image render failed: %s", exc)
         for i, (card, dot) in enumerate(thumb_cards):
+            if i >= len(state.deck.pages):
+                break  # strip is briefly stale after a recompile; poll rebuilds it
             if i == state.index:
                 card.classes(add="ss-active")
             else:
@@ -703,6 +712,178 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         _render_audio_status()
         _render_orphan_tray()
         _sync_transport()
+
+    # ---- structured block editor (utterances, pauses, transitions) ----------
+    def _transition_row(which: str, transition: Transition, disabled: bool) -> None:
+        label = "Transition in" if which == "in" else "Transition out"
+        with ui.row().classes("w-full items-center no-wrap gap-2 ss-transition"):
+            ui.label(label).classes("ss-trans-label ss-mono")
+            kind = (
+                ui.toggle(["cut", "crossfade"], value=transition.kind)
+                .props("dense no-caps unelevated")
+                .mark(f"trans-{which}")
+            )
+            secs = (
+                ui.number(value=transition.seconds or 0.5, min=0, step=0.1, format="%.1f")
+                .props("dense filled")
+                .classes("ss-trans-secs")
+            )
+            secs.bind_visibility_from(kind, "value", backward=lambda v: v == "crossfade")
+            if disabled:
+                kind.disable()
+                secs.disable()
+            kind.on_value_change(lambda: _commit())
+            secs.on("blur", lambda: _commit())
+
+        def collect() -> Transition:
+            k: str = kind.value or "cut"
+            seconds = float(secs.value or 0.0) if k == "crossfade" else 0.0
+            return Transition(kind=k, seconds=seconds)  # type: ignore[arg-type]
+
+        transition_getters[which] = collect
+
+    def _seg_controls(index: int, disabled: bool) -> None:
+        up = ui.button(icon="keyboard_arrow_up", on_click=lambda: _move_segment(index, -1))
+        up.props("flat round dense size=sm").mark(f"seg-up-{index}")
+        down = ui.button(icon="keyboard_arrow_down", on_click=lambda: _move_segment(index, 1))
+        down.props("flat round dense size=sm").mark(f"seg-down-{index}")
+        trash = ui.button(icon="close", on_click=lambda: _delete_segment(index))
+        trash.props("flat round dense size=sm").mark(f"seg-del-{index}")
+        if disabled:
+            for b in (up, down, trash):
+                b.disable()
+
+    def _utterance_card(index: int, seg: Segment, disabled: bool) -> Callable[[], Segment]:
+        with ui.card().classes("ss-card ss-utterance w-full").mark(f"utterance-{index}"):
+            with ui.row().classes("w-full items-start no-wrap gap-1"):
+                text = (
+                    ui.textarea(value=seg.text, placeholder="Spoken words…")
+                    .props("filled autogrow dense")
+                    .classes("ss-mono ss-utext")
+                    .mark(f"utext-{index}")
+                )
+                with ui.column().classes("gap-0 ss-seg-controls"):
+                    _seg_controls(index, disabled)
+            with (
+                ui.expansion("voice · pace · direction", icon="tune")
+                .props("dense")
+                .classes("ss-utt-opts w-full")
+            ):
+                voice = (
+                    ui.input(
+                        label="Voice",
+                        value=seg.voice or "",
+                        placeholder="default",
+                        autocomplete=sorted(state.config.voices),
+                    )
+                    .props("filled dense")
+                    .classes("ss-mono w-full")
+                    .mark(f"uvoice-{index}")
+                )
+                pace = (
+                    ui.toggle(["slow", "normal", "fast"], value=seg.pace or "normal")
+                    .props("dense no-caps unelevated")
+                    .mark(f"upace-{index}")
+                )
+                direct = (
+                    ui.input(
+                        label="Director's note",
+                        value=seg.direction or "",
+                        placeholder="how to speak it (optional)",
+                    )
+                    .props("filled dense")
+                    .classes("w-full")
+                    .mark(f"udirect-{index}")
+                )
+            for w in (text, voice, pace, direct):
+                if disabled:
+                    w.disable()
+            text.on("blur", lambda: _commit())
+            voice.on("blur", lambda: _commit())
+            pace.on_value_change(lambda: _commit())
+            direct.on("blur", lambda: _commit())
+
+        def collect() -> Segment:
+            return Segment.speech(
+                text.value or "",
+                voice=(voice.value or "").strip() or None,
+                pace=_pace_value(pace.value),
+                direction=(direct.value or "").strip() or None,
+            )
+
+        return collect
+
+    def _pause_card(index: int, seg: Segment, disabled: bool) -> Callable[[], Segment]:
+        with ui.card().classes("ss-card ss-pause w-full").mark(f"pause-{index}"):
+            with ui.row().classes("w-full items-center no-wrap gap-2"):
+                ui.icon("more_horiz").classes("ss-pause-icon")
+                secs = (
+                    ui.number(value=seg.seconds, min=0, step=0.1, format="%.1f", suffix="s")
+                    .props("filled dense")
+                    .classes("ss-pause-secs")
+                    .mark(f"pause-secs-{index}")
+                )
+                ui.label("silence").classes("ss-diag ss-diag-info")
+                ui.space()
+                with ui.row().classes("gap-0 no-wrap"):
+                    _seg_controls(index, disabled)
+            if disabled:
+                secs.disable()
+            secs.on("blur", lambda: _commit())
+
+        def collect() -> Segment:
+            return Segment.pause(max(0.0, float(secs.value or 0.0)))
+
+        return collect
+
+    def _render_blocks() -> None:
+        blocks_col.clear()
+        seg_collectors.clear()
+        transition_getters.clear()
+        block = state.current_block
+        disabled = state.writes_frozen or not state.current_id
+        with blocks_col:
+            if not state.current_id:
+                ui.label(
+                    "This page has no slide-id — add \\ssid in the source to narrate it."
+                ).classes("ss-diag ss-diag-warn")
+                return
+            _transition_row("in", block.transition_in, disabled)
+            for i, seg in enumerate(block.segments):
+                if seg.is_speech:
+                    seg_collectors.append(_utterance_card(i, seg, disabled))
+                else:
+                    seg_collectors.append(_pause_card(i, seg, disabled))
+            if not block.segments:
+                ui.label("(empty — add a line or a pause above)").classes("ss-diag ss-diag-info")
+            _transition_row("out", block.transition_out, disabled)
+
+    def _collect() -> tuple[list[Segment], Transition, Transition]:
+        segs = [c() for c in seg_collectors]
+        tin = transition_getters["in"]() if "in" in transition_getters else Transition()
+        tout = transition_getters["out"]() if "out" in transition_getters else Transition()
+        return segs, tin, tout
+
+    def _add_segment(kind: str) -> None:
+        segs, tin, tout = _collect()
+        segs.append(Segment.speech("") if kind == "speech" else Segment.pause(1.0))
+        if state.replace_block(segs, transition_in=tin, transition_out=tout):
+            render()
+
+    def _delete_segment(index: int) -> None:
+        segs, tin, tout = _collect()
+        if 0 <= index < len(segs):
+            del segs[index]
+        if state.replace_block(segs, transition_in=tin, transition_out=tout):
+            render()
+
+    def _move_segment(index: int, delta: int) -> None:
+        segs, tin, tout = _collect()
+        j = index + delta
+        if 0 <= index < len(segs) and 0 <= j < len(segs):
+            segs[index], segs[j] = segs[j], segs[index]
+            if state.replace_block(segs, transition_in=tin, transition_out=tout):
+                render()
 
     def _render_orphan_tray() -> None:
         """Narration whose slide vanished in a recompile: keep it visible and actionable."""
@@ -817,11 +998,16 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     save_warned = False
 
     def save_current() -> None:
+        """Flush the open editor widgets to disk without rebuilding the cards."""
         nonlocal save_warned
-        if state.save(body.value or "", voice=voice.value or "", pace=pace.value or "normal"):
+        if not seg_collectors and "in" not in transition_getters:
+            return  # nothing built (e.g. unmarked page)
+        segs, tin, tout = _collect()
+        if state.replace_block(segs, transition_in=tin, transition_out=tout):
             save_warned = False
             saved_flash.classes(remove="opacity-0")
             ui.timer(1.2, lambda: saved_flash.classes(add="opacity-0"), once=True)
+            _render_side()
         elif state.writes_frozen and not save_warned:
             save_warned = True
             ui.notify(
@@ -829,6 +1015,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 "resolve them in the file first",
                 type="warning",
             )
+
+    def _commit() -> None:
+        save_current()
 
     # ---- navigation (each saves first) ----
     def _jump(index: int) -> None:
@@ -1154,7 +1343,6 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
 
     ui.timer(1.0, _poll_sources)
 
-    body.on("blur", lambda: save_current())
     strip_toggle.on_click(lambda: _toggle_pane(strip_split, "strip", 150.0))
     console_toggle.on_click(lambda: _toggle_pane(console_split, "console", 264.0))
     collapse_strip.on_click(lambda: _toggle_pane(strip_split, "strip", 150.0))

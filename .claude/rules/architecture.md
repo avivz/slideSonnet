@@ -29,11 +29,16 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 
 - **pdf/reader.py** — `read_page_ids` (PyMuPDF, extracts invisible `SSID:` markers),
   `rasterize` (pdftoppm → page PNGs).
-- **narration/model.py** — `Segment` (speech|pause), `PageNarration`, `Deck`.
-- **narration/format.py** — parse/serialize the sidecar grammar (round-trip stable);
-  `parse_segments`, `serialize_body`, `pace_to_speed`.
-- **diagnostics.py** — id-only reconciliation (duplicate/auto/missing/orphan/order).
-- **deck.py** — `load_deck`, `save_deck`, `blank_blocks_for`, default sidecar path.
+- **narration/model.py** — `Segment` (speech|pause; speech carries per-utterance
+  `voice`/`pace`/`direction`), `Transition` (cut|crossfade), `PageNarration`
+  (segments + `transition_in`/`transition_out`), `Deck`.
+- **narration/format.py** — parse/serialize the indented block sidecar grammar
+  (round-trip stable; `utterance:`/`pause:`/`transition-*:` lines);
+  `parse_segments`/`serialize_body` (lossy plain-text helper), `pace_to_speed`.
+- **diagnostics.py** — id reconciliation (duplicate-block/auto/missing/orphan/order/
+  transition-conflict); `boundary_transition` (earlier slide's transition wins).
+- **deck.py** — `load_deck`, `save_deck`, `dedupe_page_ids`, `blank_blocks_for`,
+  default sidecar path.
 - **timing.py** — `TimingMode` (tts/estimate/fixed), `compute_page_timing` → `PageTiming`.
 - **render.py** — `build_timeline` (`DeckTimeline`), `subtitle_entries`,
   `render_audio_track`, `compose_video`.

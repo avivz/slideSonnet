@@ -11,6 +11,7 @@ from nicegui import ui
 from nicegui.testing import User
 
 from slidesonnet import api
+from tests.conftest import simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -22,7 +23,7 @@ def _prep(tmp_path: Path, sidecar: str = "") -> Path:
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())
     if sidecar:
-        (tmp_path / "marked.narration").write_text(sidecar, encoding="utf-8")
+        (tmp_path / "marked.narration").write_text(simple_narration(sidecar), encoding="utf-8")
     return pdf
 
 
@@ -75,12 +76,30 @@ async def test_edit_persists(user: User, tmp_path: Path, monkeypatch: pytest.Mon
     pdf = _prep(tmp_path)
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
-    user.find(ui.textarea).clear().type("Hello deck. [pause 1] Bye.")
+    # empty slide: add a spoken line, type into it, then add a pause block
+    user.find(marker="add-utterance").click()
+    user.find(ui.textarea).type("Hello deck.")
+    user.find(marker="add-pause").click()
     user.find("Next").click()  # nav saves the current slide first
     sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
     assert "@intro-title" in sidecar
-    assert "Hello deck." in sidecar
-    assert "[pause 1]" in sidecar
+    assert "text: Hello deck." in sidecar
+    assert "pause: 1" in sidecar  # default pause length
+
+
+async def test_per_utterance_voice_and_pace_persist(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    # the one utterance's options carry voice + director's note
+    user.find(marker="uvoice-0").type("af_bella")
+    user.find(marker="udirect-0").type("warmly")
+    user.find("Next").click()
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "voice: af_bella" in sidecar
+    assert "direct: warmly" in sidecar
 
 
 async def test_diagnostics_visible(
@@ -119,7 +138,9 @@ async def test_recompile_while_editing_updates_deck_live(
     from tests.conftest import write_pdf
 
     pdf = write_pdf(tmp_path / "deck.pdf", ["alpha", "beta"])
-    (tmp_path / "deck.narration").write_text("@alpha\nHi.\n\n@beta\nBye.\n", encoding="utf-8")
+    (tmp_path / "deck.narration").write_text(
+        simple_narration("@alpha\nHi.\n\n@beta\nBye.\n"), encoding="utf-8"
+    )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     await user.should_see("Slide 1 / 2")
@@ -392,7 +413,7 @@ async def test_orphan_attach_flow(
     user.find(marker="attach-confirm").click()
     await user.should_see("Narration attached to 'euler-setup'")
     sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
-    assert "@euler-setup\nLost text to keep." in sidecar
+    assert "Lost text to keep." in sidecar
     assert "@ghost" not in sidecar
     await user.should_see("✓ no errors")  # orphan error resolved
 
@@ -417,7 +438,9 @@ async def test_typing_survives_recompile_that_drops_the_slide(
     from tests.conftest import write_pdf
 
     pdf = write_pdf(tmp_path / "deck.pdf", ["alpha", "beta"])
-    (tmp_path / "deck.narration").write_text("@alpha\nHi.\n\n@beta\nBye.\n", encoding="utf-8")
+    (tmp_path / "deck.narration").write_text(
+        simple_narration("@alpha\nHi.\n\n@beta\nBye.\n"), encoding="utf-8"
+    )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     await user.should_see("Slide 1 / 2")

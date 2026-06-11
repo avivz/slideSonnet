@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Structured narration: attributed utterances, pauses, and transitions.**
+  A slide's narration is now an ordered list of *utterance* and *pause*
+  blocks. Each utterance carries its own `voice`, `pace`, and free-text
+  `direct` (director's note); a slide can mix voices — each utterance is its
+  own synthesis call (so Kokoro renders a two-voice exchange on one slide).
+  `direct` is stored and serialized for forward compatibility (the local
+  engine ignores it). Each slide also has `transition-in`/`transition-out`
+  (default `cut`, or a timed `crossfade`).
+- **Block editor.** The single narration textarea is replaced by a card list:
+  "Line" and "Pause" buttons add blocks; each utterance card has a growing
+  text area with collapsed voice/pace/director's-note options and
+  reorder/delete controls; pause cards edit their duration; transition rows
+  bracket the slide.
 - Editor usability: single-slide preview button (was deck-only), ←/→
   keyboard navigation, autosave "saved" flash, engine/sidecar status footer,
   and pace as a one-click toggle instead of a dropdown.
@@ -33,6 +46,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   ids, duplicate sidecar blocks, orphan narration) — open it in the editor
   to see how each one surfaces. Guarded by tests so it stays broken in
   exactly the advertised ways.
+
+### Changed (narration file format)
+- **The `.narration` sidecar grammar is now an indented block format** (a
+  breaking change). Each slide is `@id` followed by `utterance:` blocks (with
+  `voice:`/`pace:`/`direct:`/`text:` lines), `pause: N` lines, and optional
+  `transition-in:`/`transition-out:` lines. The old flat `:voice`/`:pace` +
+  inline-`[pause]` body grammar is gone; the bundled example decks are
+  migrated. A new `transition-conflict` check (warning) fires when a slide's
+  `transition-out` disagrees with the next slide's `transition-in`; the
+  earlier slide's transition wins, and the editor clears the next slide's
+  `transition-in` when you set an outgoing one, so a boundary is only ever
+  written on one side.
 
 ### Changed (reconciliation)
 - Duplicate slide-ids are no longer a hard error: when the same `\ssid`

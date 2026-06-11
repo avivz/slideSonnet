@@ -16,12 +16,10 @@ from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import default_config_path, load_config
 from slidesonnet.deck import default_sidecar_path, load_deck, save_deck
 from slidesonnet.diagnostics import Diagnostic
-from slidesonnet.narration.format import parse_segments, serialize_body
-from slidesonnet.narration.model import Pace, PageNarration
+from slidesonnet.narration.format import serialize_body
+from slidesonnet.narration.model import PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import rasterize
 from slidesonnet.tts import create_tts
-
-_VALID_PACES: frozenset[str] = frozenset({"slow", "normal", "fast"})
 
 SlideStatus = Literal["error", "warning", "ready", "empty"]
 
@@ -126,14 +124,6 @@ class EditorState:
         return serialize_body(self.current_block)
 
     @property
-    def voice(self) -> str:
-        return self.current_block.voice or ""
-
-    @property
-    def pace(self) -> str:
-        return self.current_block.pace or "normal"
-
-    @property
     def writes_frozen(self) -> bool:
         """True while rewriting the sidecar would silently lose content.
 
@@ -142,24 +132,61 @@ class EditorState:
         """
         return any(d.code == "duplicate-block" for d in self.diagnostics)
 
-    def save(self, body: str, *, voice: str = "", pace: str = "normal") -> bool:
-        """Persist edits to the current slide's block; False if saving is unsafe.
+    def _next_page_id(self) -> str | None:
+        nxt = self.index + 1
+        return self.deck.pages[nxt] if nxt < self.page_count else None
 
-        Unsafe: the page has no slide-id to key the block ("@" would corrupt
-        the sidecar grammar), or duplicate blocks froze writes.
+    def set_body(self, body: str) -> bool:
+        """Replace the current block from a plain free-text body (preserves transitions).
+
+        Lossy convenience for the plain-text editing path: per-utterance voice,
+        pace, and director's notes are not expressible here. Inline ``[pause N]``
+        still splits the body into segments.
+        """
+        from slidesonnet.narration.format import parse_segments
+
+        block = self.current_block
+        return self.replace_block(
+            parse_segments(body),
+            transition_in=block.transition_in,
+            transition_out=block.transition_out,
+        )
+
+    def replace_block(
+        self,
+        segments: list[Segment],
+        *,
+        transition_in: Transition | None = None,
+        transition_out: Transition | None = None,
+    ) -> bool:
+        """Replace the current slide's block wholesale, then persist; False if unsafe.
+
+        Unsafe: the page has no slide-id to key the block ("@" would corrupt the
+        sidecar grammar), or duplicate blocks froze writes. A block that ends up
+        empty (no segments, plain cuts) is dropped from the sidecar entirely.
+
+        Setting a non-cut ``transition_out`` clears the *next* slide's
+        ``transition_in`` so a boundary is only ever specified on the earlier
+        slide (see :func:`diagnostics.boundary_transition`).
         """
         if not self.current_id or self.writes_frozen:
             return False
-        block = PageNarration(
-            slide_id=self.current_id,
-            segments=parse_segments(body),
-            voice=voice.strip() or None,
-            pace=_coerce_pace(pace),
-        )
-        if block.segments or block.voice or block.pace:
-            self.deck.narration[self.current_id] = block
-        else:
+        tin = transition_in or Transition()
+        tout = transition_out or Transition()
+        empty = not segments and tin.kind == "cut" and tout.kind == "cut"
+        if empty:
             self.deck.narration.pop(self.current_id, None)
+        else:
+            self.deck.narration[self.current_id] = PageNarration(
+                slide_id=self.current_id,
+                segments=list(segments),
+                transition_in=tin,
+                transition_out=tout,
+            )
+            if tout.kind != "cut":
+                nxt = self._next_page_id()
+                if nxt and nxt in self.deck.narration:
+                    self.deck.narration[nxt].transition_in = Transition()
         self._write_and_reload()
         return True
 
@@ -202,7 +229,10 @@ class EditorState:
             raise ValueError(f"slide '{target_id}' already has narration")
         block = self.deck.narration.pop(orphan_id)
         self.deck.narration[target_id] = PageNarration(
-            slide_id=target_id, segments=block.segments, voice=block.voice, pace=block.pace
+            slide_id=target_id,
+            segments=block.segments,
+            transition_in=block.transition_in,
+            transition_out=block.transition_out,
         )
         self._write_and_reload()
 
@@ -296,11 +326,4 @@ def cue_start(cues: list[tuple[float, str]], slide_id: str) -> float | None:
     for start, sid in cues:
         if sid == slide_id:
             return start
-    return None
-
-
-def _coerce_pace(pace: str) -> Pace | None:
-    p = pace.strip().lower()
-    if p in _VALID_PACES and p != "normal":
-        return p  # type: ignore[return-value]
     return None

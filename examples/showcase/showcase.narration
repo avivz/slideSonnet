@@ -1,48 +1,65 @@
 @title
-Welcome to slideSonnet. Everything you're about to hear was written as plain text in a sidecar file, and rendered straight from a PDF. Let me show you how. [pause 0.5]
+  utterance:
+    text: Welcome to slideSonnet. Everything you're about to hear was written as plain text in a sidecar file, and rendered straight from a PDF. Let me show you how.
+  pause: 0.5
 
 @intro-q
-:voice alex
-So what does slideSonnet actually do?
+  utterance:
+    voice: alex
+    text: So what does slideSonnet actually do?
 
 @intro-a
-You bring a finished PDF of your slides, and slideSonnet turns it into a narrated video. The narration you're hearing right now lives in a plain text file, sitting right next to that PDF.
+  utterance:
+    text: You bring a finished PDF of your slides, and slideSonnet turns it into a narrated video. The narration you're hearing right now lives in a plain text file, sitting right next to that PDF.
 
 @why-q
-:voice alex
-Why not just put the narration inside the slides themselves?
+  utterance:
+    voice: alex
+    text: Why not just put the narration inside the slides themselves?
 
 @why-a
-Because the PDF is your frozen artifact. Keeping narration in a separate, git-diffable file means you can rewrite a line and re-render in seconds. No recompiling the slides, no re-recording a microphone.
+  utterance:
+    text: Because the PDF is your frozen artifact. Keeping narration in a separate, git-diffable file means you can rewrite a line and re-render in seconds. No recompiling the slides, no re-recording a microphone.
 
 @markers
-Step one: mark your slides. Add the slideSonnet package to your Beamer source, and give every slide a stable id with the ess-ess-eye-dee macro. The id gets stamped invisibly onto each page, so narration binds to the id, not to a page number that shifts when you insert a slide.
+  utterance:
+    text: Step one: mark your slides. Add the slideSonnet package to your Beamer source, and give every slide a stable id with the ess-ess-eye-dee macro. The id gets stamped invisibly onto each page, so narration binds to the id, not to a page number that shifts when you insert a slide.
 
 @init
-Step two: scaffold the sidecar. Run slidesonnet init on your PDF, and it reads the ids straight out of the document and writes a blank narration file, one block per slide, ready for you to fill in. By hand, or by an LLM.
+  utterance:
+    text: Step two: scaffold the sidecar. Run slidesonnet init on your PDF, and it reads the ids straight out of the document and writes a blank narration file, one block per slide, ready for you to fill in. By hand, or by an LLM.
 
 @format
-The format is simple. An at-sign and the slide id starts a block. Optional voice and pace directives go on lines starting with a colon. And square-bracket pause, with a number, inserts silence. That one primitive covers a pause between sentences, a hold at the end of a slide, or an entirely silent slide.
+  utterance:
+    text: The format is simple. An at-sign and the slide id starts a block. Optional voice and pace directives go on lines starting with a colon. And square-bracket pause, with a number, inserts silence. That one primitive covers a pause between sentences, a hold at the end of a slide, or an entirely silent slide.
 
 @edit-q
-:voice alex
-Do I really have to write that text file by hand?
+  utterance:
+    voice: alex
+    text: Do I really have to write that text file by hand?
 
 @edit-a
-You can, or you can run slidesonnet edit for a local editor. Page through the deck, type narration beside each slide, and preview the whole thing. The preview bakes in your pauses, so it plays back exactly like the final video will.
+  utterance:
+    text: You can, or you can run slidesonnet edit for a local editor. Page through the deck, type narration beside each slide, and preview the whole thing. The preview bakes in your pauses, so it plays back exactly like the final video will.
 
 @export
-Step four: render. Run slidesonnet export with the piper engine for free local speech, or elevenlabs for high quality cloud voices. Want a fast rough cut? Use silent mode, or estimate timing, to skip speech entirely. Subtitles are written alongside the video automatically.
+  utterance:
+    text: Step four: render. Run slidesonnet export with the piper engine for free local speech, or elevenlabs for high quality cloud voices. Want a fast rough cut? Use silent mode, or estimate timing, to skip speech entirely. Subtitles are written alongside the video automatically.
 
 @cache-q
-:voice alex
-Doesn't re-rendering everything get slow?
+  utterance:
+    voice: alex
+    text: Doesn't re-rendering everything get slow?
 
 @cache-a
-Audio is cached by content. Edit one block, and only that line is re-synthesized. Everything else is reused. And swapping piper for elevenlabs never throws away the audio you already paid for.
+  utterance:
+    text: Audio is cached by content. Edit one block, and only that line is re-synthesized. Everything else is reused. And swapping piper for elevenlabs never throws away the audio you already paid for.
 
 @recap
-That's the whole workflow. Mark your slides, scaffold the narration, check that the ids line up, write and preview, then export. Every step is scriptable, so an LLM or a Makefile can drive the entire pipeline without ever opening the editor.
+  utterance:
+    text: That's the whole workflow. Mark your slides, scaffold the narration, check that the ids line up, write and preview, then export. Every step is scriptable, so an LLM or a Makefile can drive the entire pipeline without ever opening the editor.
 
 @closing
-Mark your slides. Write narration. Render. Give slideSonnet a try. [pause 1]
+  utterance:
+    text: Mark your slides. Write narration. Render. Give slideSonnet a try.
+  pause: 1

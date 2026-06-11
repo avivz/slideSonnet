@@ -1,66 +1,91 @@
 @intro-title
-Today I want to tell you about one of my favorite stories in mathematics: the Basel problem. A sum that resisted solution for eighty-five years, before a young mathematician finally cracked it with a beautifully simple idea. [pause 0.6]
+  utterance:
+    text: Today I want to tell you about one of my favorite stories in mathematics: the Basel problem. A sum that resisted solution for eighty-five years, before a young mathematician finally cracked it with a beautifully simple idea.
+  pause: 0.6
 
 @simple-question
-Here's the question. Take every perfect square — one, four, nine, sixteen, twenty-five, and so on — flip each one over, and add them all up. Does this infinite sum converge? And if it does, then to what?
+  utterance:
+    text: Here's the question. Take every perfect square — one, four, nine, sixteen, twenty-five, and so on — flip each one over, and add them all up. Does this infinite sum converge? And if it does, then to what?
 
 @challenge-mengoli
-The problem was first posed by Pietro Mengoli in 1650. The sum does converge — you can check that by comparison with the integral of one over x squared. Add the first thousand terms and you get about 1.6439. It clearly approaches something near 1.6449. But what is this number? Nobody could figure it out.
+  utterance:
+    text: The problem was first posed by Pietro Mengoli in 1650. The sum does converge — you can check that by comparison with the integral of one over x squared. Add the first thousand terms and you get about 1.6439. It clearly approaches something near 1.6449. But what is this number? Nobody could figure it out.
 
 @challenge-bernoulli-intro
-Even Jakob Bernoulli, one of the greatest mathematicians of his era, admitted defeat in 1689. He wrote: [pause 0.4]
+  utterance:
+    text: Even Jakob Bernoulli, one of the greatest mathematicians of his era, admitted defeat in 1689. He wrote:
+  pause: 0.4
 
 @challenge-bernoulli-quote
-:voice bernoulli
-If anyone finds, and communicates to us, that which thus far has eluded our efforts — great will be our gratitude.
+  utterance:
+    voice: bernoulli
+    text: If anyone finds, and communicates to us, that which thus far has eluded our efforts — great will be our gratitude.
 
 @enter-euler
-For eighty-five years, nobody could solve it. Then in 1734, a twenty-seven year old named Leonhard Euler, working at the Academy of Sciences in Saint Petersburg, found the answer.
+  utterance:
+    text: For eighty-five years, nobody could solve it. Then in 1734, a twenty-seven year old named Leonhard Euler, working at the Academy of Sciences in Saint Petersburg, found the answer.
 
 @euler-answer
-The sum equals pi squared over six. And that was shocking. Pi is the ratio of a circle's circumference to its diameter — why on earth would it show up in a sum of reciprocal squares? Let me show you Euler's argument.
+  utterance:
+    text: The sum equals pi squared over six. And that was shocking. Pi is the ratio of a circle's circumference to its diameter — why on earth would it show up in a sum of reciprocal squares? Let me show you Euler's argument.
 
 @step1-series
-Euler's proof starts with something you might not expect — the sine function. We know the Taylor series for sine of x: x, minus x cubed over three factorial, plus x to the fifth over five factorial, and so on.
+  utterance:
+    text: Euler's proof starts with something you might not expect — the sine function. We know the Taylor series for sine of x: x, minus x cubed over three factorial, plus x to the fifth over five factorial, and so on.
 
 @step1-divide
-For any fixed nonzero x, divide that series by x. We get sine of x over x equals one, minus x squared over six, plus higher-order terms.
+  utterance:
+    text: For any fixed nonzero x, divide that series by x. We get sine of x over x equals one, minus x squared over six, plus higher-order terms.
 
 @step1-coeff
-Hold onto that coefficient of x squared — it's negative one sixth. That number is going to come back. [pause 0.4]
+  utterance:
+    text: Hold onto that coefficient of x squared — it's negative one sixth. That number is going to come back.
+  pause: 0.4
 
 @step2-zeros
-Now here's Euler's bold move. The function sine of x over x equals zero whenever x is plus or minus pi, plus or minus two pi, plus or minus three pi, and so on.
+  utterance:
+    text: Now here's Euler's bold move. The function sine of x over x equals zero whenever x is plus or minus pi, plus or minus two pi, plus or minus three pi, and so on.
 
 @step2-factor
-Euler reasoned by analogy. Just as a polynomial can be factored by its roots, he wrote sine of x over x as an infinite product, one factor for each pair of roots. This was an assumption, not a proof — the rigorous justification came over a century later with the Weierstrass factorization theorem.
+  utterance:
+    text: Euler reasoned by analogy. Just as a polynomial can be factored by its roots, he wrote sine of x over x as an infinite product, one factor for each pair of roots. This was an assumption, not a proof — the rigorous justification came over a century later with the Weierstrass factorization theorem.
 
 @step3a-finite
-Before the infinite product, see why this works for a finite one. Take three factors. An x squared term only appears when you pick the negative a-k x squared piece from exactly one factor, and the one from every other factor. So the x squared coefficient is just the sum a-one plus a-two plus a-three, with a minus sign.
+  utterance:
+    text: Before the infinite product, see why this works for a finite one. Take three factors. An x squared term only appears when you pick the negative a-k x squared piece from exactly one factor, and the one from every other factor. So the x squared coefficient is just the sum a-one plus a-two plus a-three, with a minus sign.
 
 @step3b-infinite
-Extend this to the infinite product. By the same reasoning, the x squared coefficient is minus one over pi squared, times our mystery sum.
+  utterance:
+    text: Extend this to the infinite product. By the same reasoning, the x squared coefficient is minus one over pi squared, times our mystery sum.
 
 @punchline-taylor
-Now we compare. The Taylor series told us the x squared coefficient is negative one sixth.
+  utterance:
+    text: Now we compare. The Taylor series told us the x squared coefficient is negative one sixth.
 
 @punchline-product
-And the infinite product told us it's negative one over pi squared, times our sum.
+  utterance:
+    text: And the infinite product told us it's negative one over pi squared, times our sum.
 
 @punchline-equate
-Both are power series for the same function, and a power series is unique. So the coefficients must match. One over pi squared, times the sum, equals one sixth.
+  utterance:
+    text: Both are power series for the same function, and a power series is unique. So the coefficients must match. One over pi squared, times the sum, equals one sixth.
 
 @final-result
-Multiply both sides by pi squared, and there it is. One plus one fourth plus one ninth plus one sixteenth, on forever, equals pi squared over six. That mysterious 1.6449 that nobody could pin down for eighty-five years. The circle constant was hiding in the sum all along. [pause 0.5]
+  utterance:
+    text: Multiply both sides by pi squared, and there it is. One plus one fourth plus one ninth plus one sixteenth, on forever, equals pi squared over six. That mysterious 1.6449 that nobody could pin down for eighty-five years. The circle constant was hiding in the sum all along.
+  pause: 0.5
 
 @why-rigor
-Should we worry that Euler cut corners? Mathematicians did. It took over a century before Weierstrass made the factoring step rigorous. But the answer was never in doubt. Sometimes intuition runs ahead of proof.
+  utterance:
+    text: Should we worry that Euler cut corners? Mathematicians did. It took over a century before Weierstrass made the factoring step rigorous. But the answer was never in doubt. Sometimes intuition runs ahead of proof.
 
 @why-zeta
-What we computed is a special value of the Riemann zeta function, at s equals two. Euler showed all the even values are rational multiples of powers of pi. But the odd values? Zeta of three, zeta of five? Still mysterious to this day.
+  utterance:
+    text: What we computed is a special value of the Riemann zeta function, at s equals two. Euler showed all the even values are rational multiples of powers of pi. But the odd values? Zeta of three, zeta of five? Still mysterious to this day.
 
 @what-learned
-So what did we learn? A simple question can hide an answer of extraordinary depth. Euler's genius was the boldness to try something that had no right to work, and the taste to see beauty in the result. And at the heart of it, pi, quietly connecting circles to whole numbers.
+  utterance:
+    text: So what did we learn? A simple question can hide an answer of extraordinary depth. Euler's genius was the boldness to try something that had no right to work, and the taste to see beauty in the result. And at the heart of it, pi, quietly connecting circles to whole numbers.
 
 @sources
-[pause 2.5]
+  pause: 2.5

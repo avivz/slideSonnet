@@ -124,7 +124,7 @@ def _iter_speech(pdf_path: Path) -> list[tuple[str, str | None]]:
     out: list[tuple[str, str | None]] = []
     for block in deck.narration.values():
         for seg in block.speech_segments:
-            out.append((config.apply_pronunciation(seg.text), block.voice))
+            out.append((config.apply_pronunciation(seg.text), seg.voice))
     return out
 
 

@@ -44,12 +44,15 @@ class SynthResult:
 
 
 def speech_refs(deck: Deck, config: Config) -> list[SpeechRef]:
-    """All speech segments across the deck, in page order, with processed text."""
+    """All speech segments across the deck, in page order, with processed text.
+
+    Voice and pace are read per utterance, so a single slide may mix voices and
+    paces — each becomes its own synthesis call (and its own cache entry).
+    """
     refs: list[SpeechRef] = []
     backend = config.tts.backend
     for page_index, slide_id in enumerate(deck.pages):
         block = deck.page_narration(slide_id)
-        voice = resolve_voice(block.voice, config.voices, backend)
         for speech_index, seg in enumerate(block.speech_segments):
             refs.append(
                 SpeechRef(
@@ -57,8 +60,8 @@ def speech_refs(deck: Deck, config: Config) -> list[SpeechRef]:
                     slide_id=slide_id,
                     speech_index=speech_index,
                     text=config.apply_pronunciation(seg.text),
-                    voice=voice,
-                    pace=block.pace,
+                    voice=resolve_voice(seg.voice, config.voices, backend),
+                    pace=seg.pace,
                 )
             )
     return refs

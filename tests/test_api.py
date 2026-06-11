@@ -8,6 +8,7 @@ import pytest
 
 from slidesonnet import api
 from slidesonnet.tts.base import TTSEngine
+from tests.conftest import simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -81,7 +82,7 @@ def _narrated_deck(tmp_path: Path) -> Path:
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())
     (tmp_path / "marked.narration").write_text(
-        "@intro-title\nHello world from the deck.\n", encoding="utf-8"
+        simple_narration("@intro-title\nHello world from the deck.\n"), encoding="utf-8"
     )
     return pdf
 
