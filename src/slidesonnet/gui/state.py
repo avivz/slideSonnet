@@ -13,7 +13,7 @@ from typing import Literal
 from slidesonnet import api
 from slidesonnet.audio.synth import uncached_targets
 from slidesonnet.cache import audio_dir, render_dir
-from slidesonnet.config import load_config
+from slidesonnet.config import default_config_path, load_config
 from slidesonnet.deck import default_sidecar_path, load_deck, save_deck
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.narration.format import parse_segments, serialize_body
@@ -36,10 +36,40 @@ class EditorState:
         self.index = 0
         self._images: list[Path] | None = None
         self.reload()
+        self._mtimes = self._source_mtimes()
 
     # ---- loading -------------------------------------------------------
     def reload(self) -> None:
         self.deck, self.diagnostics = load_deck(self.pdf_path, sidecar_path=self.sidecar_path)
+
+    # ---- source watching -------------------------------------------------
+    def _source_mtimes(self) -> dict[str, float]:
+        sources = (self.pdf_path, self.sidecar_path, default_config_path(self.pdf_path))
+        out: dict[str, float] = {}
+        for path in sources:
+            try:
+                out[str(path)] = path.stat().st_mtime
+            except OSError:  # missing file counts as a (stable) timestamp of 0
+                out[str(path)] = 0.0
+        return out
+
+    def poll_sources(self) -> bool:
+        """Reload when the PDF, sidecar, or config changed on disk; True if so.
+
+        The editor polls this so external edits (a recompile, hand-editing the
+        sidecar) appear live. Saves made through this state refresh the
+        baseline themselves and never trigger a reload.
+        """
+        current = self._source_mtimes()
+        if current == self._mtimes:
+            return False
+        if current[str(self.pdf_path)] != self._mtimes[str(self.pdf_path)]:
+            self._images = None  # page images are stale; re-rasterize on demand
+        self._mtimes = current
+        self.config = load_config(self.pdf_path)
+        self.reload()
+        self.go(self.index)  # clamp in case the deck shrank
+        return True
 
     def ensure_images(self) -> list[Path]:
         """Rasterize page images on first use (needs pdftoppm)."""
@@ -100,6 +130,7 @@ class EditorState:
             self.deck.narration.pop(self.current_id, None)
         save_deck(self.deck)
         self.reload()
+        self._mtimes = self._source_mtimes()  # our own write must not look external
 
     # ---- synthesis cost ---------------------------------------------------
     @property

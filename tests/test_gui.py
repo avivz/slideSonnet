@@ -47,6 +47,26 @@ async def test_filmstrip_jump(user: User, tmp_path: Path, monkeypatch: pytest.Mo
     await user.should_see("Slide 3 / 6")
 
 
+async def test_in_panel_collapse_buttons(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    strip = next(iter(user.find(marker="split-strip").elements))
+    console = next(iter(user.find(marker="split-console").elements))
+    assert isinstance(strip, ui.splitter) and isinstance(console, ui.splitter)
+    assert strip.value > 0 and console.value > 0
+    user.find(marker="collapse-strip").click()
+    assert strip.value == 0
+    user.find(marker="collapse-console").click()
+    assert console.value == 0
+    # the persistent header toggles bring the panes back at their default widths
+    user.find(marker="toggle-strip").click()
+    user.find(marker="toggle-console").click()
+    assert strip.value > 0 and console.value > 0
+
+
 async def test_edit_persists(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pdf = _prep(tmp_path)
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))

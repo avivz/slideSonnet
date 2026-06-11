@@ -9,6 +9,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Editor usability: single-slide preview button (was deck-only), ←/→
   keyboard navigation, autosave "saved" flash, engine/sidecar status footer,
   and pace as a one-click toggle instead of a dropdown.
+- **Live reload of deck sources.** The editor watches the PDF, the
+  `.narration` sidecar, and `slidesonnet.toml` (1s mtime poll — reliable on
+  WSL mounts) and reloads automatically: recompile your deck or edit the
+  sidecar in another editor and the filmstrip, thumbnails, diagnostics, and
+  config refresh in place. The editor's own saves don't trigger it.
+- Resizable, collapsible side panels: drag the dividers (grip handles) to
+  resize the filmstrip and console, collapse them via in-panel chevrons or
+  the persistent header toggles (which remember the dragged width). On
+  narrow windows both panels auto-collapse, and reopening one floats it
+  over the stage instead of squeezing it.
+- The narration pane now matches the slide's aspect ratio (read from the
+  PDF), keeping comfortable line lengths instead of spanning the window.
+- `slidesonnet edit --dev`: auto-restart the editor when slideSonnet's own
+  source changes (for hacking on slideSonnet itself).
+- Per-deck `.latexmkrc` in the example decks routes LaTeX intermediates to
+  a `.build/` subfolder, keeping deck directories clean.
 
 ### Changed
 - **Kokoro replaces Piper as the local TTS engine.** The default backend is

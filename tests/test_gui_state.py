@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -66,6 +68,49 @@ def test_uncached_count_counts_speech_segments(tmp_path: Path) -> None:
 def test_tts_is_paid_default_kokoro(tmp_path: Path) -> None:
     state = _state(tmp_path)
     assert state.tts_is_paid is False
+
+
+def _bump_mtime(path: Path) -> None:
+    """Force a visibly newer mtime regardless of filesystem timestamp granularity."""
+    later = time.time() + 5
+    os.utime(path, (later, later))
+
+
+def test_poll_sources_false_when_unchanged(tmp_path: Path) -> None:
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    assert state.poll_sources() is False
+
+
+def test_poll_sources_picks_up_external_sidecar_edit(tmp_path: Path) -> None:
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text("@intro-title\nChanged externally.\n", encoding="utf-8")
+    _bump_mtime(sidecar)
+    assert state.poll_sources() is True
+    assert "Changed externally." in state.body_text
+    assert state.poll_sources() is False  # baseline refreshed
+
+
+def test_own_save_does_not_trigger_reload(tmp_path: Path) -> None:
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    state.save("Edited in the GUI.")
+    assert state.poll_sources() is False
+
+
+def test_pdf_change_invalidates_image_cache(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    state._images = [tmp_path / "fake.png"]  # primed cache
+    _bump_mtime(tmp_path / "marked.pdf")
+    assert state.poll_sources() is True
+    assert state._images is None
+
+
+def test_config_change_reloads_config(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    assert state.config.tts.backend == "kokoro"
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "elevenlabs"\n', encoding="utf-8")
+    assert state.poll_sources() is True
+    assert state.config.tts.backend == "elevenlabs"
 
 
 def test_cue_start_finds_slide() -> None:

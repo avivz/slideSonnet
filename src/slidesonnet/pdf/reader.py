@@ -45,6 +45,15 @@ def page_count(pdf_path: Path) -> int:
         return int(doc.page_count)
 
 
+def page_aspect(pdf_path: Path) -> float:
+    """Return the width/height ratio of the first page (e.g. 4:3 → 1.333)."""
+    if not pdf_path.exists():
+        raise ParserError(f"PDF not found: {pdf_path}")
+    with fitz.open(pdf_path) as doc:
+        rect = doc[0].rect
+        return float(rect.width / rect.height)
+
+
 def _numeric_suffix(path: Path) -> int:
     """Extract the trailing integer from a pdftoppm output filename."""
     m = re.search(r"(\d+)$", path.stem)
