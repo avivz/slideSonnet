@@ -21,5 +21,9 @@ class FFmpegError(SlideSonnetError):
     """FFmpeg is missing or a command failed."""
 
 
+class RenderError(SlideSonnetError):
+    """Track/video assembly was asked to render inconsistent inputs."""
+
+
 class APINotAllowedError(SlideSonnetError):
     """Build requires paid API calls but --allow-api was not passed."""

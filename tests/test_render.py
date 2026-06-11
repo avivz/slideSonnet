@@ -73,3 +73,23 @@ def test_tts_timeline_uses_supplied_durations() -> None:
     )
     assert tl.page_durations[0] == pytest.approx(0.3 + 1.5 + 0.5)
     assert tl.page_durations[2] == pytest.approx(0.3 + 2.0 + 1.0 + 0.5)
+
+
+def test_page_pieces_clear_error_when_speech_clip_missing() -> None:
+    import pytest
+
+    from slidesonnet.audio.track import page_pieces
+    from slidesonnet.exceptions import RenderError
+    from slidesonnet.narration.model import Segment
+    from slidesonnet.timing import PageTiming, SegmentTiming
+
+    seg = Segment.speech("hello")
+    timing = PageTiming(
+        slide_id="lonely",
+        duration=2.0,
+        lead=0.5,
+        tail=0.5,
+        segments=[SegmentTiming(segment=seg, start=0.5, end=1.5)],
+    )
+    with pytest.raises(RenderError, match="lonely"):
+        page_pieces(timing, [])

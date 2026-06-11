@@ -12,7 +12,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from slidesonnet.exceptions import FFmpegError
+from slidesonnet.exceptions import FFmpegError, RenderError
 from slidesonnet.timing import PageTiming
 from slidesonnet.video.composer import concatenate_audio, get_duration
 
@@ -65,6 +65,12 @@ def page_pieces(timing: PageTiming, speech_clips: list[Path]) -> list[AudioPiece
     speech_idx = 0
     for st in timing.segments:
         if st.segment.is_speech:
+            if speech_idx >= len(speech_clips):
+                raise RenderError(
+                    f"slide '{timing.slide_id}' has {len(timing.speech_timings)} speech "
+                    f"segment(s) but only {len(speech_clips)} audio clip(s) — "
+                    "synthesize its narration before rendering"
+                )
             pieces.append(AudioPiece(kind="speech", path=speech_clips[speech_idx]))
             speech_idx += 1
         else:

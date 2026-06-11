@@ -529,10 +529,12 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
 
         with console_split.after, ui.column().classes("ss-console gap-3 no-wrap"):
             with ui.row().classes("w-full items-center justify-between no-wrap"):
-                ui.label("Checks").classes("ss-section")
+                ui.label("Checks · this slide").classes("ss-section")
                 collapse_console = ui.button(icon="chevron_right").props("flat round dense size=sm")
                 collapse_console.mark("collapse-console").tooltip("Collapse console")
             diag_box = ui.column().classes("w-full gap-1")
+            ui.label("Audio · this slide").classes("ss-section")
+            audio_status = ui.label().classes("ss-diag ss-diag-info")
             ui.space()
             gen_btn = ui.button("Generate", icon="graphic_eq").classes("w-full")
             gen_btn.props("outline no-caps")
@@ -580,6 +582,18 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             dot.classes(remove=_ALL_DOTS, add=f"ss-dot-{state.status_for(state.deck.pages[i])}")
         _scroll_strip()
         _render_diagnostics()
+        _render_audio_status()
+
+    def _render_audio_status() -> None:
+        total = len(state.current_block.speech_segments)
+        audio_status.classes(remove="ss-diag-ok ss-diag-warn ss-diag-info")
+        if total == 0:
+            audio_status.set_text("no speech on this slide")
+            audio_status.classes(add="ss-diag-info")
+            return
+        done = total - state.uncached_count(state.current_id)
+        audio_status.set_text(f"{done} of {total} generated")
+        audio_status.classes(add="ss-diag-ok" if done == total else "ss-diag-warn")
 
     def _scroll_strip() -> None:
         card = thumb_cards[state.index][0]
@@ -596,7 +610,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         with diag_box:
             diags = state.diagnostics_for_current()
             if not diags:
-                ui.label("all good").classes("ss-diag ss-diag-ok")
+                ui.label("no issues on this slide").classes("ss-diag ss-diag-ok")
             for d in diags:
                 css = {"error": "ss-diag-err", "warning": "ss-diag-warn"}.get(
                     d.severity, "ss-diag-info"

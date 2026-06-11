@@ -89,6 +89,15 @@ class Deck:
         """Return the narration for *slide_id*, or an empty silent block if none."""
         return self.narration.get(slide_id, PageNarration(slide_id=slide_id))
 
+    def restricted_to(self, slide_id: str) -> Deck:
+        """A one-page view of this deck (narration shared), for single-slide rendering."""
+        return Deck(
+            pdf_path=self.pdf_path,
+            sidecar_path=self.sidecar_path,
+            pages=[slide_id],
+            narration=self.narration,
+        )
+
     @property
     def ordered_narration(self) -> list[PageNarration]:
         """Narration blocks in PDF page order (empty blocks for un-narrated pages)."""

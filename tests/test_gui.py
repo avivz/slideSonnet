@@ -91,11 +91,34 @@ async def test_diagnostics_visible(
     await user.should_see("auto-")
 
 
+async def test_console_shows_audio_generation_status(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello. [pause 1] World.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("0 of 2 generated")  # two speech segments, nothing cached yet
+
+
+async def test_console_checks_are_per_slide(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("no issues on this slide")
+
+
 @pytest.mark.integration
 async def test_generate_and_preview(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pdf = _prep(tmp_path, sidecar="@intro-title\nWelcome to the deck.\n")
+    # a SECOND narrated slide stays ungenerated: single-slide preview must not
+    # trip over its missing clips (regression: IndexError in page_pieces)
+    pdf = _prep(
+        tmp_path,
+        sidecar="@intro-title\nWelcome to the deck.\n\n@euler-setup\nNot generated yet.\n",
+    )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     user.find("Generate").click()
@@ -105,6 +128,8 @@ async def test_generate_and_preview(
     from slidesonnet.cache import audio_dir
 
     assert any(audio_dir(pdf).glob("*.wav"))
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
 
 
 async def test_paid_engine_preview_asks_before_synthesis(
