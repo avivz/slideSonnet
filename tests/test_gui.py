@@ -366,6 +366,70 @@ async def test_seek_bar_tracks_position_and_resets_on_stop(
     assert "disable" in seek.props
 
 
+async def test_orphan_tray_lists_unattached_narration(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n\n@ghost\nLost text to keep.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Unattached narration")
+    await user.should_see("@ghost")
+    await user.should_see("Lost text to keep.")
+
+
+async def test_orphan_attach_flow(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n\n@ghost\nLost text to keep.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(marker="attach-ghost").click()
+    await user.should_see("Attach narration '@ghost' to which slide?")
+    # default target is the first un-narrated slide: euler-setup
+    user.find(marker="attach-confirm").click()
+    await user.should_see("Narration attached to 'euler-setup'")
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "@euler-setup\nLost text to keep." in sidecar
+    assert "@ghost" not in sidecar
+    await user.should_see("✓ no errors")  # orphan error resolved
+
+
+async def test_orphan_delete_flow(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n\n@ghost\nLost text to keep.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(marker="delete-ghost").click()
+    await user.should_see("Delete the unattached narration '@ghost'?")
+    user.find(marker="delete-confirm").click()
+    await user.should_see("Deleted narration '@ghost'")
+    assert "Lost text to keep." not in (tmp_path / "marked.narration").read_text(encoding="utf-8")
+
+
+async def test_typing_survives_recompile_that_drops_the_slide(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Narration being typed when its slide is dropped lands in the tray, not /dev/null."""
+    from tests.conftest import write_pdf
+
+    pdf = write_pdf(tmp_path / "deck.pdf", ["alpha", "beta"])
+    (tmp_path / "deck.narration").write_text("@alpha\nHi.\n\n@beta\nBye.\n", encoding="utf-8")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Slide 1 / 2")
+    user.find(ui.textarea).clear().type("Fresh thoughts, unsaved.")
+    # the recompile drops the slide being edited
+    write_pdf(pdf, ["beta"])
+    later = time.time() + 5
+    os.utime(pdf, (later, later))
+    await user.should_see("Deck files changed on disk — reloaded", retries=300)
+    sidecar = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "Fresh thoughts, unsaved." in sidecar  # flushed before the reload
+    await user.should_see("Unattached narration")
+    await user.should_see("@alpha")
+
+
 async def test_paid_engine_preview_asks_before_synthesis(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

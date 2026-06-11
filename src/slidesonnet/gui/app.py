@@ -419,6 +419,11 @@ body{
 .ss-audio{display:none}  /* invisible sound pipe — the transport buttons are the UI */
 .ss-seek{flex:1 1 0;min-width:60px}
 .ss-time{font-size:11px;color:var(--ss-dim);white-space:nowrap}
+.ss-orphan{border:1px solid var(--ss-line,#333);border-radius:6px;padding:4px 6px}
+.ss-orphan-text{flex:1 1 0;min-width:0}
+.ss-orphan-id{font-size:11px;color:var(--ss-warn,#d9a23c)}
+.ss-orphan-preview{font-size:11px;color:var(--ss-dim);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
 .ss-console{
   width:100%;height:100%;overflow-y:auto;padding:16px;
   background:var(--ss-surface)}
@@ -619,6 +624,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             diag_box = ui.column().classes("w-full gap-1")
             ui.label("Audio · this slide").classes("ss-section")
             audio_status = ui.label().classes("ss-diag ss-diag-info")
+            tray_box = ui.column().classes("w-full gap-1")
+            tray_box.mark("orphan-tray")
+            tray_box.visible = False
             ui.space()
             gen_btn = ui.button("Generate", icon="graphic_eq").classes("w-full")
             gen_btn.props("outline no-caps")
@@ -669,7 +677,77 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         _scroll_strip()
         _render_diagnostics()
         _render_audio_status()
+        _render_orphan_tray()
         _sync_transport()
+
+    def _render_orphan_tray() -> None:
+        """Narration whose slide vanished in a recompile: keep it visible and actionable."""
+        tray_box.clear()
+        orphans = state.orphan_blocks()
+        tray_box.visible = bool(orphans)
+        if not orphans:
+            return
+        with tray_box:
+            ui.label("Unattached narration").classes("ss-section")
+            ui.label("these slides are gone — attach the text elsewhere or keep it here").classes(
+                "ss-diag ss-diag-info"
+            )
+            for block in orphans:
+                with ui.row().classes("w-full items-center no-wrap gap-1 ss-orphan"):
+                    with ui.column().classes("ss-orphan-text gap-0"):
+                        ui.label(f"@{block.slide_id}").classes("ss-mono ss-orphan-id")
+                        preview = block.speech_text or "(pauses only)"
+                        if len(preview) > 60:
+                            preview = preview[:57] + "…"
+                        ui.label(preview).classes("ss-orphan-preview")
+                    attach = ui.button(icon="move_down").props("flat round dense size=sm")
+                    attach.mark(f"attach-{block.slide_id}").tooltip("Attach to a slide…")
+                    attach.on_click(lambda sid=block.slide_id: _attach_orphan_dialog(sid))
+                    trash = ui.button(icon="delete").props("flat round dense size=sm")
+                    trash.mark(f"delete-{block.slide_id}").tooltip("Delete this narration")
+                    trash.on_click(lambda sid=block.slide_id: _delete_orphan_dialog(sid))
+
+    def _attach_orphan_dialog(orphan_id: str) -> None:
+        candidates = state.unnarrated_pages()
+        if not candidates:
+            ui.notify("No un-narrated slide to attach to", type="warning")
+            return
+        with ui.dialog() as dialog, ui.card():
+            ui.label(f"Attach narration '@{orphan_id}' to which slide?")
+            target = ui.select(candidates, value=candidates[0]).classes("w-full")
+            target.mark("attach-target")
+
+            def _do_attach() -> None:
+                dialog.close()
+                state.attach_orphan(orphan_id, str(target.value))
+                ui.notify(f"Narration attached to '{target.value}'", type="positive")
+                render()
+
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Cancel", on_click=dialog.close).props("flat no-caps")
+                ui.button("Attach", on_click=_do_attach).props("no-caps").mark("attach-confirm")
+        dialog.open()
+
+    def _delete_orphan_dialog(orphan_id: str) -> None:
+        with ui.dialog() as dialog, ui.card():
+            ui.label(
+                f"Delete the unattached narration '@{orphan_id}'? "
+                "This removes its text from the sidecar."
+            )
+
+            def _do_delete() -> None:
+                dialog.close()
+                state.delete_orphan(orphan_id)
+                ui.notify(f"Deleted narration '@{orphan_id}'", type="info")
+                render()
+
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Cancel", on_click=dialog.close).props("flat no-caps")
+                delete_btn = ui.button("Delete", on_click=_do_delete).props(
+                    "no-caps color=negative"
+                )
+                delete_btn.mark("delete-confirm")
+        dialog.open()
 
     def _render_audio_status() -> None:
         total = len(state.current_block.speech_segments)
@@ -1003,6 +1081,14 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     async def _poll_sources() -> None:
         if busy:  # don't yank the deck out from under a synth/export
             return
+        changes = await run.io_bound(state.external_changes)
+        if not changes:
+            return
+        if "sidecar" not in changes:
+            # a recompile is landing: flush typing first, so narration for a
+            # dropped slide survives as an unattached block instead of vanishing.
+            # (never on sidecar changes — that would clobber the external edit)
+            save_current()
         if not await run.io_bound(state.poll_sources):
             return
         try:

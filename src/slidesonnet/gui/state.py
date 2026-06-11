@@ -78,6 +78,16 @@ class EditorState:
         self.go(self.index)  # clamp in case the deck shrank
         return True
 
+    def external_changes(self) -> set[str]:
+        """Which sources changed on disk since the last baseline: pdf/sidecar/config."""
+        current = self._source_mtimes()
+        labels = {
+            str(self.pdf_path): "pdf",
+            str(self.sidecar_path): "sidecar",
+            str(default_config_path(self.pdf_path)): "config",
+        }
+        return {labels[key] for key, mtime in current.items() if mtime != self._mtimes[key]}
+
     def ensure_images(self) -> list[Path]:
         """Rasterize page images on first use (needs pdftoppm)."""
         if self._images is None:
@@ -135,9 +145,53 @@ class EditorState:
             self.deck.narration[self.current_id] = block
         else:
             self.deck.narration.pop(self.current_id, None)
+        self._write_and_reload()
+
+    def _write_and_reload(self) -> None:
+        """Persist the deck, re-run diagnostics, and absorb our own sidecar write.
+
+        Only the sidecar baseline is refreshed — refreshing the others here
+        would mask a PDF/config change that landed since the last poll.
+        """
         save_deck(self.deck)
         self.reload()
-        self._mtimes = self._source_mtimes()  # our own write must not look external
+        try:
+            self._mtimes[str(self.sidecar_path)] = self.sidecar_path.stat().st_mtime
+        except OSError:
+            self._mtimes[str(self.sidecar_path)] = 0.0
+
+    # ---- unattached narration (slide dropped/renamed by a recompile) -------
+    def orphan_blocks(self) -> list[PageNarration]:
+        """Narration blocks whose slide-id matches no PDF page (sidecar order)."""
+        on_page = set(self.deck.pages)
+        return [b for sid, b in self.deck.narration.items() if sid not in on_page]
+
+    def unnarrated_pages(self) -> list[str]:
+        """Page ids an orphan could attach to (no narration yet), in page order."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for sid in self.deck.pages:
+            if sid and sid not in seen and not self.has_narration(sid):
+                seen.add(sid)
+                out.append(sid)
+        return out
+
+    def attach_orphan(self, orphan_id: str, target_id: str) -> None:
+        """Move an orphan block's narration onto the page *target_id* and save."""
+        if target_id not in self.deck.pages:
+            raise ValueError(f"'{target_id}' is not a page in the deck")
+        if self.has_narration(target_id):
+            raise ValueError(f"slide '{target_id}' already has narration")
+        block = self.deck.narration.pop(orphan_id)
+        self.deck.narration[target_id] = PageNarration(
+            slide_id=target_id, segments=block.segments, voice=block.voice, pace=block.pace
+        )
+        self._write_and_reload()
+
+    def delete_orphan(self, orphan_id: str) -> None:
+        """Drop an orphan block (and its text) from the sidecar."""
+        self.deck.narration.pop(orphan_id, None)
+        self._write_and_reload()
 
     # ---- synthesis cost ---------------------------------------------------
     @property

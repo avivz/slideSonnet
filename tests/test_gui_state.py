@@ -191,6 +191,69 @@ def test_poll_survives_malformed_config_edit(tmp_path: Path) -> None:
     assert state.poll_sources() is True
 
 
+# ---- unattached narration (slide dropped/renamed by a recompile) ------------
+
+
+def test_orphan_blocks_lists_blocks_without_pages(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n\n@ghost\nLost text.\n")
+    orphans = state.orphan_blocks()
+    assert [b.slide_id for b in orphans] == ["ghost"]
+    assert orphans[0].speech_text == "Lost text."
+
+
+def test_orphan_blocks_empty_when_reconciled(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n")
+    assert state.orphan_blocks() == []
+
+
+def test_unnarrated_pages_lists_candidates(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b", "c"], sidecar="@a\nHi.\n\n@b\n")
+    assert state.unnarrated_pages() == ["b", "c"]  # empty block counts as un-narrated
+
+
+def test_attach_orphan_moves_narration_to_page(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@ghost\nLost text.\n")
+    state.attach_orphan("ghost", "b")
+    assert state.orphan_blocks() == []
+    assert state.deck.page_narration("b").speech_text == "Lost text."
+    sidecar = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "@b\nLost text." in sidecar
+    assert "@ghost" not in sidecar
+    assert state.error_count == 0  # orphan error resolved
+
+
+def test_attach_orphan_refuses_narrated_target(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n\n@ghost\nLost text.\n")
+    with pytest.raises(ValueError, match="already has narration"):
+        state.attach_orphan("ghost", "a")
+    with pytest.raises(ValueError, match="not a page"):
+        state.attach_orphan("ghost", "nope")
+
+
+def test_delete_orphan_removes_block(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n\n@ghost\nLost text.\n")
+    state.delete_orphan("ghost")
+    assert state.orphan_blocks() == []
+    assert "Lost text." not in (tmp_path / "deck.narration").read_text(encoding="utf-8")
+
+
+def test_external_changes_reports_which_sources_moved(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n")
+    assert state.external_changes() == set()
+    _bump_mtime(state.pdf_path)
+    assert state.external_changes() == {"pdf"}
+
+
+def test_save_does_not_mask_concurrent_pdf_change(tmp_path: Path) -> None:
+    # a recompile lands, then the GUI saves before the next poll: the reload
+    # must still happen (save refreshes only the sidecar baseline)
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n")
+    _recompile(state, ["a", "b", "c"])
+    state.save("Hi there.")
+    assert state.poll_sources() is True
+    assert state.page_count == 3
+
+
 def test_cue_start_finds_slide() -> None:
     cues = [(0.0, "a"), (3.5, "b"), (9.0, "c")]
     assert cue_start(cues, "b") == 3.5
