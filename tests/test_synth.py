@@ -62,3 +62,20 @@ def test_only_ids_restricts(tmp_path: Path, monkeypatch) -> None:  # type: ignor
     monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: engine)
     synth_mod.synthesize(_deck(), Config(), audio_dir=tmp_path, only_ids={"b"})
     assert engine.calls == 0  # page b has no speech, page a skipped
+
+
+def test_uncached_targets_lists_missing_then_shrinks(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    deck = _deck()
+    targets = synth_mod.uncached_targets(deck, Config(), tmp_path)
+    assert len(targets) == 1  # one speech segment across the deck, nothing cached
+    targets[0].parent.mkdir(parents=True, exist_ok=True)
+    targets[0].write_bytes(b"RIFFfake")
+    assert synth_mod.uncached_targets(deck, Config(), tmp_path) == []
+
+
+def test_uncached_targets_only_ids(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    deck = _deck()
+    assert synth_mod.uncached_targets(deck, Config(), tmp_path, only_ids={"b"}) == []
+    assert len(synth_mod.uncached_targets(deck, Config(), tmp_path, only_ids={"a"})) == 1

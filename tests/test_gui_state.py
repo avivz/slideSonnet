@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from slidesonnet.gui.state import EditorState
+from slidesonnet.gui.state import EditorState, cue_start
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -54,3 +54,22 @@ def test_statuses_cover_all_pages(tmp_path: Path, sidecar: str) -> None:
     state = _state(tmp_path, sidecar=sidecar)
     for sid in state.deck.pages:
         assert state.status_for(sid) in {"error", "warning", "ready", "empty"}
+
+
+def test_uncached_count_counts_speech_segments(tmp_path: Path) -> None:
+    state = _state(tmp_path, sidecar="@intro-title\nHello. [pause 1] World.\n")
+    assert state.uncached_count("intro-title") == 2  # nothing synthesized yet
+    assert state.uncached_count("euler-setup") == 0  # no narration at all
+    assert state.uncached_total() == 2
+
+
+def test_tts_is_paid_default_kokoro(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    assert state.tts_is_paid is False
+
+
+def test_cue_start_finds_slide() -> None:
+    cues = [(0.0, "a"), (3.5, "b"), (9.0, "c")]
+    assert cue_start(cues, "b") == 3.5
+    assert cue_start(cues, "a") == 0.0
+    assert cue_start(cues, "zzz") is None

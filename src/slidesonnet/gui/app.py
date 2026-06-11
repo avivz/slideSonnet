@@ -20,7 +20,7 @@ from nicegui import app, run, ui
 from nicegui.events import KeyEventArguments
 
 from slidesonnet.cache import render_dir
-from slidesonnet.gui.state import EditorState
+from slidesonnet.gui.state import EditorState, cue_start
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +146,9 @@ def _serve_media(state: EditorState) -> None:
 
 
 # ---------------------------------------------------------------------------
-# look & feel: a dark "recording studio" theme — warm charcoal, amber accents,
-# IBM Plex Mono for everything machine-flavored, filmstrip + stage + console.
+# look & feel: a dark studio theme — cool graphite surfaces, electric-blue
+# accents, IBM Plex Mono for everything machine-flavored; filmstrip + stage
+# + console.
 # ---------------------------------------------------------------------------
 
 _FONTS_HTML = (
@@ -168,14 +169,14 @@ _NOISE_SVG = (
 
 _CSS = """
 :root{
-  --ss-bg:#14110f; --ss-surface:#1b1714; --ss-raised:#28211a;
-  --ss-line:#3a3128; --ss-text:#efe6d9; --ss-dim:#a3937e;
-  --ss-amber:#ffb454; --ss-amber-deep:#d98e2b;
-  --ss-err:#ff6552; --ss-warn:#ffc46b; --ss-ok:#8bd97c;
+  --ss-bg:#0e1116; --ss-surface:#151a22; --ss-raised:#1e2531;
+  --ss-line:#2b3442; --ss-text:#e8ecf3; --ss-dim:#8a94a6;
+  --ss-accent:#5db3f0; --ss-accent-deep:#2f7fc4;
+  --ss-err:#ff6b6b; --ss-warn:#ffc857; --ss-ok:#7ee08a;
 }
 body{
   background:
-    radial-gradient(1100px 520px at 72% -10%, rgba(255,180,84,.07), transparent 60%),
+    radial-gradient(1100px 520px at 72% -10%, rgba(93,179,240,.06), transparent 60%),
     var(--ss-bg) !important;
   font-family:"IBM Plex Sans",sans-serif;
 }
@@ -185,9 +186,9 @@ body{
 .ss-wordmark{
   font-family:"Bricolage Grotesque",sans-serif;font-size:19px;font-weight:800;
   letter-spacing:.01em;color:var(--ss-text)}
-.ss-accent{color:var(--ss-amber)}
+.ss-accent{color:var(--ss-accent)}
 .ss-header{
-  background:rgba(27,23,20,.92)!important;border-bottom:1px solid var(--ss-line);
+  background:rgba(21,26,34,.92)!important;border-bottom:1px solid var(--ss-line);
   backdrop-filter:blur(10px);padding:0 18px;height:52px}
 .ss-footer{
   background:var(--ss-surface)!important;border-top:1px solid var(--ss-line);
@@ -216,10 +217,10 @@ body{
   position:relative;width:100%;border:1px solid var(--ss-line);border-radius:8px;
   overflow:hidden;cursor:pointer;background:var(--ss-raised);
   transition:border-color .15s,transform .15s,box-shadow .15s}
-.ss-thumb:hover{border-color:var(--ss-amber-deep);transform:translateY(-1px)}
+.ss-thumb:hover{border-color:var(--ss-accent-deep);transform:translateY(-1px)}
 .ss-thumb.ss-active{
-  border-color:var(--ss-amber);
-  box-shadow:0 0 0 1px var(--ss-amber),0 6px 18px rgba(255,180,84,.12)}
+  border-color:var(--ss-accent);
+  box-shadow:0 0 0 1px var(--ss-accent),0 6px 18px rgba(93,179,240,.16)}
 .ss-thumb-fallback{
   display:block;padding:18px 8px;font-size:10px;color:var(--ss-dim);
   text-align:center;word-break:break-all}
@@ -232,31 +233,37 @@ body{
 .ss-dot-warning{background:var(--ss-warn)}
 .ss-dot-error{background:var(--ss-err);box-shadow:0 0 8px var(--ss-err)}
 .ss-dot-empty{background:transparent;border:1.5px solid var(--ss-dim)}
-.ss-stage{flex:1 1 0;min-width:0;height:100%;padding:20px 24px 12px}
-.ss-stage-view{flex:1 1 0;min-height:0;width:100%;display:flex;justify-content:center}
+.ss-stage{flex:1 1 0;min-width:0;height:100%;padding:16px 24px 10px}
+.ss-stage-view{
+  flex:2 1 0;min-height:0;width:100%;
+  display:flex;justify-content:center}
 .ss-stage-img{width:100%;height:100%}
 .ss-stage-img img{border-radius:6px}
 .ss-counter{font-size:12px;color:var(--ss-dim);padding:0 8px;min-width:96px;text-align:center}
 .ss-vsep{width:1px;height:20px;background:var(--ss-line);margin:0 8px}
-.ss-audio{width:100%;max-width:640px;color-scheme:dark}
+.ss-audio{flex:1 1 0;min-width:0;height:36px;color-scheme:dark}
 .ss-console{
-  width:360px;flex-shrink:0;height:100%;overflow-y:auto;padding:16px;
+  width:248px;flex-shrink:0;height:100%;overflow-y:auto;padding:16px;
   background:var(--ss-surface);border-left:1px solid var(--ss-line)}
 .ss-section{
   font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;
   color:var(--ss-dim);margin-top:4px}
-.ss-id{font-size:15px;font-weight:600;color:var(--ss-amber)}
-.ss-body textarea{min-height:200px;line-height:1.55;font-size:13px}
+.ss-id{font-size:15px;font-weight:600;color:var(--ss-accent)}
+.ss-voice{width:200px}
+.ss-body{flex:1 1 0;min-height:0;width:100%;display:flex;flex-direction:column}
+.ss-body .q-field__inner,.ss-body .q-field__control,
+.ss-body .q-field__control-container{height:100%}
+.ss-body textarea{height:100%!important;resize:none;line-height:1.7;font-size:16.5px}
 .q-field--filled .q-field__control{background:var(--ss-raised)!important;border-radius:8px}
 .ss-diag{font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.4}
 .ss-diag-err{color:var(--ss-err)}
 .ss-diag-warn{color:var(--ss-warn)}
 .ss-diag-info{color:var(--ss-dim)}
 .ss-diag-ok{color:var(--ss-ok)}
-.ss-export{color:#181410!important;font-weight:600}
+.ss-export{color:#0c1117!important;font-weight:600}
 .ss-pace .q-btn{color:var(--ss-dim)}
-.ss-pace .q-btn.bg-primary{color:#181410!important;font-weight:600}
-textarea,input{caret-color:var(--ss-amber)}
+.ss-pace .q-btn.bg-primary{color:#0c1117!important;font-weight:600}
+textarea,input{caret-color:var(--ss-accent)}
 """
 
 _GRAIN = (
@@ -274,12 +281,12 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
 
     ui.dark_mode().enable()
     ui.colors(
-        primary="#ffb454",
-        positive="#3f7a37",
-        negative="#b3402f",
-        warning="#a06414",
-        dark="#1b1714",
-        dark_page="#14110f",
+        primary="#5db3f0",
+        positive="#2e7d4f",
+        negative="#c0443c",
+        warning="#a8772a",
+        dark="#151a22",
+        dark_page="#0e1116",
     )
     ui.add_head_html(_FONTS_HTML + "<style>" + _CSS + _GRAIN + "</style>")
 
@@ -314,10 +321,32 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 card.on("click", lambda _e=None, i=i: _jump(i))
                 thumb_cards.append((card, dot))
 
-        with ui.column().classes("ss-stage items-center gap-3"):
+        with ui.column().classes("ss-stage gap-3 no-wrap"):
             with ui.element("div").classes("ss-stage-view"):
                 slide_img = ui.image().classes("ss-stage-img").props('fit="contain" no-spinner')
-            with ui.row().classes("items-center no-wrap gap-1"):
+            with ui.row().classes("w-full items-center no-wrap gap-3"):
+                id_label = ui.label().classes("ss-id ss-mono")
+                ui.space()
+                voice = (
+                    ui.input(
+                        label="Voice",
+                        placeholder="default",
+                        autocomplete=sorted(state.config.voices),
+                    )
+                    .classes("ss-voice ss-mono")
+                    .props("filled dense")
+                )
+                pace = (
+                    ui.toggle(["slow", "normal", "fast"], value="normal")
+                    .classes("ss-pace")
+                    .props("no-caps dense unelevated toggle-color=primary")
+                )
+            body = (
+                ui.textarea(placeholder="Speak this slide…  use [pause 1.5] for silence")
+                .classes("ss-mono ss-body")
+                .props("filled")
+            )
+            with ui.row().classes("w-full items-center no-wrap gap-1"):
                 prev_btn = ui.button(icon="chevron_left").props("flat round dense")
                 prev_btn.mark("Previous").tooltip("Back (←)")
                 page_label = ui.label().classes("ss-counter ss-mono")
@@ -325,37 +354,16 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 next_btn.mark("Next").tooltip("Forward (→)")
                 ui.element("div").classes("ss-vsep")
                 play_one = ui.button(icon="play_arrow").props("flat round dense")
-                play_one.tooltip("Preview this slide")
+                play_one.mark("play-slide").tooltip("Hear this slide")
                 play_all = ui.button(icon="playlist_play").props("flat round dense")
-                play_all.tooltip("Preview whole deck")
+                play_all.mark("play-deck").tooltip("Preview whole deck")
                 stop_btn = ui.button(icon="stop").props("flat round dense")
-                stop_btn.tooltip("Stop preview")
-            audio = ui.audio("").props("controls").classes("ss-audio")
-            audio.visible = False
+                stop_btn.mark("stop").tooltip("Stop preview")
+                ui.element("div").classes("ss-vsep")
+                audio = ui.audio("").props("controls").classes("ss-audio")
+                audio.visible = False
 
         with ui.column().classes("ss-console gap-3 no-wrap"):
-            ui.label("Narration").classes("ss-section")
-            id_label = ui.label().classes("ss-id ss-mono")
-            body = (
-                ui.textarea(placeholder="Speak this slide…  use [pause 1.5] for silence")
-                .classes("w-full ss-mono ss-body")
-                .props("filled autogrow")
-            )
-            ui.label("Delivery").classes("ss-section")
-            voice = (
-                ui.input(
-                    label="Voice",
-                    placeholder="default",
-                    autocomplete=sorted(state.config.voices),
-                )
-                .classes("w-full ss-mono")
-                .props("filled dense")
-            )
-            pace = (
-                ui.toggle(["slow", "normal", "fast"], value="normal")
-                .classes("ss-pace")
-                .props("no-caps dense unelevated toggle-color=primary")
-            )
             ui.label("Checks").classes("ss-section")
             diag_box = ui.column().classes("w-full gap-1")
             ui.space()
@@ -377,6 +385,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     # ---- rendering helpers ----
     cues: list[tuple[float, str]] = []
     busy = False
+    playing = False  # deck-preview audio is rolling (nav seeks instead of just flipping)
 
     def render() -> None:
         page_label.set_text(f"Slide {state.index + 1} / {state.page_count}")
@@ -436,6 +445,10 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     def _jump(index: int) -> None:
         save_current()
         state.go(index)
+        if cues and playing:  # deck preview rolling: seek the track to this slide's cue
+            start = cue_start(cues, state.current_id)
+            if start is not None:
+                audio.seek(start)
         render()
 
     def _go(delta: int) -> None:
@@ -482,6 +495,18 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         result = state.export(out)
         return f"Exported {out.name} ({result.duration:.1f}s)"
 
+    async def _confirm_paid_synth(count: int) -> bool:
+        backend = state.config.tts.backend
+        with ui.dialog() as dialog, ui.card():
+            ui.label(
+                f"{count} segment(s) aren't cached — synthesizing them with "
+                f"{backend} will spend API credits."
+            )
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat no-caps")
+                ui.button("Generate & play", on_click=lambda: dialog.submit(True)).props("no-caps")
+        return bool(await dialog)
+
     async def _preview(btn: Any, whole_deck: bool) -> None:
         nonlocal busy, cues
         if busy:
@@ -490,6 +515,12 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         save_current()
         btn.props("loading")
         try:
+            if state.tts_is_paid:
+                count = (
+                    state.uncached_total() if whole_deck else state.uncached_count(state.current_id)
+                )
+                if count and not await _confirm_paid_synth(count):
+                    return
             preview = await run.io_bound(
                 state.preview_deck if whole_deck else state.preview_current
             )
@@ -523,7 +554,14 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 state.index = idx
                 render()
 
+    def _set_playing(value: bool) -> None:
+        nonlocal playing
+        playing = value
+
     audio.on("timeupdate", _on_timeupdate, args=["target.currentTime"])
+    audio.on("play", lambda: _set_playing(True))
+    audio.on("pause", lambda: _set_playing(False))
+    audio.on("ended", lambda: _set_playing(False))
     prev_btn.on_click(lambda: _go(-1))
     next_btn.on_click(lambda: _go(1))
     play_one.on_click(lambda: _preview(play_one, False))

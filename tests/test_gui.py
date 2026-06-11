@@ -85,3 +85,19 @@ async def test_generate_and_preview(
     from slidesonnet.cache import audio_dir
 
     assert any(audio_dir(pdf).glob("*.wav"))
+
+
+async def test_paid_engine_preview_asks_before_synthesis(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "elevenlabs"\n', encoding="utf-8")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(marker="play-slide").click()
+    await user.should_see("API credits")  # confirm dialog instead of silent synthesis
+    user.find("Cancel").click()
+    # cancelled: nothing was synthesized (an attempt would also fail — no API key)
+    from slidesonnet.cache import audio_dir
+
+    assert not list(audio_dir(pdf).glob("*"))

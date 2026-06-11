@@ -36,6 +36,8 @@ VoiceSettings: type | None = _VoiceSettings
 
 
 class ElevenLabsTTS(TTSEngine):
+    paid = True
+
     def __init__(self, config: TTSConfig) -> None:
         self._api_key_env: str = config.elevenlabs_api_key_env
         self._client: _ElevenLabsType | None = None

@@ -155,3 +155,7 @@ class TestFactoryAndConfig:
         engine = _engine_for_pace(cfg, "fast", cache)
         assert isinstance(engine, KokoroTTS)
         assert engine.speed == pytest.approx(pace_to_speed("fast"))
+
+
+def test_kokoro_is_not_paid() -> None:
+    assert KokoroTTS().paid is False

@@ -7,6 +7,10 @@ from pathlib import Path
 
 
 class TTSEngine(ABC):
+    #: True when synthesis spends money (metered API credits). The editor uses
+    #: this to ask before synthesizing uncached audio; local engines are free.
+    paid: bool = False
+
     @abstractmethod
     def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
         """Synthesize text to an audio file.

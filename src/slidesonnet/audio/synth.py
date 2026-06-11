@@ -110,6 +110,30 @@ def synthesize(
     return results
 
 
+def uncached_targets(
+    deck: Deck,
+    config: Config,
+    audio_dir: Path,
+    *,
+    only_ids: set[str] | None = None,
+) -> list[Path]:
+    """Cache paths of speech segments that have no cached audio yet.
+
+    Never synthesizes — lets callers count (or pre-create) what a synthesis
+    run would actually generate, e.g. to warn before spending API credits.
+    """
+    engines: dict[float, TTSEngine] = {}
+    targets: list[Path] = []
+    for ref in speech_refs(deck, config):
+        if only_ids is not None and ref.slide_id not in only_ids:
+            continue
+        engine = _engine_for_pace(config.tts, ref.pace, engines)
+        target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
+        if audio_cache_path_or_alt(target) is None:
+            targets.append(target)
+    return targets
+
+
 def page_speech_durations(
     deck: Deck,
     results: dict[tuple[str, int], SynthResult],

@@ -11,13 +11,15 @@ from pathlib import Path
 from typing import Literal
 
 from slidesonnet import api
-from slidesonnet.cache import render_dir
+from slidesonnet.audio.synth import uncached_targets
+from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import load_config
 from slidesonnet.deck import default_sidecar_path, load_deck, save_deck
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.narration.format import parse_segments, serialize_body
 from slidesonnet.narration.model import Pace, PageNarration
 from slidesonnet.pdf.reader import rasterize
+from slidesonnet.tts import create_tts
 
 _VALID_PACES: frozenset[str] = frozenset({"slow", "normal", "fast"})
 
@@ -99,6 +101,22 @@ class EditorState:
         save_deck(self.deck)
         self.reload()
 
+    # ---- synthesis cost ---------------------------------------------------
+    @property
+    def tts_is_paid(self) -> bool:
+        """True when the configured TTS backend spends API credits."""
+        return create_tts(self.config.tts).paid
+
+    def uncached_count(self, slide_id: str) -> int:
+        """How many of *slide_id*'s speech segments a synthesis run would generate."""
+        return len(
+            uncached_targets(self.deck, self.config, audio_dir(self.pdf_path), only_ids={slide_id})
+        )
+
+    def uncached_total(self) -> int:
+        """How many speech segments across the deck a synthesis run would generate."""
+        return len(uncached_targets(self.deck, self.config, audio_dir(self.pdf_path)))
+
     # ---- actions -------------------------------------------------------
     def synth_current(self) -> int:
         return api.synthesize_deck(
@@ -159,6 +177,14 @@ class EditorState:
 
     def diagnostics_for_current(self) -> list[Diagnostic]:
         return [d for d in self.diagnostics if d.slide_id == self.current_id]
+
+
+def cue_start(cues: list[tuple[float, str]], slide_id: str) -> float | None:
+    """Start time of *slide_id* in a deck-preview cue sheet, or None if absent."""
+    for start, sid in cues:
+        if sid == slide_id:
+            return start
+    return None
 
 
 def _coerce_pace(pace: str) -> Pace | None:

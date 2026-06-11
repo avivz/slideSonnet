@@ -223,3 +223,9 @@ def test_cache_key_default_speed():
     # Default speed (1.0) → key should end with similarity_boost, no trailing speed
     parts = tts.cache_key().split(":")
     assert len(parts) == 5  # elevenlabs:voice:model:stability:similarity_boost
+
+
+def test_elevenlabs_is_paid():
+    from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+
+    assert ElevenLabsTTS(TTSConfig()).paid is True
