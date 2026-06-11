@@ -39,6 +39,33 @@ def test_toggled_width_falls_back_to_default() -> None:
     assert toggled_width(0.0, 0.0, default=150.0) == (150.0, 0.0)
 
 
+def test_clamp_keeps_panes_when_stage_has_room() -> None:
+    from slidesonnet.gui.app import clamp_panel_widths
+
+    assert clamp_panel_widths(1600, 150, 264, reserve=680) == (150, 264)
+
+
+def test_clamp_shrinks_console_first() -> None:
+    from slidesonnet.gui.app import clamp_panel_widths
+
+    strip, console = clamp_panel_widths(1200, 300, 400, reserve=680)
+    assert (strip, console) == (300, 220)
+
+
+def test_clamp_shrinks_strip_when_console_exhausted() -> None:
+    from slidesonnet.gui.app import clamp_panel_widths
+
+    strip, console = clamp_panel_widths(1000, 400, 300, reserve=680)
+    assert console == 0
+    assert strip == 320
+
+
+def test_clamp_never_negative() -> None:
+    from slidesonnet.gui.app import clamp_panel_widths
+
+    assert clamp_panel_widths(500, 200, 200, reserve=680) == (0, 0)
+
+
 def test_responsive_collapses_open_panes_when_narrow() -> None:
     from slidesonnet.gui.app import ResponsivePanes
 
@@ -120,6 +147,20 @@ def test_dev_invocation_passes_sidecar() -> None:
 def test_devserver_module_imports_without_launching() -> None:
     # the __main__/__mp_main__ guard must keep a plain import side-effect free
     import slidesonnet.gui.devserver  # noqa: F401
+
+
+def test_should_open_browser_when_no_client_ever_connects() -> None:
+    from slidesonnet.gui.devserver import should_open_browser
+
+    assert should_open_browser([0, 0]) is True
+    assert should_open_browser([None, 0]) is True  # probe failure ≠ connected client
+
+
+def test_should_not_reopen_when_old_tab_reconnected() -> None:
+    from slidesonnet.gui.devserver import should_open_browser
+
+    assert should_open_browser([0, 1]) is False
+    assert should_open_browser([2]) is False
 
 
 def _free_port() -> int:

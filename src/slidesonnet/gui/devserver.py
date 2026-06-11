@@ -13,13 +13,17 @@ side effects — the banner, opening the browser — belong to the watcher only.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import threading
+import time
+import urllib.request
 import webbrowser
+from collections.abc import Iterable
 from pathlib import Path
 
-from nicegui import ui
+from nicegui import app, ui
 
 import slidesonnet
 from slidesonnet.gui.app import (
@@ -31,11 +35,35 @@ from slidesonnet.gui.app import (
 )
 
 
+def should_open_browser(samples: Iterable[int | None]) -> bool:
+    """Decide whether the watcher should open a browser tab.
+
+    *samples* are successive readings of the server's connected-client count
+    (``None`` when a probe failed). An already-open tab reconnects to the
+    restarted server on its own — as soon as any reading shows a live client,
+    opening another tab would be a duplicate.
+    """
+    for count in samples:
+        if count is not None and count > 0:
+            return False
+    return True
+
+
+def _connected_clients(url: str) -> int | None:
+    try:
+        with urllib.request.urlopen(f"{url}/ss-dev/clients", timeout=2) as resp:
+            return int(json.load(resp).get("connected", 0))
+    except Exception:
+        return None
+
+
 def _open_browser_soon(url: str) -> None:
-    """Open *url* once the worker has had a moment to bind the port.
+    """Open *url* unless an existing tab reconnects first.
 
     Mirrors ``run_editor``'s opening logic (``--browser``/``--app`` flags arrive
-    via env). Runs in the watcher process only, so reloads never re-open tabs.
+    via env). Runs in the watcher process only, so source reloads never re-open
+    tabs; restarting the command reuses a still-open tab instead of stacking up
+    new ones (it reconnects within socket.io's ~5s retry window).
     """
     browser = os.environ.get("SLIDESONNET_DEV_BROWSER")
     env_browser = os.environ.get("SLIDESONNET_BROWSER")
@@ -47,13 +75,24 @@ def _open_browser_soon(url: str) -> None:
         cmd, use_webbrowser = browser_invocation(
             browser, env_browser=env_browser, wsl=wsl, wslview=shutil.which("wslview")
         )
-    if cmd is not None:
-        opener = cmd
-        threading.Timer(1.5, lambda: _launch_browser(opener, url)).start()
-    elif use_webbrowser:
-        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
-    else:
+    if cmd is None and not use_webbrowser:
         print(f"Open {url} in your browser (under WSL: install 'wslview' or pass --browser).")
+        return
+    opener = cmd
+
+    def probe_then_open() -> None:
+        samples: list[int | None] = []
+        for delay in (3.0, 3.5):  # server boot, then the old tab's reconnect window
+            time.sleep(delay)
+            samples.append(_connected_clients(url))
+            if not should_open_browser(samples):
+                return
+        if opener is not None:
+            _launch_browser(opener, url)
+        else:
+            webbrowser.open(url)
+
+    threading.Thread(target=probe_then_open, daemon=True).start()
 
 
 if __name__ in {"__main__", "__mp_main__"}:
@@ -66,6 +105,13 @@ if __name__ in {"__main__", "__mp_main__"}:
     @ui.page("/")
     def _index() -> None:
         build_editor(_pdf, _sidecar)
+
+    @app.get("/ss-dev/clients")
+    def _clients() -> dict[str, int]:
+        from nicegui import Client
+
+        connected = sum(1 for c in Client.instances.values() if c.has_socket_connection)
+        return {"connected": connected}
 
     if __name__ == "__main__":  # watcher process: one-shot side effects
         _url = f"http://{_host}:{_port}"

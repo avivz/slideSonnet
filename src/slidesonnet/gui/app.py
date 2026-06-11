@@ -164,6 +164,21 @@ def dev_invocation(
     return [sys.executable, "-m", "slidesonnet.gui.devserver"], env
 
 
+_STAGE_RESERVE = 680.0  # stage minimum (620px content) + its padding + separators
+_STRIP_MAX = 400.0
+_CONSOLE_MAX = 520.0
+
+
+def clamp_panel_widths(
+    window_px: float, strip: float, console: float, *, reserve: float = _STAGE_RESERVE
+) -> tuple[float, float]:
+    """Shrink pane widths (console first, then filmstrip) until the stage keeps *reserve* px."""
+    avail = max(0.0, window_px - reserve)
+    console = max(0.0, min(console, avail - strip))
+    strip = max(0.0, min(strip, avail - console))
+    return strip, console
+
+
 class ResponsivePanes:
     """Auto-collapse side panes below a window-width breakpoint, restore above it.
 
@@ -637,19 +652,44 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             remembered[key] = current
             splitter.value = 0.0
 
+    last_width = {"px": 0.0}
+
+    def _apply_limits() -> None:
+        """Cap drag limits so panes can't push the stage below its minimum."""
+        width = last_width["px"]
+        if not width:
+            return
+        if responsive.narrow:  # overlay mode: panes float over the stage, no cap needed
+            strip_split.props(f"limits=[0,{_STRIP_MAX:.0f}]")
+            console_split.props(f"limits=[0,{_CONSOLE_MAX:.0f}]")
+            return
+        avail = max(0.0, width - _STAGE_RESERVE)
+        strip_w = float(strip_split.value or 0.0)
+        console_w = float(console_split.value or 0.0)
+        strip_split.props(f"limits=[0,{min(_STRIP_MAX, max(0.0, avail - console_w)):.0f}]")
+        console_split.props(f"limits=[0,{min(_CONSOLE_MAX, max(0.0, avail - strip_w)):.0f}]")
+
     def _on_resize(e: Any) -> None:
         width = float(e.args)
+        last_width["px"] = width
         open_now = {k: float(s.value or 0.0) > 2.0 for k, (s, _d, _c) in panes.items()}
         to_collapse, to_restore = responsive.update(width, open_now)
         for key in to_collapse:
             _set_pane(key, open_pane=False)
         for key in to_restore:
             _set_pane(key, open_pane=True)
+        if not responsive.narrow:  # stretched panes yield before the stage shrinks
+            strip_w, console_w = clamp_panel_widths(
+                width, float(strip_split.value or 0.0), float(console_split.value or 0.0)
+            )
+            strip_split.value = strip_w
+            console_split.value = console_w
         for _key, (splitter, _d, cls) in panes.items():
             if responsive.narrow:
                 splitter.classes(add=cls)
             else:
                 splitter.classes(remove=cls)
+        _apply_limits()
         _sync_pane_toggles()
 
     ui.on("ss_resize", _on_resize)
@@ -792,8 +832,13 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     console_toggle.on_click(lambda: _toggle_pane(console_split, "console", 264.0))
     collapse_strip.on_click(lambda: _toggle_pane(strip_split, "strip", 150.0))
     collapse_console.on_click(lambda: _toggle_pane(console_split, "console", 264.0))
-    strip_split.on_value_change(lambda _e: _sync_pane_toggles())
-    console_split.on_value_change(lambda _e: _sync_pane_toggles())
+
+    def _on_pane_drag() -> None:
+        _apply_limits()
+        _sync_pane_toggles()
+
+    strip_split.on_value_change(lambda _e: _on_pane_drag())
+    console_split.on_value_change(lambda _e: _on_pane_drag())
     ui.keyboard(on_key=_on_key)
 
     render()
