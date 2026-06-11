@@ -15,6 +15,7 @@ from slidesonnet.api import ExportResult
 from slidesonnet.clean import CleanResult
 from slidesonnet.cli import _CliFormatter, _configure_logging, main
 from slidesonnet.exceptions import SlideSonnetError
+from tests.conftest import simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -60,7 +61,7 @@ def test_init_merge_tops_up(tmp_path: Path) -> None:
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())
     sidecar = tmp_path / "marked.narration"
-    sidecar.write_text("@intro-title\nHello.\n", encoding="utf-8")
+    sidecar.write_text(simple_narration("@intro-title\nHello.\n"), encoding="utf-8")
     result = CliRunner().invoke(main, ["init", str(pdf), "--merge"])
     assert result.exit_code == 0
     text = sidecar.read_text(encoding="utf-8")
@@ -81,7 +82,7 @@ def test_check_errors_on_orphan(tmp_path: Path) -> None:
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())
     sidecar = tmp_path / "marked.narration"
-    sidecar.write_text("@ghost\nNobody.\n", encoding="utf-8")
+    sidecar.write_text(simple_narration("@ghost\nNobody.\n"), encoding="utf-8")
     result = CliRunner().invoke(main, ["check", str(pdf)])
     assert result.exit_code == 1
     assert "ghost" in result.output and "no matching" in result.output.lower()

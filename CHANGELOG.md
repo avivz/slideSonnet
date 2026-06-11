@@ -6,9 +6,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Structured narration: attributed utterances, pauses, and transitions.**
+  A slide's narration is now an ordered list of *utterance* and *pause*
+  blocks. Each utterance carries its own `voice`, `pace`, and free-text
+  `direct` (director's note); a slide can mix voices — each utterance is its
+  own synthesis call (so Kokoro renders a two-voice exchange on one slide).
+  `direct` is stored and serialized for forward compatibility (the local
+  engine ignores it). Each slide also has `transition-in`/`transition-out`
+  (default `cut`, or a timed `crossfade`).
+- **Block editor.** The single narration textarea is replaced by a card list:
+  "Line" and "Pause" buttons add blocks; each utterance card has a growing
+  text area with a one-line, labelled voice / pace / director's-note strip
+  (bordered fields). **Voice** is a dropdown of the engine's actual voices
+  (Kokoro's English set, plus any named presets from `slidesonnet.toml`);
+  clear it for the deck default. A per-utterance voice that isn't a named
+  preset is now passed straight to the backend as a raw voice id, so the
+  picker's choices take effect. Pace is a compact select; cards reorder and
+  delete; pause cards edit their duration; transition rows bracket the slide.
+- **Unattached-narration tray.** When a recompile (or a duplicate `@id`) drops
+  a narration block, it lands in a distinct, highlighted tray instead of
+  vanishing: the full text is shown and selectable, with one-click **copy**,
+  **Append here** (fold it onto the open slide), **Attach to…** (move it onto
+  an empty slide), and **Delete**.
 - Editor usability: single-slide preview button (was deck-only), ←/→
-  keyboard navigation, autosave "saved" flash, engine/sidecar status footer,
-  and pace as a one-click toggle instead of a dropdown.
+  keyboard navigation, autosave "saved" flash, and an engine/sidecar
+  status footer.
 - **Live reload of deck sources.** The editor watches the PDF, the
   `.narration` sidecar, and `slidesonnet.toml` (1s mtime poll — reliable on
   WSL mounts) and reloads automatically: recompile your deck or edit the
@@ -28,7 +50,54 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - ↑/↓ now navigate slides too, matching the vertical filmstrip (←/→ still
   work).
 
+- `examples/error-showcase`: a deliberately broken deck with every
+  reconciliation problem on its own slide (auto id, un-narrated, duplicate
+  ids, duplicate sidecar blocks, orphan narration) — open it in the editor
+  to see how each one surfaces. Guarded by tests so it stays broken in
+  exactly the advertised ways.
+
+### Changed (narration file format)
+- **The `.narration` sidecar grammar is now an indented block format** (a
+  breaking change). Each slide is `@id` followed by `utterance:` blocks (with
+  `voice:`/`pace:`/`direct:`/`text:` lines), `pause: N` lines, and optional
+  `transition-in:`/`transition-out:` lines. The old flat `:voice`/`:pace` +
+  inline-`[pause]` body grammar is gone; the bundled example decks are
+  migrated. A new `transition-conflict` check (warning) fires when a slide's
+  `transition-out` disagrees with the next slide's `transition-in`; the
+  earlier slide's transition wins, and the editor clears the next slide's
+  `transition-in` when you set an outgoing one, so a boundary is only ever
+  written on one side.
+
+### Changed (reconciliation)
+- Duplicate slide-ids are no longer a hard error: when the same `\ssid`
+  appears on several pages, later occurrences are auto-renamed (`twin`,
+  `twin-2`, …) with a warning, so every page stays addressable and
+  narratable. The suffix always skips ids that genuinely exist (a real
+  `twin-2` elsewhere makes the duplicate become `twin-3`), so renames can
+  never collide. Note the renamed binding follows occurrence order — it
+  shifts if the duplicate pages reorder, which is why the warning still
+  tells you to give each page its own `\ssid`. Duplicate *narration blocks*
+  are handled the same way: a repeated `@id` in the sidecar is auto-renamed
+  on load (`double-block` → `double-block-2`) so neither block's text is
+  lost, with a warning, and the renamed block surfaces in the
+  unattached-narration tray — no more frozen saving.
+
 ### Fixed
+- Typing narration on a page with no slide-id no longer corrupts the
+  sidecar (it wrote an unparseable "@" block). The editor disables the
+  narration pane on unmarked pages and shows the missing-\ssid warning on
+  the page itself.
+- Browsing a deck whose sidecar has duplicate blocks no longer silently
+  collapses them (navigation auto-saves were dropping all but the last
+  duplicate's text). The later block is auto-renamed on load so its text is
+  kept, and editing the rest of the deck is never frozen by a duplicate
+  elsewhere in the file.
+- Saving no longer scaffolds bare `@id` headers for un-narrated pages. An
+  empty placeholder block used to read back as a (narrated-but-empty) block
+  and silence the page's `missing-narration` warning; un-narrated pages now
+  stay out of the sidecar until they get real content.
+- Pressing play on a slide with no narration now says so instead of
+  rendering and playing a silent track.
 - Recompiling a deck no longer risks killing the editor's live-reload: a
   poll tick that catches the PDF (or `slidesonnet.toml`) missing or
   half-written keeps showing the last good deck and retries next tick.
@@ -38,6 +107,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   slides during a single-slide preview stops its audio (it used to keep
   talking over the new slide), and the deck preview's automatic page flips
   no longer discard narration you typed during playback.
+- Replaying a preview after navigating now plays the new slide's audio:
+  previews render to one track file, and the browser kept replaying the
+  old audio because the URL never changed (now cache-busted per request).
+
+### Changed (editor transport)
+- "Generate" moved into the transport bar next to play (icon button); play
+  and generate now gray out when pointless — play when the slide has no
+  speech, generate when every segment is already cached. "Generate all"
+  stays in the console for whole-deck synthesis.
+- One transport, no duplicate players: the native browser audio widget is
+  gone (it offered a second, stale play button). The play-slide /
+  play-deck buttons now toggle play/pause for their own track (icon
+  flips), Stop resets the player, and switching slides clears a
+  single-slide preview (even one still building) while deck previews
+  seek to the new slide — playing or paused. A seek bar + elapsed/total
+  clock in the transport replaces the widget's scrubber (drag to jump
+  anywhere in the track).
 
 ### Changed
 - **Kokoro replaces Piper as the local TTS engine.** The default backend is

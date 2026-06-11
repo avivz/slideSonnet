@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from slidesonnet.deck import default_sidecar_path
+from slidesonnet.deck import dedupe_page_ids, default_sidecar_path
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
@@ -105,7 +105,7 @@ def init_sidecar(
     """
     pdf_path = pdf_path.resolve()
     sidecar = sidecar_path or default_sidecar_path(pdf_path)
-    pages = read_page_ids(pdf_path)
+    pages, _ = dedupe_page_ids(read_page_ids(pdf_path))  # scaffold the effective ids
 
     if sidecar.exists() and not (merge or force):
         raise FileExistsError(
@@ -212,8 +212,16 @@ def export(
     from slidesonnet.render import build_timeline, compose_video, render_audio_track
     from slidesonnet.timing import TimingMode, parse_timing
 
+    import logging
+
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
+
+    if any(b.has_nondefault_transitions for b in deck.narration.values()):
+        logging.getLogger(__name__).warning(
+            "crossfade transitions are recorded but not yet composited — "
+            "rendering them as hard cuts for now"
+        )
 
     audible = (not silent) and mode.kind == "tts"
     if silent and mode.kind == "tts":

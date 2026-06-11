@@ -113,7 +113,7 @@ def _seed_deck(tmp_path: Path, *, with_voices: bool = False) -> Path:
     pdf.write_bytes(MARKED.read_bytes())
     blocks = [
         PageNarration("intro-title", [Segment.speech(HELLO), Segment.pause(1.0)]),
-        PageNarration("euler-setup", [Segment.speech(SECOND)], voice="narrator"),
+        PageNarration("euler-setup", [Segment.speech(SECOND, voice="narrator")]),
     ]
     (tmp_path / "marked.narration").write_text(serialize_sidecar(blocks), encoding="utf-8")
     if with_voices:

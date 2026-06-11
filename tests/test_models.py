@@ -44,8 +44,9 @@ class TestResolveVoice:
     def test_empty_preset(self) -> None:
         assert resolve_voice("", self.VOICES, "kokoro") is None
 
-    def test_unknown_preset(self) -> None:
-        assert resolve_voice("ghost", self.VOICES, "kokoro") is None
+    def test_raw_voice_id_passes_through(self) -> None:
+        # not a named preset -> treated as a raw backend voice id
+        assert resolve_voice("af_heart", self.VOICES, "kokoro") == "af_heart"
 
     def test_known_preset_mapped_backend(self) -> None:
         assert resolve_voice("narrator", self.VOICES, "kokoro") == "af_bella"

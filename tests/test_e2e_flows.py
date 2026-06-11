@@ -13,7 +13,7 @@ import pytest
 from click.testing import CliRunner, Result
 
 from slidesonnet.cli import main
-from tests.conftest import write_pdf
+from tests.conftest import simple_narration, write_pdf
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -39,7 +39,7 @@ def test_journey_scaffold_recompile_merge(tmp_path: Path) -> None:
     assert "exists" in res.output
 
     # the user narrates, then recompiles the deck with a new slide
-    sidecar.write_text("@alpha\nHello.\n\n@beta\nWorld.\n", encoding="utf-8")
+    sidecar.write_text(simple_narration("@alpha\nHello.\n\n@beta\nWorld.\n"), encoding="utf-8")
     write_pdf(pdf, ["alpha", "beta", "gamma"])
 
     res = _run("check", str(pdf))
@@ -60,7 +60,9 @@ def test_journey_scaffold_recompile_merge(tmp_path: Path) -> None:
 def test_journey_rename_creates_orphan_error(tmp_path: Path) -> None:
     """Renaming a slide-id in the source orphans its narration: check must fail."""
     pdf = write_pdf(tmp_path / "deck.pdf", ["alpha", "beta"])
-    (tmp_path / "deck.narration").write_text("@alpha\nHello.\n\n@beta\nWorld.\n", encoding="utf-8")
+    (tmp_path / "deck.narration").write_text(
+        simple_narration("@alpha\nHello.\n\n@beta\nWorld.\n"), encoding="utf-8"
+    )
     write_pdf(pdf, ["alpha", "beta-v2"])  # recompile with a renamed id
 
     res = _run("check", str(pdf))
@@ -69,12 +71,18 @@ def test_journey_rename_creates_orphan_error(tmp_path: Path) -> None:
     assert "no matching PDF page" in res.output
 
 
-def test_journey_duplicate_ids_error(tmp_path: Path) -> None:
+def test_journey_duplicate_ids_disambiguated(tmp_path: Path) -> None:
+    """Duplicate \\ssid is auto-renamed (alpha, alpha-2) and warned, not fatal."""
     pdf = write_pdf(tmp_path / "deck.pdf", ["alpha", "alpha"])
-    (tmp_path / "deck.narration").write_text("@alpha\nHello.\n", encoding="utf-8")
+    (tmp_path / "deck.narration").write_text(simple_narration("@alpha\nHello.\n"), encoding="utf-8")
     res = _run("check", str(pdf))
-    assert res.exit_code != 0
-    assert "ambiguous" in res.output
+    assert res.exit_code == 0  # warnings only
+    assert "renamed to 'alpha-2'" in res.output
+
+    # the renamed page is narratable under its new id, and init --merge offers it
+    res = _run("init", str(pdf), "--merge")
+    assert res.exit_code == 0
+    assert "@alpha-2" in (tmp_path / "deck.narration").read_text(encoding="utf-8")
 
 
 @pytest.mark.integration
@@ -85,7 +93,7 @@ def test_journey_narrate_synthesize_export_clean(tmp_path: Path) -> None:
 
     assert _run("init", str(pdf)).exit_code == 0
     (tmp_path / "deck.narration").write_text(
-        "@intro-title\nHello deck.\n\n@euler-setup\nOne more line. [pause 1]\n",
+        simple_narration("@intro-title\nHello deck.\n\n@euler-setup\nOne more line. [pause 1]\n"),
         encoding="utf-8",
     )
 

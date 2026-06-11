@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from slidesonnet.gui.state import EditorState, cue_start
+from tests.conftest import simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -18,7 +19,7 @@ def _state(tmp_path: Path, sidecar: str = "") -> EditorState:
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())
     if sidecar:
-        (tmp_path / "marked.narration").write_text(sidecar, encoding="utf-8")
+        (tmp_path / "marked.narration").write_text(simple_narration(sidecar), encoding="utf-8")
     return EditorState(pdf)
 
 
@@ -84,7 +85,7 @@ def test_poll_sources_false_when_unchanged(tmp_path: Path) -> None:
 def test_poll_sources_picks_up_external_sidecar_edit(tmp_path: Path) -> None:
     state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
     sidecar = tmp_path / "marked.narration"
-    sidecar.write_text("@intro-title\nChanged externally.\n", encoding="utf-8")
+    sidecar.write_text(simple_narration("@intro-title\nChanged externally.\n"), encoding="utf-8")
     _bump_mtime(sidecar)
     assert state.poll_sources() is True
     assert "Changed externally." in state.body_text
@@ -93,7 +94,7 @@ def test_poll_sources_picks_up_external_sidecar_edit(tmp_path: Path) -> None:
 
 def test_own_save_does_not_trigger_reload(tmp_path: Path) -> None:
     state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
-    state.save("Edited in the GUI.")
+    state.set_body("Edited in the GUI.")
     assert state.poll_sources() is False
 
 
@@ -121,7 +122,7 @@ def _factory_state(tmp_path: Path, ids: list[str], sidecar: str = "") -> EditorS
 
     pdf = write_pdf(tmp_path / "deck.pdf", ids)
     if sidecar:
-        (tmp_path / "deck.narration").write_text(sidecar, encoding="utf-8")
+        (tmp_path / "deck.narration").write_text(simple_narration(sidecar), encoding="utf-8")
     return EditorState(pdf)
 
 
@@ -189,6 +190,172 @@ def test_poll_survives_malformed_config_edit(tmp_path: Path) -> None:
     cfg.write_text('[tts]\nbackend = "kokoro"\n', encoding="utf-8")
     _bump_mtime(cfg)
     assert state.poll_sources() is True
+
+
+def test_duplicate_blocks_are_disambiguated_not_frozen(tmp_path: Path) -> None:
+    # a repeated @a is renamed (a -> a-2) on load so neither block's text is lost;
+    # editing an unrelated slide is no longer frozen, and a rewrite keeps both
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nFirst.\n\n@a\nSecond.\n\n@b\nBye.\n")
+    assert "a-2" in state.deck.narration  # the second @a block was disambiguated
+    state.go(1)  # onto slide b
+    assert state.set_body("edited b") is True
+    text = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "First." in text and "Second." in text  # both blocks preserved
+    assert "edited b" in text
+
+
+def test_save_returns_true_on_normal_write(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n")
+    assert state.set_body("Hello.") is True
+    assert "Hello." in (tmp_path / "deck.narration").read_text(encoding="utf-8")
+
+
+def test_save_on_unmarked_page_is_a_safe_noop(tmp_path: Path) -> None:
+    # an empty slide-id can't be keyed in the sidecar; writing "@" would corrupt it
+    state = _factory_state(tmp_path, ["a", "", "b"], sidecar="@a\nHi.\n")
+    state.go(1)
+    assert state.current_id == ""
+    assert state.set_body("typed on an unmarked page") is False
+    text = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "typed on an unmarked page" not in text
+    state.reload()  # the sidecar must still parse
+    assert state.deck.page_narration("a").speech_text == "Hi."
+
+
+# ---- unattached narration (slide dropped/renamed by a recompile) ------------
+
+
+def test_orphan_blocks_lists_blocks_without_pages(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n\n@ghost\nLost text.\n")
+    orphans = state.orphan_blocks()
+    assert [b.slide_id for b in orphans] == ["ghost"]
+    assert orphans[0].speech_text == "Lost text."
+
+
+def test_orphan_blocks_empty_when_reconciled(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n")
+    assert state.orphan_blocks() == []
+
+
+def test_unnarrated_pages_lists_candidates(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b", "c"], sidecar="@a\nHi.\n\n@b\n")
+    assert state.unnarrated_pages() == ["b", "c"]  # empty block counts as un-narrated
+
+
+def test_attach_orphan_moves_narration_to_page(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@ghost\nLost text.\n")
+    state.attach_orphan("ghost", "b")
+    assert state.orphan_blocks() == []
+    assert state.deck.page_narration("b").speech_text == "Lost text."
+    sidecar = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "Lost text." in sidecar
+    assert "@ghost" not in sidecar
+    assert state.error_count == 0  # orphan error resolved
+
+
+def test_attach_orphan_refuses_narrated_target(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n\n@ghost\nLost text.\n")
+    with pytest.raises(ValueError, match="already has narration"):
+        state.attach_orphan("ghost", "a")
+    with pytest.raises(ValueError, match="not a page"):
+        state.attach_orphan("ghost", "nope")
+
+
+def test_append_orphan_to_current_merges_segments(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nKeep me.\n\n@ghost\nLost text.\n")
+    state.go(0)  # current slide is 'a', which already has narration
+    state.append_orphan_to_current("ghost")
+    assert state.orphan_blocks() == []
+    # the orphan's text is appended after the slide's existing narration
+    assert state.deck.page_narration("a").speech_text == "Keep me. Lost text."
+    sidecar = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "Keep me." in sidecar and "Lost text." in sidecar and "@ghost" not in sidecar
+    assert state.error_count == 0  # orphan error resolved
+
+
+def test_append_orphan_to_current_refuses_unmarked_page(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "", "b"], sidecar="@a\nHi.\n\n@ghost\nLost.\n")
+    state.go(1)  # the unmarked page has no slide-id to append onto
+    with pytest.raises(ValueError, match="no slide-id"):
+        state.append_orphan_to_current("ghost")
+
+
+def test_delete_orphan_removes_block(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n\n@ghost\nLost text.\n")
+    state.delete_orphan("ghost")
+    assert state.orphan_blocks() == []
+    assert "Lost text." not in (tmp_path / "deck.narration").read_text(encoding="utf-8")
+
+
+def test_external_changes_reports_which_sources_moved(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n")
+    assert state.external_changes() == set()
+    _bump_mtime(state.pdf_path)
+    assert state.external_changes() == {"pdf"}
+
+
+def test_save_does_not_mask_concurrent_pdf_change(tmp_path: Path) -> None:
+    # a recompile lands, then the GUI saves before the next poll: the reload
+    # must still happen (save refreshes only the sidecar baseline)
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n")
+    _recompile(state, ["a", "b", "c"])
+    state.set_body("Hi there.")
+    assert state.poll_sources() is True
+    assert state.page_count == 3
+
+
+# ---- structured block editing (replace_block + transitions) ----------------
+
+
+def test_replace_block_persists_mixed_segments(tmp_path: Path) -> None:
+    from slidesonnet.narration.model import Segment
+
+    state = _factory_state(tmp_path, ["a"])
+    ok = state.replace_block(
+        [
+            Segment.speech("Hello.", voice="af_bella", pace="slow", direction="warm"),
+            Segment.pause(1.5),
+            Segment.speech("Goodbye."),
+        ]
+    )
+    assert ok
+    block = state.current_block
+    assert [s.kind for s in block.segments] == ["speech", "pause", "speech"]
+    assert block.segments[0].voice == "af_bella"
+    assert block.segments[0].pace == "slow"
+    assert block.segments[0].direction == "warm"
+    # survives a reload from disk
+    state.reload()
+    assert state.current_block.segments[0].direction == "warm"
+
+
+def test_replace_block_empty_clears_the_text(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n")
+    assert state.replace_block([]) is True
+    assert state.current_block.is_silent  # bare @a header may remain, but no content
+    assert "Hi." not in (tmp_path / "deck.narration").read_text(encoding="utf-8")
+
+
+def test_set_transition_out_clears_next_slide_in(tmp_path: Path) -> None:
+    from slidesonnet.narration.model import Segment, Transition
+
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@b\nBye.\n")
+    # b initially carries a transition-in; setting a's transition-out normalizes it away
+    state.go(1)
+    state.replace_block([Segment.speech("Bye.")], transition_in=Transition("crossfade", 0.4))
+    state.go(0)
+    state.replace_block([Segment.speech("Hi.")], transition_out=Transition("crossfade", 0.5))
+    assert state.deck.page_narration("a").transition_out == Transition("crossfade", 0.5)
+    assert state.deck.page_narration("b").transition_in == Transition()  # cleared
+    assert not any(d.code == "transition-conflict" for d in state.diagnostics)
+
+
+def test_replace_block_succeeds_despite_duplicate_blocks(tmp_path: Path) -> None:
+    from slidesonnet.narration.model import Segment
+
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nFirst.\n\n@a\nSecond.\n\n@b\nBye.\n")
+    # writes are no longer frozen by a duplicate elsewhere in the file
+    assert state.replace_block([Segment.speech("edited a")]) is True
 
 
 def test_cue_start_finds_slide() -> None:

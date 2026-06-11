@@ -1,10 +1,15 @@
-"""Narration data model: Segment / PageNarration / Deck.
+"""Narration data model: Segment / Transition / PageNarration / Deck.
 
 A narration sidecar is a flat list of per-slide blocks. Each block is a
 :class:`PageNarration` keyed by a stable slide-id, holding an ordered list of
-:class:`Segment`s (spoken text or explicit pauses) plus optional voice/pace
-directives. The :class:`Deck` ties a PDF (its page-ordered slide-ids) to the
-parsed narration.
+:class:`Segment`s (attributed spoken utterances or explicit pauses) plus the
+transitions into and out of the slide. The :class:`Deck` ties a PDF (its
+page-ordered slide-ids) to the parsed narration.
+
+Per-utterance attributes (voice, pace, director's note) live on the speech
+segment itself, so one slide can mix voices and paces — each speech segment is
+its own synthesis call. ``direction`` is stored and serialized for forward
+compatibility; the current local engine ignores it.
 """
 
 from __future__ import annotations
@@ -15,19 +20,55 @@ from typing import Literal
 
 SegmentKind = Literal["speech", "pause"]
 Pace = Literal["slow", "normal", "fast"]
+TransitionKind = Literal["cut", "crossfade"]
+
+
+@dataclass(frozen=True)
+class Transition:
+    """How a slide enters or leaves: a hard *cut* or a timed *crossfade*.
+
+    ``seconds`` is the crossfade duration; it is ignored for a cut. A crossfade
+    is accepted and persisted everywhere but currently renders as a cut until
+    the compositor learns it (a warning is logged at render time).
+    """
+
+    kind: TransitionKind = "cut"
+    seconds: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.seconds < 0:
+            raise ValueError(f"transition seconds must be non-negative, got {self.seconds}")
+
+    @property
+    def is_crossfade(self) -> bool:
+        return self.kind == "crossfade"
 
 
 @dataclass(frozen=True)
 class Segment:
-    """One narration element: either spoken *text* or a *pause* of *seconds*."""
+    """One narration element: a spoken utterance or a *pause* of *seconds*.
+
+    Speech segments carry their own ``voice`` (backend voice name, or None for
+    the configured default), ``pace``, and free-text ``direction``.
+    """
 
     kind: SegmentKind
     text: str = ""
     seconds: float = 0.0
+    voice: str | None = None
+    pace: Pace | None = None
+    direction: str | None = None
 
     @classmethod
-    def speech(cls, text: str) -> Segment:
-        return cls(kind="speech", text=text)
+    def speech(
+        cls,
+        text: str,
+        *,
+        voice: str | None = None,
+        pace: Pace | None = None,
+        direction: str | None = None,
+    ) -> Segment:
+        return cls(kind="speech", text=text, voice=voice, pace=pace, direction=direction)
 
     @classmethod
     def pause(cls, seconds: float) -> Segment:
@@ -46,12 +87,12 @@ class Segment:
 
 @dataclass
 class PageNarration:
-    """Narration for a single slide-id."""
+    """Narration for a single slide-id: attributed segments plus transitions."""
 
     slide_id: str
     segments: list[Segment] = field(default_factory=list)
-    voice: str | None = None
-    pace: Pace | None = None
+    transition_in: Transition = field(default_factory=Transition)
+    transition_out: Transition = field(default_factory=Transition)
 
     @property
     def speech_segments(self) -> list[Segment]:
@@ -74,6 +115,25 @@ class PageNarration:
     @property
     def total_pause_seconds(self) -> float:
         return sum(s.seconds for s in self.segments if s.is_pause)
+
+    @property
+    def has_nondefault_transitions(self) -> bool:
+        """True if either transition differs from a plain cut."""
+        return self.transition_in.is_crossfade or self.transition_out.is_crossfade
+
+    @property
+    def is_empty(self) -> bool:
+        """True for a placeholder block: no segments and plain-cut transitions.
+
+        Such a block carries no information, so it is never serialized — writing
+        a bare ``@id`` header would otherwise register the page as "narrated"
+        (an empty block) and suppress its ``missing-narration`` warning.
+        """
+        return (
+            not self.segments
+            and self.transition_in.kind == "cut"
+            and self.transition_out.kind == "cut"
+        )
 
 
 @dataclass

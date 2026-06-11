@@ -35,6 +35,44 @@ KPipeline: type[_KPipelineType] | None = _KPipeline
 _REPO_ID = "hexgrad/Kokoro-82M"
 _SAMPLE_RATE = 24_000
 
+# The Kokoro-82M v1.0 English voices (``<lang><gender>_<name>``; lang a=American,
+# b=British). Offered as the voice choices in the editor — these need no extra
+# language packs, unlike the es/fr/hi/it/ja/pt/zh voices the model also ships.
+KOKORO_VOICES: tuple[str, ...] = (
+    # American English — female
+    "af_heart",
+    "af_alloy",
+    "af_aoede",
+    "af_bella",
+    "af_jessica",
+    "af_kore",
+    "af_nicole",
+    "af_nova",
+    "af_river",
+    "af_sarah",
+    "af_sky",
+    # American English — male
+    "am_adam",
+    "am_echo",
+    "am_eric",
+    "am_fenrir",
+    "am_liam",
+    "am_michael",
+    "am_onyx",
+    "am_puck",
+    "am_santa",
+    # British English — female
+    "bf_alice",
+    "bf_emma",
+    "bf_isabella",
+    "bf_lily",
+    # British English — male
+    "bm_daniel",
+    "bm_fable",
+    "bm_george",
+    "bm_lewis",
+)
+
 
 class KokoroTTS(TTSEngine):
     def __init__(self, voice: str = "af_heart", speed: float = 1.0) -> None:

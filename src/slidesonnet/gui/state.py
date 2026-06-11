@@ -16,12 +16,10 @@ from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import default_config_path, load_config
 from slidesonnet.deck import default_sidecar_path, load_deck, save_deck
 from slidesonnet.diagnostics import Diagnostic
-from slidesonnet.narration.format import parse_segments, serialize_body
-from slidesonnet.narration.model import Pace, PageNarration
+from slidesonnet.narration.format import serialize_body
+from slidesonnet.narration.model import PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import rasterize
 from slidesonnet.tts import create_tts
-
-_VALID_PACES: frozenset[str] = frozenset({"slow", "normal", "fast"})
 
 SlideStatus = Literal["error", "warning", "ready", "empty"]
 
@@ -78,6 +76,16 @@ class EditorState:
         self.go(self.index)  # clamp in case the deck shrank
         return True
 
+    def external_changes(self) -> set[str]:
+        """Which sources changed on disk since the last baseline: pdf/sidecar/config."""
+        current = self._source_mtimes()
+        labels = {
+            str(self.pdf_path): "pdf",
+            str(self.sidecar_path): "sidecar",
+            str(default_config_path(self.pdf_path)): "config",
+        }
+        return {labels[key] for key, mtime in current.items() if mtime != self._mtimes[key]}
+
     def ensure_images(self) -> list[Path]:
         """Rasterize page images on first use (needs pdftoppm)."""
         if self._images is None:
@@ -115,29 +123,148 @@ class EditorState:
     def body_text(self) -> str:
         return serialize_body(self.current_block)
 
-    @property
-    def voice(self) -> str:
-        return self.current_block.voice or ""
+    def _next_page_id(self) -> str | None:
+        nxt = self.index + 1
+        return self.deck.pages[nxt] if nxt < self.page_count else None
 
-    @property
-    def pace(self) -> str:
-        return self.current_block.pace or "normal"
+    def set_body(self, body: str) -> bool:
+        """Replace the current block from a plain free-text body (preserves transitions).
 
-    def save(self, body: str, *, voice: str = "", pace: str = "normal") -> None:
-        """Persist edits to the current slide's block, then re-run diagnostics."""
-        block = PageNarration(
-            slide_id=self.current_id,
-            segments=parse_segments(body),
-            voice=voice.strip() or None,
-            pace=_coerce_pace(pace),
+        Lossy convenience for the plain-text editing path: per-utterance voice,
+        pace, and director's notes are not expressible here. Inline ``[pause N]``
+        still splits the body into segments.
+        """
+        from slidesonnet.narration.format import parse_segments
+
+        block = self.current_block
+        return self.replace_block(
+            parse_segments(body),
+            transition_in=block.transition_in,
+            transition_out=block.transition_out,
         )
-        if block.segments or block.voice or block.pace:
-            self.deck.narration[self.current_id] = block
-        else:
+
+    def replace_block(
+        self,
+        segments: list[Segment],
+        *,
+        transition_in: Transition | None = None,
+        transition_out: Transition | None = None,
+    ) -> bool:
+        """Replace the current slide's block wholesale, then persist; False if unsafe.
+
+        Unsafe: the page has no slide-id to key the block ("@" would corrupt the
+        sidecar grammar). A block that ends up empty (no segments, plain cuts)
+        is dropped from the sidecar entirely.
+
+        Setting a non-cut ``transition_out`` clears the *next* slide's
+        ``transition_in`` so a boundary is only ever specified on the earlier
+        slide (see :func:`diagnostics.boundary_transition`).
+        """
+        if not self.current_id:
+            return False
+        tin = transition_in or Transition()
+        tout = transition_out or Transition()
+        empty = not segments and tin.kind == "cut" and tout.kind == "cut"
+        if empty:
             self.deck.narration.pop(self.current_id, None)
+        else:
+            self.deck.narration[self.current_id] = PageNarration(
+                slide_id=self.current_id,
+                segments=list(segments),
+                transition_in=tin,
+                transition_out=tout,
+            )
+            if tout.kind != "cut":
+                nxt = self._next_page_id()
+                if nxt and nxt in self.deck.narration:
+                    self.deck.narration[nxt].transition_in = Transition()
+        self._write_and_reload()
+        return True
+
+    def _write_and_reload(self) -> None:
+        """Persist the deck, re-run diagnostics, and absorb our own sidecar write.
+
+        Only the sidecar baseline is refreshed — refreshing the others here
+        would mask a PDF/config change that landed since the last poll.
+        """
         save_deck(self.deck)
         self.reload()
-        self._mtimes = self._source_mtimes()  # our own write must not look external
+        try:
+            self._mtimes[str(self.sidecar_path)] = self.sidecar_path.stat().st_mtime
+        except OSError:
+            self._mtimes[str(self.sidecar_path)] = 0.0
+
+    # ---- unattached narration (slide dropped/renamed by a recompile) -------
+    def orphan_blocks(self) -> list[PageNarration]:
+        """Narration blocks whose slide-id matches no PDF page (sidecar order)."""
+        on_page = set(self.deck.pages)
+        return [b for sid, b in self.deck.narration.items() if sid not in on_page]
+
+    def unnarrated_pages(self) -> list[str]:
+        """Page ids an orphan could attach to (no narration yet), in page order."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for sid in self.deck.pages:
+            if sid and sid not in seen and not self.has_narration(sid):
+                seen.add(sid)
+                out.append(sid)
+        return out
+
+    def attach_orphan(self, orphan_id: str, target_id: str) -> None:
+        """Move an orphan block's narration onto the page *target_id* and save."""
+        if target_id not in self.deck.pages:
+            raise ValueError(f"'{target_id}' is not a page in the deck")
+        if self.has_narration(target_id):
+            raise ValueError(f"slide '{target_id}' already has narration")
+        block = self.deck.narration.pop(orphan_id)
+        self.deck.narration[target_id] = PageNarration(
+            slide_id=target_id,
+            segments=block.segments,
+            transition_in=block.transition_in,
+            transition_out=block.transition_out,
+        )
+        self._write_and_reload()
+
+    def append_orphan_to_current(self, orphan_id: str) -> None:
+        """Append an orphan block's segments onto the current slide, then save.
+
+        Unlike :meth:`attach_orphan` (which targets an *empty* slide), this
+        merges the orphan's utterances/pauses after whatever the current slide
+        already has — the way to fold dropped narration back into a live slide.
+        """
+        if not self.current_id:
+            raise ValueError("this page has no slide-id to append to")
+        if orphan_id not in self.deck.narration:
+            raise ValueError(f"no narration block '{orphan_id}'")
+        orphan = self.deck.narration.pop(orphan_id)
+        target = self.current_block
+        self.deck.narration[self.current_id] = PageNarration(
+            slide_id=self.current_id,
+            segments=[*target.segments, *orphan.segments],
+            transition_in=target.transition_in,
+            transition_out=target.transition_out,
+        )
+        self._write_and_reload()
+
+    def delete_orphan(self, orphan_id: str) -> None:
+        """Drop an orphan block (and its text) from the sidecar."""
+        self.deck.narration.pop(orphan_id, None)
+        self._write_and_reload()
+
+    # ---- voices -----------------------------------------------------------
+    def voice_options(self) -> list[str]:
+        """Voice choices for the editor: named presets first, then engine voices.
+
+        For Kokoro this is the model's fixed English voice set; for any backend
+        it also includes the deck's named presets from ``slidesonnet.toml``. The
+        per-utterance voice is otherwise None (the deck default).
+        """
+        from slidesonnet.tts.kokoro import KOKORO_VOICES
+
+        opts: list[str] = sorted(self.config.voices)  # named presets
+        if self.config.tts.backend == "kokoro":
+            opts += [v for v in KOKORO_VOICES if v not in opts]
+        return opts
 
     # ---- synthesis cost ---------------------------------------------------
     @property
@@ -222,11 +349,4 @@ def cue_start(cues: list[tuple[float, str]], slide_id: str) -> float | None:
     for start, sid in cues:
         if sid == slide_id:
             return start
-    return None
-
-
-def _coerce_pace(pace: str) -> Pace | None:
-    p = pace.strip().lower()
-    if p in _VALID_PACES and p != "normal":
-        return p  # type: ignore[return-value]
     return None

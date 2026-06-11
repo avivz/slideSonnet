@@ -1,0 +1,22 @@
+# slideSonnet narration — deck: error-showcase.pdf
+# This sidecar is deliberately broken to demo every reconciliation finding.
+
+@all-good
+  utterance:
+    text: The control case. This slide has a stable id and this narration, so every check passes.
+
+@twin
+  utterance:
+    text: Two pages claim this id, so it is ambiguous which one I belong to.
+
+@double-block
+  utterance:
+    text: I am the first of two blocks for this slide.
+
+@double-block
+  utterance:
+    text: I am the second block for the same slide. The checker flags us as duplicates.
+
+@ghost-slide
+  utterance:
+    text: This narration belongs to a slide that no longer exists in the PDF. It shows up in the editor's unattached-narration tray, where you can re-attach or delete it.

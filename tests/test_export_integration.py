@@ -12,6 +12,7 @@ import pytest
 
 from slidesonnet import api
 from slidesonnet.video.composer import get_duration
+from tests.conftest import simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -28,7 +29,7 @@ Here is the setup.
 def _prep(tmp_path: Path) -> Path:
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())
-    (tmp_path / "marked.narration").write_text(_SIDECAR, encoding="utf-8")
+    (tmp_path / "marked.narration").write_text(simple_narration(_SIDECAR), encoding="utf-8")
     return pdf
 
 
@@ -68,3 +69,33 @@ def test_export_tts_kokoro(tmp_path: Path) -> None:
     # the cached audio makes a second export cheap (cache hit)
     n_new = api.synthesize_deck(pdf, engine="kokoro")
     assert n_new == 0
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("kokoro") is None,
+    reason="kokoro not installed",
+)
+def test_multi_voice_within_one_slide(tmp_path: Path) -> None:
+    """Two utterances on one slide in different voices = two distinct Kokoro calls."""
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    (tmp_path / "marked.narration").write_text(
+        "@intro-title\n"
+        "  utterance:\n"
+        "    voice: af_heart\n"
+        "    text: This line is in one voice.\n"
+        "  utterance:\n"
+        "    voice: am_michael\n"
+        "    text: And this line answers in another.\n",
+        encoding="utf-8",
+    )
+    n_new = api.synthesize_deck(pdf, engine="kokoro")
+    assert n_new == 2  # two separate synthesis calls, one per voice
+    from slidesonnet.cache import audio_dir
+
+    clips = sorted(audio_dir(pdf).glob("*.wav"))
+    assert len(clips) == 2
+    # distinct content (different voice ids) -> distinct content-addressed filenames
+    assert clips[0].stem != clips[1].stem
+    # a re-run is fully cached
+    assert api.synthesize_deck(pdf, engine="kokoro") == 0

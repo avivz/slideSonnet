@@ -36,16 +36,18 @@ def resolve_voice(
     voices: dict[str, VoiceConfig],
     backend: str,
 ) -> str | None:
-    """Resolve a named voice preset to a backend-specific voice ID.
+    """Resolve a per-utterance voice to a backend-specific voice ID.
 
-    Returns None if *voice_preset* is None, unknown, or has no mapping
-    for *backend*.
+    A named *preset* (a key in *voices*) maps to its backend voice ID (or None
+    if it has no mapping for *backend*). Anything else is treated as a raw
+    backend voice ID and passed through unchanged — so an utterance can name an
+    engine voice directly (e.g. Kokoro ``af_heart``). None/empty means default.
     """
     if not voice_preset:
         return None
     voice_cfg = voices.get(voice_preset)
     if voice_cfg is None:
-        return None
+        return voice_preset  # a raw backend voice id (not a named preset)
     return voice_cfg.resolve(backend)
 
 
