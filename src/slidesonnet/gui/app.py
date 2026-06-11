@@ -15,9 +15,9 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from nicegui import app, run, ui
+from nicegui import app, background_tasks, run, ui
 from nicegui.events import KeyEventArguments
 
 from slidesonnet.cache import render_dir
@@ -204,6 +204,58 @@ class ResponsivePanes:
         restore = {k for k in self._auto if not open_panes.get(k, False)}
         self._auto = set()
         return set(), restore
+
+
+class PlaybackController:
+    """Defined behaviors for the preview player.
+
+    - A play request supersedes whatever is rolling; the superseded track
+      never starts (or stops) playing.
+    - Stop cancels a play request even while its track is still being built.
+    - Navigating during deck playback seeks the track; during single-slide
+      playback it stops it (slide A's audio never plays over slide B).
+    """
+
+    def __init__(self) -> None:
+        self._generation = 0
+        self.playing = False
+        self.deck_mode = False
+
+    def begin(self, *, deck: bool) -> int:
+        """Register a new play request; returns its token."""
+        self._generation += 1
+        self.deck_mode = deck
+        return self._generation
+
+    def may_start(self, token: int) -> bool:
+        """True if no stop/newer request arrived since *token* was issued."""
+        return token == self._generation
+
+    def stop(self) -> None:
+        self._generation += 1
+        self.playing = False
+
+    def set_playing(self, value: bool) -> None:
+        self.playing = value
+
+    def nav_action(self) -> Literal["seek", "stop", "none"]:
+        """What slide navigation should do to the player right now."""
+        if not self.playing:
+            return "none"
+        return "seek" if self.deck_mode else "stop"
+
+
+def nav_direction(key: Any) -> int:
+    """Slide-navigation delta for an arrow key: ←/↑ previous, →/↓ next, else 0.
+
+    Both pairs navigate: ↑/↓ matches the vertical filmstrip, ←/→ matches
+    presentation order (and presenters' muscle memory).
+    """
+    if key.arrow_left or key.arrow_up:
+        return -1
+    if key.arrow_right or key.arrow_down:
+        return 1
+    return 0
 
 
 def toggled_width(current: float, remembered: float, *, default: float) -> tuple[float, float]:
@@ -525,6 +577,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     stop_btn.mark("stop").tooltip("Stop preview")
                     ui.element("div").classes("ss-vsep")
                     audio = ui.audio("").props("controls").classes("ss-audio")
+                    audio.mark("preview-audio")
                     audio.visible = False
 
         with console_split.after, ui.column().classes("ss-console gap-3 no-wrap"):
@@ -549,12 +602,12 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         ui.element("div").classes("ss-vsep")
         ui.label(state.sidecar_path.name).classes("ss-mono ss-foot")
         ui.space()
-        ui.label("← → slides · drag dividers · saves automatically").classes("ss-mono ss-foot")
+        ui.label("←→ or ↑↓ slides · drag dividers · saves automatically").classes("ss-mono ss-foot")
 
     # ---- rendering helpers ----
     cues: list[tuple[float, str]] = []
     busy = False
-    playing = False  # deck-preview audio is rolling (nav seeks instead of just flipping)
+    playback = PlaybackController()
 
     def render() -> None:
         page_label.set_text(f"Slide {state.index + 1} / {state.page_count}")
@@ -626,10 +679,13 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     def _jump(index: int) -> None:
         save_current()
         state.go(index)
-        if cues and playing:  # deck preview rolling: seek the track to this slide's cue
+        action = playback.nav_action()
+        if action == "seek" and cues:  # deck preview rolling: follow to this slide's cue
             start = cue_start(cues, state.current_id)
             if start is not None:
                 audio.seek(start)
+        elif action == "stop":  # single-slide audio must not play over another slide
+            _stop_playback()
         render()
 
     def _go(delta: int) -> None:
@@ -711,10 +767,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     def _on_key(e: KeyEventArguments) -> None:
         if not e.action.keydown:
             return
-        if e.key.arrow_left:
-            _go(-1)
-        elif e.key.arrow_right:
-            _go(1)
+        delta = nav_direction(e.key)
+        if delta:
+            _go(delta)
 
     # ---- actions (saved first, run off the event loop, one at a time) ----
     async def _run(btn: Any, work: Callable[[], str]) -> None:
@@ -761,35 +816,60 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 ui.button("Generate & play", on_click=lambda: dialog.submit(True)).props("no-caps")
         return bool(await dialog)
 
-    async def _preview(btn: Any, whole_deck: bool) -> None:
-        nonlocal busy, cues
+    def _stop_playback() -> None:
+        playback.stop()  # cancels a pending play too — Stop always wins
+        audio.pause()
+
+    def _request_preview(btn: Any, whole_deck: bool) -> None:
+        """Claim the player synchronously at click time, then build off the loop.
+
+        Claiming the token here (not inside the task) means a Stop click that
+        lands before the build even starts still cancels it.
+        """
+        nonlocal busy
         if busy:
             return
         busy = True
-        save_current()
-        btn.props("loading")
+        token = playback.begin(deck=whole_deck)
+        audio.pause()  # a rolling preview yields to the new request right away
+        background_tasks.create(_preview(btn, whole_deck, token))
+
+    client = ui.context.client  # background tasks must re-enter the page's slot stack
+
+    async def _preview(btn: Any, whole_deck: bool, token: int) -> None:
+        nonlocal busy, cues
+        with client:
+            save_current()
+            btn.props("loading")
         try:
             if state.tts_is_paid:
                 count = (
                     state.uncached_total() if whole_deck else state.uncached_count(state.current_id)
                 )
-                if count and not await _confirm_paid_synth(count):
-                    return
+                with client:
+                    if count and not await _confirm_paid_synth(count):
+                        return
             preview = await run.io_bound(
                 state.preview_deck if whole_deck else state.preview_current
             )
-            cues = preview.cues if whole_deck else []
-            audio.set_source(_media_url(state, preview.track))
-            audio.visible = True
-            audio.play()
-            ui.notify(f"Preview ready ({preview.total_duration:.1f}s)", type="positive")
+            with client:
+                if not playback.may_start(token):  # user pressed Stop while building
+                    ui.notify("Preview stopped", type="info")
+                    return
+                cues = preview.cues if whole_deck else []
+                audio.set_source(_media_url(state, preview.track))
+                audio.visible = True
+                audio.play()
+                ui.notify(f"Preview ready ({preview.total_duration:.1f}s)", type="positive")
         except Exception as exc:
             logger.exception("preview failed")
-            ui.notify(f"Error: {exc}", type="negative")
+            with client:
+                ui.notify(f"Error: {exc}", type="negative")
         finally:
             busy = False
-            btn.props(remove="loading")
-            render()
+            with client:
+                btn.props(remove="loading")
+                render()
 
     # cue-driven image flip during deck preview
     def _on_timeupdate(e: Any) -> None:
@@ -805,22 +885,19 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         if current in state.deck.pages:
             idx = state.deck.pages.index(current)
             if idx != state.index:
+                save_current()  # don't clobber narration typed during playback
                 state.index = idx
                 render()
 
-    def _set_playing(value: bool) -> None:
-        nonlocal playing
-        playing = value
-
     audio.on("timeupdate", _on_timeupdate, args=["target.currentTime"])
-    audio.on("play", lambda: _set_playing(True))
-    audio.on("pause", lambda: _set_playing(False))
-    audio.on("ended", lambda: _set_playing(False))
+    audio.on("play", lambda: playback.set_playing(True))
+    audio.on("pause", lambda: playback.set_playing(False))
+    audio.on("ended", lambda: playback.set_playing(False))
     prev_btn.on_click(lambda: _go(-1))
     next_btn.on_click(lambda: _go(1))
-    play_one.on_click(lambda: _preview(play_one, False))
-    play_all.on_click(lambda: _preview(play_all, True))
-    stop_btn.on_click(lambda: audio.pause())
+    play_one.on_click(lambda: _request_preview(play_one, False))
+    play_all.on_click(lambda: _request_preview(play_all, True))
+    stop_btn.on_click(lambda: _stop_playback())
     gen_btn.on_click(lambda: _run(gen_btn, _generate_one))
     gen_all_btn.on_click(lambda: _run(gen_all_btn, _generate_all))
     export_btn.on_click(lambda: _run(export_btn, _export_work))

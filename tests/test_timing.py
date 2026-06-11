@@ -25,6 +25,21 @@ def test_parse_timing_invalid() -> None:
         parse_timing("bogus")
 
 
+def test_timing_mode_rejects_unknown_kind() -> None:
+    with pytest.raises(ValueError, match="unknown timing kind 'warp'"):
+        TimingMode("warp")
+
+
+def test_timing_mode_rejects_nonpositive_wpm() -> None:
+    with pytest.raises(ValueError, match="wpm must be positive"):
+        TimingMode("estimate", wpm=0)
+
+
+def test_timing_mode_rejects_negative_fixed_seconds() -> None:
+    with pytest.raises(ValueError, match="fixed_seconds must be non-negative"):
+        TimingMode("fixed", fixed_seconds=-1.0)
+
+
 def test_word_count() -> None:
     assert word_count("one two three") == 3
     assert word_count("") == 0

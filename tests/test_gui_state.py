@@ -113,6 +113,84 @@ def test_config_change_reloads_config(tmp_path: Path) -> None:
     assert state.config.tts.backend == "elevenlabs"
 
 
+# ---- recompiling the deck while the editor is open ------------------------
+
+
+def _factory_state(tmp_path: Path, ids: list[str], sidecar: str = "") -> EditorState:
+    from tests.conftest import write_pdf
+
+    pdf = write_pdf(tmp_path / "deck.pdf", ids)
+    if sidecar:
+        (tmp_path / "deck.narration").write_text(sidecar, encoding="utf-8")
+    return EditorState(pdf)
+
+
+def _recompile(state: EditorState, ids: list[str]) -> None:
+    from tests.conftest import write_pdf
+
+    write_pdf(state.pdf_path, ids)
+    _bump_mtime(state.pdf_path)
+
+
+def test_recompile_added_slide_flags_missing_narration(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@b\nBye.\n")
+    assert state.error_count == 0
+    _recompile(state, ["a", "b", "c"])
+    assert state.poll_sources() is True
+    assert state.page_count == 3
+    assert any(d.code == "missing-narration" and d.slide_id == "c" for d in state.diagnostics)
+
+
+def test_recompile_renamed_slide_yields_orphan_error(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@b\nBye.\n")
+    _recompile(state, ["a", "b-renamed"])
+    assert state.poll_sources() is True
+    assert any(d.code == "orphan-narration" and d.slide_id == "b" for d in state.diagnostics)
+    assert state.status_for("b") == "error"
+
+
+def test_recompile_shrunk_deck_clamps_index(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b", "c"])
+    state.go(2)
+    _recompile(state, ["a"])
+    assert state.poll_sources() is True
+    assert state.index == 0
+    assert state.current_id == "a"
+
+
+def test_poll_survives_pdf_missing_mid_recompile(tmp_path: Path) -> None:
+    # latexmk deletes/rewrites the PDF; a poll tick in that window must not crash
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n")
+    state.pdf_path.unlink()
+    assert state.poll_sources() is False  # keeps showing the last good deck
+    assert state.page_count == 2
+    _recompile(state, ["a", "b", "c"])  # compile finished
+    assert state.poll_sources() is True
+    assert state.page_count == 3
+
+
+def test_poll_survives_partially_written_pdf(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n")
+    state.pdf_path.write_bytes(b"%PDF-1.5 garbage truncated")
+    _bump_mtime(state.pdf_path)
+    assert state.poll_sources() is False  # unreadable: keep last good deck, retry next tick
+    assert state.page_count == 2
+    _recompile(state, ["a", "b"])
+    assert state.poll_sources() is True
+
+
+def test_poll_survives_malformed_config_edit(tmp_path: Path) -> None:
+    # a half-saved slidesonnet.toml must not crash the poll loop
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n")
+    cfg = tmp_path / "slidesonnet.toml"
+    cfg.write_text("[tts\nbackend = ", encoding="utf-8")
+    _bump_mtime(cfg)
+    assert state.poll_sources() is False
+    cfg.write_text('[tts]\nbackend = "kokoro"\n', encoding="utf-8")
+    _bump_mtime(cfg)
+    assert state.poll_sources() is True
+
+
 def test_cue_start_finds_slide() -> None:
     cues = [(0.0, "a"), (3.5, "b"), (9.0, "c")]
     assert cue_start(cues, "b") == 3.5

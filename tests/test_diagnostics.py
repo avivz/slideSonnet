@@ -32,6 +32,12 @@ def test_missing_narration_is_warning() -> None:
     assert any(d.code == "missing-narration" and d.slide_id == "b" for d in diags)
 
 
+def test_duplicate_sidecar_block_is_error() -> None:
+    diags = diagnose(["a"], _blocks("a", "a"))
+    assert has_errors(diags)
+    assert any(d.code == "duplicate-block" and d.slide_id == "a" for d in diags)
+
+
 def test_orphan_narration_is_error() -> None:
     diags = diagnose(["a"], _blocks("a", "ghost"))
     assert has_errors(diags)

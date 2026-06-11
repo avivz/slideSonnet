@@ -10,12 +10,88 @@ from pathlib import Path
 
 import pytest
 
+from nicegui.events import KeyboardKey
+
 from slidesonnet.exceptions import ParserError
-from slidesonnet.gui.app import toggled_width
+from slidesonnet.gui.app import PlaybackController, nav_direction, toggled_width
 from slidesonnet.pdf.reader import page_aspect
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
+
+
+def _key(name: str) -> KeyboardKey:
+    return KeyboardKey(name=name, code=name, location=0)
+
+
+@pytest.mark.parametrize("name", ["ArrowLeft", "ArrowUp"])
+def test_nav_direction_previous(name: str) -> None:
+    assert nav_direction(_key(name)) == -1
+
+
+@pytest.mark.parametrize("name", ["ArrowRight", "ArrowDown"])
+def test_nav_direction_next(name: str) -> None:
+    assert nav_direction(_key(name)) == 1
+
+
+def test_nav_direction_ignores_other_keys() -> None:
+    assert nav_direction(_key("Enter")) == 0
+    assert nav_direction(_key("a")) == 0
+
+
+# ---- preview playback behaviors --------------------------------------------
+
+
+def test_playback_build_then_start() -> None:
+    pc = PlaybackController()
+    token = pc.begin(deck=False)
+    assert pc.may_start(token)
+
+
+def test_playback_stop_cancels_pending_play() -> None:
+    # user presses Stop while the track is still being built
+    pc = PlaybackController()
+    token = pc.begin(deck=False)
+    pc.stop()
+    assert not pc.may_start(token)
+
+
+def test_playback_new_request_supersedes_old() -> None:
+    pc = PlaybackController()
+    old = pc.begin(deck=True)
+    new = pc.begin(deck=False)
+    assert not pc.may_start(old)
+    assert pc.may_start(new)
+
+
+def test_playback_nav_stops_single_slide_playback() -> None:
+    # slide A's audio must never keep playing over slide B
+    pc = PlaybackController()
+    pc.begin(deck=False)
+    pc.set_playing(True)
+    assert pc.nav_action() == "stop"
+
+
+def test_playback_nav_seeks_during_deck_playback() -> None:
+    pc = PlaybackController()
+    pc.begin(deck=True)
+    pc.set_playing(True)
+    assert pc.nav_action() == "seek"
+
+
+def test_playback_nav_is_plain_when_idle() -> None:
+    pc = PlaybackController()
+    assert pc.nav_action() == "none"
+    pc.begin(deck=False)  # built but browser never started playing
+    assert pc.nav_action() == "none"
+
+
+def test_playback_stop_clears_playing() -> None:
+    pc = PlaybackController()
+    pc.begin(deck=True)
+    pc.set_playing(True)
+    pc.stop()
+    assert pc.nav_action() == "none"
 
 
 def test_page_aspect_of_fixture() -> None:

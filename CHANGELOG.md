@@ -25,6 +25,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   source changes (for hacking on slideSonnet itself).
 - Per-deck `.latexmkrc` in the example decks routes LaTeX intermediates to
   a `.build/` subfolder, keeping deck directories clean.
+- ↑/↓ now navigate slides too, matching the vertical filmstrip (←/→ still
+  work).
+
+### Fixed
+- Recompiling a deck no longer risks killing the editor's live-reload: a
+  poll tick that catches the PDF (or `slidesonnet.toml`) missing or
+  half-written keeps showing the last good deck and retries next tick.
+- Preview playback got defined behaviors: Stop now cancels a preview even
+  while its track is still being built (it used to start playing anyway),
+  starting a new preview immediately silences the rolling one, switching
+  slides during a single-slide preview stops its audio (it used to keep
+  talking over the new slide), and the deck preview's automatic page flips
+  no longer discard narration you typed during playback.
 
 ### Changed
 - **Kokoro replaces Piper as the local TTS engine.** The default backend is

@@ -63,11 +63,18 @@ class EditorState:
         current = self._source_mtimes()
         if current == self._mtimes:
             return False
+        try:
+            config = load_config(self.pdf_path)
+            deck, diagnostics = load_deck(self.pdf_path, sidecar_path=self.sidecar_path)
+        except Exception:
+            # mid-recompile: the PDF (or config) is missing or half-written.
+            # Keep showing the last good deck; the next tick retries.
+            return False
         if current[str(self.pdf_path)] != self._mtimes[str(self.pdf_path)]:
             self._images = None  # page images are stale; re-rasterize on demand
         self._mtimes = current
-        self.config = load_config(self.pdf_path)
-        self.reload()
+        self.config = config
+        self.deck, self.diagnostics = deck, diagnostics
         self.go(self.index)  # clamp in case the deck shrank
         return True
 
