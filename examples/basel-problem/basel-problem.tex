@@ -9,10 +9,46 @@
 % basel-problem.narration, keyed by those ids.
 \documentclass[aspectratio=169]{beamer}
 \usepackage{slidesonnet}
-\usetheme{Madrid}
-\usecolortheme{seahorse}
+\usetheme[progressbar=frametitle]{metropolis}
+\usepackage[T1]{fontenc}
+\usepackage[sfdefault]{FiraSans}
+\usepackage{FiraMono}
 \setbeamertemplate{navigation symbols}{}
+
+% Palette: warm paper, deep ink, coral accent.
+% logodark matches the background baked into the logo PNG.
+\definecolor{paper}{HTML}{FAF8F4}
+\definecolor{ink}{HTML}{1A1A2E}
 \definecolor{accent}{HTML}{E94560}
+\definecolor{logodark}{HTML}{0D1117}
+
+\setbeamercolor{normal text}{fg=ink, bg=paper}
+\setbeamercolor{frametitle}{fg=paper, bg=ink}
+\setbeamercolor{progress bar}{fg=accent, bg=ink!15}
+\setbeamercolor{title separator}{fg=accent}
+\setbeamercolor{title}{fg=ink}
+\setbeamercolor{subtitle}{fg=ink!65}
+\setbeamercolor{alerted text}{fg=accent}
+\setbeamercolor{itemize item}{fg=accent}
+\setbeamercolor{footline}{fg=ink!55}
+\setbeamerfont{frametitle}{size=\large, series=\bfseries}
+\setbeamerfont{subtitle}{size=\normalsize, shape=\itshape}
+\setbeamertemplate{itemize item}{\textbullet}
+
+% Thicker accent rules under the title and frame titles.
+\makeatletter
+\setlength{\metropolis@titleseparator@linewidth}{2pt}
+\setlength{\metropolis@progressinheadfoot@linewidth}{2pt}
+\makeatother
+
+% Tiny brand mark, right-aligned inside the frame-title bar.
+\usepackage{tikz}
+\addtobeamertemplate{frametitle}{}{%
+  \begin{tikzpicture}[remember picture, overlay]
+    \node[anchor=east, inner sep=0pt]
+      at ([xshift=-0.45cm, yshift=-0.5cm]current page.north east)
+      {\includegraphics[height=0.5cm]{../../assets/logo/slidesonnet-mark-coral.png}};
+  \end{tikzpicture}}
 
 \title{The Basel Problem}
 \subtitle{An impossible sum, a young genius, and a surprise visit from $\pi$}
@@ -135,9 +171,14 @@
   \end{itemize}
 \end{frame}
 
+{\setbeamercolor{background canvas}{bg=logodark}%
+ \setbeamercolor{normal text}{fg=paper}\usebeamercolor[fg]{normal text}
 \begin{frame}[plain]
   \ssid{sources}
-  \centering \large Thanks for watching.
+  \centering
+  {\large Thanks for watching.}\\[2.2em]
+  \includegraphics[width=0.34\textwidth]{../../assets/logo/slidesonnet-logo-hi.png}
 \end{frame}
+}
 
 \end{document}

@@ -9,11 +9,57 @@
 \documentclass[aspectratio=169]{beamer}
 \usepackage{slidesonnet}
 \usepackage{listings}
-\usetheme{Madrid}
-\usecolortheme{whale}
+\usetheme[progressbar=frametitle]{metropolis}
+\usepackage[T1]{fontenc}
+\usepackage[sfdefault]{FiraSans}
+\usepackage{FiraMono}
+% Keep -- literal in monospace (Fira Mono would ligate it into an en-dash).
+\usepackage{microtype}
+\DisableLigatures{encoding = T1, family = tt*}
 \setbeamertemplate{navigation symbols}{}
-\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,
-        backgroundcolor=\color{black!4},keepspaces=true}
+
+% Palette: cool paper, deep-sea ink, bright whale-blue accent.
+% logodark matches the background baked into the logo PNG.
+\definecolor{paper}{HTML}{F7FAFC}
+\definecolor{ink}{HTML}{0B3954}
+\definecolor{accent}{HTML}{1B98E0}
+\definecolor{logodark}{HTML}{0D1117}
+\newcommand{\sslogo}[1]{\includegraphics[width=#1]{../../assets/logo/slidesonnet-logo-hi.png}}
+
+\setbeamercolor{normal text}{fg=ink, bg=paper}
+\setbeamercolor{frametitle}{fg=paper, bg=ink}
+\setbeamercolor{progress bar}{fg=accent, bg=ink!15}
+\setbeamercolor{title separator}{fg=accent}
+\setbeamercolor{title}{fg=ink}
+\setbeamercolor{subtitle}{fg=ink!65}
+\setbeamercolor{alerted text}{fg=accent}
+\setbeamercolor{itemize item}{fg=accent}
+\setbeamercolor{footline}{fg=ink!55}
+\setbeamerfont{frametitle}{size=\large, series=\bfseries}
+\setbeamerfont{subtitle}{size=\normalsize, shape=\itshape}
+\setbeamertemplate{itemize item}{\textbullet}
+
+% Thicker accent rules under the title and frame titles.
+\makeatletter
+\setlength{\metropolis@titleseparator@linewidth}{2pt}
+\setlength{\metropolis@progressinheadfoot@linewidth}{2pt}
+\makeatother
+
+% Tiny brand mark, right-aligned inside the frame-title bar.
+\usepackage{tikz}
+\addtobeamertemplate{frametitle}{}{%
+  \begin{tikzpicture}[remember picture, overlay]
+    \node[anchor=east, inner sep=0pt]
+      at ([xshift=-0.45cm, yshift=-0.5cm]current page.north east)
+      {\includegraphics[height=0.5cm]{../../assets/logo/slidesonnet-mark-blue.png}};
+  \end{tikzpicture}}
+
+% Code listings: quiet background, accent rule down the left edge.
+\lstset{basicstyle=\ttfamily\small,breaklines=true,keepspaces=true,
+        backgroundcolor=\color{ink!6},frame=leftline,
+        framerule=2.5pt,rulecolor=\color{accent},
+        xleftmargin=12pt,framexleftmargin=8pt,
+        aboveskip=0.8\baselineskip,belowskip=0.8\baselineskip}
 
 \title{slideSonnet}
 \subtitle{Narration for your slides --- as editable text}
@@ -22,10 +68,17 @@
 
 \begin{document}
 
+{\setbeamercolor{background canvas}{bg=logodark}%
+ \setbeamercolor{normal text}{fg=paper}\usebeamercolor[fg]{normal text}
 \begin{frame}[plain]
   \ssid{title}
-  \titlepage
+  \centering
+  \vspace{0.6em}
+  \sslogo{0.6\textwidth}\\[1.8em]
+  {\itshape Narration for your slides --- as editable text}\\[1.2em]
+  {\small\color{paper!60}A self-narrated tour}
 \end{frame}
+}
 
 \begin{frame}{What is this?}
   \ssid<1>{intro-q}
@@ -128,12 +181,16 @@ slidesonnet export deck.pdf -o deck.mp4
   Every step is scriptable --- an LLM or a Makefile can drive the whole pipeline.
 \end{frame}
 
+{\setbeamercolor{background canvas}{bg=logodark}%
+ \setbeamercolor{normal text}{fg=paper}\usebeamercolor[fg]{normal text}
 \begin{frame}[plain]
   \ssid{closing}
   \centering
-  {\Large \textbf{slideSonnet}}\\[0.4em]
-  Mark your slides. Write narration. Render.\\[1em]
-  \texttt{pip install slidesonnet}
+  \vspace{0.6em}
+  \sslogo{0.5\textwidth}\\[1.6em]
+  Mark your slides. Write narration. Render.\\[1.1em]
+  {\color{accent}\texttt{pip install slidesonnet}}
 \end{frame}
+}
 
 \end{document}
