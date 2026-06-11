@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- Editor usability: single-slide preview button (was deck-only), ←/→
+  keyboard navigation, autosave "saved" flash, engine/sidecar status footer,
+  and pace as a one-click toggle instead of a dropdown.
+
 ### Changed
 - **Kokoro replaces Piper as the local TTS engine.** The default backend is
   now [Kokoro 82M](https://github.com/hexgrad/kokoro) (Apache-2.0): clearly
@@ -12,22 +17,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   with `[tts.kokoro]` (`voice`, `speed`); voices are named like `af_heart` /
   `am_michael` / `bm_george`. Install via the `[kokoro]` extra; the model
   (~330 MB) auto-downloads from the Hugging Face hub on first use.
-
-### Removed
-- **Piper TTS backend.** `--engine piper`, the `[piper]` extra, `[tts.piper]`
-  config, and `piper_model`/`piper_speed` are gone. Cached Piper audio is no
-  longer referenced (clean it with `slidesonnet clean`).
 - **Editor redesign** (`slidesonnet edit`): dark "recording studio" theme
   (warm charcoal + amber, IBM Plex Mono / Bricolage Grotesque) and a
   three-pane layout — clickable filmstrip with per-slide status dots
   (error / warning / narrated / empty), a letterboxed slide stage with a
   transport bar, and a narration console with sectioned controls.
-- Editor usability: single-slide preview button (was deck-only), ←/→
-  keyboard navigation, autosave "saved" flash, engine/sidecar status footer,
-  and pace as a one-click toggle instead of a dropdown.
 - Editor actions (generate / preview / export) now run off the event loop
   with button spinners instead of freezing the UI, and won't double-run
   while one is in flight.
+
+### Removed
+- **Piper TTS backend.** `--engine piper`, the `[piper]` extra, `[tts.piper]`
+  config, and `piper_model`/`piper_speed` are gone. Cached Piper audio is no
+  longer referenced (clean it with `slidesonnet clean`).
 
 ## [1.0.0a0] — 2026-06-09
 

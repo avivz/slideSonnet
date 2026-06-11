@@ -2,8 +2,7 @@
 
 Current version: 1.0.0a0 (alpha) — the PDF + narration-sidecar editor rewrite.
 
-See `dev/DESIGN-narration-editor.md` for the design, `CHANGELOG.md` for shipped
-changes.
+See `CHANGELOG.md` for shipped changes.
 
 ## Now — finish the v1 rewrite
 
@@ -37,14 +36,13 @@ changes.
 
 ## Later — backlog
 
-1. **id-injection adapters** (designed, deferred — see DESIGN §11): Marp theme
+1. **id-injection adapters** (designed, deferred): Marp theme
    span, PPTX `python-pptx` textbox, Google Slides API. Same marker contract.
 2. **Layered reconciliation** — optional text-fingerprint fallback when ids are
    missing, for non-Beamer sources.
-3. **Hebrew / RTL TTS** — research in `dev/hebrew-tts-research.md`.
-4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
+3. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
    interface).
-5. **Qwen3-TTS backend with own-voice cloning** — narrate decks in the user's
+4. **Qwen3-TTS backend with own-voice cloning** — narrate decks in the user's
    own voice from a ~10 s reference clip. Qwen3-TTS (Apache 2.0) clones via a
    tiny reusable prompt artifact (~100 KB `.pt`: codec tokens + speaker
    embedding); quality clearly above Piper. Runs three ways: local GPU (works
@@ -52,7 +50,7 @@ changes.
    re-renders), serverless GPU (Modal/RunPod, ~$0.01/10 min), or the official
    DashScope API (~$0.13/10 min, no infra, but voice leaves the machine).
    Evaluated 2026-06-10; assets + lessons in `dev/voice-profile/`.
-6. **Inworld TTS managed backend** — test it as a cloud engine (follow the
+5. **Inworld TTS managed backend** — test it as a cloud engine (follow the
    engine interface). Beats ElevenLabs on control *and* price (~$0.009/min vs
    ElevenLabs ~$0.10–0.27/min), with Markdown-style emotion control and top
    quality-to-price on the 2026 arena. Most relevant here: **instant own-voice
@@ -60,9 +58,9 @@ changes.
    own-voice plan — no GPU infra, but the voice + reference clip leave the
    machine (privacy tradeoff vs local Qwen3). Consent attestation now standard.
    Researched 2026-06-10.
-7. **Multi-deck playlists** — concatenate several PDFs into one video.
-8. **Crossfade / transitions** between slides in the export.
-9. **`--json` output** for CI/automation.
+6. **Multi-deck playlists** — concatenate several PDFs into one video.
+7. **Crossfade / transitions** between slides in the export.
+8. **`--json` output** for CI/automation.
 
 ## Done (v1 rewrite)
 

@@ -122,6 +122,10 @@ Watch the denominators carefully. [pause 1] This is the trick.
 - `[pause N]` is the single timing primitive: a mid-sentence pause, an
   end-of-slide hold, or — as the only content — a silent slide.
 
+The full authoring guide — marking overlay steps, the complete sidecar
+grammar, and the optional `slidesonnet.toml` config — is in
+[`docs/authoring.md`](docs/authoring.md).
+
 ## The editor
 
 `slidesonnet edit deck.pdf` opens a local [NiceGUI](https://nicegui.io/) app:

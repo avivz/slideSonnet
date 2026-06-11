@@ -14,7 +14,7 @@ whole-deck preview. The CLI/`slidesonnet.api` make the whole pipeline scriptable
 
 > The pre-1.0 source→video pipeline (MARP/Beamer parsers, doit build graph,
 > playlists, inline `\say`/`<!-- say -->`) was **removed** in the v1 rewrite.
-> Don't reintroduce it. See `dev/DESIGN-narration-editor.md`.
+> Don't reintroduce it.
 
 ## Development Environment
 
