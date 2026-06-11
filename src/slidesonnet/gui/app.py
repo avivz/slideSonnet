@@ -601,7 +601,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                         .props("no-caps dense unelevated toggle-color=primary")
                     )
                 body = (
-                    ui.textarea(placeholder="(no narration yet — type here · [pause 1.5] adds silence)")
+                    ui.textarea(
+                        placeholder="(no narration yet — type here · [pause 1.5] adds silence)"
+                    )
                     .classes("ss-mono ss-body")
                     .props("filled")
                 )
