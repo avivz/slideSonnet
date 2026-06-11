@@ -53,14 +53,14 @@ def resolve_voice(
 class TTSConfig:
     """TTS backend configuration."""
 
-    backend: Literal["piper", "elevenlabs"] = "piper"
-    piper_model: str = "en_US-lessac-medium"
+    backend: Literal["kokoro", "elevenlabs"] = "kokoro"
+    kokoro_voice: str = "af_heart"
+    kokoro_speed: float = 1.0
     elevenlabs_api_key_env: str = "ELEVENLABS_API_KEY"
     elevenlabs_voice_id: str = ""
     elevenlabs_model_id: str = "eleven_multilingual_v2"
     elevenlabs_stability: float = 0.5
     elevenlabs_similarity_boost: float = 0.75
-    piper_speed: float = 1.0
     elevenlabs_speed: float = 1.0
 
     def __post_init__(self) -> None:
@@ -73,8 +73,8 @@ class TTSConfig:
                 "elevenlabs_similarity_boost must be between 0 and 1, "
                 f"got {self.elevenlabs_similarity_boost}"
             )
-        if self.piper_speed <= 0:
-            raise ValueError(f"piper_speed must be positive, got {self.piper_speed}")
+        if self.kokoro_speed <= 0:
+            raise ValueError(f"kokoro_speed must be positive, got {self.kokoro_speed}")
         if self.elevenlabs_speed <= 0:
             raise ValueError(f"elevenlabs_speed must be positive, got {self.elevenlabs_speed}")
 

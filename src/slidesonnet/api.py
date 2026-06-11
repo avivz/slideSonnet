@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from slidesonnet.narration.model import Deck
     from slidesonnet.render import DeckTimeline
 
-Engine = Literal["piper", "elevenlabs"]
+Engine = Literal["kokoro", "elevenlabs"]
 ProgressFn = Callable[[str, int, int], None]
 
 __all__ = [

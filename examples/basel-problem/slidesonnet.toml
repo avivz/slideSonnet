@@ -1,11 +1,11 @@
 # slideSonnet config for the Basel Problem demo.
-# Piper is used now; the ElevenLabs voice ids are kept for a later HQ re-render.
+# Kokoro is used now; the ElevenLabs voice ids are kept for a later HQ re-render.
 
 [tts]
-backend = "piper"
+backend = "kokoro"
 
-[tts.piper]
-model = "en_US-lessac-medium"
+[tts.kokoro]
+voice = "am_michael"
 
 [tts.elevenlabs]
 voice_id = "aMSt68OGf4xUZAnLpTU8"
@@ -20,7 +20,7 @@ tail_seconds = 0.8
 
 # A second voice for the Bernoulli quote (:voice bernoulli in the sidecar).
 [voices.bernoulli]
-piper = "en_GB-alan-medium"
+kokoro = "bm_george"
 elevenlabs = "jhYRUrjaLTqNSQTIDKZw"
 
 pronunciation = ["pronunciation/names.md"]

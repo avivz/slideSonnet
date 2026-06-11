@@ -44,7 +44,7 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **config.py** — optional `slidesonnet.toml`: `Config` (tts/video/voices/pronunciation).
 - **cache.py** — `<deck-dir>/.slidesonnet/{audio,render}/` layout.
 - **hashing.py** — content-addressed audio filenames (`{text_hash}.{backend}.{config_hash}.ext`).
-- **tts/** — `create_tts`, `TTSEngine` base, Piper, ElevenLabs, pronunciation.
+- **tts/** — `create_tts`, `TTSEngine` base, Kokoro, ElevenLabs, pronunciation.
 - **video/composer.py** — FFmpeg: `compose_segment`, `compose_silent_segment`,
   `concatenate_segments`, `concatenate_audio`, `get_duration`.
 - **gui/state.py** — UI-free `EditorState` (nav, edit→sidecar, save, TTS, preview, export).

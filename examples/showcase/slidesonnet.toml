@@ -1,11 +1,11 @@
 # slideSonnet config for the showcase demo.
-# Two Piper voices for the dialog; ElevenLabs ids kept for a later HQ re-render.
+# Two Kokoro voices for the dialog; ElevenLabs ids kept for a later HQ re-render.
 
 [tts]
-backend = "piper"
+backend = "kokoro"
 
-[tts.piper]
-model = "en_US-amy-medium"
+[tts.kokoro]
+voice = "af_heart"
 
 [tts.elevenlabs]
 voice_id = "qBDvhofpxp92JgXJxDjB"
@@ -20,7 +20,7 @@ tail_seconds = 0.6
 
 # Alex's questions use a distinct voice (:voice alex in the sidecar).
 [voices.alex]
-piper = "en_US-joe-medium"
+kokoro = "am_michael"
 elevenlabs = "yr43K8H5LoTp6S1QFSGg"
 
 pronunciation = ["pronunciation/general.md", "pronunciation/names.md"]

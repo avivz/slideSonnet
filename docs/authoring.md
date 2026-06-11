@@ -82,7 +82,7 @@ Watch the denominators. [pause 1] This is the trick.
 ## 4. Render
 
 ```bash
-slidesonnet export deck.pdf -o deck.mp4 --engine piper      # narrated + subtitles
+slidesonnet export deck.pdf -o deck.mp4 --engine kokoro     # narrated + subtitles
 slidesonnet export deck.pdf -o deck.mp4 --silent            # fast silent cut
 slidesonnet edit  deck.pdf                                  # GUI editor + preview
 ```
@@ -91,21 +91,21 @@ slidesonnet edit  deck.pdf                                  # GUI editor + previ
 
 ```toml
 [tts]
-backend = "piper"          # or "elevenlabs"
+backend = "kokoro"         # or "elevenlabs"
 
-[tts.piper]
-model = "en_US-lessac-medium"
+[tts.kokoro]
+voice = "af_heart"
 
 [video]
 resolution = "1920x1080"
 fps = 24
 
 [voices.narrator]
-piper = "en_US-lessac-medium"
+kokoro = "af_heart"
 elevenlabs = "EXAVITQu4vr4xnSDxMaL"
 
 pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
 ```
 
 Place it next to the deck; it's auto-discovered. With no config, sensible defaults
-(Piper, 1080p) apply.
+(Kokoro, 1080p) apply.

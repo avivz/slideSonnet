@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Changed
+- **Kokoro replaces Piper as the local TTS engine.** The default backend is
+  now [Kokoro 82M](https://github.com/hexgrad/kokoro) (Apache-2.0): clearly
+  more natural speech than Piper while still ~2x real-time on CPU. Configure
+  with `[tts.kokoro]` (`voice`, `speed`); voices are named like `af_heart` /
+  `am_michael` / `bm_george`. Install via the `[kokoro]` extra; the model
+  (~330 MB) auto-downloads from the Hugging Face hub on first use.
+
+### Removed
+- **Piper TTS backend.** `--engine piper`, the `[piper]` extra, `[tts.piper]`
+  config, and `piper_model`/`piper_speed` are gone. Cached Piper audio is no
+  longer referenced (clean it with `slidesonnet clean`).
 - **Editor redesign** (`slidesonnet edit`): dark "recording studio" theme
   (warm charcoal + amber, IBM Plex Mono / Bricolage Grotesque) and a
   three-pane layout — clickable filmstrip with per-slide status dots

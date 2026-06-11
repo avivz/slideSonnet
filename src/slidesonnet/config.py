@@ -1,24 +1,24 @@
 """Optional project configuration for the narration editor.
 
 Unlike the old playlist-driven pipeline, the editor needs no config to run —
-sensible defaults (Piper, 1080p) apply out of the box. A ``slidesonnet.toml``
+sensible defaults (Kokoro, 1080p) apply out of the box. A ``slidesonnet.toml``
 next to the deck can override the TTS backend, voices, video settings, and
 pronunciation files.
 
 Example ``slidesonnet.toml``::
 
     [tts]
-    backend = "piper"
+    backend = "kokoro"
 
-    [tts.piper]
-    model = "en_US-lessac-medium"
+    [tts.kokoro]
+    voice = "af_heart"
 
     [video]
     resolution = "1920x1080"
     fps = 24
 
     [voices.narrator]
-    piper = "en_US-lessac-medium"
+    kokoro = "af_heart"
     elevenlabs = "EXAVITQu4vr4xnSDxMaL"
 
     pronunciation = ["pronunciation.md"]
@@ -36,7 +36,7 @@ from slidesonnet.models import TTSConfig, VideoConfig, VoiceConfig
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
 
 CONFIG_FILENAME = "slidesonnet.toml"
-_KNOWN_BACKENDS = {"piper", "elevenlabs"}
+_KNOWN_BACKENDS = {"kokoro", "elevenlabs"}
 
 
 @dataclass
@@ -86,15 +86,15 @@ def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
 
 
 def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
-    piper = raw.get("piper", {})
+    kokoro = raw.get("kokoro", {})
     el = raw.get("elevenlabs", {})
     kwargs: dict[str, Any] = {}
     if "backend" in raw:
         kwargs["backend"] = raw["backend"]
-    if "model" in piper:
-        kwargs["piper_model"] = str(piper["model"])
-    if "speed" in piper:
-        kwargs["piper_speed"] = float(piper["speed"])
+    if "voice" in kokoro:
+        kwargs["kokoro_voice"] = str(kokoro["voice"])
+    if "speed" in kokoro:
+        kwargs["kokoro_speed"] = float(kokoro["speed"])
     for key, target, cast in (
         ("api_key_env", "elevenlabs_api_key_env", str),
         ("voice_id", "elevenlabs_voice_id", str),

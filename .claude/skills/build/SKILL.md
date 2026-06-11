@@ -43,7 +43,7 @@ on errors** — use it in an LLM/CI loop after editing slides or narration.
 ### `slidesonnet tts` — synthesize into the cache
 
 ```bash
-slidesonnet tts deck.pdf [--engine piper|elevenlabs] [--id ID ...]
+slidesonnet tts deck.pdf [--engine kokoro|elevenlabs] [--id ID ...]
 ```
 
 Synthesizes narration into the content-addressed cache (only missing/changed
@@ -57,7 +57,7 @@ slidesonnet export deck.pdf -o OUT.mp4 [OPTIONS]
 
 | Flag | Effect |
 |------|--------|
-| `--engine piper` | Local Piper TTS (free) |
+| `--engine kokoro` | Local Kokoro TTS (free) |
 | `--engine elevenlabs` | ElevenLabs cloud TTS (**costs money!**) |
 | `--silent` | No TTS: silent video; timing from the model below |
 | `--timing tts` | Real synthesized audio (default) |
@@ -91,7 +91,7 @@ slidesonnet clean deck.pdf [--keep nothing|api|current|exact] [-y]
 
 | Level | Keeps | Removes |
 |-------|-------|---------|
-| `api` (default) | All cloud (ElevenLabs) audio | Piper audio + renders |
+| `api` (default) | All cloud (ElevenLabs) audio | Kokoro audio + renders |
 | `current` | Audio matching current sidecar text (any engine) | Orphans + renders |
 | `exact` | Audio matching current text + active engine config | Everything else |
 | `nothing` | Nothing | The entire `.slidesonnet/` cache |
@@ -103,7 +103,7 @@ slidesonnet doctor
 ```
 
 Checks ffmpeg/ffprobe/pdftoppm/PyMuPDF (core), NiceGUI, latexmk/pdflatex (to
-compile your deck), piper/elevenlabs, and `ELEVENLABS_API_KEY`. Exit 1 if a core
+compile your deck), kokoro/elevenlabs, and `ELEVENLABS_API_KEY`. Exit 1 if a core
 dependency is missing.
 
 ## Common workflows
@@ -115,7 +115,7 @@ latexmk -pdf deck.tex                         # compile (your job)
 slidesonnet init  deck.pdf                    # scaffold narration
 # ...write deck.narration...
 slidesonnet check deck.pdf                     # reconcile ids
-slidesonnet export deck.pdf -o deck.mp4 --engine piper
+slidesonnet export deck.pdf -o deck.mp4 --engine kokoro
 ```
 
 **Fast visual rough cut (no TTS):**
@@ -125,13 +125,13 @@ slidesonnet export deck.pdf -o deck.mp4 --silent
 
 **Iterate on one slide's narration:**
 ```bash
-slidesonnet tts deck.pdf --id euler-setup --engine piper
+slidesonnet tts deck.pdf --id euler-setup --engine kokoro
 slidesonnet edit deck.pdf            # or preview the whole deck in the GUI
 ```
 
 **Rebuild audio from scratch:**
 ```bash
-slidesonnet clean deck.pdf --keep nothing -y && slidesonnet export deck.pdf -o deck.mp4 --engine piper
+slidesonnet clean deck.pdf --keep nothing -y && slidesonnet export deck.pdf -o deck.mp4 --engine kokoro
 ```
 
 Every command is also a typed function in `slidesonnet.api` (`init_sidecar`,
@@ -140,7 +140,7 @@ Every command is also a typed function in `slidesonnet.api` (`init_sidecar`,
 ## Critical rules
 
 - **NEVER use `--engine elevenlabs` for testing** — it costs real money. Use
-  `--engine piper` unless the user explicitly asks for ElevenLabs.
+  `--engine kokoro` unless the user explicitly asks for ElevenLabs.
 - **Prefer `slidesonnet clean --keep api`** (default) over `--keep nothing` to
   preserve paid cloud audio.
 - **`slidesonnet check` before rendering** — it catches duplicate/orphan ids that

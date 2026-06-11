@@ -142,21 +142,10 @@ def check_nicegui() -> CheckResult:
     return _check_python_package("nicegui", "nicegui", "pip install nicegui", "GUI editor")
 
 
-def check_piper() -> CheckResult:
-    found = shutil.which("piper")
-    if not found:
-        venv_piper = os.path.join(os.path.dirname(sys.executable), "piper")
-        if os.path.isfile(venv_piper):
-            found = venv_piper
-    if not found:
-        return CheckResult(
-            "piper", "missing", "", "pip install slidesonnet[piper]", "Local TTS (free)"
-        )
-    try:
-        version = importlib.metadata.version("piper-tts")
-    except importlib.metadata.PackageNotFoundError:
-        version = "installed"
-    return CheckResult("piper", "ok", version, "", "Local TTS (free)")
+def check_kokoro() -> CheckResult:
+    return _check_python_package(
+        "kokoro", "kokoro", "pip install slidesonnet[kokoro]", "Local TTS (free)"
+    )
 
 
 def check_elevenlabs() -> CheckResult:
@@ -194,7 +183,7 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
         ),
         ("Editor GUI", [check_nicegui()]),
         ("Beamer toolchain (for compiling your deck)", [check_latexmk(), check_pdflatex()]),
-        ("TTS backends (at least one required)", [check_piper(), check_elevenlabs()]),
+        ("TTS backends (at least one required)", [check_kokoro(), check_elevenlabs()]),
         ("API keys", [check_api_key()]),
     ]
 

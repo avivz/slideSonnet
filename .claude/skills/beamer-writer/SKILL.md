@@ -104,17 +104,17 @@ Only needed to override defaults or define named voices/pronunciation:
 
 ```toml
 [tts]
-backend = "piper"            # or "elevenlabs"
+backend = "kokoro"           # or "elevenlabs"
 
-[tts.piper]
-model = "en_US-lessac-medium"
+[tts.kokoro]
+voice = "af_heart"
 
 [video]
 resolution = "1920x1080"
 fps = 24
 
 [voices.narrator]
-piper = "en_US-amy-medium"
+kokoro = "af_bella"
 elevenlabs = "21m00Tcm4TlvDq8ikWAM"
 
 pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
@@ -134,7 +134,7 @@ pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
    each `@id` block as natural speech.
 6. **Reconcile** — `slidesonnet check deck.pdf` must report no errors (fix
    duplicate/auto/orphan ids).
-7. **(Optional) render** — `slidesonnet export deck.pdf -o deck.mp4 --engine piper`.
+7. **(Optional) render** — `slidesonnet export deck.pdf -o deck.mp4 --engine kokoro`.
 
 ## Content principles
 

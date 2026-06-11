@@ -14,7 +14,7 @@ def _seed(tmp_path: Path) -> Path:
     ad = audio_dir(pdf)
     ad.mkdir(parents=True)
     # valid 3-part names: {text_hash}.{backend}.{config_hash}.{ext}
-    (ad / "aaaa.piper.bbbb.wav").write_bytes(b"x")
+    (ad / "aaaa.kokoro.bbbb.wav").write_bytes(b"x")
     (ad / "cccc.elevenlabs.dddd.mp3").write_bytes(b"y")
     rd = render_dir(pdf)
     rd.mkdir(parents=True)
@@ -22,11 +22,11 @@ def _seed(tmp_path: Path) -> Path:
     return pdf
 
 
-def test_keep_api_drops_piper_keeps_cloud(tmp_path: Path) -> None:
+def test_keep_api_drops_kokoro_keeps_cloud(tmp_path: Path) -> None:
     pdf = _seed(tmp_path)
     clean(pdf, keep="api")
     ad = audio_dir(pdf)
-    assert not (ad / "aaaa.piper.bbbb.wav").exists()
+    assert not (ad / "aaaa.kokoro.bbbb.wav").exists()
     assert (ad / "cccc.elevenlabs.dddd.mp3").exists()
     assert not render_dir(pdf).exists()  # renders always removed
 

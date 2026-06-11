@@ -1,7 +1,7 @@
 """Selective cache cleanup with graduated preservation levels.
 
 nothing — remove the entire .slidesonnet cache
-api     — keep cloud (ElevenLabs) audio, drop local Piper audio + renders
+api     — keep cloud (ElevenLabs) audio, drop local Kokoro audio + renders
 current — keep audio for the current sidecar text (any engine), drop orphans + renders
 exact   — keep only audio matching the current text + active TTS config
 """

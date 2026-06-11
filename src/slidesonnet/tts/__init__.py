@@ -13,10 +13,10 @@ if TYPE_CHECKING:
 
 def create_tts(tts: TTSConfig) -> TTSEngine:
     """Create a TTS engine from a :class:`TTSConfig`."""
-    from slidesonnet.tts.piper import PiperTTS
+    if tts.backend == "kokoro":
+        from slidesonnet.tts.kokoro import KokoroTTS
 
-    if tts.backend == "piper":
-        return PiperTTS(model=tts.piper_model, speed=tts.piper_speed)
+        return KokoroTTS(voice=tts.kokoro_voice, speed=tts.kokoro_speed)
     if tts.backend == "elevenlabs":
         from slidesonnet.tts.elevenlabs import ElevenLabsTTS
 

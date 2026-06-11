@@ -1,11 +1,11 @@
-"""Integration tests for export/subs (ffmpeg, pdftoppm, and Piper).
+"""Integration tests for export/subs (ffmpeg, pdftoppm, and Kokoro).
 
 Never uses ElevenLabs. Marked integration so CI's unit-only run skips them.
 """
 
 from __future__ import annotations
 
-import shutil
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -55,17 +55,16 @@ def test_subs_estimate_no_render(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(
-    shutil.which("piper") is None
-    and not (Path(__file__).resolve().parents[1] / ".venv/bin/piper").exists(),
-    reason="piper not installed",
+    importlib.util.find_spec("kokoro") is None,
+    reason="kokoro not installed",
 )
-def test_export_tts_piper(tmp_path: Path) -> None:
+def test_export_tts_kokoro(tmp_path: Path) -> None:
     pdf = _prep(tmp_path)
     out = tmp_path / "out.mp4"
-    result = api.export(pdf, out, engine="piper", subtitles="srt")
+    result = api.export(pdf, out, engine="kokoro", subtitles="srt")
     assert out.exists() and out.stat().st_size > 0
     assert result.silent is False
     assert result.duration > 0
     # the cached audio makes a second export cheap (cache hit)
-    n_new = api.synthesize_deck(pdf, engine="piper")
+    n_new = api.synthesize_deck(pdf, engine="kokoro")
     assert n_new == 0

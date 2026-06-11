@@ -79,7 +79,7 @@ async def test_generate_and_preview(
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     user.find("Generate").click()
-    # synthesis runs off the event loop now; allow up to 30s for piper
+    # synthesis runs off the event loop now; allow up to 30s for kokoro
     await user.should_see("Synthesized", retries=300)
     # audio cache now exists for intro-title
     from slidesonnet.cache import audio_dir

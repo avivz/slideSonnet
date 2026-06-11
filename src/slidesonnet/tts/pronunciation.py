@@ -48,7 +48,7 @@ def load_pronunciation_files(paths: list[Path]) -> dict[str, str]:
 def load_pronunciation_dict(
     pronunciation_files: dict[str, list[Path]],
 ) -> dict[str, dict[str, str]]:
-    """Load pronunciation files grouped by category (shared, piper, elevenlabs).
+    """Load pronunciation files grouped by category (shared, kokoro, elevenlabs).
 
     Returns a dict mapping each category to its merged word→replacement dict.
     """

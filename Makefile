@@ -8,7 +8,7 @@ SLIDESONNET := $(VENV)/slidesonnet
 	purge-examples
 
 install:
-	$(VENV)/pip install -e ".[piper,dev]"
+	$(VENV)/pip install -e ".[kokoro,dev]"
 
 test:
 	$(VENV)/pytest tests/
@@ -26,7 +26,7 @@ fmt:
 typecheck:
 	$(VENV)/mypy src/slidesonnet/
 
-# --- Demos: compile the Beamer PDF, then render with Piper ---
+# --- Demos: compile the Beamer PDF, then render with Kokoro ---
 # Each example ships a committed PDF, so rendering works without recompiling;
 # these targets recompile from source for a from-scratch rebuild.
 
@@ -36,7 +36,7 @@ examples/basel-problem/basel-problem.pdf: examples/basel-problem/basel-problem.t
 
 basel: examples/basel-problem/basel-problem.pdf
 	$(SLIDESONNET) export examples/basel-problem/basel-problem.pdf \
-		-o examples/basel-problem/basel-problem.mp4 --engine piper
+		-o examples/basel-problem/basel-problem.mp4 --engine kokoro
 
 check-basel:
 	$(SLIDESONNET) check examples/basel-problem/basel-problem.pdf
@@ -47,7 +47,7 @@ examples/showcase/showcase.pdf: examples/showcase/showcase.tex
 
 showcase: examples/showcase/showcase.pdf
 	$(SLIDESONNET) export examples/showcase/showcase.pdf \
-		-o examples/showcase/showcase.mp4 --engine piper
+		-o examples/showcase/showcase.mp4 --engine kokoro
 
 check-showcase:
 	$(SLIDESONNET) check examples/showcase/showcase.pdf

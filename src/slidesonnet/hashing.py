@@ -5,9 +5,9 @@ used by both tasks.py (build) and clean.py (selective cleanup).
 
 Filename format: {text_hash}.{backend}.{config_hash}.{ext}
   - text_hash:   sha256(text + voice)[:16]  — identifies the utterance content
-  - backend:     "piper" or "elevenlabs"    — readable engine name
+  - backend:     "kokoro" or "elevenlabs"   — readable engine name
   - config_hash: sha256(cache_key)[:8]      — differentiates engine configs
-  - ext:         backend-specific extension (.wav for piper, .mp3 for elevenlabs)
+  - ext:         backend-specific extension (.wav for kokoro, .mp3 for elevenlabs)
 
 Concat files keep the format: {hash}_concat.wav
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _BACKEND_EXTENSIONS: dict[str, str] = {
-    "piper": ".wav",
+    "kokoro": ".wav",
     "elevenlabs": ".mp3",
 }
 

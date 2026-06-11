@@ -12,7 +12,7 @@ changes.
 - [x] M1 headless media: cache-aware TTS, audio track + cue sheet, video export
   (tts/estimate/fixed, `--silent`), SRT/VTT subtitles, typed `slidesonnet.api`.
 - [x] M2/M3 NiceGUI editor: nav, edit, per-slide TTS, whole-deck preview, diagnostics.
-- [x] Demos converted to the new format (basel-problem + showcase, Piper).
+- [x] Demos converted to the new format (basel-problem + showcase).
 - [x] Docs (README, CHANGELOG), Makefile, `mypy --strict` + ruff + tests green.
 - [ ] **ElevenLabs re-render of the demos** — regenerate `basel-problem` and
   `showcase` with the cloud voices (`slidesonnet.toml` already maps them) and
@@ -52,18 +52,7 @@ changes.
    re-renders), serverless GPU (Modal/RunPod, ~$0.01/10 min), or the official
    DashScope API (~$0.13/10 min, no infra, but voice leaves the machine).
    Evaluated 2026-06-10; assets + lessons in `dev/voice-profile/`.
-6. **Kokoro 82M as the default local engine** — test it and, if it holds up,
-   optionally switch the default local backend from Piper to Kokoro. Sound is
-   clearly above Piper (near top of the open-weights TTS arena) while staying
-   fast: ~2× real-time on CPU alone (RTF ~0.45–0.51), so the 1:1 target is met
-   without a GPU. Intel iGPU acceleration works via the XPU/IPEX path (already
-   set up here) or the `magicunicorn/kokoro-tts-intel` OpenVINO build — but the
-   *vanilla* OpenVINO GPU backend fails on Kokoro (unsupported 3D-tensor
-   interpolation), so don't go that route. MIT/Apache, ONNX builds available.
-   Tradeoff vs Qwen3: Kokoro has limited control (voice pick + blending, no
-   emotion tags/instruct steering), so keep Qwen3 for the expressive path.
-   Researched 2026-06-10.
-7. **Inworld TTS managed backend** — test it as a cloud engine (follow the
+6. **Inworld TTS managed backend** — test it as a cloud engine (follow the
    engine interface). Beats ElevenLabs on control *and* price (~$0.009/min vs
    ElevenLabs ~$0.10–0.27/min), with Markdown-style emotion control and top
    quality-to-price on the 2026 arena. Most relevant here: **instant own-voice
@@ -71,9 +60,9 @@ changes.
    own-voice plan — no GPU infra, but the voice + reference clip leave the
    machine (privacy tradeoff vs local Qwen3). Consent attestation now standard.
    Researched 2026-06-10.
-5. **Multi-deck playlists** — concatenate several PDFs into one video.
-6. **Crossfade / transitions** between slides in the export.
-7. **`--json` output** for CI/automation.
+7. **Multi-deck playlists** — concatenate several PDFs into one video.
+8. **Crossfade / transitions** between slides in the export.
+9. **`--json` output** for CI/automation.
 
 ## Done (v1 rewrite)
 
@@ -89,3 +78,10 @@ changes.
 - [x] NiceGUI editor with automated user-simulation tests.
 - [x] Typed `slidesonnet.api` mirroring the CLI.
 - [x] Optional `slidesonnet.toml` config; `.slidesonnet/` cache layout.
+- [x] **Kokoro 82M replaces Piper as the local TTS engine** (2026-06-10).
+  Clearly more natural sound (near top of the open-weights TTS arena) at
+  ~2× real-time on CPU (RTF ~0.5), so no GPU needed. Notes kept from the
+  evaluation: Intel iGPU acceleration possible via the XPU/IPEX path; the
+  *vanilla* OpenVINO GPU backend fails on Kokoro (unsupported 3D-tensor
+  interpolation) — don't go that route. Limited expressive control (voice
+  pick + blending only), so Qwen3 remains the expressive/own-voice path.

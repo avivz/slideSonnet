@@ -165,8 +165,8 @@ _NARRATION_OPT = click.option(
 )
 _ENGINE_OPT = click.option(
     "--engine",
-    type=click.Choice(["piper", "elevenlabs"]),
-    help="TTS backend (default: config; piper = free/local)",
+    type=click.Choice(["kokoro", "elevenlabs"]),
+    help="TTS backend (default: config; kokoro = free/local)",
 )
 
 

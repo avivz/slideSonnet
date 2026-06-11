@@ -46,11 +46,12 @@ dependencies. After installing, run `slidesonnet doctor`.
 ### Install slideSonnet
 
 ```bash
-uv tool install "slidesonnet[piper]"     # or: pipx install "slidesonnet[piper]"
+uv tool install "slidesonnet[kokoro]"    # or: pipx install "slidesonnet[kokoro]"
 ```
 
-The `[piper]` extra adds [Piper](https://github.com/rhasspy/piper) for free,
-local speech. Use `[elevenlabs]` for cloud voices (needs `ELEVENLABS_API_KEY`).
+The `[kokoro]` extra adds [Kokoro](https://github.com/hexgrad/kokoro) (82M,
+Apache-2.0) for free, natural-sounding local speech (~2x real-time on CPU;
+the model downloads on first use). Use `[elevenlabs]` for cloud voices (needs `ELEVENLABS_API_KEY`).
 
 ## Quick start
 
@@ -69,7 +70,7 @@ slidesonnet init deck.pdf            # writes deck.narration
 slidesonnet edit deck.pdf
 
 # 5. Render — narrated MP4 + subtitles
-slidesonnet export deck.pdf -o deck.mp4 --engine piper
+slidesonnet export deck.pdf -o deck.mp4 --engine kokoro
 ```
 
 ## Marking slides — the `\ssid` macro
@@ -147,7 +148,7 @@ slidesonnet init   deck.pdf [--merge|--force]      scaffold a blank sidecar
 slidesonnet check  deck.pdf                         reconcile ids (exit≠0 on errors)
 slidesonnet tts    deck.pdf [--engine ...] [--id ID ...]   synthesize into the cache
 slidesonnet export deck.pdf -o OUT.mp4
-        [--engine piper|elevenlabs]   [--silent]
+        [--engine kokoro|elevenlabs]   [--silent]
         [--timing tts|estimate|fixed:N] [--wpm N]
         [--subtitles srt|vtt|both|none] [--sub-granularity segment|slide]
 slidesonnet subs   deck.pdf -o OUT.srt [--format srt|vtt] [--timing ...]
@@ -175,21 +176,21 @@ captioned silent cut.
 - [`examples/showcase/`](examples/showcase/) — a self-narrated tour that teaches
   the workflow as a two-voice dialog (written in this very format).
 
-Build them from source with `make basel` / `make showcase` (Piper). Videos are
+Build them from source with `make basel` / `make showcase` (Kokoro). Videos are
 hosted as GitHub Release assets, not committed.
 
 ## Development
 
 ```bash
-make install      # editable install with Piper + dev tools
+make install      # editable install with Kokoro + dev tools
 make test-unit    # fast unit tests (no external tools)
-make test         # full suite (needs ffmpeg, pdftoppm, piper)
+make test         # full suite (needs ffmpeg, pdftoppm, kokoro)
 make lint         # ruff
 make typecheck    # mypy --strict
 ```
 
 All source is fully typed (`mypy --strict`); ElevenLabs is never exercised in
-tests (it costs money) — Piper and mocks only.
+tests (it costs money) — Kokoro and mocks only.
 
 ## License
 

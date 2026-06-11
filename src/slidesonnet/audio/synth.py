@@ -69,7 +69,7 @@ def _engine_for_pace(tts: TTSConfig, pace: Pace | None, cache: dict[float, TTSEn
     if speed not in cache:
         cfg = replace(
             tts,
-            piper_speed=tts.piper_speed * speed,
+            kokoro_speed=tts.kokoro_speed * speed,
             elevenlabs_speed=tts.elevenlabs_speed * speed,
         )
         cache[speed] = create_tts(cfg)

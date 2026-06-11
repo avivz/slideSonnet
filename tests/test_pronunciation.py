@@ -87,17 +87,17 @@ def test_empty_dictionary():
 def test_load_pronunciation_dict(tmp_path):
     shared = tmp_path / "shared.md"
     shared.write_text("**Euler**: OY-ler\n")
-    piper = tmp_path / "piper.md"
-    piper.write_text("**Euler**: OY-lur\n**Knuth**: kuh-NOOTH\n")
+    kokoro = tmp_path / "kokoro.md"
+    kokoro.write_text("**Euler**: OY-lur\n**Knuth**: kuh-NOOTH\n")
 
     result = load_pronunciation_dict(
         {
             "shared": [shared],
-            "piper": [piper],
+            "kokoro": [kokoro],
         }
     )
     assert result["shared"] == {"Euler": "OY-ler"}
-    assert result["piper"] == {"Euler": "OY-lur", "Knuth": "kuh-NOOTH"}
+    assert result["kokoro"] == {"Euler": "OY-lur", "Knuth": "kuh-NOOTH"}
 
 
 def test_load_pronunciation_dict_empty():

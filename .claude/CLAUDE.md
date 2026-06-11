@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 slideSonnet (v1.x) is a **PDF + narration-sidecar editor**. You bring a finished
 PDF whose Beamer source stamped a stable `\ssid` slide-id onto every page; the
 spoken narration lives in a human-readable, git-diffable `<deck>.narration`
-sidecar keyed to those ids. The tool synthesizes speech (Piper local / ElevenLabs
+sidecar keyed to those ids. The tool synthesizes speech (Kokoro local / ElevenLabs
 cloud, content-addressed cache), composites video with FFmpeg, writes SRT/VTT
 subtitles, and ships a NiceGUI editor (`slidesonnet edit`) with a silence-aware
 whole-deck preview. The CLI/`slidesonnet.api` make the whole pipeline scriptable.
@@ -35,14 +35,14 @@ Items flow from inbox → roadmap during `/pm` triage. The `/pm` skill reads bot
 ## Development Commands
 
 ```bash
-make install                           # Editable install with Piper + dev tools
-make test                              # All tests (needs ffmpeg, pdftoppm, piper)
+make install                           # Editable install with Kokoro + dev tools
+make test                              # All tests (needs ffmpeg, pdftoppm, kokoro)
 make test-unit                         # Unit tests only (fast, no external deps)
 make lint                              # Ruff check + format --check
 make fmt                               # Ruff format
 make typecheck                         # mypy --strict on src/
-make basel                             # Compile + render basel-problem (Piper)
-make showcase                          # Compile + render showcase (Piper)
+make basel                             # Compile + render basel-problem (Kokoro)
+make showcase                          # Compile + render showcase (Kokoro)
 make demos                             # Both demos
 make check-basel / make check-showcase # Run id reconciliation on a demo
 make clean-basel / make clean-showcase # slidesonnet clean (keeps API audio)
@@ -57,7 +57,7 @@ slidesonnet clean <deck.pdf> --keep nothing        # Nuke the deck's cache
 
 ## Testing Rules
 
-- **NEVER run tests or builds against ElevenLabs** — it costs real money (API credits). Use `--engine piper` for integration testing, and mocked unit tests (a fake `TTSEngine`) for ElevenLabs functionality.
+- **NEVER run tests or builds against ElevenLabs** — it costs real money (API credits). Use `--engine kokoro` for integration testing, and mocked unit tests (a fake `TTSEngine`) for ElevenLabs functionality.
 - **Prefer `make clean-*` over `make purge-*`** — clean keeps cached API audio (which costs money to regenerate), purge nukes everything. Only use purge when explicitly asked.
 - **No integration tests in CI** — GitHub Actions free tier has limited minutes. CI runs lint, typecheck, unit tests, and wheel build only. Integration tests (`make test`) are local-only.
 
@@ -86,6 +86,6 @@ v1 rewrite lives on the `v2-narration-editor` branch until merged to `main`.
 ## Code Conventions
 
 - Python 3.12+, line length 100 (Ruff)
-- `mypy --strict` must pass on all source files. Untyped external libraries (elevenlabs, dotenv, piper, fitz, nicegui) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
-- Integration tests marked with `@pytest.mark.integration` (export/render and GUI-with-Piper tests). GUI logic is unit-tested via NiceGUI's in-process `user` simulation (selenium-free `nicegui.testing.user_plugin`, loaded in `tests/conftest.py`).
-- External tool dependencies: ffmpeg, ffprobe, pdftoppm, piper; latexmk + pdflatex to compile your own deck (use `slidesonnet doctor` to check)
+- `mypy --strict` must pass on all source files. Untyped external libraries (elevenlabs, dotenv, kokoro, fitz, nicegui) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
+- Integration tests marked with `@pytest.mark.integration` (export/render and GUI-with-Kokoro tests). GUI logic is unit-tested via NiceGUI's in-process `user` simulation (selenium-free `nicegui.testing.user_plugin`, loaded in `tests/conftest.py`).
+- External tool dependencies: ffmpeg, ffprobe, pdftoppm, kokoro (Python package); latexmk + pdflatex to compile your own deck (use `slidesonnet doctor` to check)

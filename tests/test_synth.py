@@ -1,4 +1,4 @@
-"""Unit tests for cache-aware synthesis (mock TTS engine, no ffmpeg/piper)."""
+"""Unit tests for cache-aware synthesis (mock TTS engine, no ffmpeg/kokoro)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ class FakeEngine(TTSEngine):
         return 1.25
 
     def name(self) -> str:
-        return "piper"
+        return "kokoro"
 
     def cache_key(self) -> str:
         return "fake"

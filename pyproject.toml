@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-piper = ["piper-tts>=1.4"]
+kokoro = ["kokoro>=0.9"]
 elevenlabs = ["elevenlabs>=1.0"]
 dev = [
     "pytest>=8.0",
@@ -66,7 +66,7 @@ strict = true
 module = [
     "elevenlabs.*",
     "dotenv.*",
-    "piper.*",
+    "kokoro.*",
     "fitz.*",
     "nicegui.*",
 ]
@@ -75,5 +75,5 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 markers = [
-    "integration: requires external tools (ffmpeg, pdftoppm, latexmk, piper)",
+    "integration: requires external tools (ffmpeg, pdftoppm, latexmk, kokoro)",
 ]

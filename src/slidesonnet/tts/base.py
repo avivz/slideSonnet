@@ -14,7 +14,7 @@ class TTSEngine(ABC):
         Args:
             text: The text to synthesize.
             output_path: Where to write the audio file.
-            voice: Optional backend-specific voice override (model name for Piper,
+            voice: Optional backend-specific voice override (voice name for Kokoro,
                    voice_id for ElevenLabs). None uses the default.
 
         Returns:

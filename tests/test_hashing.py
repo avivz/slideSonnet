@@ -39,18 +39,18 @@ class TestTextHash:
 
 class TestConfigHash:
     def test_deterministic(self):
-        assert config_hash("piper:model:0") == config_hash("piper:model:0")
+        assert config_hash("kokoro:model:0") == config_hash("kokoro:model:0")
 
     def test_8_chars(self):
-        assert len(config_hash("piper:model:0")) == 8
+        assert len(config_hash("kokoro:model:0")) == 8
 
     def test_different_keys_different_hash(self):
-        assert config_hash("piper:model:0") != config_hash("elevenlabs:voice:model:0.5:0.75")
+        assert config_hash("kokoro:model:0") != config_hash("elevenlabs:voice:model:0.5:0.75")
 
 
 class TestAudioExtension:
-    def test_piper(self):
-        assert audio_extension("piper") == ".wav"
+    def test_kokoro(self):
+        assert audio_extension("kokoro") == ".wav"
 
     def test_elevenlabs(self):
         assert audio_extension("elevenlabs") == ".mp3"
@@ -61,10 +61,10 @@ class TestAudioExtension:
 
 class TestAudioFilename:
     def test_format(self):
-        name = audio_filename("hello", "piper", "piper:model:0")
+        name = audio_filename("hello", "kokoro", "kokoro:model:0")
         parts = name.split(".")
         assert len(parts) == 4
-        assert parts[1] == "piper"
+        assert parts[1] == "kokoro"
         assert parts[3] == "wav"
 
     def test_elevenlabs_format(self):
@@ -75,22 +75,22 @@ class TestAudioFilename:
         assert parts[3] == "mp3"
 
     def test_text_hash_part(self):
-        name = audio_filename("hello", "piper", "piper:model:0")
+        name = audio_filename("hello", "kokoro", "kokoro:model:0")
         th = name.split(".")[0]
         assert th == text_hash("hello")
 
     def test_config_hash_part(self):
-        name = audio_filename("hello", "piper", "piper:model:0")
+        name = audio_filename("hello", "kokoro", "kokoro:model:0")
         ch = name.split(".")[2]
-        assert ch == config_hash("piper:model:0")
+        assert ch == config_hash("kokoro:model:0")
 
     def test_voice_affects_filename(self):
-        name1 = audio_filename("hello", "piper", "piper:model:0")
-        name2 = audio_filename("hello", "piper", "piper:model:0", voice="alice")
+        name1 = audio_filename("hello", "kokoro", "kokoro:model:0")
+        name2 = audio_filename("hello", "kokoro", "kokoro:model:0", voice="alice")
         assert name1 != name2
 
     def test_different_backend_same_text(self):
-        name1 = audio_filename("hello", "piper", "piper:model:0")
+        name1 = audio_filename("hello", "kokoro", "kokoro:model:0")
         name2 = audio_filename("hello", "elevenlabs", "elevenlabs:voice:model:0.5:0.75")
         # Backend differs, text_hash is the same (no voice)
         assert name1.split(".")[0] == name2.split(".")[0]
@@ -99,12 +99,12 @@ class TestAudioFilename:
 
 class TestAudioPath:
     def test_returns_path_in_audio_dir(self):
-        p = audio_path(Path("/cache/audio"), "hello", "piper", "piper:model:0")
+        p = audio_path(Path("/cache/audio"), "hello", "kokoro", "kokoro:model:0")
         assert p.parent == Path("/cache/audio")
 
     def test_filename_matches(self):
-        p = audio_path(Path("/cache/audio"), "hello", "piper", "piper:model:0")
-        assert p.name == audio_filename("hello", "piper", "piper:model:0")
+        p = audio_path(Path("/cache/audio"), "hello", "kokoro", "kokoro:model:0")
+        assert p.name == audio_filename("hello", "kokoro", "kokoro:model:0")
 
 
 class TestConcatFilename:
@@ -124,8 +124,8 @@ class TestConcatFilename:
 
 class TestParseAudioFilename:
     def test_new_format(self):
-        result = parse_audio_filename("abcdef1234567890.piper.12345678.wav")
-        assert result == ("abcdef1234567890", "piper", "12345678")
+        result = parse_audio_filename("abcdef1234567890.kokoro.12345678.wav")
+        assert result == ("abcdef1234567890", "kokoro", "12345678")
 
     def test_elevenlabs(self):
         result = parse_audio_filename("abcdef1234567890.elevenlabs.12345678.mp3")
@@ -138,16 +138,16 @@ class TestParseAudioFilename:
         assert parse_audio_filename("abcdef1234567890.wav") is None
 
     def test_unknown_ext_returns_none(self):
-        assert parse_audio_filename("abcdef1234567890.piper.12345678.ogg") is None
+        assert parse_audio_filename("abcdef1234567890.kokoro.12345678.ogg") is None
 
     def test_roundtrip(self):
-        name = audio_filename("hello world", "piper", "piper:model:0", voice="alice")
+        name = audio_filename("hello world", "kokoro", "kokoro:model:0", voice="alice")
         parsed = parse_audio_filename(name)
         assert parsed is not None
         th, backend, ch = parsed
         assert th == text_hash("hello world", "alice")
-        assert backend == "piper"
-        assert ch == config_hash("piper:model:0")
+        assert backend == "kokoro"
+        assert ch == config_hash("kokoro:model:0")
 
     def test_roundtrip_elevenlabs(self):
         name = audio_filename(
