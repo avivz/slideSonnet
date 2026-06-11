@@ -8,6 +8,7 @@ without a browser, and stays under ``mypy --strict``.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from slidesonnet import api
 from slidesonnet.cache import render_dir
@@ -19,6 +20,8 @@ from slidesonnet.narration.model import Pace, PageNarration
 from slidesonnet.pdf.reader import rasterize
 
 _VALID_PACES: frozenset[str] = frozenset({"slow", "normal", "fast"})
+
+SlideStatus = Literal["error", "warning", "ready", "empty"]
 
 
 class EditorState:
@@ -131,6 +134,24 @@ class EditorState:
             engine=None if silent else self.config.tts.backend,
             silent=silent,
         )
+
+    # ---- per-slide status (filmstrip) -----------------------------------
+    def has_narration(self, slide_id: str) -> bool:
+        block = self.deck.narration.get(slide_id)
+        return block is not None and bool(block.segments)
+
+    def status_for(self, slide_id: str) -> SlideStatus:
+        """Worst finding for a slide; un-narrated alone reads as 'empty'."""
+        severities = {
+            d.severity
+            for d in self.diagnostics
+            if d.slide_id == slide_id and d.code != "missing-narration"
+        }
+        if "error" in severities:
+            return "error"
+        if "warning" in severities:
+            return "warning"
+        return "ready" if self.has_narration(slide_id) else "empty"
 
     @property
     def error_count(self) -> int:

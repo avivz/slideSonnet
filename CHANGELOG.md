@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Changed
+- **Editor redesign** (`slidesonnet edit`): dark "recording studio" theme
+  (warm charcoal + amber, IBM Plex Mono / Bricolage Grotesque) and a
+  three-pane layout — clickable filmstrip with per-slide status dots
+  (error / warning / narrated / empty), a letterboxed slide stage with a
+  transport bar, and a narration console with sectioned controls.
+- Editor usability: single-slide preview button (was deck-only), ←/→
+  keyboard navigation, autosave "saved" flash, engine/sidecar status footer,
+  and pace as a one-click toggle instead of a dropdown.
+- Editor actions (generate / preview / export) now run off the event loop
+  with button spinners instead of freezing the UI, and won't double-run
+  while one is in flight.
+
 ## [1.0.0a0] — 2026-06-09
 
 A ground-up rewrite. slideSonnet is now a **PDF + narration sidecar editor**

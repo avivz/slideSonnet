@@ -39,6 +39,14 @@ async def test_navigation(user: User, tmp_path: Path, monkeypatch: pytest.Monkey
     await user.should_see("Slide 2 / 6")
 
 
+async def test_filmstrip_jump(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pdf = _prep(tmp_path)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(marker="thumb-2").click()  # filmstrip jump straight to slide 3
+    await user.should_see("Slide 3 / 6")
+
+
 async def test_edit_persists(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pdf = _prep(tmp_path)
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
@@ -71,7 +79,8 @@ async def test_generate_and_preview(
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     user.find("Generate").click()
-    await user.should_see("Synthesized")
+    # synthesis runs off the event loop now; allow up to 30s for piper
+    await user.should_see("Synthesized", retries=300)
     # audio cache now exists for intro-title
     from slidesonnet.cache import audio_dir
 
