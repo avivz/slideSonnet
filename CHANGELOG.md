@@ -28,7 +28,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - ↑/↓ now navigate slides too, matching the vertical filmstrip (←/→ still
   work).
 
+- `examples/error-showcase`: a deliberately broken deck with every
+  reconciliation problem on its own slide (auto id, un-narrated, duplicate
+  ids, duplicate sidecar blocks, orphan narration) — open it in the editor
+  to see how each one surfaces. Guarded by tests so it stays broken in
+  exactly the advertised ways.
+
 ### Fixed
+- Typing narration on a page with no slide-id no longer corrupts the
+  sidecar (it wrote an unparseable "@" block). The editor disables the
+  narration pane on unmarked pages and shows the missing-\ssid warning on
+  the page itself.
+- Browsing a deck whose sidecar has duplicate blocks no longer silently
+  collapses them (navigation auto-saves were dropping all but the last
+  duplicate's text). Saving freezes with a visible warning until the
+  duplicates are resolved in the file.
+- Pressing play on a slide with no narration now says so instead of
+  rendering and playing a silent track.
 - Recompiling a deck no longer risks killing the editor's live-reload: a
   poll tick that catches the PDF (or `slidesonnet.toml`) missing or
   half-written keeps showing the last good deck and retries next tick.

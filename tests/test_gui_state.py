@@ -191,6 +191,34 @@ def test_poll_survives_malformed_config_edit(tmp_path: Path) -> None:
     assert state.poll_sources() is True
 
 
+def test_save_refuses_to_collapse_duplicate_blocks(tmp_path: Path) -> None:
+    # the narration dict keeps only the last duplicate; a rewrite would silently
+    # destroy the first block's text — freeze writes until the user resolves it
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nFirst.\n\n@a\nSecond.\n\n@b\nBye.\n")
+    assert state.save("edited b") is False
+    text = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "First." in text and "Second." in text  # nothing collapsed
+    assert "edited b" not in text
+
+
+def test_save_returns_true_on_normal_write(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n")
+    assert state.save("Hello.") is True
+    assert "Hello." in (tmp_path / "deck.narration").read_text(encoding="utf-8")
+
+
+def test_save_on_unmarked_page_is_a_safe_noop(tmp_path: Path) -> None:
+    # an empty slide-id can't be keyed in the sidecar; writing "@" would corrupt it
+    state = _factory_state(tmp_path, ["a", "", "b"], sidecar="@a\nHi.\n")
+    state.go(1)
+    assert state.current_id == ""
+    assert state.save("typed on an unmarked page") is False
+    text = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "typed on an unmarked page" not in text
+    state.reload()  # the sidecar must still parse
+    assert state.deck.page_narration("a").speech_text == "Hi."
+
+
 # ---- unattached narration (slide dropped/renamed by a recompile) ------------
 
 

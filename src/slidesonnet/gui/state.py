@@ -133,8 +133,23 @@ class EditorState:
     def pace(self) -> str:
         return self.current_block.pace or "normal"
 
-    def save(self, body: str, *, voice: str = "", pace: str = "normal") -> None:
-        """Persist edits to the current slide's block, then re-run diagnostics."""
+    @property
+    def writes_frozen(self) -> bool:
+        """True while rewriting the sidecar would silently lose content.
+
+        Duplicate blocks collapse to one on parse (last wins); a rewrite would
+        drop the others' text. The user must resolve the duplicates in the file.
+        """
+        return any(d.code == "duplicate-block" for d in self.diagnostics)
+
+    def save(self, body: str, *, voice: str = "", pace: str = "normal") -> bool:
+        """Persist edits to the current slide's block; False if saving is unsafe.
+
+        Unsafe: the page has no slide-id to key the block ("@" would corrupt
+        the sidecar grammar), or duplicate blocks froze writes.
+        """
+        if not self.current_id or self.writes_frozen:
+            return False
         block = PageNarration(
             slide_id=self.current_id,
             segments=parse_segments(body),
@@ -146,6 +161,7 @@ class EditorState:
         else:
             self.deck.narration.pop(self.current_id, None)
         self._write_and_reload()
+        return True
 
     def _write_and_reload(self) -> None:
         """Persist the deck, re-run diagnostics, and absorb our own sidecar write.
@@ -178,6 +194,8 @@ class EditorState:
 
     def attach_orphan(self, orphan_id: str, target_id: str) -> None:
         """Move an orphan block's narration onto the page *target_id* and save."""
+        if self.writes_frozen:
+            raise ValueError("the sidecar has duplicate narration blocks — resolve them first")
         if target_id not in self.deck.pages:
             raise ValueError(f"'{target_id}' is not a page in the deck")
         if self.has_narration(target_id):
@@ -190,6 +208,8 @@ class EditorState:
 
     def delete_orphan(self, orphan_id: str) -> None:
         """Drop an orphan block (and its text) from the sidecar."""
+        if self.writes_frozen:
+            raise ValueError("the sidecar has duplicate narration blocks — resolve them first")
         self.deck.narration.pop(orphan_id, None)
         self._write_and_reload()
 

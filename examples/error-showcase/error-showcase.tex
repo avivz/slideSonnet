@@ -1,0 +1,62 @@
+% Error showcase — a deliberately broken slideSonnet demo deck.
+%
+% Every reconciliation problem the checker knows, one slide each, so you can
+% open it in the editor and see exactly how each error surfaces:
+%
+%   page 1  all-good        narrated, named — the control case
+%   page 2  (no \ssid)      auto-generated id -> "auto-id" warning
+%   page 3  silent-stage    named but never narrated -> "missing-narration"
+%   page 4  twin            duplicate \ssid on two pages -> "duplicate-id" error
+%   page 5  twin            (the other twin)
+%   page 6  double-block    one page, TWO sidecar blocks -> "duplicate-block" error
+%
+% The narration sidecar adds the file-side problems: an orphan block
+% (@ghost-slide: no such page) and the duplicate @double-block pair.
+%
+% Compile:  latexmk -pdf error-showcase.tex   (intermediates go to .build/)
+% Inspect:  slidesonnet check error-showcase.pdf
+%           slidesonnet edit error-showcase.pdf
+\documentclass[aspectratio=169]{beamer}
+\usepackage{slidesonnet}
+\setbeamertemplate{navigation symbols}{}
+
+\begin{document}
+
+\begin{frame}
+  \ssid{all-good}
+  \frametitle{1 · all-good}
+  This slide is fine: it has a stable id and a narration block.
+\end{frame}
+
+\begin{frame}
+  % no \ssid here on purpose -> the package stamps an auto-p<page> id
+  \frametitle{2 · no slide id}
+  This frame forgot its \texttt{\textbackslash ssid} — the checker flags the
+  auto-generated id and asks for a real name.
+\end{frame}
+
+\begin{frame}
+  \ssid{silent-stage}
+  \frametitle{3 · named but not narrated}
+  This slide has an id but no narration block in the sidecar.
+\end{frame}
+
+\begin{frame}
+  \ssid{twin}
+  \frametitle{4 · duplicate id (first)}
+  This page and the next both claim \texttt{twin} — the binding is ambiguous.
+\end{frame}
+
+\begin{frame}
+  \ssid{twin}
+  \frametitle{5 · duplicate id (second)}
+  Same id as the previous page.
+\end{frame}
+
+\begin{frame}
+  \ssid{double-block}
+  \frametitle{6 · double narration block}
+  The sidecar holds two \texttt{@double-block} entries for this one page.
+\end{frame}
+
+\end{document}

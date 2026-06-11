@@ -39,7 +39,8 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
     sidecar_set = set(sidecar_ids)
     page_set = set(real_pages)
 
-    # Pages with no marker at all.
+    # Pages with no marker at all. slide_id "" keys them to the unmarked pages
+    # themselves, so the editor can show the finding on the page it belongs to.
     for i, pid in enumerate(pages, start=1):
         if not pid:
             diags.append(
@@ -47,6 +48,7 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
                     "warning",
                     "unmarked-page",
                     f"page {i} has no slide-id marker (missing \\ssid)",
+                    "",
                 )
             )
 

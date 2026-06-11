@@ -658,10 +658,14 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         else:
             err_badge.set_text("✓ no errors")
             err_badge.classes(remove="ss-pill-err", add="ss-pill-ok")
-        id_label.set_text(state.current_id)
+        id_label.set_text(state.current_id or "(no slide id)")
         body.value = state.body_text
         voice.value = state.voice
         pace.value = state.pace
+        if state.current_id:
+            body.enable()
+        else:  # unmarked page: there is no id to key a narration block to
+            body.disable()
         try:
             img = state.current_image()
             if img is not None:
@@ -719,7 +723,11 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
 
             def _do_attach() -> None:
                 dialog.close()
-                state.attach_orphan(orphan_id, str(target.value))
+                try:
+                    state.attach_orphan(orphan_id, str(target.value))
+                except ValueError as exc:
+                    ui.notify(str(exc), type="warning")
+                    return
                 ui.notify(f"Narration attached to '{target.value}'", type="positive")
                 render()
 
@@ -737,7 +745,11 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
 
             def _do_delete() -> None:
                 dialog.close()
-                state.delete_orphan(orphan_id)
+                try:
+                    state.delete_orphan(orphan_id)
+                except ValueError as exc:
+                    ui.notify(str(exc), type="warning")
+                    return
                 ui.notify(f"Deleted narration '@{orphan_id}'", type="info")
                 render()
 
@@ -782,10 +794,21 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 )
                 ui.label(f"{d.severity}: {d.message}").classes(f"ss-diag {css}")
 
+    save_warned = False
+
     def save_current() -> None:
-        state.save(body.value or "", voice=voice.value or "", pace=pace.value or "normal")
-        saved_flash.classes(remove="opacity-0")
-        ui.timer(1.2, lambda: saved_flash.classes(add="opacity-0"), once=True)
+        nonlocal save_warned
+        if state.save(body.value or "", voice=voice.value or "", pace=pace.value or "normal"):
+            save_warned = False
+            saved_flash.classes(remove="opacity-0")
+            ui.timer(1.2, lambda: saved_flash.classes(add="opacity-0"), once=True)
+        elif state.writes_frozen and not save_warned:
+            save_warned = True
+            ui.notify(
+                "Not saving: the narration file has duplicate blocks — "
+                "resolve them in the file first",
+                type="warning",
+            )
 
     # ---- navigation (each saves first) ----
     def _jump(index: int) -> None:
@@ -965,6 +988,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         lands before the build even starts still cancels it.
         """
         nonlocal busy
+        if not whole_deck and not state.current_block.has_speech:
+            ui.notify("This slide has no narration to play", type="info")
+            return
         key = "deck" if whole_deck else state.current_id
         action = playback.press_action(key)
         if action == "pause":
