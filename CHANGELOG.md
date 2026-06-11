@@ -16,12 +16,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   (default `cut`, or a timed `crossfade`).
 - **Block editor.** The single narration textarea is replaced by a card list:
   "Line" and "Pause" buttons add blocks; each utterance card has a growing
-  text area with collapsed voice/pace/director's-note options and
-  reorder/delete controls; pause cards edit their duration; transition rows
-  bracket the slide.
+  text area with a one-line, labelled voice / pace / director's-note strip
+  (bordered fields). **Voice** is a dropdown of the engine's actual voices
+  (Kokoro's English set, plus any named presets from `slidesonnet.toml`);
+  clear it for the deck default. A per-utterance voice that isn't a named
+  preset is now passed straight to the backend as a raw voice id, so the
+  picker's choices take effect. Pace is a compact select; cards reorder and
+  delete; pause cards edit their duration; transition rows bracket the slide.
+- **Unattached-narration tray.** When a recompile (or a duplicate `@id`) drops
+  a narration block, it lands in a distinct, highlighted tray instead of
+  vanishing: the full text is shown and selectable, with one-click **copy**,
+  **Append here** (fold it onto the open slide), **Attach to…** (move it onto
+  an empty slide), and **Delete**.
 - Editor usability: single-slide preview button (was deck-only), ←/→
-  keyboard navigation, autosave "saved" flash, engine/sidecar status footer,
-  and pace as a one-click toggle instead of a dropdown.
+  keyboard navigation, autosave "saved" flash, and an engine/sidecar
+  status footer.
 - **Live reload of deck sources.** The editor watches the PDF, the
   `.narration` sidecar, and `slidesonnet.toml` (1s mtime poll — reliable on
   WSL mounts) and reloads automatically: recompile your deck or edit the
@@ -68,7 +77,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   never collide. Note the renamed binding follows occurrence order — it
   shifts if the duplicate pages reorder, which is why the warning still
   tells you to give each page its own `\ssid`. Duplicate *narration blocks*
-  remain an error (they can't be auto-resolved without losing text).
+  are handled the same way: a repeated `@id` in the sidecar is auto-renamed
+  on load (`double-block` → `double-block-2`) so neither block's text is
+  lost, with a warning, and the renamed block surfaces in the
+  unattached-narration tray — no more frozen saving.
 
 ### Fixed
 - Typing narration on a page with no slide-id no longer corrupts the
@@ -77,8 +89,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   the page itself.
 - Browsing a deck whose sidecar has duplicate blocks no longer silently
   collapses them (navigation auto-saves were dropping all but the last
-  duplicate's text). Saving freezes with a visible warning until the
-  duplicates are resolved in the file.
+  duplicate's text). The later block is auto-renamed on load so its text is
+  kept, and editing the rest of the deck is never frozen by a duplicate
+  elsewhere in the file.
+- Saving no longer scaffolds bare `@id` headers for un-narrated pages. An
+  empty placeholder block used to read back as a (narrated-but-empty) block
+  and silence the page's `missing-narration` warning; un-narrated pages now
+  stay out of the sidecar until they get real content.
 - Pressing play on a slide with no narration now says so instead of
   rendering and playing a silent track.
 - Recompiling a deck no longer risks killing the editor's live-reload: a

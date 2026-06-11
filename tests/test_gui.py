@@ -93,12 +93,14 @@ async def test_per_utterance_voice_and_pace_persist(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
-    # the one utterance's options carry voice + director's note
-    user.find(marker="uvoice-0").type("af_bella")
+    # the utterance's options carry voice (chosen from the engine's set), pace, note
+    next(iter(user.find(marker="uvoice-0").elements)).set_value("af_bella")
+    next(iter(user.find(marker="upace-0").elements)).set_value("slow")
     user.find(marker="udirect-0").type("warmly")
     user.find("Next").click()
     sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
     assert "voice: af_bella" in sidecar
+    assert "pace: slow" in sidecar
     assert "direct: warmly" in sidecar
 
 
@@ -150,12 +152,13 @@ async def test_recompile_while_editing_updates_deck_live(
     os.utime(pdf, (later, later))
     await user.should_see("Deck files changed on disk — reloaded", retries=300)
     await user.should_see("Slide 1 / 3")
-    # jumping to the new slide saves, which scaffolds its (empty) sidecar block
+    # the new slide is empty; saving must NOT scaffold a bare @gamma block, which
+    # would read back as a (narrated-but-empty) block and hide its missing warning
     user.find(marker="thumb-2").click()
     await user.should_see("Slide 3 / 3")
     await user.should_see("no speech on this slide")
     sidecar = (tmp_path / "deck.narration").read_text(encoding="utf-8")
-    assert "@gamma" in sidecar
+    assert "@gamma" not in sidecar  # stays unnarrated until it gets real content
 
 
 @pytest.mark.integration

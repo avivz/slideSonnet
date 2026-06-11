@@ -121,6 +121,20 @@ class PageNarration:
         """True if either transition differs from a plain cut."""
         return self.transition_in.is_crossfade or self.transition_out.is_crossfade
 
+    @property
+    def is_empty(self) -> bool:
+        """True for a placeholder block: no segments and plain-cut transitions.
+
+        Such a block carries no information, so it is never serialized — writing
+        a bare ``@id`` header would otherwise register the page as "narrated"
+        (an empty block) and suppress its ``missing-narration`` warning.
+        """
+        return (
+            not self.segments
+            and self.transition_in.kind == "cut"
+            and self.transition_out.kind == "cut"
+        )
+
 
 @dataclass
 class Deck:

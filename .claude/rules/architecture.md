@@ -35,10 +35,12 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **narration/format.py** — parse/serialize the indented block sidecar grammar
   (round-trip stable; `utterance:`/`pause:`/`transition-*:` lines);
   `parse_segments`/`serialize_body` (lossy plain-text helper), `pace_to_speed`.
-- **diagnostics.py** — id reconciliation (duplicate-block/auto/missing/orphan/order/
+- **diagnostics.py** — id reconciliation (auto/missing/orphan/order/unmarked/
   transition-conflict); `boundary_transition` (earlier slide's transition wins).
-- **deck.py** — `load_deck`, `save_deck`, `dedupe_page_ids`, `blank_blocks_for`,
-  default sidecar path.
+  Duplicate ids (page *and* sidecar) are auto-disambiguated in `deck.py`, not here.
+- **deck.py** — `load_deck`, `save_deck` (skips empty placeholder blocks),
+  `dedupe_page_ids`, `dedupe_block_ids` (repeated `@id` → `id-2`, keeps text),
+  `blank_blocks_for`, default sidecar path.
 - **timing.py** — `TimingMode` (tts/estimate/fixed), `compute_page_timing` → `PageTiming`.
 - **render.py** — `build_timeline` (`DeckTimeline`), `subtitle_entries`,
   `render_audio_track`, `compose_video`.

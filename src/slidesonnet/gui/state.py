@@ -123,15 +123,6 @@ class EditorState:
     def body_text(self) -> str:
         return serialize_body(self.current_block)
 
-    @property
-    def writes_frozen(self) -> bool:
-        """True while rewriting the sidecar would silently lose content.
-
-        Duplicate blocks collapse to one on parse (last wins); a rewrite would
-        drop the others' text. The user must resolve the duplicates in the file.
-        """
-        return any(d.code == "duplicate-block" for d in self.diagnostics)
-
     def _next_page_id(self) -> str | None:
         nxt = self.index + 1
         return self.deck.pages[nxt] if nxt < self.page_count else None
@@ -162,14 +153,14 @@ class EditorState:
         """Replace the current slide's block wholesale, then persist; False if unsafe.
 
         Unsafe: the page has no slide-id to key the block ("@" would corrupt the
-        sidecar grammar), or duplicate blocks froze writes. A block that ends up
-        empty (no segments, plain cuts) is dropped from the sidecar entirely.
+        sidecar grammar). A block that ends up empty (no segments, plain cuts)
+        is dropped from the sidecar entirely.
 
         Setting a non-cut ``transition_out`` clears the *next* slide's
         ``transition_in`` so a boundary is only ever specified on the earlier
         slide (see :func:`diagnostics.boundary_transition`).
         """
-        if not self.current_id or self.writes_frozen:
+        if not self.current_id:
             return False
         tin = transition_in or Transition()
         tout = transition_out or Transition()
@@ -221,8 +212,6 @@ class EditorState:
 
     def attach_orphan(self, orphan_id: str, target_id: str) -> None:
         """Move an orphan block's narration onto the page *target_id* and save."""
-        if self.writes_frozen:
-            raise ValueError("the sidecar has duplicate narration blocks — resolve them first")
         if target_id not in self.deck.pages:
             raise ValueError(f"'{target_id}' is not a page in the deck")
         if self.has_narration(target_id):
@@ -236,12 +225,46 @@ class EditorState:
         )
         self._write_and_reload()
 
+    def append_orphan_to_current(self, orphan_id: str) -> None:
+        """Append an orphan block's segments onto the current slide, then save.
+
+        Unlike :meth:`attach_orphan` (which targets an *empty* slide), this
+        merges the orphan's utterances/pauses after whatever the current slide
+        already has — the way to fold dropped narration back into a live slide.
+        """
+        if not self.current_id:
+            raise ValueError("this page has no slide-id to append to")
+        if orphan_id not in self.deck.narration:
+            raise ValueError(f"no narration block '{orphan_id}'")
+        orphan = self.deck.narration.pop(orphan_id)
+        target = self.current_block
+        self.deck.narration[self.current_id] = PageNarration(
+            slide_id=self.current_id,
+            segments=[*target.segments, *orphan.segments],
+            transition_in=target.transition_in,
+            transition_out=target.transition_out,
+        )
+        self._write_and_reload()
+
     def delete_orphan(self, orphan_id: str) -> None:
         """Drop an orphan block (and its text) from the sidecar."""
-        if self.writes_frozen:
-            raise ValueError("the sidecar has duplicate narration blocks — resolve them first")
         self.deck.narration.pop(orphan_id, None)
         self._write_and_reload()
+
+    # ---- voices -----------------------------------------------------------
+    def voice_options(self) -> list[str]:
+        """Voice choices for the editor: named presets first, then engine voices.
+
+        For Kokoro this is the model's fixed English voice set; for any backend
+        it also includes the deck's named presets from ``slidesonnet.toml``. The
+        per-utterance voice is otherwise None (the deck default).
+        """
+        from slidesonnet.tts.kokoro import KOKORO_VOICES
+
+        opts: list[str] = sorted(self.config.voices)  # named presets
+        if self.config.tts.backend == "kokoro":
+            opts += [v for v in KOKORO_VOICES if v not in opts]
+        return opts
 
     # ---- synthesis cost ---------------------------------------------------
     @property

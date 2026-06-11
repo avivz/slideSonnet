@@ -34,7 +34,6 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
 
     real_pages = [p for p in pages if p]
     sidecar_ids = [b.slide_id for b in blocks]
-    sidecar_counts = Counter(sidecar_ids)
     sidecar_set = set(sidecar_ids)
     page_set = set(real_pages)
 
@@ -54,17 +53,8 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
     # Duplicate ids across PDF pages are disambiguated (renamed) upstream by
     # deck.dedupe_page_ids, which emits its own warnings — not re-checked here.
 
-    # Duplicate id within the sidecar.
-    for sid, n in sidecar_counts.items():
-        if n >= 2:
-            diags.append(
-                Diagnostic(
-                    "error",
-                    "duplicate-block",
-                    f"slide-id '{sid}' has {n} narration blocks in the sidecar",
-                    sid,
-                )
-            )
+    # Duplicate sidecar @ids are disambiguated (renamed) upstream by
+    # deck.dedupe_block_ids, which emits its own warnings — not re-checked here.
 
     # auto-* ids on pages.
     for pid in dict.fromkeys(real_pages):

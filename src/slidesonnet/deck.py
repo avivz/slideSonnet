@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from slidesonnet.diagnostics import Diagnostic, diagnose, sort_diagnostics
@@ -65,6 +66,59 @@ def dedupe_page_ids(pages: list[str]) -> tuple[list[str], list[Diagnostic]]:
     return out, diags
 
 
+def dedupe_block_ids(
+    blocks: list[PageNarration],
+) -> tuple[list[PageNarration], list[Diagnostic]]:
+    """Rename repeated sidecar ``@ids`` so no narration block is silently dropped.
+
+    The narration is keyed by id, so two ``@same-id`` blocks would otherwise
+    collapse to one (last wins) — losing the first block's text. Instead the
+    first keeps its id and each later one is renamed to the smallest free
+    ``-n`` (n ≥ 2), avoiding collision with any other block id. A renamed block
+    usually has no matching page, so it surfaces in the unattached-narration
+    tray where it can be re-attached or deleted. Every rename is a warning;
+    de-duplicating the ``@blocks`` in the file is still the durable fix.
+    """
+    taken = {b.slide_id for b in blocks}
+    seen: set[str] = set()
+    out: list[PageNarration] = []
+    diags: list[Diagnostic] = []
+    flagged: set[str] = set()
+    for block in blocks:
+        sid = block.slide_id
+        if sid not in seen:
+            seen.add(sid)
+            out.append(block)
+            continue
+        n = 2
+        while f"{sid}-{n}" in taken:
+            n += 1
+        new = f"{sid}-{n}"
+        taken.add(new)
+        seen.add(new)
+        out.append(replace(block, slide_id=new))
+        if sid not in flagged:
+            flagged.add(sid)
+            diags.append(
+                Diagnostic(
+                    "warning",
+                    "duplicate-block",
+                    f"slide-id '{sid}' has more than one narration block — later "
+                    "ones were renamed to disambiguate; merge the @blocks in the file",
+                    sid,
+                )
+            )
+        diags.append(
+            Diagnostic(
+                "warning",
+                "duplicate-block",
+                f"a second '{sid}' block was renamed to '{new}' so its text is kept",
+                new,
+            )
+        )
+    return out, diags
+
+
 def load_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> tuple[Deck, list[Diagnostic]]:
     """Load *pdf_path* and its sidecar into a :class:`Deck` plus diagnostics.
 
@@ -75,10 +129,11 @@ def load_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> tuple[Deck
     pages, dedupe_diags = dedupe_page_ids(read_page_ids(pdf_path))
 
     blocks: list[PageNarration] = []
+    block_diags: list[Diagnostic] = []
     if sidecar.exists():
-        blocks = parse_sidecar(sidecar.read_text(encoding="utf-8"))
+        blocks, block_diags = dedupe_block_ids(parse_sidecar(sidecar.read_text(encoding="utf-8")))
 
-    diags = sort_diagnostics(dedupe_diags + diagnose(pages, blocks))
+    diags = sort_diagnostics(dedupe_diags + block_diags + diagnose(pages, blocks))
     deck = Deck(
         pdf_path=pdf_path,
         sidecar_path=sidecar,
@@ -100,13 +155,19 @@ def blank_blocks_for(pages: list[str]) -> list[PageNarration]:
 
 
 def save_deck(deck: Deck, *, header: str | None = None) -> None:
-    """Serialize *deck*'s narration to its sidecar, in PDF page order."""
+    """Serialize *deck*'s narration to its sidecar, in PDF page order.
+
+    Empty placeholder blocks are skipped: a page with no narration is left out
+    of the sidecar entirely (a bare ``@id`` header would otherwise read back as
+    an empty narration block and silence its ``missing-narration`` warning).
+    """
     blocks = [deck.page_narration(pid) for pid in _unique(deck.pages) if pid]
     # Include any orphan blocks (not on a page) so they aren't silently dropped.
     on_page = {pid for pid in deck.pages if pid}
     for sid, block in deck.narration.items():
         if sid not in on_page:
             blocks.append(block)
+    blocks = [b for b in blocks if not b.is_empty]
     deck.sidecar_path.write_text(serialize_sidecar(blocks, header=header), encoding="utf-8")
 
 

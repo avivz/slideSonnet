@@ -192,14 +192,16 @@ def test_poll_survives_malformed_config_edit(tmp_path: Path) -> None:
     assert state.poll_sources() is True
 
 
-def test_save_refuses_to_collapse_duplicate_blocks(tmp_path: Path) -> None:
-    # the narration dict keeps only the last duplicate; a rewrite would silently
-    # destroy the first block's text — freeze writes until the user resolves it
+def test_duplicate_blocks_are_disambiguated_not_frozen(tmp_path: Path) -> None:
+    # a repeated @a is renamed (a -> a-2) on load so neither block's text is lost;
+    # editing an unrelated slide is no longer frozen, and a rewrite keeps both
     state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nFirst.\n\n@a\nSecond.\n\n@b\nBye.\n")
-    assert state.set_body("edited b") is False
+    assert "a-2" in state.deck.narration  # the second @a block was disambiguated
+    state.go(1)  # onto slide b
+    assert state.set_body("edited b") is True
     text = (tmp_path / "deck.narration").read_text(encoding="utf-8")
-    assert "First." in text and "Second." in text  # nothing collapsed
-    assert "edited b" not in text
+    assert "First." in text and "Second." in text  # both blocks preserved
+    assert "edited b" in text
 
 
 def test_save_returns_true_on_normal_write(tmp_path: Path) -> None:
@@ -257,6 +259,25 @@ def test_attach_orphan_refuses_narrated_target(tmp_path: Path) -> None:
         state.attach_orphan("ghost", "a")
     with pytest.raises(ValueError, match="not a page"):
         state.attach_orphan("ghost", "nope")
+
+
+def test_append_orphan_to_current_merges_segments(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nKeep me.\n\n@ghost\nLost text.\n")
+    state.go(0)  # current slide is 'a', which already has narration
+    state.append_orphan_to_current("ghost")
+    assert state.orphan_blocks() == []
+    # the orphan's text is appended after the slide's existing narration
+    assert state.deck.page_narration("a").speech_text == "Keep me. Lost text."
+    sidecar = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    assert "Keep me." in sidecar and "Lost text." in sidecar and "@ghost" not in sidecar
+    assert state.error_count == 0  # orphan error resolved
+
+
+def test_append_orphan_to_current_refuses_unmarked_page(tmp_path: Path) -> None:
+    state = _factory_state(tmp_path, ["a", "", "b"], sidecar="@a\nHi.\n\n@ghost\nLost.\n")
+    state.go(1)  # the unmarked page has no slide-id to append onto
+    with pytest.raises(ValueError, match="no slide-id"):
+        state.append_orphan_to_current("ghost")
 
 
 def test_delete_orphan_removes_block(tmp_path: Path) -> None:
@@ -329,11 +350,12 @@ def test_set_transition_out_clears_next_slide_in(tmp_path: Path) -> None:
     assert not any(d.code == "transition-conflict" for d in state.diagnostics)
 
 
-def test_replace_block_frozen_when_duplicate_blocks(tmp_path: Path) -> None:
+def test_replace_block_succeeds_despite_duplicate_blocks(tmp_path: Path) -> None:
     from slidesonnet.narration.model import Segment
 
     state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nFirst.\n\n@a\nSecond.\n\n@b\nBye.\n")
-    assert state.replace_block([Segment.speech("nope")]) is False
+    # writes are no longer frozen by a duplicate elsewhere in the file
+    assert state.replace_block([Segment.speech("edited a")]) is True
 
 
 def test_cue_start_finds_slide() -> None:

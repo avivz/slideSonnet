@@ -36,10 +36,15 @@ def test_missing_narration_is_warning() -> None:
     assert any(d.code == "missing-narration" and d.slide_id == "b" for d in diags)
 
 
-def test_duplicate_sidecar_block_is_error() -> None:
-    diags = diagnose(["a"], _blocks("a", "a"))
-    assert has_errors(diags)
-    assert any(d.code == "duplicate-block" and d.slide_id == "a" for d in diags)
+def test_duplicate_sidecar_block_is_renamed_with_warnings() -> None:
+    # a repeated @id is disambiguated upstream (deck.dedupe_block_ids), not an error,
+    # so the second block's text is preserved instead of collapsing away
+    from slidesonnet.deck import dedupe_block_ids
+
+    blocks, diags = dedupe_block_ids(_blocks("a", "a", "b"))
+    assert [b.slide_id for b in blocks] == ["a", "a-2", "b"]
+    assert not has_errors(diags)
+    assert any(d.code == "duplicate-block" and d.severity == "warning" for d in diags)
 
 
 def test_orphan_narration_is_error() -> None:
@@ -65,6 +70,6 @@ def test_errors_sorted_first() -> None:
 
 
 def test_count_by_severity() -> None:
-    diags = diagnose(["a", "a"], _blocks("a", "a", "ghost"))
+    diags = diagnose(["a", "b"], _blocks("a", "b", "ghost"))
     counts = count_by_severity(diags)
-    assert counts["error"] == 2  # duplicate-block + orphan
+    assert counts["error"] == 1  # orphan narration

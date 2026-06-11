@@ -374,7 +374,6 @@ body{
   color:var(--ss-warn);border-color:rgba(217,162,60,.45);
   background:rgba(217,162,60,.08)}
 .ss-body textarea::placeholder{color:var(--ss-dim);opacity:.55;font-style:italic}
-.ss-frozen textarea{border-left:2px solid var(--ss-warn)}
 .ss-main{height:calc(100vh - 80px)}
 .ss-split{position:relative}
 .ss-split > .q-splitter__separator{background:var(--ss-line)}
@@ -425,11 +424,19 @@ body{
 .ss-audio{display:none}  /* invisible sound pipe — the transport buttons are the UI */
 .ss-seek{flex:1 1 0;min-width:60px}
 .ss-time{font-size:11px;color:var(--ss-dim);white-space:nowrap}
-.ss-orphan{border:1px solid var(--ss-line,#333);border-radius:6px;padding:4px 6px}
-.ss-orphan-text{flex:1 1 0;min-width:0}
-.ss-orphan-id{font-size:11px;color:var(--ss-warn,#d9a23c)}
-.ss-orphan-preview{font-size:11px;color:var(--ss-dim);overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap}
+/* unattached-narration tray: a distinct warning-tinted panel so it stands out
+   from the plain console sections around it */
+.ss-tray{background:rgba(255,200,87,.07);border:1px solid rgba(255,200,87,.32);
+  border-left:3px solid var(--ss-warn);border-radius:8px;padding:10px 12px}
+.ss-tray-icon{color:var(--ss-warn);font-size:18px}
+.ss-tray-title{font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--ss-warn)}
+.ss-tray-hint{font-size:11px;color:var(--ss-dim);line-height:1.4}
+.ss-orphan{border:1px solid var(--ss-line);border-radius:6px;padding:6px 8px;
+  background:var(--ss-surface)}
+.ss-orphan-id{font-size:12px;font-weight:600;color:var(--ss-warn);
+  font-family:"IBM Plex Mono",monospace}
+.ss-orphan-text{font-size:12.5px;color:var(--ss-text);line-height:1.5;
+  white-space:pre-wrap;word-break:break-word;user-select:text;cursor:text}
 .ss-console{
   width:100%;height:100%;overflow-y:auto;padding:16px;
   background:var(--ss-surface)}
@@ -445,8 +452,16 @@ body{
 .ss-utext{flex:1 1 0;min-width:0}
 .ss-utext textarea{line-height:1.6;font-size:15.5px;resize:none}
 .ss-utt-opts{margin-top:2px}
-.ss-utt-opts .q-expansion-item__content{padding:6px 2px 2px;display:flex;
-  flex-direction:column;gap:8px}
+.ss-uvoice{flex:0 0 162px}
+.ss-upace{flex:0 0 122px}
+.ss-udirect{flex:1 1 0;min-width:0}
+/* the option-row widgets sit on a darker fill with a hairline so they read as
+   editable fields instead of blending into the card */
+.ss-utt-opts .q-field--filled .q-field__control{
+  background:var(--ss-surface)!important;border:1px solid var(--ss-line)}
+.ss-utt-opts .q-field--filled .q-field__control:hover{border-color:var(--ss-dim)}
+.ss-utt-opts .q-field__native::placeholder,
+.ss-utt-opts input::placeholder{color:var(--ss-dim);opacity:.45;font-style:italic}
 .ss-seg-controls{flex:0 0 auto}
 .ss-pause{border-style:dashed}
 .ss-pause-icon{color:var(--ss-dim)}
@@ -462,8 +477,6 @@ body{
 .ss-diag-info{color:var(--ss-dim)}
 .ss-diag-ok{color:var(--ss-ok)}
 .ss-export{color:#0c1117!important;font-weight:600}
-.ss-pace .q-btn{color:var(--ss-dim)}
-.ss-pace .q-btn.bg-primary{color:#0c1117!important;font-weight:600}
 textarea,input{caret-color:var(--ss-accent)}
 .ss-flip{transform:scaleX(-1)}
 /* narrow-window mode: opened side panes float over the stage instead of squeezing it */
@@ -529,14 +542,6 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             ui.label(pdf_path.name).classes("ss-chip ss-mono")
         with ui.row().classes("items-center gap-3 no-wrap"):
             saved_flash = ui.label("● saved").classes("ss-saved opacity-0")
-            freeze_pill = ui.label("⚠ not saving — duplicate blocks in file").classes(
-                "ss-pill ss-pill-warn"
-            )
-            freeze_pill.mark("freeze-pill").tooltip(
-                "The narration file has two blocks for one slide; rewriting it would "
-                "drop one. Resolve the duplicate @blocks in the file to resume saving."
-            )
-            freeze_pill.visible = False
             err_badge = ui.label().classes("ss-pill")
             # material's view_sidebar glyph puts the sidebar on the RIGHT; flip for the left pane
             strip_toggle = ui.button(icon="view_sidebar").props("flat round dense")
@@ -606,7 +611,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     add_line_btn.props("flat dense no-caps").mark("add-utterance")
                     add_line_btn.tooltip("Add a spoken line")
                     add_pause_btn = ui.button(
-                        "Pause", icon="more_horiz", on_click=lambda: _add_segment("pause")
+                        "Pause", icon="hourglass_empty", on_click=lambda: _add_segment("pause")
                     )
                     add_pause_btn.props("flat dense no-caps").mark("add-pause")
                     add_pause_btn.tooltip("Add a silent pause")
@@ -689,8 +694,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             err_badge.set_text("✓ no errors")
             err_badge.classes(remove="ss-pill-err", add="ss-pill-ok")
         id_label.set_text(state.current_id or "(no slide id)")
-        freeze_pill.visible = state.writes_frozen
-        editable = bool(state.current_id) and not state.writes_frozen
+        editable = bool(state.current_id)
         add_line_btn.set_enabled(editable)
         add_pause_btn.set_enabled(editable)
         try:
@@ -742,20 +746,29 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
 
         transition_getters[which] = collect
 
-    def _seg_controls(index: int, disabled: bool) -> None:
+    def _reorder_controls(index: int, disabled: bool) -> None:
+        """Up/down reorder arrows — placed on the *left* of a card."""
         up = ui.button(icon="keyboard_arrow_up", on_click=lambda: _move_segment(index, -1))
-        up.props("flat round dense size=sm").mark(f"seg-up-{index}")
+        up.props("flat round dense size=sm").mark(f"seg-up-{index}").tooltip("Move up")
         down = ui.button(icon="keyboard_arrow_down", on_click=lambda: _move_segment(index, 1))
-        down.props("flat round dense size=sm").mark(f"seg-down-{index}")
-        trash = ui.button(icon="close", on_click=lambda: _delete_segment(index))
-        trash.props("flat round dense size=sm").mark(f"seg-del-{index}")
+        down.props("flat round dense size=sm").mark(f"seg-down-{index}").tooltip("Move down")
         if disabled:
-            for b in (up, down, trash):
-                b.disable()
+            up.disable()
+            down.disable()
+
+    def _delete_control(index: int, disabled: bool) -> None:
+        """Destructive delete — placed on the *right*, far from the reorder arrows."""
+        trash = ui.button(icon="delete", on_click=lambda: _delete_segment(index))
+        trash.props("flat round dense size=sm color=negative").mark(f"seg-del-{index}")
+        trash.tooltip("Delete this block")
+        if disabled:
+            trash.disable()
 
     def _utterance_card(index: int, seg: Segment, disabled: bool) -> Callable[[], Segment]:
         with ui.card().classes("ss-card ss-utterance w-full").mark(f"utterance-{index}"):
             with ui.row().classes("w-full items-start no-wrap gap-1"):
+                with ui.column().classes("gap-0 ss-seg-controls"):
+                    _reorder_controls(index, disabled)
                 text = (
                     ui.textarea(value=seg.text, placeholder="Spoken words…")
                     .props("filled autogrow dense")
@@ -763,43 +776,46 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     .mark(f"utext-{index}")
                 )
                 with ui.column().classes("gap-0 ss-seg-controls"):
-                    _seg_controls(index, disabled)
-            with (
-                ui.expansion("voice · pace · direction", icon="tune")
-                .props("dense")
-                .classes("ss-utt-opts w-full")
-            ):
+                    _delete_control(index, disabled)
+            voice_choices = state.voice_options()
+            if seg.voice and seg.voice not in voice_choices:
+                voice_choices = [seg.voice, *voice_choices]  # keep an off-list value visible
+            with ui.row().classes("ss-utt-opts w-full items-end gap-2 no-wrap"):
                 voice = (
-                    ui.input(
+                    ui.select(
+                        voice_choices,
+                        value=seg.voice or None,
                         label="Voice",
-                        value=seg.voice or "",
-                        placeholder="default",
-                        autocomplete=sorted(state.config.voices),
+                        with_input=True,  # type to filter the voice list
                     )
-                    .props("filled dense")
-                    .classes("ss-mono w-full")
+                    .props(
+                        "filled dense options-dense clearable hide-bottom-space "
+                        'title="Voice (type to filter; clear for the deck default)"'
+                    )
+                    .classes("ss-mono ss-uvoice")
                     .mark(f"uvoice-{index}")
                 )
                 pace = (
-                    ui.toggle(["slow", "normal", "fast"], value=seg.pace or "normal")
-                    .props("dense no-caps unelevated")
+                    ui.select(["slow", "normal", "fast"], value=seg.pace or "normal", label="Pace")
+                    .props("filled dense options-dense hide-bottom-space")
+                    .classes("ss-upace")
                     .mark(f"upace-{index}")
                 )
                 direct = (
                     ui.input(
-                        label="Director's note",
                         value=seg.direction or "",
+                        label="Director's note",
                         placeholder="how to speak it (optional)",
                     )
-                    .props("filled dense")
-                    .classes("w-full")
+                    .props("filled dense hide-bottom-space stack-label")
+                    .classes("ss-udirect")
                     .mark(f"udirect-{index}")
                 )
             for w in (text, voice, pace, direct):
                 if disabled:
                     w.disable()
             text.on("blur", lambda: _commit())
-            voice.on("blur", lambda: _commit())
+            voice.on_value_change(lambda: _commit())
             pace.on_value_change(lambda: _commit())
             direct.on("blur", lambda: _commit())
 
@@ -816,7 +832,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     def _pause_card(index: int, seg: Segment, disabled: bool) -> Callable[[], Segment]:
         with ui.card().classes("ss-card ss-pause w-full").mark(f"pause-{index}"):
             with ui.row().classes("w-full items-center no-wrap gap-2"):
-                ui.icon("more_horiz").classes("ss-pause-icon")
+                with ui.row().classes("gap-0 no-wrap ss-seg-controls"):
+                    _reorder_controls(index, disabled)
+                ui.icon("hourglass_empty").classes("ss-pause-icon")
                 secs = (
                     ui.number(value=seg.seconds, min=0, step=0.1, format="%.1f", suffix="s")
                     .props("filled dense")
@@ -825,8 +843,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 )
                 ui.label("silence").classes("ss-diag ss-diag-info")
                 ui.space()
-                with ui.row().classes("gap-0 no-wrap"):
-                    _seg_controls(index, disabled)
+                _delete_control(index, disabled)
             if disabled:
                 secs.disable()
             secs.on("blur", lambda: _commit())
@@ -841,7 +858,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         seg_collectors.clear()
         transition_getters.clear()
         block = state.current_block
-        disabled = state.writes_frozen or not state.current_id
+        disabled = not state.current_id
         with blocks_col:
             if not state.current_id:
                 ui.label(
@@ -892,25 +909,59 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         tray_box.visible = bool(orphans)
         if not orphans:
             return
-        with tray_box:
-            ui.label("Unattached narration").classes("ss-section")
-            ui.label("these slides are gone — attach the text elsewhere or keep it here").classes(
-                "ss-diag ss-diag-info"
+        with tray_box, ui.column().classes("ss-tray w-full gap-2 no-wrap"):
+            with ui.row().classes("w-full items-center no-wrap gap-1"):
+                ui.icon("link_off").classes("ss-tray-icon")
+                ui.label("Unattached narration").classes("ss-tray-title")
+            ui.label("these slides are gone — fold the text into a slide or keep it here").classes(
+                "ss-tray-hint"
             )
             for block in orphans:
-                with ui.row().classes("w-full items-center no-wrap gap-1 ss-orphan"):
-                    with ui.column().classes("ss-orphan-text gap-0"):
+                full = block.speech_text or "(pauses only)"
+                with ui.column().classes("w-full gap-1 ss-orphan no-wrap"):
+                    with ui.row().classes("w-full items-center no-wrap gap-1"):
                         ui.label(f"@{block.slide_id}").classes("ss-mono ss-orphan-id")
-                        preview = block.speech_text or "(pauses only)"
-                        if len(preview) > 60:
-                            preview = preview[:57] + "…"
-                        ui.label(preview).classes("ss-orphan-preview")
-                    attach = ui.button(icon="move_down").props("flat round dense size=sm")
-                    attach.mark(f"attach-{block.slide_id}").tooltip("Attach to a slide…")
-                    attach.on_click(lambda sid=block.slide_id: _attach_orphan_dialog(sid))
-                    trash = ui.button(icon="delete").props("flat round dense size=sm")
-                    trash.mark(f"delete-{block.slide_id}").tooltip("Delete this narration")
-                    trash.on_click(lambda sid=block.slide_id: _delete_orphan_dialog(sid))
+                        ui.space()
+                        copy = ui.button(icon="content_copy").props("flat round dense size=sm")
+                        copy.mark(f"copy-{block.slide_id}").tooltip("Copy the text")
+                        copy.on_click(lambda text=full: _copy_text(text))
+                        trash = ui.button(icon="delete").props("flat round dense size=sm")
+                        trash.mark(f"delete-{block.slide_id}").tooltip("Delete this narration")
+                        trash.on_click(lambda sid=block.slide_id: _delete_orphan_dialog(sid))
+                    # full text, selectable so it can always be copied by hand
+                    ui.label(full).classes("ss-orphan-text").mark(f"orphan-text-{block.slide_id}")
+                    with ui.row().classes("w-full items-center no-wrap gap-1"):
+                        here = ui.button(
+                            "Append here",
+                            icon="south",
+                            on_click=lambda sid=block.slide_id: _append_orphan_here(sid),
+                        ).props("flat dense no-caps size=sm")
+                        here.mark(f"append-{block.slide_id}")
+                        here.set_enabled(bool(state.current_id))
+                        here.tooltip(
+                            f"Append to this slide (@{state.current_id})"
+                            if state.current_id
+                            else "Open a slide with an id first"
+                        )
+                        attach = ui.button("Attach to…", icon="move_down").props(
+                            "flat dense no-caps size=sm"
+                        )
+                        attach.mark(f"attach-{block.slide_id}").tooltip("Move onto an empty slide")
+                        attach.on_click(lambda sid=block.slide_id: _attach_orphan_dialog(sid))
+
+    def _copy_text(text: str) -> None:
+        ui.clipboard.write(text)
+        ui.notify("Copied narration text", type="info")
+
+    def _append_orphan_here(orphan_id: str) -> None:
+        target = state.current_id
+        try:
+            state.append_orphan_to_current(orphan_id)
+        except ValueError as exc:
+            ui.notify(str(exc), type="warning")
+            return
+        ui.notify(f"Appended '@{orphan_id}' to '{target}'", type="positive")
+        render()
 
     def _attach_orphan_dialog(orphan_id: str) -> None:
         candidates = state.unnarrated_pages()
@@ -995,26 +1046,15 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 )
                 ui.label(f"{d.severity}: {d.message}").classes(f"ss-diag {css}")
 
-    save_warned = False
-
     def save_current() -> None:
         """Flush the open editor widgets to disk without rebuilding the cards."""
-        nonlocal save_warned
         if not seg_collectors and "in" not in transition_getters:
             return  # nothing built (e.g. unmarked page)
         segs, tin, tout = _collect()
         if state.replace_block(segs, transition_in=tin, transition_out=tout):
-            save_warned = False
             saved_flash.classes(remove="opacity-0")
             ui.timer(1.2, lambda: saved_flash.classes(add="opacity-0"), once=True)
             _render_side()
-        elif state.writes_frozen and not save_warned:
-            save_warned = True
-            ui.notify(
-                "Not saving: the narration file has duplicate blocks — "
-                "resolve them in the file first",
-                type="warning",
-            )
 
     def _commit() -> None:
         save_current()

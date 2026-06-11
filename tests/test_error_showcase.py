@@ -37,7 +37,8 @@ def test_example_stays_deliberately_broken() -> None:
     res = CliRunner().invoke(main, ["check", str(EXAMPLE / "error-showcase.pdf")])
     assert res.exit_code == 1
     assert "renamed to 'twin-2'" in res.output  # duplicate \ssid: disambiguated + warned
-    assert "'double-block' has 2 narration blocks" in res.output
+    assert "'double-block' has more than one narration block" in res.output  # disambiguated
+    assert "renamed to 'double-block-2'" in res.output  # the dup block's text is kept
     assert "'ghost-slide' has no matching PDF page" in res.output
     assert "auto-generated default" in res.output
     assert "slide 'silent-stage' has no narration block" in res.output
@@ -48,7 +49,9 @@ async def test_error_pill_counts_all_errors(
 ) -> None:
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
     await user.open("/")
-    await user.should_see("⛔ 2 errors")  # double-block, ghost-slide (twin is a warning now)
+    # two orphans: ghost-slide and double-block-2 (the disambiguated dup block).
+    # duplicate \ssid and duplicate @block are warnings now, not errors.
+    await user.should_see("⛔ 2 errors")
 
 
 async def test_clean_slide_shows_no_issues(
@@ -92,13 +95,16 @@ async def test_duplicate_pdf_id_renames_and_warns_on_both_pages(
     await user.should_see("twin-2")  # the id label shows the effective id
 
 
-async def test_duplicate_sidecar_block_errors(
+async def test_duplicate_sidecar_block_self_heals_in_editor(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A duplicate @block is auto-disambiguated: the slide keeps the first block,
+    the second lands in the tray, and nothing freezes (the warning is in `check`)."""
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
     await user.open("/")
-    user.find(marker="thumb-5").click()  # page 6: double-block
-    await user.should_see("2 narration blocks")
+    user.find(marker="thumb-5").click()  # page 6: double-block, narratable
+    await user.should_see("I am the first of two blocks")
+    await user.should_see("@double-block-2")  # the second block, disambiguated into the tray
 
 
 async def test_orphan_block_lands_in_tray(
@@ -108,26 +114,37 @@ async def test_orphan_block_lands_in_tray(
     await user.open("/")
     await user.should_see("Unattached narration")
     await user.should_see("@ghost-slide")
+    # the disambiguated duplicate block also surfaces here instead of being lost
+    await user.should_see("@double-block-2")
+    # the full narration text is shown (not truncated), so it stays readable
+    await user.should_see("no longer exists in the PDF")
+    # and it can be folded back into the open slide
+    user.find(marker="append-ghost-slide")
 
 
-async def test_freeze_shows_persistent_header_pill(
+async def test_append_orphan_folds_text_into_current_slide(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """While duplicate blocks freeze saving, the header must say so persistently."""
+    """The tray's 'Append here' button merges an orphan onto the open slide."""
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
     await user.open("/")
-    await user.should_see("not saving — duplicate blocks")
+    await user.should_see("all-good")  # the control slide is open
+    user.find(marker="append-ghost-slide").click()
+    await user.should_see("Appended")
+    sidecar = (tmp_path / "error-showcase.narration").read_text(encoding="utf-8")
+    assert "@ghost-slide" not in sidecar  # the orphan is gone
+    assert "no longer exists in the PDF" in sidecar  # its text now lives on all-good
 
 
-async def test_no_freeze_pill_on_healthy_deck(
+async def test_control_slide_editable_despite_duplicate_blocks(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pdf = write_pdf(tmp_path / "deck.pdf", ["alpha"])
-    (tmp_path / "deck.narration").write_text(simple_narration("@alpha\nHi.\n"), encoding="utf-8")
-    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    """A duplicate @block elsewhere must not freeze editing on a healthy slide."""
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
     await user.open("/")
-    await user.should_see("Slide 1 / 1")
-    await user.should_not_see("not saving")
+    await user.should_see("all-good")  # the control slide opens first
+    text = next(iter(user.find(marker="utext-0").elements))
+    assert isinstance(text, ui.textarea) and text.enabled
 
 
 # ---- player behavior on broken slides ---------------------------------------
