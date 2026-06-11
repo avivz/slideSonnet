@@ -75,6 +75,16 @@ Nice-to-haves, speculative features, large refactors. Include but don't over-inv
 4. Developer experience (testing, tooling, docs)
 5. Polish and optimization
 
+### Phrase new features as stories with acceptance examples
+
+When promoting an inbox item — or proposing any new feature — for the Now/Next tiers, phrase it in specification-by-example language rather than as a bare feature name:
+
+- **Story** — one line, user outcome, not implementation: "As a {user}, I want {capability} so that {outcome}."
+- **Acceptance examples** — 2–4 concrete scenarios with real inputs and expected behavior, written so each can become a `test_journey_*` test (see `tests/test_e2e_flows.py`). If you can't write the examples yet, the item is **not ready to build** — list the open questions instead and say so.
+- **Appetite** — how much time the item is *worth* (e.g. "half a day"), decided upfront; a budget, not an estimate.
+
+Also flag any existing Now/Next roadmap item that lacks acceptance examples as "needs examples before build."
+
 ## 4. Output Format
 
 ```markdown
@@ -119,7 +129,7 @@ Nice-to-haves, speculative features, large refactors. Include but don't over-inv
 ## Rules
 
 - **Read-only** — never modify files, run builds, or make commits. (After the report, the user may ask you to update `ROADMAP.md` with your recommendations — that's a separate step.)
-- **Triage inbox → roadmap** — if `dev/INBOX.md` contains items not yet in `ROADMAP.md`, call them out and recommend where they belong (Now/Next/Later) or whether to drop them.
+- **Triage inbox → roadmap** — if `dev/INBOX.md` contains items not yet in `ROADMAP.md`, call them out and recommend where they belong (Now/Next/Later) or whether to drop them. Items recommended for Now/Next must be phrased as a story + acceptance examples + appetite (see §3).
 - **Be concrete** — "Add integration test for `clean --keep current` in `test_cli.py`" not "Improve test coverage."
 - **Be honest** — if the project is in good shape, say so. Don't manufacture urgency.
 - **Respect cost constraints** — never run commands that cost money (API calls, cloud builds). Check CLAUDE.md for project-specific cost rules.
