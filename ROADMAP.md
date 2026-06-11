@@ -39,14 +39,37 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    links to the GitHub URL). **[agent→human]**
 3. [ ] **Tag `v1.0.0a1` and push** — triggers TestPyPI → PyPI → GitHub
    Release. Ship with the Kokoro-rendered demo videos; don't block on the
-   paid ElevenLabs render. **[human]**
-4. [ ] **ElevenLabs HQ re-render of the demos** — costs API credits, human
-   triggers the render; agent uploads to the `v0.0.0` GitHub Release
-   (`gh release upload --clobber`) and refreshes README links. **[human→agent]**
-5. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
+   paid HQ render. **[human]**
+4. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS** — Inworld beats
+   ElevenLabs on control *and* price (~$0.009/min vs ~$0.10–0.27/min), with
+   Markdown-style emotion control, top quality-to-price on the 2026 arena,
+   and instant own-voice cloning from a ~5–15 s clip (consent attestation
+   standard; voice + clip leave the machine). Researched 2026-06-10. Agent
+   implements the engine behind the engine interface (mocked unit tests, a
+   `[tts.inworld]` config section + extra); human supplies the API key, runs
+   a small paid smoke test, and judges voice quality. Decision point: keep
+   ElevenLabs as a legacy optional backend or remove it outright (as was
+   done with Piper). **[agent→human]**
+5. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
+   ElevenLabs render (don't pay ElevenLabs for renders we're about to drop).
+   Human triggers the paid render; agent uploads to the `v0.0.0` GitHub
+   Release (`gh release upload --clobber`) and refreshes README links.
+   **[human→agent]**
+6. [ ] **Qwen3-TTS own-voice engine (third optional backend)** — narrate
+   decks in the user's own voice from a ~10 s reference clip. Qwen3-TTS
+   (Apache 2.0) clones via a tiny reusable prompt artifact (~100 KB `.pt`:
+   codec tokens + speaker embedding); quality clearly above Piper. Runs
+   three ways: local GPU (works on Intel iGPU via XPU, ~4× slower than
+   real-time — fine for cached re-renders), serverless GPU (Modal/RunPod,
+   ~$0.01/10 min), or the official DashScope API (~$0.13/10 min, no infra,
+   but voice leaves the machine). Evaluated 2026-06-10; assets + lessons in
+   `dev/voice-profile/`. Agent implements behind the engine interface as an
+   optional extra; human records the reference clip and judges the cloned
+   voice. **[agent→human]**
+7. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
    an unlisted-vs-public decision; agent preps titles, descriptions, and
    chapter markers from the narration sidecars. **[human]**
-6. [ ] **README refresh** — new video links, Kokoro install instructions,
+8. [ ] **README refresh** — new video links, Kokoro install instructions,
    editor screenshots of the new dark studio theme. **[agent]**
 
 ## Later — before 1.0 final
@@ -75,26 +98,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 3. **Layered reconciliation** — optional text-fingerprint fallback when ids are
    missing, for non-Beamer sources.
 4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
-   interface).
-5. **Qwen3-TTS backend with own-voice cloning** — narrate decks in the user's
-   own voice from a ~10 s reference clip. Qwen3-TTS (Apache 2.0) clones via a
-   tiny reusable prompt artifact (~100 KB `.pt`: codec tokens + speaker
-   embedding); quality clearly above Piper. Runs three ways: local GPU (works
-   on Intel iGPU via XPU, ~4× slower than real-time — fine for cached
-   re-renders), serverless GPU (Modal/RunPod, ~$0.01/10 min), or the official
-   DashScope API (~$0.13/10 min, no infra, but voice leaves the machine).
-   Evaluated 2026-06-10; assets + lessons in `dev/voice-profile/`.
-6. **Inworld TTS managed backend** — test it as a cloud engine (follow the
-   engine interface). Beats ElevenLabs on control *and* price (~$0.009/min vs
-   ElevenLabs ~$0.10–0.27/min), with Markdown-style emotion control and top
-   quality-to-price on the 2026 arena. Most relevant here: **instant own-voice
-   cloning from a ~5–15 s clip**, making it a managed counterpart to the Qwen3
-   own-voice plan — no GPU infra, but the voice + reference clip leave the
-   machine (privacy tradeoff vs local Qwen3). Consent attestation now standard.
-   Researched 2026-06-10.
-7. **Multi-deck playlists** — concatenate several PDFs into one video.
-8. **Crossfade / transitions** between slides in the export.
-9. **`--json` output** for CI/automation.
+   interface). (Qwen3-TTS and Inworld promoted to Next on 2026-06-11.)
+5. **Multi-deck playlists** — concatenate several PDFs into one video.
+6. **Crossfade / transitions** between slides in the export.
+7. **`--json` output** for CI/automation.
 
 ## Done (v1 rewrite)
 
