@@ -70,6 +70,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   old audio because the URL never changed (now cache-busted per request).
 
 ### Changed (editor transport)
+- "Generate" moved into the transport bar next to play (icon button); play
+  and generate now gray out when pointless — play when the slide has no
+  speech, generate when every segment is already cached. "Generate all"
+  stays in the console for whole-deck synthesis.
 - One transport, no duplicate players: the native browser audio widget is
   gone (it offered a second, stale play button). The play-slide /
   play-deck buttons now toggle play/pause for their own track (icon

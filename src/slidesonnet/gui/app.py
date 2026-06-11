@@ -614,6 +614,8 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     next_btn = ui.button(icon="chevron_right").props("flat round dense")
                     next_btn.mark("Next").tooltip("Forward (→)")
                     ui.element("div").classes("ss-vsep")
+                    gen_btn = ui.button(icon="graphic_eq").props("flat round dense")
+                    gen_btn.mark("gen-slide").tooltip("Generate this slide's audio")
                     play_one = ui.button(icon="play_arrow").props("flat round dense")
                     play_one.mark("play-slide").tooltip("Hear this slide")
                     play_all = ui.button(icon="playlist_play").props("flat round dense")
@@ -643,8 +645,6 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             tray_box.mark("orphan-tray")
             tray_box.visible = False
             ui.space()
-            gen_btn = ui.button("Generate", icon="graphic_eq").classes("w-full")
-            gen_btn.props("outline no-caps")
             gen_all_btn = ui.button("Generate all", icon="library_music").classes("w-full")
             gen_all_btn.props("flat no-caps")
             export_btn = ui.button("Export video", icon="movie").classes("w-full ss-export")
@@ -973,11 +973,18 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         return bool(await dialog)
 
     def _sync_transport() -> None:
-        """Play buttons mirror the player: the loaded track's button shows pause."""
+        """Play buttons mirror the player: the loaded track's button shows pause.
+
+        Buttons with nothing to do gray out: play needs speech on the slide,
+        generate needs speech that isn't already cached.
+        """
         one_active = playback.playing and playback.loaded_key == state.current_id
         play_one.props(f"icon={'pause' if one_active else 'play_arrow'}")
         deck_active = playback.playing and playback.loaded_key == "deck"
         play_all.props(f"icon={'pause' if deck_active else 'playlist_play'}")
+        has_speech = state.current_block.has_speech
+        play_one.set_enabled(has_speech)
+        gen_btn.set_enabled(has_speech and state.uncached_count(state.current_id) > 0)
 
     def _fmt_clock(t: float) -> str:
         s = max(0, int(t))

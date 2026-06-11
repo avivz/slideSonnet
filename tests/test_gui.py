@@ -149,9 +149,12 @@ async def test_generate_and_preview(
     )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
-    user.find("Generate").click()
+    user.find(marker="gen-slide").click()
     # synthesis runs off the event loop now; allow up to 30s for kokoro
     await user.should_see("Synthesized", retries=300)
+    # everything cached now: the generate button has nothing left to do
+    gen = next(iter(user.find(marker="gen-slide").elements))
+    assert isinstance(gen, ui.button) and not gen.enabled
     # audio cache now exists for intro-title
     from slidesonnet.cache import audio_dir
 
@@ -428,6 +431,23 @@ async def test_typing_survives_recompile_that_drops_the_slide(
     assert "Fresh thoughts, unsaved." in sidecar  # flushed before the reload
     await user.should_see("Unattached narration")
     await user.should_see("@alpha")
+
+
+async def test_transport_grays_out_play_and_generate_when_pointless(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Generate sits in the transport; play/generate disable when there's nothing to do."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    play = next(iter(user.find(marker="play-slide").elements))
+    gen = next(iter(user.find(marker="gen-slide").elements))
+    assert isinstance(play, ui.button) and isinstance(gen, ui.button)
+    # narrated slide, nothing cached: both actions make sense
+    assert play.enabled and gen.enabled
+    user.find("Next").click()  # euler-setup has no narration
+    assert not play.enabled
+    assert not gen.enabled
 
 
 async def test_paid_engine_preview_asks_before_synthesis(

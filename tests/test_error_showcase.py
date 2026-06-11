@@ -133,15 +133,19 @@ async def test_no_freeze_pill_on_healthy_deck(
 # ---- player behavior on broken slides ---------------------------------------
 
 
-async def test_play_on_speechless_slide_says_so_instead_of_building(
+async def test_play_and_generate_disabled_on_speechless_slide(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Playing a slide with nothing to say must explain, not render silence."""
+    """A slide with nothing to say can't be played or generated — buttons gray out."""
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
     await user.open("/")
     user.find(marker="thumb-2").click()  # silent-stage: no narration at all
-    user.find(marker="play-slide").click()
-    await user.should_see("no narration to play", retries=300)
+    await user.should_see("no speech on this slide")
+    play = next(iter(user.find(marker="play-slide").elements))
+    gen = next(iter(user.find(marker="gen-slide").elements))
+    assert isinstance(play, ui.button) and isinstance(gen, ui.button)
+    assert not play.enabled
+    assert not gen.enabled
 
 
 @pytest.mark.integration
