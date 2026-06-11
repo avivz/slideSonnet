@@ -38,6 +38,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   slides during a single-slide preview stops its audio (it used to keep
   talking over the new slide), and the deck preview's automatic page flips
   no longer discard narration you typed during playback.
+- Replaying a preview after navigating now plays the new slide's audio:
+  previews render to one track file, and the browser kept replaying the
+  old audio because the URL never changed (now cache-busted per request).
 
 ### Changed
 - **Kokoro replaces Piper as the local TTS engine.** The default backend is

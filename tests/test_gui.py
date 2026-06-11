@@ -215,6 +215,41 @@ async def test_deck_playback_cue_flip_saves_pending_edits(
     assert "Typed during playback." in sidecar  # saved under @intro-title, not lost
 
 
+async def test_replaying_preview_reloads_the_new_track(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every preview renders to the same track path; the browser must still refetch.
+
+    Regression: preview slide A, navigate, preview slide B — the audio element
+    kept playing A because the source URL was unchanged.
+    """
+    import asyncio
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    audio = next(iter(user.find(marker="preview-audio").elements))
+    first = str(audio.props.get("src"))
+    assert "preview.wav" in first
+
+    user.find("Next").click()
+    user.find(marker="play-slide").click()
+    for _ in range(100):  # wait for the second build to land
+        if str(audio.props.get("src")) != first:
+            break
+        await asyncio.sleep(0.05)
+    second = str(audio.props.get("src"))
+    assert "preview.wav" in second
+    assert second != first  # same path, but the browser must see a fresh URL
+
+
 async def test_paid_engine_preview_asks_before_synthesis(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -57,3 +57,4 @@ examples/**/cache/audio/*.piper.*.wav
 
 # setuptools build dir
 build/
+.claude/worktrees/

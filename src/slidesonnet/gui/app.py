@@ -857,7 +857,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     ui.notify("Preview stopped", type="info")
                     return
                 cues = preview.cues if whole_deck else []
-                audio.set_source(_media_url(state, preview.track))
+                # every preview renders to the same track path — vary the URL so
+                # the browser refetches instead of replaying the previous audio
+                audio.set_source(f"{_media_url(state, preview.track)}?v={token}")
                 audio.visible = True
                 audio.play()
                 ui.notify(f"Preview ready ({preview.total_duration:.1f}s)", type="positive")

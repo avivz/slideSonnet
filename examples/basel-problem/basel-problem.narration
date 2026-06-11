@@ -2,7 +2,7 @@
 Today I want to tell you about one of my favorite stories in mathematics: the Basel problem. A sum that resisted solution for eighty-five years, before a young mathematician finally cracked it with a beautifully simple idea. [pause 0.6]
 
 @simple-question
-Here's the question. Take every perfect square — one, four, nine, sixteen, twenty-five, and so on — flip each one over, and add them all up. Does this infinite sum converge? And if it does, to what?
+Here's the question. Take every perfect square — one, four, nine, sixteen, twenty-five, and so on — flip each one over, and add them all up. Does this infinite sum converge? And if it does, then to what?
 
 @challenge-mengoli
 The problem was first posed by Pietro Mengoli in 1650. The sum does converge — you can check that by comparison with the integral of one over x squared. Add the first thousand terms and you get about 1.6439. It clearly approaches something near 1.6449. But what is this number? Nobody could figure it out.
