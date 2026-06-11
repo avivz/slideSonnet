@@ -33,7 +33,6 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
     diags: list[Diagnostic] = []
 
     real_pages = [p for p in pages if p]
-    page_counts = Counter(real_pages)
     sidecar_ids = [b.slide_id for b in blocks]
     sidecar_counts = Counter(sidecar_ids)
     sidecar_set = set(sidecar_ids)
@@ -52,17 +51,8 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
                 )
             )
 
-    # Duplicate id across PDF pages.
-    for pid, n in page_counts.items():
-        if n >= 2:
-            diags.append(
-                Diagnostic(
-                    "error",
-                    "duplicate-id",
-                    f"slide-id '{pid}' appears on {n} PDF pages — ambiguous binding",
-                    pid,
-                )
-            )
+    # Duplicate ids across PDF pages are disambiguated (renamed) upstream by
+    # deck.dedupe_page_ids, which emits its own warnings — not re-checked here.
 
     # Duplicate id within the sidecar.
     for sid, n in sidecar_counts.items():
@@ -124,6 +114,11 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
             )
         )
 
+    return sort_diagnostics(diags)
+
+
+def sort_diagnostics(diags: list[Diagnostic]) -> list[Diagnostic]:
+    """Order findings errors-first, then warnings, then info (stable)."""
     severity_rank = {"error": 0, "warning": 1, "info": 2}
     return sorted(diags, key=lambda d: severity_rank[d.severity])
 

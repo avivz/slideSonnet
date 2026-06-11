@@ -16,10 +16,14 @@ def test_clean_deck_no_findings() -> None:
     assert not has_errors(diags)
 
 
-def test_duplicate_page_id_is_error() -> None:
-    diags = diagnose(["a", "a", "b"], _blocks("a", "b"))
-    assert has_errors(diags)
-    assert any(d.code == "duplicate-id" for d in diags)
+def test_duplicate_page_ids_are_renamed_with_warnings() -> None:
+    # duplicate \ssid is disambiguated upstream (deck.dedupe_page_ids), not an error
+    from slidesonnet.deck import dedupe_page_ids
+
+    pages, diags = dedupe_page_ids(["a", "a", "b"])
+    assert pages == ["a", "a-2", "b"]
+    assert not has_errors(diags)
+    assert any(d.code == "duplicate-id" and d.severity == "warning" for d in diags)
 
 
 def test_auto_id_is_warning() -> None:
@@ -55,11 +59,12 @@ def test_order_drift_is_info() -> None:
 
 
 def test_errors_sorted_first() -> None:
-    diags = diagnose(["a", "a", "auto-x"], _blocks("a", "auto-x"))
+    # orphan block (error) must sort ahead of the auto-id warning
+    diags = diagnose(["a", "auto-x"], _blocks("a", "auto-x", "ghost"))
     assert diags[0].severity == "error"
 
 
 def test_count_by_severity() -> None:
-    diags = diagnose(["a", "a"], _blocks("a", "ghost"))
+    diags = diagnose(["a", "a"], _blocks("a", "a", "ghost"))
     counts = count_by_severity(diags)
-    assert counts["error"] == 2  # duplicate-id + orphan
+    assert counts["error"] == 2  # duplicate-block + orphan

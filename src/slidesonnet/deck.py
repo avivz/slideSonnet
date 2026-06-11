@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from slidesonnet.diagnostics import Diagnostic, diagnose
+from slidesonnet.diagnostics import Diagnostic, diagnose, sort_diagnostics
 from slidesonnet.narration.format import parse_sidecar, serialize_sidecar
 from slidesonnet.narration.model import Deck, PageNarration
 from slidesonnet.pdf.reader import read_page_ids
@@ -15,6 +15,56 @@ def default_sidecar_path(pdf_path: Path) -> Path:
     return pdf_path.with_suffix(".narration")
 
 
+def dedupe_page_ids(pages: list[str]) -> tuple[list[str], list[Diagnostic]]:
+    """Rename repeated slide-ids so every page is addressable: x, x → x, x-2.
+
+    The first occurrence keeps its name; each later one gets the smallest
+    ``-n`` (n ≥ 2) that no other page uses — raw ids included, so a genuine
+    ``x-2`` elsewhere in the deck is never clobbered (the duplicate skips to
+    ``x-3``). Every rename is reported as a warning: narration attached to a
+    renamed id is bound by *occurrence order*, which shifts if pages reorder —
+    giving each page its own ``\\ssid`` is still the durable fix.
+
+    Unmarked pages (empty id) pass through; they carry their own diagnostic.
+    """
+    taken = {p for p in pages if p}
+    seen: set[str] = set()
+    out: list[str] = []
+    diags: list[Diagnostic] = []
+    for i, pid in enumerate(pages, start=1):
+        if not pid or pid not in seen:
+            seen.add(pid)
+            out.append(pid)
+            continue
+        n = 2
+        while f"{pid}-{n}" in taken:
+            n += 1
+        new = f"{pid}-{n}"
+        taken.add(new)
+        seen.add(new)
+        out.append(new)
+        if pid not in {d.slide_id for d in diags if d.code == "duplicate-id"}:
+            diags.append(
+                Diagnostic(
+                    "warning",
+                    "duplicate-id",
+                    f"slide-id '{pid}' appears on several pages — later ones were "
+                    "renamed to disambiguate; give each page its own \\ssid",
+                    pid,
+                )
+            )
+        diags.append(
+            Diagnostic(
+                "warning",
+                "duplicate-id",
+                f"page {i} reused slide-id '{pid}' — renamed to '{new}' to "
+                "disambiguate; give it its own \\ssid",
+                new,
+            )
+        )
+    return out, diags
+
+
 def load_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> tuple[Deck, list[Diagnostic]]:
     """Load *pdf_path* and its sidecar into a :class:`Deck` plus diagnostics.
 
@@ -22,13 +72,13 @@ def load_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> tuple[Deck
     """
     pdf_path = pdf_path.resolve()
     sidecar = sidecar_path or default_sidecar_path(pdf_path)
-    pages = read_page_ids(pdf_path)
+    pages, dedupe_diags = dedupe_page_ids(read_page_ids(pdf_path))
 
     blocks: list[PageNarration] = []
     if sidecar.exists():
         blocks = parse_sidecar(sidecar.read_text(encoding="utf-8"))
 
-    diags = diagnose(pages, blocks)
+    diags = sort_diagnostics(dedupe_diags + diagnose(pages, blocks))
     deck = Deck(
         pdf_path=pdf_path,
         sidecar_path=sidecar,

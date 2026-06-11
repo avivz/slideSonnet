@@ -36,7 +36,7 @@ def test_example_stays_deliberately_broken() -> None:
     """Guard the example: every advertised finding must keep firing."""
     res = CliRunner().invoke(main, ["check", str(EXAMPLE / "error-showcase.pdf")])
     assert res.exit_code == 1
-    assert "'twin' appears on 2 PDF pages" in res.output
+    assert "renamed to 'twin-2'" in res.output  # duplicate \ssid: disambiguated + warned
     assert "'double-block' has 2 narration blocks" in res.output
     assert "'ghost-slide' has no matching PDF page" in res.output
     assert "auto-generated default" in res.output
@@ -48,7 +48,7 @@ async def test_error_pill_counts_all_errors(
 ) -> None:
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
     await user.open("/")
-    await user.should_see("⛔ 3 errors")  # twin, double-block, ghost-slide
+    await user.should_see("⛔ 2 errors")  # double-block, ghost-slide (twin is a warning now)
 
 
 async def test_clean_slide_shows_no_issues(
@@ -80,15 +80,16 @@ async def test_unnarrated_slide_warns_and_reports_no_speech(
     await user.should_see("no speech on this slide")
 
 
-async def test_duplicate_pdf_id_errors_on_both_pages(
+async def test_duplicate_pdf_id_renames_and_warns_on_both_pages(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
     await user.open("/")
-    user.find(marker="thumb-3").click()  # page 4: first twin
-    await user.should_see("ambiguous binding")
-    user.find(marker="thumb-4").click()  # page 5: second twin shows it too
-    await user.should_see("ambiguous binding")
+    user.find(marker="thumb-3").click()  # page 4: keeps the original 'twin' id
+    await user.should_see("appears on several pages")
+    user.find(marker="thumb-4").click()  # page 5: renamed to twin-2, narratable
+    await user.should_see("renamed to 'twin-2'")
+    await user.should_see("twin-2")  # the id label shows the effective id
 
 
 async def test_duplicate_sidecar_block_errors(

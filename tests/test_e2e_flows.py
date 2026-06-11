@@ -69,12 +69,18 @@ def test_journey_rename_creates_orphan_error(tmp_path: Path) -> None:
     assert "no matching PDF page" in res.output
 
 
-def test_journey_duplicate_ids_error(tmp_path: Path) -> None:
+def test_journey_duplicate_ids_disambiguated(tmp_path: Path) -> None:
+    """Duplicate \\ssid is auto-renamed (alpha, alpha-2) and warned, not fatal."""
     pdf = write_pdf(tmp_path / "deck.pdf", ["alpha", "alpha"])
     (tmp_path / "deck.narration").write_text("@alpha\nHello.\n", encoding="utf-8")
     res = _run("check", str(pdf))
-    assert res.exit_code != 0
-    assert "ambiguous" in res.output
+    assert res.exit_code == 0  # warnings only
+    assert "renamed to 'alpha-2'" in res.output
+
+    # the renamed page is narratable under its new id, and init --merge offers it
+    res = _run("init", str(pdf), "--merge")
+    assert res.exit_code == 0
+    assert "@alpha-2" in (tmp_path / "deck.narration").read_text(encoding="utf-8")
 
 
 @pytest.mark.integration

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from slidesonnet.deck import default_sidecar_path
+from slidesonnet.deck import dedupe_page_ids, default_sidecar_path
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
@@ -105,7 +105,7 @@ def init_sidecar(
     """
     pdf_path = pdf_path.resolve()
     sidecar = sidecar_path or default_sidecar_path(pdf_path)
-    pages = read_page_ids(pdf_path)
+    pages, _ = dedupe_page_ids(read_page_ids(pdf_path))  # scaffold the effective ids
 
     if sidecar.exists() and not (merge or force):
         raise FileExistsError(

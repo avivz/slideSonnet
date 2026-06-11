@@ -6,6 +6,7 @@ from pathlib import Path
 
 from slidesonnet.deck import (
     blank_blocks_for,
+    dedupe_page_ids,
     default_sidecar_path,
     load_deck,
     save_deck,
@@ -15,6 +16,39 @@ from slidesonnet.narration.model import PageNarration, Segment
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
+
+
+def test_dedupe_renames_later_occurrences() -> None:
+    pages, diags = dedupe_page_ids(["a", "twin", "twin", "twin"])
+    assert pages == ["a", "twin", "twin-2", "twin-3"]
+    renames = [d for d in diags if d.code == "duplicate-id"]
+    assert all(d.severity == "warning" for d in renames)
+    assert {d.slide_id for d in renames} == {"twin", "twin-2", "twin-3"}
+
+
+def test_dedupe_never_collides_with_a_real_id() -> None:
+    # a genuine 'twin-2' page exists: the renamed twin must skip past it
+    pages, _ = dedupe_page_ids(["twin", "twin", "twin-2"])
+    assert pages == ["twin", "twin-3", "twin-2"]
+
+
+def test_dedupe_leaves_unique_and_unmarked_pages_alone() -> None:
+    pages, diags = dedupe_page_ids(["a", "", "b", ""])
+    assert pages == ["a", "", "b", ""]  # unmarked pages have their own diagnostic
+    assert diags == []
+
+
+def test_load_deck_disambiguates_duplicate_ids(tmp_path: Path) -> None:
+    from tests.conftest import write_pdf
+
+    pdf = write_pdf(tmp_path / "deck.pdf", ["twin", "twin"])
+    (tmp_path / "deck.narration").write_text("@twin\nHello.\n", encoding="utf-8")
+    deck, diags = load_deck(pdf)
+    assert deck.pages == ["twin", "twin-2"]
+    assert deck.page_narration("twin").speech_text == "Hello."
+    assert deck.page_narration("twin-2").is_silent  # its own (empty) narration slot
+    assert not any(d.severity == "error" for d in diags)  # a warning now, not an error
+    assert any(d.code == "duplicate-id" and "renamed" in d.message for d in diags)
 
 
 def test_default_sidecar_path() -> None:

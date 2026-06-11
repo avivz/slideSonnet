@@ -34,6 +34,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   to see how each one surfaces. Guarded by tests so it stays broken in
   exactly the advertised ways.
 
+### Changed (reconciliation)
+- Duplicate slide-ids are no longer a hard error: when the same `\ssid`
+  appears on several pages, later occurrences are auto-renamed (`twin`,
+  `twin-2`, …) with a warning, so every page stays addressable and
+  narratable. The suffix always skips ids that genuinely exist (a real
+  `twin-2` elsewhere makes the duplicate become `twin-3`), so renames can
+  never collide. Note the renamed binding follows occurrence order — it
+  shifts if the duplicate pages reorder, which is why the warning still
+  tells you to give each page its own `\ssid`. Duplicate *narration blocks*
+  remain an error (they can't be auto-resolved without losing text).
+
 ### Fixed
 - Typing narration on a page with no slide-id no longer corrupts the
   sidecar (it wrote an unparseable "@" block). The editor disables the

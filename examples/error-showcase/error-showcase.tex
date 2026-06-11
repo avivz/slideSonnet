@@ -6,8 +6,8 @@
 %   page 1  all-good        narrated, named — the control case
 %   page 2  (no \ssid)      auto-generated id -> "auto-id" warning
 %   page 3  silent-stage    named but never narrated -> "missing-narration"
-%   page 4  twin            duplicate \ssid on two pages -> "duplicate-id" error
-%   page 5  twin            (the other twin)
+%   page 4  twin            duplicate \ssid on two pages -> page 5 auto-renamed
+%   page 5  twin -> twin-2  to "twin-2" with a "duplicate-id" warning
 %   page 6  double-block    one page, TWO sidecar blocks -> "duplicate-block" error
 %
 % The narration sidecar adds the file-side problems: an orphan block
