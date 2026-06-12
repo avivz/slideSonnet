@@ -8,39 +8,34 @@ Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
 (paid, irreversible, or account-bound).
 
-## Now — converge and verify v2 (release critical path)
+## Now — last gaps before publishing
 
-1. [ ] **Review & approve the UX pass (`v2-editor-ux`)** — code review +
-   lint/typecheck/unit on the branch by agent; human approves look-and-feel
-   in the live editor. Everything merges through this branch. **[agent→human]**
-2. [ ] **Resolve loose ends** — the uncommitted `basel-problem.narration`
-   edit in the working tree (human confirms it's wanted). **[agent→human]**
-3. [ ] **Update `ci.yml` + `publish.yml` for v2** — add 3.12 to the test
-   matrix (or drop the 3.12 claim from `pyproject.toml`), make CI run on the
-   v2 branches, verify the publish smoke test against the new dependency set
-   (PyMuPDF, NiceGUI). Gate for everything downstream — v2 has never run on
-   GitHub CI. **[agent]**
-4. [ ] **Better tests** — audit what the integration tests actually exercise
-   vs. what slips through; fill gaps (export timing modes end-to-end, editor
-   save/reload paths, `check` diagnostics on real overlay decks); finish with
-   a joint human+AI review of coverage and quality. **[agent→human]**
-5. [ ] **Re-verify both demos end-to-end with Kokoro** — `make basel`,
+1. [ ] **Non-destructive sidecar save.** *Story:* As an author who hand-edits
+   the `.narration` file, I want GUI saves to rewrite only the blocks I
+   actually changed, so my comments and wrapping survive and diffs stay
+   reviewable. *Acceptance examples:* (a) open a deck whose sidecar has `#`
+   comments and hand-wrapped lines, navigate slides without editing → the
+   file is byte-identical; (b) edit only `@intro`'s text → the diff touches
+   only `@intro`'s block; (c) a comment line above an edited block survives
+   the save. *Appetite:* one day. The format's core promise
+   ("human-readable, git-diffable") — ship before a1. **[agent]**
+2. [ ] **Re-verify both demos end-to-end with Kokoro** — `make basel`,
    `make showcase`, `make check-basel`, `make check-showcase`; validates the
-   metropolis restyle + `.latexmkrc` + Kokoro changes together. Human watches
-   the resulting MP4s. **[agent→human]**
+   structured narration format + metropolis restyle + `.latexmkrc` + Kokoro
+   changes together. Human watches the resulting MP4s. **[agent→human]**
 
 ## Next — publish 1.0.0a1
 
-1. [ ] **Merge `v2-editor-ux` → `v2` → `main`**, watch CI green (after Now #1
-   is approved). **[agent]**
-2. [ ] **Repo public pre-flight, then flip visibility** — secrets scan,
-   license check, README accuracy pass by agent; human runs
+1. [ ] **Repo public pre-flight, then flip visibility** — secrets scan,
+   license check, README accuracy pass by agent (drop or caveat the
+   ElevenLabs install section pending #3 below); human runs
    `gh repo edit --visibility public`. Must precede the PyPI tag (the package
    links to the GitHub URL). **[agent→human]**
-3. [ ] **Tag `v1.0.0a1` and push** — triggers TestPyPI → PyPI → GitHub
+2. [ ] **Tag `v1.0.0a1` and push** — bump `src/slidesonnet/__init__.py`, move
+   CHANGELOG Unreleased → a1, push tag; triggers TestPyPI → PyPI → GitHub
    Release. Ship with the Kokoro-rendered demo videos; don't block on the
    paid HQ render. **[human]**
-4. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS** — Inworld beats
+3. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS** — Inworld beats
    ElevenLabs on control *and* price (~$0.009/min vs ~$0.10–0.27/min), with
    Markdown-style emotion control, top quality-to-price on the 2026 arena,
    and instant own-voice cloning from a ~5–15 s clip (consent attestation
@@ -49,13 +44,37 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `[tts.inworld]` config section + extra); human supplies the API key, runs
    a small paid smoke test, and judges voice quality. Decision point: keep
    ElevenLabs as a legacy optional backend or remove it outright (as was
-   done with Piper). **[agent→human]**
-5. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
+   done with Piper). **Needs acceptance examples before build** — e.g.
+   "given `[tts.inworld]` with a key, `slidesonnet tts deck.pdf --engine
+   inworld` synthesizes one clip per utterance, content-addressed cached"
+   plus a mocked API-failure example. **[agent→human]**
+4. [ ] **Crossfade compositing.** *Story:* As a deck author, I want the
+   `crossfade: N` transition I set in the editor to render as an actual
+   crossfade in the MP4, so the export matches what the editor promises.
+   Today it's stored, edited, and conflict-checked but renders as a hard
+   cut. *Acceptance examples:* (a) two-slide deck with
+   `transition-out: crossfade 1.0` → exported video blends for 1 s and total
+   duration shrinks by 1 s; (b) audio acrossfades with no click; (c)
+   all-`cut` decks export identically to today. *Appetite:* two days. Needs
+   `build_timeline` to learn overlap (it assumes back-to-back cuts); a
+   legacy unwired `concatenate_segments_xfade` sits in
+   `src/slidesonnet/video/composer.py` — predates the v1 rewrite, don't
+   assume it's drop-in. **[agent]**
+5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+   "Checks · deck" console section for pageless diagnostics, and saving
+   pending edits before PDF-triggered reloads (typing during a recompile
+   still loses unsaved keystrokes; never auto-save on sidecar-triggered
+   reloads). *Appetite:* half a day each. **[agent]**
+6. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
+   gaps to fill deliberately: export timing modes end-to-end, `check`
+   diagnostics on real overlay decks, editor save/reload paths. Finish with
+   a joint human+AI review of coverage and quality. **[agent→human]**
+7. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
    ElevenLabs render (don't pay ElevenLabs for renders we're about to drop).
    Human triggers the paid render; agent uploads to the `v0.0.0` GitHub
    Release (`gh release upload --clobber`) and refreshes README links.
    **[human→agent]**
-6. [ ] **Qwen3-TTS own-voice engine (third optional backend)** — narrate
+8. [ ] **Qwen3-TTS own-voice engine (third optional backend)** — narrate
    decks in the user's own voice from a ~10 s reference clip. Qwen3-TTS
    (Apache 2.0) clones via a tiny reusable prompt artifact (~100 KB `.pt`:
    codec tokens + speaker embedding); quality clearly above Piper. Runs
@@ -66,25 +85,37 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `dev/voice-profile/`. Agent implements behind the engine interface as an
    optional extra; human records the reference clip and judges the cloned
    voice. **[agent→human]**
-7. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
+9. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
    an unlisted-vs-public decision; agent preps titles, descriptions, and
    chapter markers from the narration sidecars. **[human]**
-8. [ ] **README refresh** — new video links, Kokoro install instructions,
-   editor screenshots of the new dark studio theme. **[agent]**
+10. [ ] **README refresh** — new video links, Kokoro install instructions,
+    editor screenshots of the new dark studio theme. **[agent]**
 
 ## Later — before 1.0 final
 
-1. **`init` default sidecar UX** — richer scaffold comments (per-page titles
+1. **Narration schema validation** (decided 2026-06-12): publish an EBNF
+   grammar of the sidecar format in docs (with `slidesonnet check` as the
+   reference validator) and add `narration export --json` emitting a JSON
+   projection with a published JSON Schema for LLM/CI round-tripping. Don't
+   YAML-ify the format — the terse `@id` grammar is the product.
+2. **Multi-take TTS / re-roll takes** — generation is stochastic; users may
+   want to re-roll an utterance and keep/compare takes. Blocked on a cache
+   design decision: today the cache is content-addressed (text+voice+config
+   → one file), so N takes need a take index in the key or a side `takes/`
+   store, plus UI to audition/pick. Until then the per-utterance generate
+   button's "fresh take" re-roll overwrites the cached clip.
+3. **`init` default sidecar UX** — richer scaffold comments (per-page titles
    pulled from the PDF outline, if present).
-2. **Editor polish leftovers** — engine/voice picker, export dialog with
+4. **Editor polish leftovers** — engine/voice picker, export dialog with
    timing/subtitle options. (Keyboard nav and single-slide preview already
    shipped — see CHANGELOG Unreleased.)
-3. **`clean --dry-run`** — preview what would be removed.
-4. **`check --fix`** — offer to re-sort the sidecar to PDF order and scaffold
+5. **`clean --dry-run`** — preview what would be removed.
+6. **`check --fix`** — offer to re-sort the sidecar to PDF order and scaffold
    missing blocks in one step.
-5. **Watch mode** — re-preview on sidecar save in the editor.
-6. **Per-segment voice** — allow a voice switch mid-block (today voice is
-   per-slide; multi-voice needs splitting into separate `\ssid` steps).
+7. **Watch mode** — re-preview on sidecar save in the editor.
+8. **Per-segment voice switching mid-utterance** — utterances already carry
+   per-utterance voices; this is about a voice switch *within* one utterance
+   (today: split into two utterances).
 
 ## Later — backlog
 
@@ -100,11 +131,17 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
    interface). (Qwen3-TTS and Inworld promoted to Next on 2026-06-11.)
 5. **Multi-deck playlists** — concatenate several PDFs into one video.
-6. **Crossfade / transitions** between slides in the export.
-7. **`--json` output** for CI/automation.
+6. **`--json` output** for CI/automation.
 
 ## Done (v1 rewrite)
 
+- [x] **v2 converged and merged to `main`** (2026-06-12): editor UX pass
+  (structured utterances/pauses/transitions, block editor, per-utterance
+  generation, unattached-narration tray, transport rework, live reload),
+  real-browser Playwright test tier, CI green on `main`. Stale branches
+  (`v2`, `ux-pass`) deleted.
+- [x] **Python floor set to 3.13** (2026-06-12) — CI only ever tested 3.13;
+  `requires-python` now matches instead of advertising an untested 3.12.
 - [x] Branch `v2` (né `v2-narration-editor`); old source→video pipeline removed.
 - [x] M0 backend spine: `\ssid` macro, PDF id extraction, sidecar parse/serialize,
   id-only diagnostics, timing model, `init`/`check`/`doctor`/`sty`.

@@ -157,6 +157,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   anywhere in the track).
 
 ### Changed
+- **Python 3.13+ is now required** (was 3.12+). CI only ever tested 3.13;
+  the package metadata now says what's actually verified.
 - **Kokoro replaces Piper as the local TTS engine.** The default backend is
   now [Kokoro 82M](https://github.com/hexgrad/kokoro) (Apache-2.0): clearly
   more natural speech than Piper while still ~2x real-time on CPU. Configure

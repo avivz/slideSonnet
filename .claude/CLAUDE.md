@@ -80,12 +80,11 @@ git tag v1.0.0a0                       # Version tag triggers publish workflow
 git push origin v1.0.0a0               # CI → TestPyPI → PyPI → GitHub Release
 ```
 
-Version is set in `src/slidesonnet/__init__.py`. Update it before tagging. The
-v1 rewrite lives on the `v2` branch until merged to `main`.
+Version is set in `src/slidesonnet/__init__.py`. Update it before tagging.
 
 ## Code Conventions
 
-- Python 3.12+, line length 100 (Ruff)
+- Python 3.13+, line length 100 (Ruff)
 - `mypy --strict` must pass on all source files. Untyped external libraries (elevenlabs, dotenv, kokoro, fitz, nicegui) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
 - Heavy tests are local-only (never in CI): `@pytest.mark.integration` (export/render and GUI-with-Kokoro) and `@pytest.mark.browser` (real-browser Playwright GUI journeys). GUI logic is also unit-tested via NiceGUI's in-process `user` simulation (selenium-free `nicegui.testing.user_plugin`, loaded in `tests/conftest.py`) — fast, but blind to focus/blur and value-sync timing, which is what the browser tier covers.
 - External tool dependencies: ffmpeg, ffprobe, pdftoppm, kokoro (Python package); latexmk + pdflatex to compile your own deck (use `slidesonnet doctor` to check)
