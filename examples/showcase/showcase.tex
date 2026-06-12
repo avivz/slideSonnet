@@ -104,18 +104,18 @@
   \ssid<1>{intro-q}
   \ssid<2>{intro-a}
   \asks{So what does slideSonnet actually do?}
-  \onslide<2->{\answers{It turns your slide deck into a narrated lecture
-    video. Voices, page timing, subtitles --- all driven by one plain text
-    file.}}
+  \onslide<2->{\answers{It compiles narration from plain text. Write what
+    each slide should say, a synthesized voice reads it, and your PDF
+    becomes a timed, subtitled lecture video.}}
 \end{frame}
 
-\begin{frame}{Why a sidecar file?}
+\begin{frame}{Why not just record it?}
   \ssid<1>{why-q}
   \ssid<2>{why-a}
-  \asks{Why not just put the narration inside the slides?}
-  \onslide<2->{\answers{Because the PDF is your frozen artifact. Keeping
-    narration in a separate, git-diffable file means you can rewrite a line
-    and re-render in seconds --- no recompiling, no re-recording.}}
+  \asks{Why a computer voice? I could record myself.}
+  \onslide<2->{\answers{Because slides change --- and every change means
+    re-recording. Text doesn't mind: fix the sentence, re-render, done.
+    Your video's source becomes git-diffable text, versioned like code.}}
 \end{frame}
 
 \begin{frame}[fragile]{Step 1 --- mark your slides}

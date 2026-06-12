@@ -10,16 +10,16 @@
 
 @intro-a
   utterance:
-    text: It turns your slide deck into a narrated lecture video. Voices, page timing, subtitles. All driven by one plain text file.
+    text: It compiles narration from plain text. You write what each slide should say, a synthesized voice reads it, and your PDF becomes a timed, subtitled lecture video.
 
 @why-q
   utterance:
     voice: alex
-    text: Why not just put the narration inside the slides themselves?
+    text: Why a computer voice? I could record myself.
 
 @why-a
   utterance:
-    text: Because the PDF is your frozen artifact. Keeping narration in a separate, git-diffable file means you can rewrite a line and re-render in seconds. No recompiling the slides, no re-recording a microphone.
+    text: Because slides change, and every change means re-recording. Text doesn't mind. Fix the sentence, re-render, done. Your video's source becomes git-diffable text, versioned like code.
 
 @markers
   utterance:
