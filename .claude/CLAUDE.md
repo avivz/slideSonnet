@@ -57,7 +57,7 @@ slidesonnet clean <deck.pdf> --keep nothing        # Nuke the deck's cache
 
 ## Testing Rules
 
-- **NEVER run tests or builds against ElevenLabs** — it costs real money (API credits). Use `--engine kokoro` for integration testing, and mocked unit tests (a fake `TTSEngine`) for ElevenLabs functionality.
+- **NEVER run tests or builds against ElevenLabs** — it costs real money (API credits). Use `--engine kokoro` for integration testing, and mocked unit tests (a fake `TTSEngine`) for ElevenLabs functionality. The test suite enforces this with an autouse conftest guard (sentinel API key + fail-fast fake client) — mock `slidesonnet.tts.elevenlabs.ElevenLabs` when a test needs a client.
 - **Prefer `make clean-*` over `make purge-*`** — clean keeps cached API audio (which costs money to regenerate), purge nukes everything. Only use purge when explicitly asked.
 - **No heavy tests in CI** — GitHub Actions free tier has limited minutes, and we stay on it. CI runs lint, typecheck, the fast unit tier (`pytest -m "not integration and not browser"`), and the wheel build only. Heavy tests are local-only: `integration` (`make test`, external tools) and `browser` (real-browser Playwright GUI journeys).
 

@@ -108,6 +108,45 @@ class PageNarration:
     lead: str | None = field(default=None, compare=False, repr=False)
     tail: str | None = field(default=None, compare=False, repr=False)
 
+    def rekeyed(self, slide_id: str) -> PageNarration:
+        """Copy of this block under a new slide-id (orphan re-attachment).
+
+        Comments (``lead``/``tail``) travel with the block; the raw ``source``
+        and ``canon`` are deliberately dropped — the content now lives under a
+        new header, so it must re-serialize canonically.
+        """
+        return PageNarration(
+            slide_id=slide_id,
+            segments=list(self.segments),
+            transition_in=self.transition_in,
+            transition_out=self.transition_out,
+            lead=self.lead,
+            tail=self.tail,
+        )
+
+    def with_content(
+        self,
+        segments: list[Segment],
+        *,
+        transition_in: Transition | None = None,
+        transition_out: Transition | None = None,
+    ) -> PageNarration:
+        """Copy with new segments/transitions, keeping all round-trip bookkeeping.
+
+        The serializer re-emits ``source`` verbatim only while ``canon`` still
+        matches, so an actual content change rewrites the block canonically.
+        """
+        return PageNarration(
+            slide_id=self.slide_id,
+            segments=list(segments),
+            transition_in=transition_in or self.transition_in,
+            transition_out=transition_out or self.transition_out,
+            source=self.source,
+            canon=self.canon,
+            lead=self.lead,
+            tail=self.tail,
+        )
+
     @property
     def speech_segments(self) -> list[Segment]:
         return [s for s in self.segments if s.is_speech]

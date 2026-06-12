@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import subprocess
 from pathlib import Path
 
 from slidesonnet.exceptions import FFmpegError
+from slidesonnet.proc import run_tool
 
 logger = logging.getLogger(__name__)
 
@@ -363,12 +363,12 @@ def get_duration(media_path: Path, *, stream: str | None = None) -> float:
         show_flag,
         str(media_path),
     ]
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except FileNotFoundError:
-        raise FFmpegError("'ffprobe' not found. Install ffmpeg.")
-    except subprocess.CalledProcessError as e:
-        raise FFmpegError(f"ffprobe failed for '{media_path}': {e.stderr}") from e
+    result = run_tool(
+        cmd,
+        error_cls=FFmpegError,
+        install_hint="ffmpeg",
+        fail_message=f"ffprobe failed for '{media_path}'",
+    )
 
     try:
         info = json.loads(result.stdout)
@@ -402,9 +402,4 @@ def _parse_duration(value: str, media_path: Path) -> float:
 
 def _run_ffmpeg(cmd: list[str]) -> None:
     """Run an ffmpeg command, handling errors."""
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except FileNotFoundError:
-        raise FFmpegError("'ffmpeg' not found. Install ffmpeg.")
-    except subprocess.CalledProcessError as e:
-        raise FFmpegError(f"ffmpeg failed:\n{e.stderr}")
+    run_tool(cmd, error_cls=FFmpegError, install_hint="ffmpeg", fail_message="ffmpeg failed")

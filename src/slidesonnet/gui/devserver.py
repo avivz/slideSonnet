@@ -4,7 +4,7 @@ NiceGUI's reload mode (uvicorn + watchfiles) re-imports the entry module in a
 child process, so it must be a real ``python -m``-runnable module with the
 ``__main__``/``__mp_main__`` guard — a console-script entry point won't do.
 The CLI execs this module with parameters in ``SLIDESONNET_DEV_*`` env vars
-(see :func:`slidesonnet.gui.app.dev_invocation`).
+(see :func:`slidesonnet.gui.launch.dev_invocation`).
 
 The module body runs in two processes: the watcher (``__main__``) and the
 serving worker (``__mp_main__``, restarted on every source change). One-shot
@@ -26,12 +26,12 @@ from pathlib import Path
 from nicegui import app, ui
 
 import slidesonnet
-from slidesonnet.gui.app import (
-    _launch_browser,
+from slidesonnet.gui.app import build_editor
+from slidesonnet.gui.launch import (
     app_invocation,
     browser_invocation,
-    build_editor,
     is_wsl,
+    launch_browser,
 )
 
 
@@ -88,7 +88,7 @@ def _open_browser_soon(url: str) -> None:
             if not should_open_browser(samples):
                 return
         if opener is not None:
-            _launch_browser(opener, url)
+            launch_browser(opener, url)
         else:
             webbrowser.open(url)
 

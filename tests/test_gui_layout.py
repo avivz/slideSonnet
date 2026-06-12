@@ -249,7 +249,7 @@ def test_responsive_skips_restore_for_user_reopened_pane() -> None:
 def test_dev_invocation_builds_module_runner() -> None:
     import sys
 
-    from slidesonnet.gui.app import dev_invocation
+    from slidesonnet.gui.launch import dev_invocation
 
     argv, env = dev_invocation(MARKED, sidecar_path=None, host="127.0.0.1", port=9000)
     assert argv == [sys.executable, "-m", "slidesonnet.gui.devserver"]
@@ -260,7 +260,7 @@ def test_dev_invocation_builds_module_runner() -> None:
 
 
 def test_dev_invocation_forwards_browser_flags() -> None:
-    from slidesonnet.gui.app import dev_invocation
+    from slidesonnet.gui.launch import dev_invocation
 
     _argv, env = dev_invocation(
         MARKED,
@@ -277,7 +277,7 @@ def test_dev_invocation_forwards_browser_flags() -> None:
 
 
 def test_dev_invocation_passes_sidecar() -> None:
-    from slidesonnet.gui.app import dev_invocation
+    from slidesonnet.gui.launch import dev_invocation
 
     sidecar = FIXTURES / "some.narration"
     _argv, env = dev_invocation(MARKED, sidecar_path=sidecar, host="h", port=1)
@@ -312,7 +312,7 @@ def _free_port() -> int:
 @pytest.mark.integration
 def test_dev_server_boots_and_prints_banner_once(tmp_path: Path) -> None:
     """Boot the real watcher+worker pair: banner exactly once, HTTP serving."""
-    from slidesonnet.gui.app import dev_invocation
+    from slidesonnet.gui.launch import dev_invocation
 
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())

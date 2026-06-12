@@ -40,7 +40,7 @@ def _timing(
 
 
 class TestMakeSilence:
-    @patch("slidesonnet.audio.track.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_command_shape(self, mock_run: MagicMock, tmp_path: Path) -> None:
         out = tmp_path / "sub" / "sil.wav"
         result = make_silence(1.5, out)
@@ -52,19 +52,19 @@ class TestMakeSilence:
         assert cmd[cmd.index("-t") + 1] == "1.5000"
         assert str(out) in cmd
 
-    @patch("slidesonnet.audio.track.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_duration_clamped_to_minimum(self, mock_run: MagicMock, tmp_path: Path) -> None:
         make_silence(0.0, tmp_path / "sil.wav")
         cmd = mock_run.call_args[0][0]
         assert cmd[cmd.index("-t") + 1] == "0.0010"  # never a zero-length stream
 
-    @patch("slidesonnet.audio.track.subprocess.run", side_effect=FileNotFoundError)
+    @patch("slidesonnet.proc.subprocess.run", side_effect=FileNotFoundError)
     def test_missing_ffmpeg_raises_ffmpeg_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
         with pytest.raises(FFmpegError, match="not found"):
             make_silence(1.0, tmp_path / "sil.wav")
 
     @patch(
-        "slidesonnet.audio.track.subprocess.run",
+        "slidesonnet.proc.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "ffmpeg", stderr="boom"),
     )
     def test_ffmpeg_failure_raises_ffmpeg_error(self, mock_run: MagicMock, tmp_path: Path) -> None:

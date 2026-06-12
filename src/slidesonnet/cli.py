@@ -6,6 +6,8 @@ import difflib
 import logging
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import click
@@ -89,6 +91,19 @@ def main(ctx: click.Context, quiet: bool) -> None:
         click.echo(ctx.get_help())
 
 
+@contextmanager
+def _cli_errors() -> Iterator[None]:
+    """Map domain failures to clean CLI errors (message, no traceback).
+
+    One uniform catch set for every command: SlideSonnetError (the domain
+    base), ValueError (api parameter validation), FileExistsError (init).
+    """
+    try:
+        yield
+    except (SlideSonnetError, ValueError, FileExistsError) as e:
+        raise click.ClickException(str(e)) from e
+
+
 def _print_diagnostics(diags: list[Diagnostic]) -> None:
     for d in diags:
         label = click.style(d.severity.upper(), fg=_SEVERITY_COLOR.get(d.severity, "white"))
@@ -129,12 +144,8 @@ def init(ctx: click.Context, pdf: Path, narration: Path | None, merge: bool, for
     """Scaffold a blank narration sidecar from a PDF's slide-ids."""
     from slidesonnet.api import init_sidecar
 
-    try:
+    with _cli_errors():
         path = init_sidecar(pdf, sidecar_path=narration, merge=merge, force=force)
-    except FileExistsError as e:
-        raise click.ClickException(str(e))
-    except SlideSonnetError as e:
-        raise click.ClickException(str(e))
     if not ctx.obj.get("quiet", False):
         click.echo(str(path))
 
@@ -148,10 +159,8 @@ def check(pdf: Path, narration: Path | None) -> None:
     """Reconcile the sidecar against the PDF; exit non-zero on errors."""
     from slidesonnet.api import check_deck
 
-    try:
+    with _cli_errors():
         diags = check_deck(pdf, sidecar_path=narration)
-    except SlideSonnetError as e:
-        raise click.ClickException(str(e))
     if not diags:
         click.echo("OK — no issues.")
         return
@@ -183,7 +192,7 @@ def tts(pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, .
     """Synthesize narration into the content-addressed cache (cache-aware)."""
     from slidesonnet.api import synthesize_deck
 
-    try:
+    with _cli_errors():
         n = synthesize_deck(
             pdf,
             sidecar_path=narration,
@@ -191,8 +200,6 @@ def tts(pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, .
             only_ids=set(ids) or None,
             progress=_progress,
         )
-    except SlideSonnetError as e:
-        raise click.ClickException(str(e))
     click.echo(f"Synthesized {n} new clip(s); rest from cache.")
 
 
@@ -232,7 +239,7 @@ def export(
     """Render the narrated (or silent) video with optional subtitles."""
     from slidesonnet.api import export as run_export
 
-    try:
+    with _cli_errors():
         result = run_export(
             pdf,
             output,
@@ -245,8 +252,6 @@ def export(
             sub_granularity=sub_granularity,
             progress=_progress,
         )
-    except (SlideSonnetError, ValueError) as e:
-        raise click.ClickException(str(e))
     kind = "silent " if result.silent else ""
     extras = f" + {', '.join(p.name for p in result.subtitles)}" if result.subtitles else ""
     click.echo(f"Built {output.name} ({kind}{result.duration:.1f}s){extras}")
@@ -281,7 +286,7 @@ def subs(
     """Write subtitles without rendering video (cached audio durations, else timing model)."""
     from slidesonnet.api import write_subs
 
-    try:
+    with _cli_errors():
         path = write_subs(
             pdf,
             output,
@@ -291,8 +296,6 @@ def subs(
             wpm=wpm,
             sidecar_path=narration,
         )
-    except (SlideSonnetError, ValueError) as e:
-        raise click.ClickException(str(e))
     click.echo(str(path))
 
 
@@ -372,7 +375,8 @@ def edit(
       slidesonnet edit deck.pdf --browser "cmd.exe /c start"
       slidesonnet edit deck.pdf --browser '/mnt/c/.../msedge.exe --app={url}'
     """
-    from slidesonnet.gui.app import dev_invocation, run_editor
+    from slidesonnet.gui.app import run_editor
+    from slidesonnet.gui.launch import dev_invocation
 
     if dev:
         argv, extra_env = dev_invocation(

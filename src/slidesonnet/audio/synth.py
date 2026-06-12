@@ -8,20 +8,19 @@ cache key, so pace changes invalidate correctly).
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from slidesonnet.config import Config
 from slidesonnet.hashing import audio_cache_path_or_alt, audio_path
-from slidesonnet.models import TTSConfig, resolve_voice
+from slidesonnet.models import ProgressFn, TTSConfig, resolve_voice
 from slidesonnet.narration.format import pace_to_speed
 from slidesonnet.narration.model import Deck, Pace
 from slidesonnet.tts import create_tts
 from slidesonnet.tts.base import TTSEngine
 from slidesonnet.video.composer import get_duration
 
-ProgressFn = Callable[[str, int, int], None]
+__all__ = ["ProgressFn", "SpeechRef", "SynthResult"]  # ProgressFn re-exported for callers
 
 
 @dataclass(frozen=True)
@@ -221,7 +220,7 @@ def cached_durations(
 
     Never synthesizes — used by ``subs`` so subtitle generation costs nothing.
     """
-    from slidesonnet.timing import word_count
+    from slidesonnet.timing import estimate_speech_seconds
 
     engines: dict[float, TTSEngine] = {}
     refs = speech_refs(deck, config)
@@ -233,7 +232,7 @@ def cached_durations(
         if cached is not None:
             dur = get_duration(cached)
         else:
-            dur = word_count(ref.text) / fallback_wpm * 60.0
+            dur = estimate_speech_seconds(ref.text, fallback_wpm)
         by_page.setdefault(ref.page_index, {})[ref.speech_index] = dur
 
     out: list[list[float]] = []

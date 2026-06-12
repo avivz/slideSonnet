@@ -9,13 +9,12 @@ FFmpeg composer's expected inputs).
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
 from pathlib import Path
 
 import fitz  # PyMuPDF
 
 from slidesonnet.exceptions import ParserError
+from slidesonnet.proc import run_tool
 
 _SSID_RE = re.compile(r"SSID:(\S+)")
 
@@ -74,8 +73,6 @@ def rasterize(
     """
     if not pdf_path.exists():
         raise ParserError(f"PDF not found: {pdf_path}")
-    if shutil.which("pdftoppm") is None:
-        raise ParserError("'pdftoppm' not found. Install poppler-utils.")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     # Clear any stale page images so the returned list is exactly this render.
@@ -83,10 +80,9 @@ def rasterize(
         stale.unlink()
 
     cmd = ["pdftoppm", "-png", "-r", str(dpi), str(pdf_path), str(out_dir / prefix)]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        raise ParserError(f"pdftoppm failed:\n{e.stderr}")
+    run_tool(
+        cmd, error_cls=ParserError, install_hint="poppler-utils", fail_message="pdftoppm failed"
+    )
 
     pages = sorted(out_dir.glob(f"{prefix}-*.png"), key=_numeric_suffix)
     if not pages:

@@ -52,6 +52,7 @@ version = {attr = "slidesonnet.__version__"}
 
 [tool.setuptools.package-data]
 "slidesonnet.templates" = ["*.sty"]
+"slidesonnet.gui" = ["static/*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

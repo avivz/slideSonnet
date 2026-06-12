@@ -410,11 +410,12 @@ def test_edit_invokes_run_editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 def test_edit_dev_execs_devserver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import slidesonnet.gui.app as gui_app
+    import slidesonnet.gui.launch as gui_launch
 
     pdf = _copy_pdf(tmp_path)
     argv = [sys.executable, "-m", "slidesonnet.gui.devserver"]
     extra_env = {"SLIDESONNET_DEV_PDF": str(pdf)}
-    monkeypatch.setattr(gui_app, "dev_invocation", lambda *a, **kw: (argv, extra_env))
+    monkeypatch.setattr(gui_launch, "dev_invocation", lambda *a, **kw: (argv, extra_env))
     execve_calls: list[tuple[str, list[str], dict[str, str]]] = []
     monkeypatch.setattr(
         os, "execve", lambda path, args, env: execve_calls.append((path, args, env))

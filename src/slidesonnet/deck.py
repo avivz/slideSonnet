@@ -161,7 +161,7 @@ def save_deck(deck: Deck, *, header: str | None = None) -> None:
     of the sidecar entirely (a bare ``@id`` header would otherwise read back as
     an empty narration block and silence its ``missing-narration`` warning).
     """
-    blocks = [deck.page_narration(pid) for pid in _unique(deck.pages) if pid]
+    blocks = [deck.page_narration(pid) for pid in unique_real_ids(deck.pages)]
     # Include any orphan blocks (not on a page) so they aren't silently dropped.
     on_page = {pid for pid in deck.pages if pid}
     for sid, block in deck.narration.items():
@@ -171,5 +171,6 @@ def save_deck(deck: Deck, *, header: str | None = None) -> None:
     deck.sidecar_path.write_text(serialize_sidecar(blocks, header=header), encoding="utf-8")
 
 
-def _unique(items: list[str]) -> list[str]:
-    return list(dict.fromkeys(items))
+def unique_real_ids(pages: list[str]) -> list[str]:
+    """The deck's addressable slide-ids: deduped, in page order, blanks dropped."""
+    return [pid for pid in dict.fromkeys(pages) if pid]

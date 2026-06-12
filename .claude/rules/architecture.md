@@ -35,6 +35,8 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **narration/format.py** — parse/serialize the indented block sidecar grammar
   (round-trip stable; `utterance:`/`pause:`/`transition-*:` lines);
   `parse_segments`/`serialize_body` (lossy plain-text helper), `pace_to_speed`.
+  `FORMAT_VERSION` + the optional `# slidesonnet-format: N` header (a comment, so
+  old parsers skip it; a greater N logs an upgrade warning).
 - **diagnostics.py** — id reconciliation (auto/missing/orphan/order/unmarked/
   transition-conflict); `boundary_transition` (earlier slide's transition wins).
   Duplicate ids (page *and* sidecar) are auto-disambiguated in `deck.py`, not here.
@@ -49,9 +51,15 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **audio/track.py** — `make_silence`, `build_page_audio`, `assemble_track`, `cue_sheet`.
 - **subtitles.py** — `format_srt`, `format_vtt`, `split_text`, `SubtitleEntry`.
 - **config.py** — optional `slidesonnet.toml`: `Config` (tts/video/voices/pronunciation).
-- **cache.py** — `<deck-dir>/.slidesonnet/{audio,render}/` layout.
+- **cache.py** — `<deck-dir>/.slidesonnet/` layout: `audio/` is content-addressed and
+  shared across decks in the dir; `render/<deck-stem>/` is per-deck (render artifacts
+  use positional names, so sharing them would interleave two decks' files).
 - **hashing.py** — content-addressed audio filenames (`{text_hash}.{backend}.{config_hash}.ext`).
-- **tts/** — `create_tts`, `TTSEngine` base, Kokoro, ElevenLabs, pronunciation.
+- **tts/** — `BACKENDS` registry (name → extension/paid/factory; the single source
+  the CLI choices, config validation, hashing extensions, and clean's paid set
+  derive from), `create_tts`, `TTSEngine` base (incl. `list_voices`/`default_voice`),
+  Kokoro, ElevenLabs, pronunciation. Adding an engine = one `BackendSpec` + the
+  `Backend` Literal in models.py (a test pins them in sync).
 - **video/composer.py** — FFmpeg: `compose_segment`, `compose_silent_segment`,
   `concatenate_segments`, `concatenate_audio`, `get_duration`.
 - **gui/state.py** — UI-free `EditorState` (nav, edit→sidecar, save, TTS, preview, export).

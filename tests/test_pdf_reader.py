@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -57,18 +56,19 @@ def test_rasterize_missing_pdf_raises(tmp_path: Path) -> None:
 
 
 def test_rasterize_without_pdftoppm_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    def missing_run(cmd: list[str], **kwargs: object) -> object:
+        raise FileNotFoundError(cmd[0])
+
+    monkeypatch.setattr("slidesonnet.proc.subprocess.run", missing_run)
     with pytest.raises(ParserError, match="poppler-utils"):
         rasterize(MARKED, tmp_path)
 
 
 def test_rasterize_pdftoppm_failure_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/pdftoppm")
-
     def failing_run(cmd: list[str], **kwargs: object) -> object:
         raise subprocess.CalledProcessError(1, cmd, stderr="corrupt page tree")
 
-    monkeypatch.setattr(subprocess, "run", failing_run)
+    monkeypatch.setattr("slidesonnet.proc.subprocess.run", failing_run)
     with pytest.raises(ParserError, match="corrupt page tree"):
         rasterize(MARKED, tmp_path)
 
@@ -78,9 +78,9 @@ def test_rasterize_no_output_raises_and_clears_stale(
 ) -> None:
     stale = tmp_path / "page-3.png"
     stale.write_bytes(b"old render")
-    monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/pdftoppm")
     monkeypatch.setattr(
-        subprocess, "run", lambda cmd, **kw: SimpleNamespace(returncode=0, stderr="")
+        "slidesonnet.proc.subprocess.run",
+        lambda cmd, **kw: SimpleNamespace(returncode=0, stderr=""),
     )
     with pytest.raises(ParserError, match="produced no images"):
         rasterize(MARKED, tmp_path)

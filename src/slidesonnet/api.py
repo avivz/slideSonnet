@@ -8,26 +8,25 @@ check, synthesize TTS, export video, write subtitles — is scriptable from Pyth
 from __future__ import annotations
 
 import importlib.resources
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from slidesonnet.deck import dedupe_page_ids, default_sidecar_path
+from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, unique_real_ids
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
 
-from slidesonnet.models import Backend
+from slidesonnet.models import Backend, ProgressFn
 
 if TYPE_CHECKING:
+    from slidesonnet.audio.track import Cue
     from slidesonnet.config import Config
     from slidesonnet.narration.model import Deck
     from slidesonnet.render import DeckTimeline
 
 # Re-export of models.Backend, kept under the public name api.Engine.
 Engine = Backend
-ProgressFn = Callable[[str, int, int], None]
 
 __all__ = [
     "sty_text",
@@ -61,16 +60,6 @@ def write_sty(target: Path) -> Path:
     return target
 
 
-def _unique_real(pages: list[str]) -> list[str]:
-    seen: set[str] = set()
-    out: list[str] = []
-    for p in pages:
-        if p and p not in seen:
-            seen.add(p)
-            out.append(p)
-    return out
-
-
 def scaffold_text(pdf_path: Path, pages: list[str]) -> str:
     """Build a blank sidecar: one ``@<id>`` block per page with a page-number comment."""
     from slidesonnet.narration.format import FORMAT_VERSION
@@ -85,7 +74,7 @@ def scaffold_text(pdf_path: Path, pages: list[str]) -> str:
     for i, pid in enumerate(pages, start=1):
         if pid and pid not in page_of:
             page_of[pid] = i
-    for pid in _unique_real(pages):
+    for pid in unique_real_ids(pages):
         lines.append(f"@{pid}")
         lines.append(f"# page {page_of[pid]}")
         lines.append("")
@@ -121,7 +110,7 @@ def init_sidecar(
     if merge and sidecar.exists():
         existing = parse_sidecar(sidecar.read_text(encoding="utf-8"))
         existing_ids = {b.slide_id for b in existing}
-        missing = [pid for pid in _unique_real(pages) if pid not in existing_ids]
+        missing = [pid for pid in unique_real_ids(pages) if pid not in existing_ids]
         if missing:
             page_of = {pid: i for i, pid in enumerate(pages, start=1) if pid}
             chunk = ["", "# --- added by `init --merge` ---"]
@@ -244,6 +233,7 @@ def export(
         mode = TimingMode("estimate", wpm=wpm)  # tts is meaningless without audio
 
     rdir = render_dir(pdf_path)
+    page_audios: list[Path] | None = None
     if audible:
         results = _synth(deck, config, audio_dir=audio_dir(pdf_path), progress=progress)
         timeline = build_timeline(
@@ -255,24 +245,16 @@ def export(
         _, page_audios = render_audio_track(
             timeline, page_speech_clips(deck, results), render_dir=rdir
         )
-        compose_video(
-            timeline,
-            _images(pdf_path, rdir),
-            output,
-            config=config,
-            page_audios=page_audios,
-            render_dir=rdir,
-        )
     else:
         timeline = build_timeline(deck, mode, video=config.video)
-        compose_video(
-            timeline,
-            _images(pdf_path, rdir),
-            output,
-            config=config,
-            page_audios=None,
-            render_dir=rdir,
-        )
+    compose_video(
+        timeline,
+        _images(pdf_path, rdir),
+        output,
+        config=config,
+        page_audios=page_audios,
+        render_dir=rdir,
+    )
 
     subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)
     return ExportResult(
@@ -347,12 +329,10 @@ def _images(pdf_path: Path, rdir: Path) -> list[Path]:
 
 @dataclass
 class Preview:
-    """A whole-deck (or single-slide) preview: one track + a cue sheet + images."""
+    """A whole-deck (or single-slide) preview: one audio track + its cue sheet."""
 
     track: Path
-    cues: list[tuple[float, str]] = field(default_factory=list)
-    images: list[Path] = field(default_factory=list)
-    page_starts: list[float] = field(default_factory=list)
+    cues: list[Cue] = field(default_factory=list)
     total_duration: float = 0.0
 
 
@@ -390,10 +370,4 @@ def build_preview(
         speech_durations_by_page=page_speech_durations(deck, results),
     )
     track, _ = render_audio_track(timeline, page_speech_clips(deck, results), render_dir=rdir)
-    return Preview(
-        track=track,
-        cues=timeline.cue_sheet(),
-        images=_images(pdf_path, rdir),
-        page_starts=timeline.page_starts,
-        total_duration=timeline.total_duration,
-    )
+    return Preview(track=track, cues=timeline.cue_sheet(), total_duration=timeline.total_duration)

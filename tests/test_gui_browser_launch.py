@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from slidesonnet.gui.app import (
+from slidesonnet.gui.launch import (
     app_invocation,
     apply_url,
     browser_invocation,

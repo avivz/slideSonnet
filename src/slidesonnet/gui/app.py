@@ -9,10 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
-import shlex
 import shutil
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -20,7 +17,14 @@ from typing import Any, Literal
 from nicegui import app, background_tasks, run, ui
 from nicegui.events import KeyEventArguments
 
+from slidesonnet.audio.track import Cue
 from slidesonnet.cache import render_dir
+from slidesonnet.gui.launch import (
+    app_invocation,
+    browser_invocation,
+    is_wsl,
+    launch_browser,
+)
 from slidesonnet.gui.state import EditorState, cue_start
 from slidesonnet.narration.model import Pace, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
@@ -29,140 +33,6 @@ logger = logging.getLogger(__name__)
 
 _MEDIA_URL = "/ssmedia"
 _served: set[str] = set()
-
-
-def is_wsl() -> bool:
-    """True when running under Windows Subsystem for Linux."""
-    if os.environ.get("WSL_DISTRO_NAME"):
-        return True
-    try:
-        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8").lower()
-    except OSError:
-        return False
-
-
-def browser_invocation(
-    browser: str | None,
-    *,
-    env_browser: str | None = None,
-    wsl: bool = False,
-    wslview: str | None = None,
-) -> tuple[list[str] | None, bool]:
-    """Decide how to open the editor URL.
-
-    Returns ``(opener, use_nicegui_show)``:
-    - ``opener`` is a command (argv list) we launch ourselves with the URL
-      (substituted for ``{url}`` if present, else appended), or ``None`` if we
-      won't open a browser ourselves.
-    - ``use_nicegui_show`` is whether to let NiceGUI open its default browser.
-
-    An explicit ``--browser`` / ``SLIDESONNET_BROWSER`` wins. Under WSL we prefer
-    ``wslview`` (opens the *Windows* default browser) and otherwise refuse to
-    launch a Linux browser — just print the URL. On a normal desktop we let
-    NiceGUI handle it.
-    """
-    chosen = browser or env_browser
-    if chosen:
-        return shlex.split(chosen), False
-    if wsl:
-        return ([wslview] if wslview else None), False
-    return None, True
-
-
-def apply_url(cmd: list[str], url: str) -> list[str]:
-    """Substitute *url* for a ``{url}`` token in *cmd*, or append it if absent."""
-    if any("{url}" in tok for tok in cmd):
-        return [tok.replace("{url}", url) for tok in cmd]
-    return [*cmd, url]
-
-
-# Common Windows install paths for Chromium browsers (seen from WSL under /mnt/c).
-_WINDOWS_CHROMIUM = [
-    "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
-    "/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe",
-    "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
-    "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-]
-# Linux/native Chromium executables (for --app on a non-WSL desktop).
-_LINUX_CHROMIUM = ["google-chrome", "chromium", "chromium-browser", "microsoft-edge", "brave"]
-
-
-def find_chromium(
-    *,
-    wsl: bool,
-    exists: Callable[[str], bool],
-    which: Callable[[str], str | None],
-) -> str | None:
-    """Locate a Chromium-based browser executable for app-window mode.
-
-    Under WSL, look for Edge/Chrome under ``/mnt/c``; otherwise search PATH.
-    Returns the executable path, or ``None`` if none is found.
-    """
-    if wsl:
-        return next((p for p in _WINDOWS_CHROMIUM if exists(p)), None)
-    for name in _LINUX_CHROMIUM:
-        found = which(name)
-        if found:
-            return found
-    return None
-
-
-def app_invocation(
-    browser: str | None,
-    *,
-    env_browser: str | None = None,
-    wsl: bool = False,
-    exists: Callable[[str], bool] = os.path.exists,
-    which: Callable[[str], str | None] = shutil.which,
-) -> list[str] | None:
-    """Build a chromeless app-window command (`<chromium> --app={url}`).
-
-    Uses an explicit ``--browser``/env executable if given (shlex-split, so it
-    may carry args), else auto-detects Edge/Chrome (kept as a single token since
-    Windows paths contain spaces). Returns the argv (with a ``{url}`` placeholder)
-    or ``None`` if no Chromium browser could be found.
-    """
-    explicit = browser or env_browser
-    if explicit:
-        base = shlex.split(explicit)
-    else:
-        exe = find_chromium(wsl=wsl, exists=exists, which=which)
-        if not exe:
-            return None
-        base = [exe]
-    return [*base, "--app={url}"]
-
-
-def dev_invocation(
-    pdf_path: Path,
-    *,
-    sidecar_path: Path | None,
-    host: str,
-    port: int,
-    browser: str | None = None,
-    app_window: bool = False,
-    no_browser: bool = False,
-) -> tuple[list[str], dict[str, str]]:
-    """Argv + extra env to launch the auto-reload dev server (``edit --dev``).
-
-    NiceGUI's reload mode re-imports its entry module in a child process, so it
-    needs a ``python -m``-runnable module (``slidesonnet.gui.devserver``) rather
-    than the console-script entry point; parameters travel via environment.
-    """
-    env = {
-        "SLIDESONNET_DEV_PDF": str(pdf_path.resolve()),
-        "SLIDESONNET_DEV_HOST": host,
-        "SLIDESONNET_DEV_PORT": str(port),
-    }
-    if sidecar_path is not None:
-        env["SLIDESONNET_DEV_SIDECAR"] = str(sidecar_path.resolve())
-    if browser:
-        env["SLIDESONNET_DEV_BROWSER"] = browser
-    if app_window:
-        env["SLIDESONNET_DEV_APP"] = "1"
-    if no_browser:
-        env["SLIDESONNET_DEV_NO_BROWSER"] = "1"
-    return [sys.executable, "-m", "slidesonnet.gui.devserver"], env
 
 
 _STAGE_RESERVE = 680.0  # stage minimum (620px content) + its padding + separators
@@ -308,221 +178,13 @@ def _serve_media(state: EditorState) -> None:
     _served.add(key)
 
 
-# ---------------------------------------------------------------------------
-# look & feel: a dark studio theme — cool graphite surfaces, electric-blue
-# accents, IBM Plex Mono for everything machine-flavored; filmstrip + stage
-# + console.
-# ---------------------------------------------------------------------------
+# look & feel lives in gui/static/ (editor.css, fonts.html, resize.html),
+# inlined into the page head once per editor build
+_STATIC_DIR = Path(__file__).parent / "static"
+_HEAD_CSS = (_STATIC_DIR / "editor.css").read_text(encoding="utf-8")
+_HEAD_FONTS = (_STATIC_DIR / "fonts.html").read_text(encoding="utf-8")
+_HEAD_RESIZE = (_STATIC_DIR / "resize.html").read_text(encoding="utf-8")
 
-_FONTS_HTML = (
-    '<link rel="preconnect" href="https://fonts.googleapis.com">'
-    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2'
-    "?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800"
-    "&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600"
-    '&display=swap">'
-)
-
-_NOISE_SVG = (
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
-    "width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence "
-    "type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E"
-    "%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"
-)
-
-_CSS = """
-:root{
-  --ss-bg:#0e1116; --ss-surface:#151a22; --ss-raised:#1e2531;
-  --ss-line:#2b3442; --ss-text:#e8ecf3; --ss-dim:#8a94a6;
-  --ss-accent:#5db3f0; --ss-accent-deep:#2f7fc4;
-  --ss-err:#ff6b6b; --ss-warn:#ffc857; --ss-ok:#7ee08a;
-}
-body{
-  background:
-    radial-gradient(1100px 520px at 72% -10%, rgba(93,179,240,.06), transparent 60%),
-    var(--ss-bg) !important;
-  font-family:"IBM Plex Sans",sans-serif;
-}
-.nicegui-content{padding:0}
-.ss-mono,.ss-mono textarea,.ss-mono input{
-  font-family:"IBM Plex Mono",ui-monospace,monospace}
-.ss-wordmark{
-  font-family:"Bricolage Grotesque",sans-serif;font-size:19px;font-weight:800;
-  letter-spacing:.01em;color:var(--ss-text)}
-.ss-accent{color:var(--ss-accent)}
-.ss-header{
-  background:rgba(21,26,34,.92)!important;border-bottom:1px solid var(--ss-line);
-  backdrop-filter:blur(10px);padding:0 18px;height:52px}
-.ss-footer{
-  background:var(--ss-surface)!important;border-top:1px solid var(--ss-line);
-  height:28px;padding:0 18px;display:flex;align-items:center}
-.ss-foot{font-size:11px;color:var(--ss-dim)}
-.ss-chip{
-  font-size:11px;color:var(--ss-dim);border:1px solid var(--ss-line);
-  border-radius:999px;padding:2px 10px;background:var(--ss-raised)}
-.ss-saved{
-  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
-  color:var(--ss-ok);transition:opacity .6s}
-.ss-pill{
-  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
-  border-radius:999px;padding:3px 10px;border:1px solid transparent}
-.ss-pill-ok{color:var(--ss-ok);border-color:rgba(139,217,124,.35)}
-.ss-pill-err{
-  color:var(--ss-err);border-color:rgba(255,101,82,.45);
-  background:rgba(255,101,82,.08)}
-.ss-pill-warn{
-  color:var(--ss-warn);border-color:rgba(217,162,60,.45);
-  background:rgba(217,162,60,.08)}
-.ss-body textarea::placeholder{color:var(--ss-dim);opacity:.55;font-style:italic}
-.ss-main{height:calc(100vh - 80px)}
-.ss-split{position:relative}
-.ss-split > .q-splitter__separator{background:var(--ss-line)}
-.ss-split > .q-splitter__separator:hover{background:var(--ss-accent-deep)}
-.ss-split > .q-splitter__panel{overflow:hidden}
-.ss-grip{
-  font-size:13px;color:var(--ss-dim);background:var(--ss-raised);
-  border:1px solid var(--ss-line);border-radius:6px;padding:8px 0}
-.ss-side{width:100%;height:100%;background:var(--ss-surface)}
-.ss-side-head{padding:8px 6px 0 12px;flex-shrink:0}
-.ss-side-head .q-btn{color:var(--ss-dim)}
-.ss-strip{
-  width:100%;flex:1 1 0;min-height:0;overflow-y:auto;padding:8px 10px 12px;
-  background:var(--ss-surface)}
-.ss-strip::-webkit-scrollbar{width:6px}
-.ss-strip::-webkit-scrollbar-thumb{background:var(--ss-line);border-radius:3px}
-.ss-thumb{
-  position:relative;width:100%;flex-shrink:0;border:1px solid var(--ss-line);border-radius:8px;
-  overflow:hidden;cursor:pointer;background:var(--ss-raised);
-  transition:border-color .15s,transform .15s,box-shadow .15s}
-.ss-thumb:hover{border-color:var(--ss-accent-deep);transform:translateY(-1px)}
-.ss-thumb.ss-active{
-  border-color:var(--ss-accent);
-  box-shadow:0 0 0 1px var(--ss-accent),0 6px 18px rgba(93,179,240,.16)}
-.ss-thumb-fallback{
-  display:block;padding:18px 8px;font-size:10px;color:var(--ss-dim);
-  text-align:center;word-break:break-all}
-.ss-thumb-num{
-  position:absolute;bottom:5px;left:6px;font-family:"IBM Plex Mono",monospace;
-  font-size:10px;font-weight:600;color:var(--ss-dim);
-  background:rgba(20,17,15,.85);padding:0 5px;border-radius:4px}
-.ss-dot{position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%}
-.ss-dot-ready{background:var(--ss-ok)}
-.ss-dot-warning{background:var(--ss-warn)}
-.ss-dot-error{background:var(--ss-err);box-shadow:0 0 8px var(--ss-err)}
-.ss-dot-empty{background:transparent;border:1.5px solid var(--ss-dim)}
-/* "audio missing" badge on a thumb: this slide still has un-generated speech */
-.ss-thumb-audio{position:absolute;top:4px;left:5px;font-size:12px;color:var(--ss-warn);
-  background:rgba(20,17,15,.85);border-radius:4px;padding:0 1px}
-.ss-stage{width:100%;height:100%;padding:16px 24px 10px;align-items:center}
-.ss-stage-inner{
-  height:100%;
-  width:min(100%, max(620px, calc((100vh - 230px) * .6667 * var(--ss-ar, 1.7778))))}
-.ss-stage-split{flex:1 1 0;min-height:0;width:100%}
-.ss-stage-view{
-  height:100%;min-height:0;width:100%;
-  display:flex;justify-content:center;padding-bottom:6px}
-.ss-edit-pane{height:100%;min-height:0;padding-top:8px}
-.ss-grip-h{transform:rotate(90deg)}
-.ss-stage-img{width:100%;height:100%}
-.ss-stage-img img{border-radius:6px}
-.ss-counter{font-size:12px;color:var(--ss-dim);padding:0 8px;min-width:96px;text-align:center}
-.ss-vsep{width:1px;height:20px;background:var(--ss-line);margin:0 8px}
-.ss-audio{display:none}  /* invisible sound pipe — the transport buttons are the UI */
-.ss-seek{flex:1 1 0;min-width:60px}
-.ss-time{font-size:11px;color:var(--ss-dim);white-space:nowrap}
-/* unattached-narration tray: a distinct warning-tinted panel so it stands out
-   from the plain console sections around it */
-.ss-tray{background:rgba(255,200,87,.07);border:1px solid rgba(255,200,87,.32);
-  border-left:3px solid var(--ss-warn);border-radius:8px;padding:10px 12px}
-.ss-tray-icon{color:var(--ss-warn);font-size:18px}
-.ss-tray-title{font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--ss-warn)}
-.ss-tray-hint{font-size:11px;color:var(--ss-dim);line-height:1.4}
-.ss-orphan{border:1px solid var(--ss-line);border-radius:6px;padding:6px 8px;
-  background:var(--ss-surface)}
-.ss-orphan-id{font-size:12px;font-weight:600;color:var(--ss-warn);
-  font-family:"IBM Plex Mono",monospace}
-.ss-orphan-text{font-size:12.5px;color:var(--ss-text);line-height:1.5;
-  white-space:pre-wrap;word-break:break-word;user-select:text;cursor:text}
-.ss-console{
-  width:100%;height:100%;overflow-y:auto;padding:16px;
-  background:var(--ss-surface)}
-.ss-section{
-  font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;
-  color:var(--ss-dim);margin-top:4px}
-.ss-id{font-size:15px;font-weight:600;color:var(--ss-accent)}
-/* structured block editor: a scrollable column of utterance + pause cards */
-.ss-blocks{flex:1 1 0;min-height:0;overflow-y:auto;padding-right:4px}
-.ss-card{
-  background:var(--ss-raised);border-radius:8px;padding:8px 10px;gap:4px;
-  box-shadow:none;border:1px solid var(--ss-line)}
-.ss-utext{flex:1 1 0;min-width:0}
-.ss-utext textarea{line-height:1.6;font-size:15.5px;resize:none}
-.ss-utt-opts{margin-top:2px}
-.ss-uvoice{flex:0 0 162px}
-.ss-upace{flex:0 0 122px}
-.ss-udirect{flex:1 1 0;min-width:0}
-/* the option-row widgets sit on a darker fill with a hairline so they read as
-   editable fields instead of blending into the card */
-.ss-utt-opts .q-field--filled .q-field__control{
-  background:var(--ss-surface)!important;border:1px solid var(--ss-line)}
-.ss-utt-opts .q-field--filled .q-field__control:hover{border-color:var(--ss-dim)}
-.ss-utt-opts .q-field__native::placeholder,
-.ss-utt-opts input::placeholder{color:var(--ss-dim);opacity:.45;font-style:italic}
-.ss-seg-controls{flex:0 0 auto}
-.ss-pause{border-style:dashed}
-.ss-pause-icon{color:var(--ss-dim)}
-.ss-pause-secs{width:96px}
-.ss-transition{padding:2px 2px}
-.ss-trans-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--ss-dim);flex:0 0 auto}
-.ss-trans-secs{width:84px}
-.q-field--filled .q-field__control{background:var(--ss-raised)!important;border-radius:8px}
-/* footer status flash: replaces popup pills — colored by outcome, fades on a timer */
-.ss-flash{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  transition:opacity .3s}
-.ss-flash-ok{color:var(--ss-ok)}
-.ss-flash-info{color:var(--ss-dim)}
-.ss-flash-warn{color:var(--ss-warn)}
-.ss-flash-err{color:var(--ss-err);font-weight:600}
-.ss-diag{font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.4}
-.ss-diag-err{color:var(--ss-err)}
-.ss-diag-warn{color:var(--ss-warn)}
-.ss-diag-info{color:var(--ss-dim)}
-.ss-diag-ok{color:var(--ss-ok)}
-.ss-export{color:#0c1117!important;font-weight:600}
-textarea,input{caret-color:var(--ss-accent)}
-.ss-flip{transform:scaleX(-1)}
-/* narrow-window mode: opened side panes float over the stage instead of squeezing it */
-.ss-overlay-left > .q-splitter__before{
-  position:absolute;left:0;top:0;bottom:0;height:100%;z-index:40;
-  box-shadow:10px 0 28px rgba(0,0,0,.5)}
-.ss-overlay-right > .q-splitter__after{
-  position:absolute;right:0;top:0;bottom:0;height:100%;z-index:40;
-  box-shadow:-10px 0 28px rgba(0,0,0,.5)}
-.ss-overlay-left > .q-splitter__separator,
-.ss-overlay-right > .q-splitter__separator{display:none}
-"""
-
-_RESIZE_JS = """
-<script>
-(function () {
-  let t;
-  function report() {
-    if (window.emitEvent) emitEvent('ss_resize', window.innerWidth);
-  }
-  window.addEventListener('resize', function () {
-    clearTimeout(t);
-    t = setTimeout(report, 150);
-  });
-  window.addEventListener('load', function () { setTimeout(report, 300); });
-})();
-</script>
-"""
-
-_GRAIN = (
-    "body::after{content:'';position:fixed;inset:0;pointer-events:none;"
-    f'z-index:1;opacity:.028;background-image:url("{_NOISE_SVG}")}}'
-)
 
 _ALL_DOTS = "ss-dot-error ss-dot-warning ss-dot-ready ss-dot-empty"
 
@@ -546,7 +208,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     except Exception:  # never let a malformed page block the editor
         aspect = 16 / 9
     ar_css = f":root{{--ss-ar:{aspect:.4f}}}"
-    ui.add_head_html(_FONTS_HTML + "<style>" + _CSS + _GRAIN + ar_css + "</style>" + _RESIZE_JS)
+    ui.add_head_html(_HEAD_FONTS + "<style>" + _HEAD_CSS + ar_css + "</style>" + _HEAD_RESIZE)
 
     # --- header: wordmark · deck · save flash · error pill ---
     with ui.header().classes("ss-header items-center justify-between no-wrap"):
@@ -720,7 +382,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             ui.timer(linger, _fade, once=True)
 
     # ---- rendering helpers ----
-    cues: list[tuple[float, str]] = []
+    cues: list[Cue] = []
     busy = False
     playback = PlaybackController()
     track_duration = 0.0
@@ -1585,7 +1247,7 @@ def run_editor(
     if open_browser and app_window:
         app_opener = app_invocation(browser, env_browser=env_browser, wsl=wsl)
         if app_opener is not None:
-            app.on_startup(lambda o=app_opener: _launch_browser(o, url))
+            app.on_startup(lambda o=app_opener: launch_browser(o, url))
         else:
             logger.warning(
                 "--app needs a Chromium browser (Edge/Chrome) and none was found. "
@@ -1597,7 +1259,7 @@ def run_editor(
             browser, env_browser=env_browser, wsl=wsl, wslview=shutil.which("wslview")
         )
         if opener is not None:
-            app.on_startup(lambda o=opener: _launch_browser(o, url))
+            app.on_startup(lambda o=opener: launch_browser(o, url))
         elif not show and wsl:
             logger.info(
                 "WSL detected and no browser configured — open %s in your Windows browser "
@@ -1607,12 +1269,3 @@ def run_editor(
 
     print(f"slideSonnet editor running at {url}  (Ctrl-C to stop)")
     ui.run(host=host, port=port, title="slideSonnet", reload=False, show=show)
-
-
-def _launch_browser(opener: list[str], url: str) -> None:
-    """Open *url* with the configured command, swallowing launch errors."""
-    cmd = apply_url(opener, url)
-    try:
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except OSError as exc:
-        logger.warning("Could not launch browser %r: %s — open %s manually.", cmd, exc, url)

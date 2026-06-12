@@ -8,8 +8,12 @@ PageNarration / Deck) lives in :mod:`slidesonnet.narration.model`.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
+
+#: Progress callback for long-running pipeline stages: (slide_id, done, total).
+ProgressFn = Callable[[str, int, int], None]
 
 
 # The typed source of backend names. mypy can't derive a Literal from the

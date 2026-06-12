@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from slidesonnet.audio.track import assemble_track, build_page_audio, cue_sheet
+from slidesonnet.audio.track import Cue, assemble_track, build_page_audio, cue_sheet
 from slidesonnet.config import Config
 from slidesonnet.models import VideoConfig
 from slidesonnet.narration.model import Deck, PageNarration, Segment
@@ -53,7 +53,7 @@ class DeckTimeline:
     def total_duration(self) -> float:
         return sum(p.duration for p in self.pages)
 
-    def cue_sheet(self) -> list[tuple[float, str]]:
+    def cue_sheet(self) -> list[Cue]:
         return cue_sheet(self.page_starts, self.slide_ids)
 
 

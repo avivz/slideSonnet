@@ -13,9 +13,16 @@ from typing import Literal
 
 from slidesonnet import api
 from slidesonnet.audio.synth import SpeechRef, ref_cache_status
+from slidesonnet.audio.track import Cue
 from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import default_config_path, load_config
-from slidesonnet.deck import default_sidecar_path, dedupe_page_ids, load_deck, save_deck
+from slidesonnet.deck import (
+    default_sidecar_path,
+    dedupe_page_ids,
+    load_deck,
+    save_deck,
+    unique_real_ids,
+)
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
@@ -189,18 +196,9 @@ class EditorState:
             self.deck.narration.pop(self.current_id, None)
         else:
             old = self.deck.narration.get(self.current_id)
-            self.deck.narration[self.current_id] = PageNarration(
-                slide_id=self.current_id,
-                segments=list(segments),
-                transition_in=tin,
-                transition_out=tout,
-                # round-trip bookkeeping: a save re-emits the author's raw text
-                # when the content is unchanged, and keeps the comments above
-                # the block either way
-                source=old.source if old else None,
-                canon=old.canon if old else None,
-                lead=old.lead if old else None,
-                tail=old.tail if old else None,
+            base = old if old is not None else PageNarration(slide_id=self.current_id)
+            self.deck.narration[self.current_id] = base.with_content(
+                segments, transition_in=tin, transition_out=tout
             )
             if tout.kind != "cut":
                 nxt = self._next_page_id()
@@ -230,13 +228,7 @@ class EditorState:
 
     def unnarrated_pages(self) -> list[str]:
         """Page ids an orphan could attach to (no narration yet), in page order."""
-        seen: set[str] = set()
-        out: list[str] = []
-        for sid in self.deck.pages:
-            if sid and sid not in seen and not self.has_narration(sid):
-                seen.add(sid)
-                out.append(sid)
-        return out
+        return [sid for sid in unique_real_ids(self.deck.pages) if not self.has_narration(sid)]
 
     def attach_orphan(self, orphan_id: str, target_id: str) -> None:
         """Move an orphan block's narration onto the page *target_id* and save."""
@@ -245,14 +237,7 @@ class EditorState:
         if self.has_narration(target_id):
             raise ValueError(f"slide '{target_id}' already has narration")
         block = self.deck.narration.pop(orphan_id)
-        self.deck.narration[target_id] = PageNarration(
-            slide_id=target_id,
-            segments=block.segments,
-            transition_in=block.transition_in,
-            transition_out=block.transition_out,
-            lead=block.lead,  # comments above the block travel with it
-            tail=block.tail,
-        )
+        self.deck.narration[target_id] = block.rekeyed(target_id)
         self._write_and_reload()
 
     def append_orphan_to_current(self, orphan_id: str) -> None:
@@ -268,13 +253,8 @@ class EditorState:
             raise ValueError(f"no narration block '{orphan_id}'")
         orphan = self.deck.narration.pop(orphan_id)
         target = self.current_block
-        self.deck.narration[self.current_id] = PageNarration(
-            slide_id=self.current_id,
-            segments=[*target.segments, *orphan.segments],
-            transition_in=target.transition_in,
-            transition_out=target.transition_out,
-            lead=target.lead,
-            tail=target.tail,
+        self.deck.narration[self.current_id] = target.with_content(
+            [*target.segments, *orphan.segments]
         )
         self._write_and_reload()
 
@@ -411,7 +391,7 @@ class EditorState:
         return [d for d in self.diagnostics if d.slide_id == self.current_id]
 
 
-def cue_start(cues: list[tuple[float, str]], slide_id: str) -> float | None:
+def cue_start(cues: list[Cue], slide_id: str) -> float | None:
     """Start time of *slide_id* in a deck-preview cue sheet, or None if absent."""
     for start, sid in cues:
         if sid == slide_id:

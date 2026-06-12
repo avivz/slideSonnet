@@ -83,7 +83,8 @@ class PageTiming:
         return [s for s in self.segments if s.segment.is_speech]
 
 
-def _estimate_speech_seconds(text: str, wpm: float) -> float:
+def estimate_speech_seconds(text: str, wpm: float) -> float:
+    """Rough spoken duration of *text* at *wpm* words per minute."""
     return word_count(text) / wpm * 60.0
 
 
@@ -140,7 +141,7 @@ def _speech_durations(
         return list(speech_durations)
 
     if mode.kind == "estimate":
-        return [_estimate_speech_seconds(s.text, mode.wpm) for s in speech_segs]
+        return [estimate_speech_seconds(s.text, mode.wpm) for s in speech_segs]
 
     # fixed: distribute fixed_seconds across speech segments by word proportion.
     if not speech_segs:

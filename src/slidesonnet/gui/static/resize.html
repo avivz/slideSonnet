@@ -1,0 +1,13 @@
+<script>
+(function () {
+  let t;
+  function report() {
+    if (window.emitEvent) emitEvent('ss_resize', window.innerWidth);
+  }
+  window.addEventListener('resize', function () {
+    clearTimeout(t);
+    t = setTimeout(report, 150);
+  });
+  window.addEventListener('load', function () { setTimeout(report, 300); });
+})();
+</script>

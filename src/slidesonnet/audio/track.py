@@ -8,11 +8,12 @@ image as the single ``<audio>`` element plays.
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 from slidesonnet.exceptions import FFmpegError, RenderError
+from slidesonnet.proc import run_tool
 from slidesonnet.timing import PageTiming
 from slidesonnet.video.composer import concatenate_audio, get_duration
 
@@ -45,12 +46,12 @@ def make_silence(duration: float, path: Path, *, sample_rate: int = _SAMPLE_RATE
         "pcm_s16le",
         str(path),
     ]
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except FileNotFoundError:
-        raise FFmpegError("'ffmpeg' not found. Install ffmpeg.")
-    except subprocess.CalledProcessError as e:
-        raise FFmpegError(f"ffmpeg failed making silence:\n{e.stderr}")
+    run_tool(
+        cmd,
+        error_cls=FFmpegError,
+        install_hint="ffmpeg",
+        fail_message="ffmpeg failed making silence",
+    )
     return path
 
 
@@ -110,6 +111,13 @@ def assemble_track(page_audios: list[Path], out_path: Path) -> float:
     return get_duration(out_path)
 
 
-def cue_sheet(page_starts: list[float], slide_ids: list[str]) -> list[tuple[float, str]]:
-    """Build the preview cue sheet: (start_seconds, slide_id) per page."""
-    return list(zip(page_starts, slide_ids, strict=True))
+class Cue(NamedTuple):
+    """One preview cue: flip to *slide_id* when playback reaches *start*."""
+
+    start: float
+    slide_id: str
+
+
+def cue_sheet(page_starts: list[float], slide_ids: list[str]) -> list[Cue]:
+    """Build the preview cue sheet: one :class:`Cue` per page."""
+    return [Cue(start, sid) for start, sid in zip(page_starts, slide_ids, strict=True)]

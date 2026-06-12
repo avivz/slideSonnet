@@ -595,37 +595,37 @@ class TestConcatenateSegmentsMocked:
 class TestGetDurationMocked:
     """Mocked tests for get_duration()."""
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_success(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=json.dumps({"format": {"duration": "12.345"}}))
         assert get_duration(Path("test.mp4")) == pytest.approx(12.345)
 
-    @patch("slidesonnet.video.composer.subprocess.run", side_effect=FileNotFoundError)
+    @patch("slidesonnet.proc.subprocess.run", side_effect=FileNotFoundError)
     def test_ffprobe_not_found(self, mock_run: MagicMock) -> None:
         with pytest.raises(FFmpegError, match="ffprobe.*not found"):
             get_duration(Path("test.mp4"))
 
     @patch(
-        "slidesonnet.video.composer.subprocess.run",
+        "slidesonnet.proc.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "ffprobe"),
     )
     def test_ffprobe_error(self, mock_run: MagicMock) -> None:
         with pytest.raises(FFmpegError, match="ffprobe failed"):
             get_duration(Path("test.mp4"))
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_bad_json(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout="not json")
         with pytest.raises(FFmpegError, match="invalid JSON"):
             get_duration(Path("test.mp4"))
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_missing_key(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=json.dumps({"format": {}}))
         with pytest.raises(FFmpegError, match="missing.*format.duration"):
             get_duration(Path("test.mp4"))
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_non_numeric_duration(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=json.dumps({"format": {"duration": "N/A"}}))
         with pytest.raises(FFmpegError, match="non-numeric duration"):
@@ -826,7 +826,7 @@ class TestConcatenateAudioMocked:
 class TestGetDurationStreamMocked:
     """Mocked tests for get_duration() with stream parameter."""
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_stream_video(self, mock_run: MagicMock) -> None:
         """get_duration(stream='video') extracts from streams list."""
         mock_run.return_value = MagicMock(
@@ -842,7 +842,7 @@ class TestGetDurationStreamMocked:
         result = get_duration(Path("test.mp4"), stream="video")
         assert result == pytest.approx(10.5)
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_stream_audio(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(
             stdout=json.dumps(
@@ -857,7 +857,7 @@ class TestGetDurationStreamMocked:
         result = get_duration(Path("test.mp4"), stream="audio")
         assert result == pytest.approx(10.7)
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_stream_missing_falls_back(self, mock_run: MagicMock) -> None:
         """If requested stream has no duration, falls back to format duration."""
         # First call: -show_streams (no duration in video stream)
@@ -873,7 +873,7 @@ class TestGetDurationStreamMocked:
         result = get_duration(Path("test.mp4"), stream="video")
         assert result == pytest.approx(12.0)
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_stream_non_numeric(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(
             stdout=json.dumps({"streams": [{"codec_type": "video", "duration": "N/A"}]})
@@ -959,20 +959,22 @@ class TestConcatenateSegmentsXfadeNormalize:
 class TestRunFfmpeg:
     """Mocked tests for _run_ffmpeg()."""
 
-    @patch("slidesonnet.video.composer.subprocess.run")
+    @patch("slidesonnet.proc.subprocess.run")
     def test_success(self, mock_run: MagicMock) -> None:
         _run_ffmpeg(["ffmpeg", "-version"])
-        mock_run.assert_called_once_with(
-            ["ffmpeg", "-version"], check=True, capture_output=True, text=True
-        )
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        assert args[0] == ["ffmpeg", "-version"]
+        assert kwargs["check"] and kwargs["capture_output"] and kwargs["text"]
+        assert kwargs["timeout"] > 0  # a wedged tool can never hang a worker forever
 
-    @patch("slidesonnet.video.composer.subprocess.run", side_effect=FileNotFoundError)
+    @patch("slidesonnet.proc.subprocess.run", side_effect=FileNotFoundError)
     def test_ffmpeg_not_found(self, mock_run: MagicMock) -> None:
         with pytest.raises(FFmpegError):
             _run_ffmpeg(["ffmpeg", "-version"])
 
     @patch(
-        "slidesonnet.video.composer.subprocess.run",
+        "slidesonnet.proc.subprocess.run",
         side_effect=subprocess.CalledProcessError(1, "ffmpeg", stderr="encode failed"),
     )
     def test_ffmpeg_error(self, mock_run: MagicMock) -> None:
