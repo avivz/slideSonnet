@@ -719,6 +719,15 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         _render_orphan_tray()
         _sync_transport()
 
+    # While a narration field holds keyboard focus, playback auto-advance must
+    # not rebuild the block editor — that would destroy the field mid-typing
+    # and lose everything typed after the rebuild. Tracked per focus/blur.
+    editing = {"active": False}
+
+    def _track_editing(widget: Any) -> None:
+        widget.on("focus", lambda: editing.update(active=True))
+        widget.on("blur", lambda: editing.update(active=False))
+
     # ---- structured block editor (utterances, pauses, transitions) ----------
     def _transition_row(which: str, transition: Transition, disabled: bool) -> None:
         label = "Transition in" if which == "in" else "Transition out"
@@ -740,6 +749,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 secs.disable()
             kind.on_value_change(lambda: _commit())
             secs.on("blur", lambda: _commit())
+            _track_editing(secs)
 
         def collect() -> Transition:
             k: str = kind.value or "cut"
@@ -820,6 +830,8 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             voice.on_value_change(lambda: _commit())
             pace.on_value_change(lambda: _commit())
             direct.on("blur", lambda: _commit())
+            for w in (text, voice, direct):  # keystroke-holding fields
+                _track_editing(w)
 
         def collect() -> Segment:
             return Segment.speech(
@@ -849,6 +861,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             if disabled:
                 secs.disable()
             secs.on("blur", lambda: _commit())
+            _track_editing(secs)
 
         def collect() -> Segment:
             return Segment.pause(max(0.0, float(secs.value or 0.0)))
@@ -856,6 +869,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         return collect
 
     def _render_blocks() -> None:
+        editing["active"] = False  # the rebuild destroys any focused field
         blocks_col.clear()
         seg_collectors.clear()
         transition_getters.clear()
@@ -1339,6 +1353,8 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         if current in state.deck.pages:
             idx = state.deck.pages.index(current)
             if idx != state.index:
+                if editing["active"]:
+                    return  # mid-edit: defer following until the field blurs
                 save_current()  # don't clobber narration typed during playback
                 state.index = idx
                 render()

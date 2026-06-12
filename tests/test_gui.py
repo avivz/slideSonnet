@@ -243,6 +243,30 @@ async def test_deck_playback_cue_flip_saves_pending_edits(
     assert "Typed during playback." in sidecar  # saved under @intro-title, not lost
 
 
+async def test_cue_flip_is_deferred_while_a_field_is_focused(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Playback must not yank the block editor mid-edit; following resumes on blur."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+
+    def instant_build(self: EditorState) -> api.Preview:
+        return _fake_preview(self.pdf_path, [(0.0, "intro-title"), (2.0, "euler-setup")])
+
+    monkeypatch.setattr(EditorState, "preview_deck", instant_build)
+    await user.open("/")
+    user.find(marker="play-deck").click()
+    await user.should_see("Preview ready", retries=300)
+    user.find(ui.textarea).trigger("focus")  # the user is mid-edit
+    user.find(marker="preview-audio").trigger("timeupdate", args=2.5)
+    await user.should_see("Slide 1 / 6")  # flip deferred, editor untouched
+    user.find(ui.textarea).trigger("blur")
+    user.find(marker="preview-audio").trigger("timeupdate", args=2.6)
+    await user.should_see("Slide 2 / 6")  # following resumed after blur
+
+
 async def test_replaying_preview_reloads_the_new_track(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

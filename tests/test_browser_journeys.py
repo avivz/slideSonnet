@@ -177,20 +177,19 @@ def test_navigate_via_buttons_keys_and_filmstrip(
 
 
 # --------------------------------------------------------------------------
-# journey 2 (known bug): type, then act WITHOUT blurring first
+# journey 2: type, then act WITHOUT blurring first
 # --------------------------------------------------------------------------
 
 
 @pytest.mark.timeout(120)
-@pytest.mark.xfail(
-    reason="save-on-blur race: the textarea commits to the sidecar only on blur, so "
-    "clicking Generate right after typing can synthesize the stale text before the "
-    "browser's new value reaches the server",
-    strict=False,
-)
 def test_typing_then_generating_without_blur_uses_the_typed_text(
     page: Page, editor_server: ServerFactory, tmp_path: Path
 ) -> None:
+    """Regression guard: type → Generate with no blur synthesizes the NEW text.
+
+    Safe because NiceGUI textareas sync their value per keystroke over the
+    ordered websocket, so every update lands before the click event does.
+    """
     pdf = _prep(tmp_path, "@intro-title\nOld words.\n")
     page.goto(editor_server(pdf))
     box = marked(page, "utext-0").locator("textarea")
@@ -209,38 +208,38 @@ def test_typing_then_generating_without_blur_uses_the_typed_text(
 
 
 # --------------------------------------------------------------------------
-# journey 3 (known bug): typing during deck playback vs the cue flip
+# journey 3: typing during deck playback vs the cue flip
 # --------------------------------------------------------------------------
 
 
 @pytest.mark.timeout(120)
-@pytest.mark.xfail(
-    reason="playback auto-advance rebuilds the block editor destructively: when the cue "
-    "flip lands mid-typing it saves only the synced prefix, destroys the focused "
-    "textarea under the user's fingers, and the rest of the sentence is lost",
-    strict=False,
-)
-def test_editing_during_deck_playback_survives_the_cue_flip(
+def test_editing_during_deck_playback_defers_the_cue_flip(
     page: Page, editor_server: ServerFactory, tmp_path: Path
 ) -> None:
+    """While a narration field is focused, playback must not yank the editor.
+
+    A cue flip rebuilds the block editor, destroying the textarea under the
+    user's fingers (history: text used to be truncated mid-word at the flip).
+    The flip is deferred while a field is focused; following resumes on blur.
+    """
     pdf = _prep(tmp_path, "@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     page.goto(editor_server(pdf, stub_seconds=2.0))
     marked(page, "play-deck").click()
     expect(page.get_by_text("Preview ready").first).to_be_visible(timeout=30_000)
-    # type slowly enough that slide 2's cue flip lands mid-sentence (the stub
-    # track flips after ~3s; 60 chars at 120 ms/keystroke span ~7s)
+    # type slowly enough that slide 2's cue flip would land mid-sentence (the
+    # stub track flips after ~3s; 57 chars at 120 ms/keystroke span ~7s)
     sentence = "The quick brown fox jumps over the lazy dog, twice over."
     box = marked(page, "utext-0").locator("textarea")
     box.click()
     box.fill("")
     box.press_sequentially(sentence, delay=120)
-    # the cue flip happened mid-typing (playback may have advanced further since)
-    expect(page.locator(".ss-counter")).not_to_have_text("Slide 1 / 6", timeout=30_000)
-    marked(page, "stop").click()
-    marked(page, "thumb-0").click()
-    expect(page.get_by_text("Slide 1 / 6")).to_be_visible()
-    assert sentence in _sidecar(tmp_path), (
-        f"typed sentence was truncated by the cue flip; sidecar has: {_sidecar(tmp_path)!r}"
+    # the flip was deferred while we typed: the editor stayed on this slide
+    # and the textarea kept every keystroke
+    expect(page.locator(".ss-counter")).to_have_text("Slide 1 / 6")
+    expect(box).to_have_value(sentence)
+    marked(page, "stop").click()  # focus leaves the field: blur commits the edit
+    assert _eventually(lambda: sentence in _sidecar(tmp_path)), (
+        f"typed sentence missing from the sidecar; it has: {_sidecar(tmp_path)!r}"
     )
 
 
