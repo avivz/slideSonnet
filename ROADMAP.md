@@ -15,15 +15,14 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    byte-identical (`test_no_change_save_is_byte_identical`), edits rewrite
    only the touched block, and comments above an edited block survive.
    Bonus: hand-wrapped `text:` lines now parse as continuations. **[agent]**
-2. [ ] **Re-verify both demos end-to-end with Kokoro** — `make basel`,
+2. [x] **Re-verify both demos end-to-end with Kokoro** — `make basel`,
    `make showcase`, `make check-basel`, `make check-showcase`; validates the
    structured narration format + metropolis restyle + `.latexmkrc` + Kokoro
    changes together. Human watches the resulting MP4s. **[agent→human]**
-   *Agent side done 2026-06-12:* both decks compiled, rendered, and
-   reconciled clean ("OK — no issues"). **Awaiting your review** of
-   `examples/basel-problem/basel-problem.mp4` (8.8 MB) and
-   `examples/showcase/showcase.mp4` (5.5 MB) — check voice quality, slide
-   timing, and the metropolis restyle. Check off when satisfied.
+   *Done 2026-06-12.* Both decks compiled, rendered, and reconciled clean
+   ("OK — no issues"); human reviewed the MP4s: visuals approved, audio
+   "decent but not amazing" — acceptable for the a1 launch artifact, to be
+   superseded by the Inworld HQ re-render (Next #7).
 
 ## Next — publish 1.0.0a1
 
