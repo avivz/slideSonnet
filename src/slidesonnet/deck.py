@@ -119,25 +119,36 @@ def dedupe_block_ids(
     return out, diags
 
 
-def load_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> tuple[Deck, list[Diagnostic]]:
+def load_deck(
+    pdf_path: Path,
+    *,
+    sidecar_path: Path | None = None,
+    pages: tuple[list[str], list[Diagnostic]] | None = None,
+) -> tuple[Deck, list[Diagnostic]]:
     """Load *pdf_path* and its sidecar into a :class:`Deck` plus diagnostics.
 
     A missing sidecar is treated as empty narration (every page un-narrated).
+    *pages* injects a previously-computed (deduped page ids, dedupe
+    diagnostics) pair when the PDF is known unchanged — reading ids re-opens
+    the PDF and walks every page, which callers that reload per edit-commit
+    (the editor) cannot afford.
     """
     pdf_path = pdf_path.resolve()
     sidecar = sidecar_path or default_sidecar_path(pdf_path)
-    pages, dedupe_diags = dedupe_page_ids(read_page_ids(pdf_path))
+    if pages is None:
+        pages = dedupe_page_ids(read_page_ids(pdf_path))
+    page_ids, dedupe_diags = pages
 
     blocks: list[PageNarration] = []
     block_diags: list[Diagnostic] = []
     if sidecar.exists():
         blocks, block_diags = dedupe_block_ids(parse_sidecar(sidecar.read_text(encoding="utf-8")))
 
-    diags = sort_diagnostics(dedupe_diags + block_diags + diagnose(pages, blocks))
+    diags = sort_diagnostics(dedupe_diags + block_diags + diagnose(page_ids, blocks))
     deck = Deck(
         pdf_path=pdf_path,
         sidecar_path=sidecar,
-        pages=pages,
+        pages=page_ids,
         narration={b.slide_id: b for b in blocks},
     )
     return deck, diags

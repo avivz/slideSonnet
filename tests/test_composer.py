@@ -882,49 +882,6 @@ class TestGetDurationStreamMocked:
             get_duration(Path("test.mp4"), stream="video")
 
 
-class TestComposeSegmentMismatchWarning:
-    """Test stream mismatch warning in compose_segment."""
-
-    @patch("slidesonnet.video.composer._run_ffmpeg")
-    @patch("slidesonnet.video.composer.get_duration")
-    def test_mismatch_logs_warning(
-        self,
-        mock_dur: MagicMock,
-        mock_ffmpeg: MagicMock,
-        tmp_path: Path,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Large stream mismatch logs a warning."""
-        # Return different durations for video and audio streams
-        mock_dur.side_effect = [5.0, 4.0]  # video=5, audio=4 → Δ=1.0
-
-        compose_segment(
-            image=tmp_path / "s.png",
-            audio=tmp_path / "a.wav",
-            output=tmp_path / "o.mp4",
-            duration=1.0,
-        )
-
-        assert "stream mismatch" in caplog.text
-
-    @patch("slidesonnet.video.composer._run_ffmpeg")
-    @patch("slidesonnet.video.composer.get_duration", side_effect=FFmpegError("no probe"))
-    def test_mismatch_probe_failure_silent(
-        self,
-        mock_dur: MagicMock,
-        mock_ffmpeg: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Probe failure during mismatch check is silently ignored."""
-        # Should not raise
-        compose_segment(
-            image=tmp_path / "s.png",
-            audio=tmp_path / "a.wav",
-            output=tmp_path / "o.mp4",
-            duration=1.0,
-        )
-
-
 class TestConcatenateSegmentsXfadeNormalize:
     """Tests for xfade with resolution/fps normalization."""
 

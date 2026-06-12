@@ -120,12 +120,23 @@ class KokoroTTS(TTSEngine):
 
 def _write_wav(path: Path, samples: list[float]) -> None:
     """Write float samples in [-1, 1] as 16-bit mono PCM at 24 kHz."""
-    frames = bytearray()
-    for s in samples:
-        clamped = max(-1.0, min(1.0, s))
-        frames += int(clamped * 32767).to_bytes(2, "little", signed=True)
+    try:
+        # numpy rides along with kokoro (via torch); vectorized conversion is
+        # ~100x faster than a per-sample Python loop at 24k samples/second
+        import numpy as np
+
+        clipped = np.clip(np.asarray(samples, dtype=np.float64), -1.0, 1.0)
+        frames = (clipped * 32767).astype("<i2").tobytes()
+    except ImportError:  # pragma: no cover — kokoro always brings numpy
+        import array
+        import sys
+
+        pcm = array.array("h", (int(max(-1.0, min(1.0, s)) * 32767) for s in samples))
+        if sys.byteorder == "big":
+            pcm.byteswap()
+        frames = pcm.tobytes()
     with wave.open(str(path), "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(_SAMPLE_RATE)
-        wf.writeframes(bytes(frames))
+        wf.writeframes(frames)

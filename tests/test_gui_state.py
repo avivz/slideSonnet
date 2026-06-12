@@ -157,6 +157,57 @@ def test_config_change_reloads_config(tmp_path: Path) -> None:
     assert state.config.tts.backend == "elevenlabs"
 
 
+def test_poll_surfaces_persistent_config_error(tmp_path: Path) -> None:
+    """Invalid TOML won't fix itself by waiting — the user needs a signal,
+    not an eternal silent retry (the deck keeps its last good config)."""
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    (tmp_path / "slidesonnet.toml").write_text("not = [valid toml", encoding="utf-8")
+    assert state.poll_sources() is True  # the UI must refresh to show the error
+    assert state.source_error is not None and "TOML" in state.source_error
+    assert state.config.tts.backend == "kokoro"  # last good config retained
+    assert state.poll_sources() is False  # reported once, not every tick
+
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "kokoro"\n', encoding="utf-8")
+    _bump_mtime(tmp_path / "slidesonnet.toml")
+    assert state.poll_sources() is True
+    assert state.source_error is None  # fixed file clears the report
+
+
+def test_poll_surfaces_sidecar_grammar_error(tmp_path: Path) -> None:
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text("orphan text before any @block\n", encoding="utf-8")
+    _bump_mtime(sidecar)
+    assert state.poll_sources() is True
+    assert state.source_error is not None
+    assert "Hello." in serialize_body(state.current_block)  # last good deck retained
+
+
+def test_reload_reuses_page_ids_when_pdf_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every commit saves + reloads; re-parsing the whole PDF per text-field
+    blur stalls the event loop on big decks. Unchanged PDF → cached page ids."""
+    from slidesonnet.gui import state as state_mod
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    calls = {"n": 0}
+    real_read = state_mod.read_page_ids
+
+    def counting_read(pdf: Path) -> list[str]:
+        calls["n"] += 1
+        return real_read(pdf)
+
+    monkeypatch.setattr(state_mod, "read_page_ids", counting_read)
+    state.replace_block(parse_segments("Edit one."))
+    state.replace_block(parse_segments("Edit two."))
+    assert calls["n"] == 0  # PDF untouched — commits must not re-open it
+
+    _bump_mtime(tmp_path / "marked.pdf")
+    assert state.poll_sources() is True
+    assert calls["n"] >= 1  # changed PDF is re-read
+
+
 # ---- recompiling the deck while the editor is open ------------------------
 
 
@@ -224,15 +275,18 @@ def test_poll_survives_partially_written_pdf(tmp_path: Path) -> None:
 
 
 def test_poll_survives_malformed_config_edit(tmp_path: Path) -> None:
-    # a half-saved slidesonnet.toml must not crash the poll loop
+    # a half-saved slidesonnet.toml must not crash the poll loop: the error is
+    # reported (not silently retried forever) and clears once the file is fixed
     state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n")
     cfg = tmp_path / "slidesonnet.toml"
     cfg.write_text("[tts\nbackend = ", encoding="utf-8")
     _bump_mtime(cfg)
-    assert state.poll_sources() is False
+    assert state.poll_sources() is True
+    assert state.source_error is not None
     cfg.write_text('[tts]\nbackend = "kokoro"\n', encoding="utf-8")
     _bump_mtime(cfg)
     assert state.poll_sources() is True
+    assert state.source_error is None
 
 
 def test_duplicate_blocks_are_disambiguated_not_frozen(tmp_path: Path) -> None:

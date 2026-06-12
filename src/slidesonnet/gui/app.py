@@ -1517,6 +1517,12 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             save_current()
         if not await run.io_bound(state.poll_sources):
             return
+        if state.source_error is not None:
+            # bad TOML / sidecar grammar: the last good deck stays on screen,
+            # but silence here would leave the user wondering why edits to the
+            # file do nothing
+            _flash(f"Deck file has an error — {state.source_error}", "warning")
+            return
         try:
             await run.io_bound(state.ensure_images)  # rasterize off the event loop
         except Exception:

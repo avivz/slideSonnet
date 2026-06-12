@@ -137,6 +137,18 @@ def _ref_targets(deck: Deck, config: Config, audio_dir: Path) -> list[tuple[Spee
     return out
 
 
+def ref_cache_status(deck: Deck, config: Config, audio_dir: Path) -> list[tuple[SpeechRef, bool]]:
+    """Every speech segment paired with whether its cached audio exists.
+
+    One deck-wide scan callers can derive counts/flags/id-sets from, instead
+    of re-walking every segment (with stat calls) per question.
+    """
+    return [
+        (ref, audio_cache_path_or_alt(target) is not None)
+        for ref, target in _ref_targets(deck, config, audio_dir)
+    ]
+
+
 def uncached_targets(
     deck: Deck,
     config: Config,

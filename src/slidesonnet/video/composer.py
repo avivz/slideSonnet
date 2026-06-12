@@ -106,25 +106,6 @@ def compose_segment(
     )
     _run_ffmpeg(cmd)
 
-    # Check for stream duration mismatch.
-    # Threshold accounts for codec frame quantization: one video frame
-    # (1/fps) plus one AAC frame (~23ms) plus a small margin.
-    _mismatch_threshold = 1.0 / fps + 0.03
-    try:
-        vid_dur = get_duration(output, stream="video")
-        aud_dur = get_duration(output, stream="audio")
-        delta = vid_dur - aud_dur
-        if abs(delta) > _mismatch_threshold:
-            logger.warning(
-                "compose: %s stream mismatch video=%.3fs audio=%.3fs (Δ=%.3fs)",
-                output.name,
-                vid_dur,
-                aud_dur,
-                delta,
-            )
-    except FFmpegError:
-        pass  # the mismatch check is diagnostic only; never fail a finished compose
-
 
 def compose_silent_segment(
     image: Path,

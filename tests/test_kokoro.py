@@ -168,3 +168,32 @@ class TestFactoryAndConfig:
 
 def test_kokoro_is_not_paid() -> None:
     assert KokoroTTS().paid is False
+
+
+class TestWriteWav:
+    def test_roundtrip_values_and_clipping(self, tmp_path: Path) -> None:
+        import wave
+
+        from slidesonnet.tts.kokoro import _SAMPLE_RATE, _write_wav
+
+        out = tmp_path / "clip.wav"
+        _write_wav(out, [0.0, 0.5, -0.5, 1.5, -1.5])  # last two must clip
+        with wave.open(str(out), "rb") as wf:
+            assert wf.getnchannels() == 1
+            assert wf.getsampwidth() == 2
+            assert wf.getframerate() == _SAMPLE_RATE
+            raw = wf.readframes(wf.getnframes())
+        values = [
+            int.from_bytes(raw[i : i + 2], "little", signed=True) for i in range(0, len(raw), 2)
+        ]
+        assert values == [0, 16383, -16383, 32767, -32767]
+
+    def test_large_buffer_is_fast_enough(self, tmp_path: Path) -> None:
+        import time
+
+        from slidesonnet.tts.kokoro import _SAMPLE_RATE, _write_wav
+
+        samples = [0.25] * (_SAMPLE_RATE * 60)  # one minute of audio
+        start = time.monotonic()
+        _write_wav(tmp_path / "minute.wav", samples)
+        assert time.monotonic() - start < 2.0  # byte-by-byte loop took far longer

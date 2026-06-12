@@ -82,6 +82,9 @@ def _remove_renders(pdf_path: Path) -> None:
     rd = render_dir(pdf_path)
     if rd.exists():
         shutil.rmtree(rd)
+    parent = rd.parent  # the shared render/ root; drop it once no deck uses it
+    if parent.exists() and not any(parent.iterdir()):
+        parent.rmdir()
 
 
 def _keep_api(pdf_path: Path) -> None:

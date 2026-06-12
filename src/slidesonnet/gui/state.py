@@ -7,18 +7,25 @@ without a browser, and stays under ``mypy --strict``.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Literal
 
 from slidesonnet import api
-from slidesonnet.audio.synth import cached_speech_flags, uncached_targets, ungenerated_ids
+from slidesonnet.audio.synth import SpeechRef, ref_cache_status
 from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import default_config_path, load_config
-from slidesonnet.deck import default_sidecar_path, load_deck, save_deck
+from slidesonnet.deck import default_sidecar_path, dedupe_page_ids, load_deck, save_deck
 from slidesonnet.diagnostics import Diagnostic
+from slidesonnet.exceptions import ConfigError
+from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import PageNarration, Segment, Transition
-from slidesonnet.pdf.reader import rasterize
+from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.tts import create_tts
+
+# Audio cache-status scans stat() every speech segment; renders ask several
+# questions per repaint. One scan is shared for this long before re-checking.
+_AUDIO_SCAN_TTL = 1.0
 
 SlideStatus = Literal["error", "warning", "ready", "empty"]
 
@@ -32,12 +39,35 @@ class EditorState:
         self.config = load_config(self.pdf_path)
         self.index = 0
         self._images: list[Path] | None = None
+        # (pdf mtime, deduped page ids, dedupe diagnostics)
+        self._page_cache: tuple[float, list[str], list[Diagnostic]] | None = None
+        self._audio_scan: tuple[float, list[tuple[SpeechRef, bool]]] | None = None
+        self.source_error: str | None = None
         self.reload()
         self._mtimes = self._source_mtimes()
 
     # ---- loading -------------------------------------------------------
     def reload(self) -> None:
-        self.deck, self.diagnostics = load_deck(self.pdf_path, sidecar_path=self.sidecar_path)
+        self.deck, self.diagnostics = load_deck(
+            self.pdf_path, sidecar_path=self.sidecar_path, pages=self._read_pages_cached()
+        )
+        self._audio_scan = None  # narration changed; cached audio-status is stale
+
+    def _read_pages_cached(self) -> tuple[list[str], list[Diagnostic]]:
+        """Page ids + dedupe diagnostics, re-reading the PDF only when it changed.
+
+        Every commit saves and reloads; without this, each text-field blur
+        re-opens the PDF and walks every page — a visible stall on big decks.
+        """
+        try:
+            mtime = self.pdf_path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        if self._page_cache is None or self._page_cache[0] != mtime:
+            ids, diags = dedupe_page_ids(read_page_ids(self.pdf_path))
+            self._page_cache = (mtime, ids, diags)
+        _, ids, diags = self._page_cache
+        return list(ids), list(diags)
 
     # ---- source watching -------------------------------------------------
     def _source_mtimes(self) -> dict[str, float]:
@@ -62,7 +92,16 @@ class EditorState:
             return False
         try:
             config = load_config(self.pdf_path)
-            deck, diagnostics = load_deck(self.pdf_path, sidecar_path=self.sidecar_path)
+            deck, diagnostics = load_deck(
+                self.pdf_path, sidecar_path=self.sidecar_path, pages=self._read_pages_cached()
+            )
+        except (ConfigError, SidecarError) as exc:
+            # A parseable-but-broken source (bad TOML, bad sidecar grammar)
+            # won't fix itself by waiting — keep the last good deck but tell
+            # the user. Absorb the baseline so this reports once, not per tick.
+            self._mtimes = current
+            self.source_error = str(exc)
+            return True
         except Exception:
             # mid-recompile: the PDF (or config) is missing or half-written.
             # Keep showing the last good deck; the next tick retries.
@@ -72,6 +111,8 @@ class EditorState:
         self._mtimes = current
         self.config = config
         self.deck, self.diagnostics = deck, diagnostics
+        self.source_error = None
+        self._audio_scan = None
         self.go(self.index)  # clamp in case the deck shrank
         return True
 
@@ -269,33 +310,46 @@ class EditorState:
         """True when the configured TTS backend spends API credits."""
         return create_tts(self.config.tts).paid
 
+    def _audio_status(self) -> list[tuple[SpeechRef, bool]]:
+        """Deck-wide (segment, is_cached) scan, shared across a render tick.
+
+        Refreshed after at most _AUDIO_SCAN_TTL seconds (so audio synthesized
+        by an external CLI run still shows up) and invalidated outright on
+        reload and after this state's own synthesis actions.
+        """
+        now = time.monotonic()
+        if self._audio_scan is None or now - self._audio_scan[0] > _AUDIO_SCAN_TTL:
+            scan = ref_cache_status(self.deck, self.config, audio_dir(self.pdf_path))
+            self._audio_scan = (now, scan)
+        return self._audio_scan[1]
+
     def uncached_count(self, slide_id: str) -> int:
         """How many of *slide_id*'s speech segments a synthesis run would generate."""
-        return len(
-            uncached_targets(self.deck, self.config, audio_dir(self.pdf_path), only_ids={slide_id})
+        return sum(
+            1 for ref, cached in self._audio_status() if ref.slide_id == slide_id and not cached
         )
 
     def uncached_total(self) -> int:
         """How many speech segments across the deck a synthesis run would generate."""
-        return len(uncached_targets(self.deck, self.config, audio_dir(self.pdf_path)))
+        return sum(1 for _ref, cached in self._audio_status() if not cached)
 
     def speech_cached_flags(self) -> list[bool]:
         """Per speech segment of the current slide: True where its audio is cached."""
         if not self.current_id:
             return []
-        return cached_speech_flags(
-            self.deck, self.config, audio_dir(self.pdf_path), self.current_id
-        )
+        current = self.current_id
+        return [cached for ref, cached in self._audio_status() if ref.slide_id == current]
 
     def ungenerated_ids(self) -> set[str]:
         """Slide-ids with at least one speech segment that has no cached audio."""
-        return ungenerated_ids(self.deck, self.config, audio_dir(self.pdf_path))
+        return {ref.slide_id for ref, cached in self._audio_status() if not cached}
 
     # ---- actions -------------------------------------------------------
     # Actions pass engine=None so api re-reads the on-disk config at action
     # time — the editor's cached config can be up to one poll interval stale,
     # and running a stale (possibly paid) backend is a money-relevant surprise.
     def synth_current(self, *, force: bool = False) -> int:
+        self._audio_scan = None
         return api.synthesize_deck(
             self.pdf_path,
             sidecar_path=self.sidecar_path,
@@ -305,6 +359,7 @@ class EditorState:
 
     def synth_segment(self, speech_index: int, *, force: bool = False) -> int:
         """Synthesize one speech segment of the current slide (by speech index)."""
+        self._audio_scan = None
         return api.synthesize_deck(
             self.pdf_path,
             sidecar_path=self.sidecar_path,
@@ -313,14 +368,17 @@ class EditorState:
         )
 
     def synth_all(self) -> int:
+        self._audio_scan = None
         return api.synthesize_deck(self.pdf_path, sidecar_path=self.sidecar_path)
 
     def preview_current(self) -> api.Preview:
+        self._audio_scan = None  # building a preview synthesizes missing clips
         return api.build_preview(
             self.pdf_path, sidecar_path=self.sidecar_path, only_id=self.current_id
         )
 
     def preview_deck(self) -> api.Preview:
+        self._audio_scan = None
         return api.build_preview(self.pdf_path, sidecar_path=self.sidecar_path)
 
     def export(self, output: Path, *, silent: bool = False) -> api.ExportResult:
