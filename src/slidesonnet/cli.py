@@ -89,11 +89,8 @@ def main(ctx: click.Context, quiet: bool) -> None:
 
 
 def _print_diagnostics(diags: list[Diagnostic]) -> None:
-    use_color = True
     for d in diags:
-        label = d.severity.upper()
-        if use_color:
-            label = click.style(label, fg=_SEVERITY_COLOR.get(d.severity, "white"))
+        label = click.style(d.severity.upper(), fg=_SEVERITY_COLOR.get(d.severity, "white"))
         click.echo(f"  {label}  {d.message}")
     counts = count_by_severity(diags)
     summary = f"{counts['error']} error(s), {counts['warning']} warning(s), {counts['info']} info"

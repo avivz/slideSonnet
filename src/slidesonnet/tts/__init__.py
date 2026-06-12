@@ -2,13 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
-
-if TYPE_CHECKING:
-    from slidesonnet.config import Config
 
 
 def create_tts(tts: TTSConfig) -> TTSEngine:
@@ -22,8 +17,3 @@ def create_tts(tts: TTSConfig) -> TTSEngine:
 
         return ElevenLabsTTS(tts)
     raise ValueError(f"Unknown TTS backend: {tts.backend}")
-
-
-def create_tts_from_config(config: Config) -> TTSEngine:
-    """Convenience: build a TTS engine from a full editor :class:`Config`."""
-    return create_tts(config.tts)

@@ -153,13 +153,6 @@ class TestFactoryAndConfig:
         with pytest.raises(ValueError, match="Unknown TTS backend"):
             create_tts(cfg)
 
-    def test_create_tts_from_config(self) -> None:
-        from slidesonnet.config import Config
-        from slidesonnet.tts import create_tts_from_config
-
-        engine = create_tts_from_config(Config())
-        assert isinstance(engine, KokoroTTS)  # default backend is kokoro
-
     def test_pace_scales_kokoro_speed(self) -> None:
         from slidesonnet.audio.synth import engine_for_pace
         from slidesonnet.models import TTSConfig

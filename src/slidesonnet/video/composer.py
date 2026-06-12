@@ -79,8 +79,6 @@ def compose_segment(
     audio: Path,
     output: Path,
     duration: float,
-    pad_seconds: float = 0.5,
-    pre_silence: float = 1.0,
     resolution: str = "1920x1080",
     fps: int = 24,
     crf: int = 23,
@@ -88,33 +86,23 @@ def compose_segment(
 ) -> None:
     """Create a video segment from a static slide image + audio.
 
-    The slide is displayed for pre_silence + audio duration + pad_seconds.
+    The slide is displayed for exactly *duration* seconds — lead/tail silence
+    is already baked into the page audio by the timeline (render.py). apad
+    only covers encoder shortfall so the streams stay aligned.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
-    total_duration = pre_silence + duration + pad_seconds
-    logger.debug(
-        "compose: %s audio=%.3fs pre=%.3fs pad=%.3fs → total=%.3fs",
-        output.name,
-        duration,
-        pre_silence,
-        pad_seconds,
-        total_duration,
-    )
-
-    # Delay audio by pre_silence (adelay takes milliseconds, all channels)
-    delay_ms = int(pre_silence * 1000)
-    audio_filter = f"adelay={delay_ms}|{delay_ms},apad"
+    logger.debug("compose: %s duration=%.3fs", output.name, duration)
 
     cmd = _compose_ffmpeg_cmd(
         image=image,
         audio_args=["-i", str(audio)],
         output=output,
-        duration=total_duration,
+        duration=duration,
         resolution=resolution,
         fps=fps,
         crf=crf,
         preset=preset,
-        audio_filter=audio_filter,
+        audio_filter="apad",
     )
     _run_ffmpeg(cmd)
 
@@ -348,9 +336,7 @@ def concatenate_audio(audio_paths: list[Path], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
 
     if len(audio_paths) == 1:
-        import shutil as _shutil
-
-        _shutil.copy2(audio_paths[0], output)
+        shutil.copy2(audio_paths[0], output)
         return
 
     inputs: list[str] = []

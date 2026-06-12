@@ -107,7 +107,6 @@ class VideoConfig:
     fps: int = 24
     crf: int = 23
     preset: str = "medium"
-    pad_seconds: float = 1.0
     pre_silence: float = 0.3
     tail_seconds: float = 0.5
 
@@ -124,8 +123,6 @@ class VideoConfig:
             raise ValueError(
                 f"Invalid preset '{self.preset}': must be one of {sorted(_VALID_PRESETS)}"
             )
-        if self.pad_seconds < 0:
-            raise ValueError(f"pad_seconds must be non-negative, got {self.pad_seconds}")
         if self.pre_silence < 0:
             raise ValueError(f"pre_silence must be non-negative, got {self.pre_silence}")
         if self.tail_seconds < 0:

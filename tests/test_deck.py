@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from slidesonnet.deck import (
-    blank_blocks_for,
     dedupe_page_ids,
     default_sidecar_path,
     load_deck,
@@ -72,12 +71,6 @@ def test_load_deck_with_sidecar(tmp_path: Path) -> None:
     deck, diags = load_deck(pdf)
     assert deck.narration["intro-title"].speech_text == "Hello."
     assert not any(d.code == "orphan-narration" for d in diags)
-
-
-def test_blank_blocks_for_dedups_and_orders() -> None:
-    blocks = blank_blocks_for(["a", "b", "a", "", "c"])
-    assert [b.slide_id for b in blocks] == ["a", "b", "c"]
-    assert all(b.segments == [] for b in blocks)
 
 
 def test_save_deck_round_trips(tmp_path: Path) -> None:

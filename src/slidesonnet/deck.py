@@ -143,17 +143,6 @@ def load_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> tuple[Deck
     return deck, diags
 
 
-def blank_blocks_for(pages: list[str]) -> list[PageNarration]:
-    """One empty narration block per (unique, real) page id, in page order."""
-    seen: set[str] = set()
-    blocks: list[PageNarration] = []
-    for pid in pages:
-        if pid and pid not in seen:
-            seen.add(pid)
-            blocks.append(PageNarration(slide_id=pid))
-    return blocks
-
-
 def save_deck(deck: Deck, *, header: str | None = None) -> None:
     """Serialize *deck*'s narration to its sidecar, in PDF page order.
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "slidesonnet"
 dynamic = ["version"]
-description = "Compile text-based presentations into narrated videos"
+description = "Narrated-video editor for PDF slide decks with a narration sidecar"
 readme = "README.md"
 license = "MIT"
 authors = [{name = "Aviv Zohar"}]
@@ -22,7 +22,6 @@ classifiers = [
 dependencies = [
     "click>=8.0",
     "python-dotenv>=1.0",
-    "rich>=13.0",
     "pymupdf>=1.24",
     "nicegui>=2.0",
 ]
@@ -52,8 +51,7 @@ slidesonnet = "slidesonnet.cli:main"
 version = {attr = "slidesonnet.__version__"}
 
 [tool.setuptools.package-data]
-"slidesonnet" = ["*.sty"]
-"slidesonnet.templates" = ["*.tex", "*.narration", "*.sty", "*.toml"]
+"slidesonnet.templates" = ["*.sty"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

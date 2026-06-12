@@ -123,10 +123,6 @@ class TestVideoConfigValidation:
         with pytest.raises(ValueError, match="preset"):
             VideoConfig(preset="warp9")
 
-    def test_pad_seconds_must_be_non_negative(self) -> None:
-        with pytest.raises(ValueError, match="pad_seconds"):
-            VideoConfig(pad_seconds=-0.1)
-
     def test_pre_silence_must_be_non_negative(self) -> None:
         with pytest.raises(ValueError, match="pre_silence"):
             VideoConfig(pre_silence=-0.1)
@@ -136,5 +132,5 @@ class TestVideoConfigValidation:
             VideoConfig(tail_seconds=-0.1)
 
     def test_zero_paddings_accepted(self) -> None:
-        cfg = VideoConfig(pad_seconds=0.0, pre_silence=0.0, tail_seconds=0.0)
-        assert cfg.pad_seconds == 0.0
+        cfg = VideoConfig(pre_silence=0.0, tail_seconds=0.0)
+        assert cfg.pre_silence == 0.0

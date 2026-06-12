@@ -1,24 +1,19 @@
 """Audio file naming and hash computation for content-addressed caching.
 
-Provides the single source of truth for how TTS audio filenames are computed,
-used by both tasks.py (build) and clean.py (selective cleanup).
+The single source of truth for how TTS audio filenames are computed, shared
+by synthesis (audio/synth.py) and selective cleanup (clean.py).
 
 Filename format: {text_hash}.{backend}.{config_hash}.{ext}
   - text_hash:   sha256(text + voice)[:16]  — identifies the utterance content
   - backend:     "kokoro" or "elevenlabs"   — readable engine name
   - config_hash: sha256(cache_key)[:8]      — differentiates engine configs
   - ext:         backend-specific extension (.wav for kokoro, .mp3 for elevenlabs)
-
-Concat files keep the format: {hash}_concat.wav
 """
 
 from __future__ import annotations
 
 import hashlib
-import logging
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 _BACKEND_EXTENSIONS: dict[str, str] = {
     "kokoro": ".wav",
@@ -72,31 +67,9 @@ def audio_path(
     return audio_dir / audio_filename(text, backend, cache_key, voice)
 
 
-def concat_filename(part_paths: list[Path]) -> str:
-    """Content-addressed filename for concatenated audio."""
-    concat_hash_input = "\0".join(str(p) for p in part_paths)
-    h = hashlib.sha256(concat_hash_input.encode("utf-8")).hexdigest()[:16]
-    return f"{h}_concat.wav"
-
-
 def _alternate_extensions(suffix: str) -> list[str]:
     """Return the other backend extensions besides *suffix*."""
     return [ext for ext in _BACKEND_EXTENSIONS.values() if ext != suffix]
-
-
-def audio_cache_is_fresh(path: Path) -> bool:
-    """Return True if *path* or a same-stem alternate extension exists and is non-empty.
-
-    Read-only: never renames anything. Used for cache existence checks where
-    we just want to know whether audio is available.
-    """
-    if path.exists() and path.stat().st_size > 0:
-        return True
-    for ext in _alternate_extensions(path.suffix):
-        alt = path.with_suffix(ext)
-        if alt.exists() and alt.stat().st_size > 0:
-            return True
-    return False
 
 
 def audio_cache_path_or_alt(path: Path) -> Path | None:
@@ -114,29 +87,11 @@ def audio_cache_path_or_alt(path: Path) -> Path | None:
     return None
 
 
-def migrate_and_check_audio_cache(path: Path) -> bool:
-    """Return True if *path* exists (migrating from an alternate extension if needed).
-
-    If *path* is missing but a same-stem alternate-extension file exists,
-    rename the alternate to *path*. Used by doit's uptodate check so
-    engine-switches (.wav ↔ .mp3) don't re-synthesize.
-    """
-    if path.exists() and path.stat().st_size > 0:
-        return True
-    for ext in _alternate_extensions(path.suffix):
-        alt = path.with_suffix(ext)
-        if alt.exists() and alt.stat().st_size > 0:
-            alt.rename(path)
-            logger.info("Migrated cache: %s → %s", alt.name, path.name)
-            return True
-    return False
-
-
 def parse_audio_filename(filename: str) -> tuple[str, str, str] | None:
     """Parse a new-format audio filename into (text_hash, backend, config_hash).
 
-    Returns None for old-format files (plain hash.wav), concat files (*_concat.wav),
-    or any filename that doesn't match the expected 3-part format.
+    Returns None for old-format files (plain hash.wav), legacy pre-1.0 concat
+    files (*_concat.wav), or any filename that doesn't match the 3-part format.
     """
     if filename.endswith("_concat.wav"):
         return None

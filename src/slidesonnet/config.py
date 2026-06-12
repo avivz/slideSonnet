@@ -118,7 +118,6 @@ def _parse_video(raw: dict[str, Any]) -> VideoConfig:
         ("fps", int),
         ("crf", int),
         ("preset", str),
-        ("pad_seconds", float),
         ("pre_silence", float),
         ("tail_seconds", float),
     ):

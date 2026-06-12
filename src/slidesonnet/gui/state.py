@@ -16,7 +16,6 @@ from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import default_config_path, load_config
 from slidesonnet.deck import default_sidecar_path, load_deck, save_deck
 from slidesonnet.diagnostics import Diagnostic
-from slidesonnet.narration.format import serialize_body
 from slidesonnet.narration.model import PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import rasterize
 from slidesonnet.tts import create_tts
@@ -119,29 +118,9 @@ class EditorState:
         return images[self.index] if self.index < len(images) else None
 
     # ---- editing -------------------------------------------------------
-    @property
-    def body_text(self) -> str:
-        return serialize_body(self.current_block)
-
     def _next_page_id(self) -> str | None:
         nxt = self.index + 1
         return self.deck.pages[nxt] if nxt < self.page_count else None
-
-    def set_body(self, body: str) -> bool:
-        """Replace the current block from a plain free-text body (preserves transitions).
-
-        Lossy convenience for the plain-text editing path: per-utterance voice,
-        pace, and director's notes are not expressible here. Inline ``[pause N]``
-        still splits the body into segments.
-        """
-        from slidesonnet.narration.format import parse_segments
-
-        block = self.current_block
-        return self.replace_block(
-            parse_segments(body),
-            transition_in=block.transition_in,
-            transition_out=block.transition_out,
-        )
 
     def replace_block(
         self,

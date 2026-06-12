@@ -6,7 +6,7 @@ class SlideSonnetError(Exception):
 
 
 class ParserError(SlideSonnetError):
-    """Slide parser external tool (marp, pdflatex, pdftoppm) is missing or failed."""
+    """Reading the deck PDF failed (PyMuPDF open/parse, or pdftoppm rasterize)."""
 
 
 class TTSError(SlideSonnetError):
@@ -23,7 +23,3 @@ class FFmpegError(SlideSonnetError):
 
 class RenderError(SlideSonnetError):
     """Track/video assembly was asked to render inconsistent inputs."""
-
-
-class APINotAllowedError(SlideSonnetError):
-    """Build requires paid API calls but --allow-api was not passed."""

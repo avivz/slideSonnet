@@ -168,7 +168,7 @@ def test_compose_video_with_audio_uses_real_durations(
 ) -> None:
     tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
     audio_durations = {f"page-{i:04d}.wav": float(i) for i in range(1, 5)}
-    seg_calls: list[tuple[Path, Path, Path, float, float, float]] = []
+    seg_calls: list[tuple[Path, Path, Path, float]] = []
 
     def fake_segment(
         image: Path,
@@ -176,14 +176,12 @@ def test_compose_video_with_audio_uses_real_durations(
         output: Path,
         *,
         duration: float,
-        pre_silence: float,
-        pad_seconds: float,
         resolution: str,
         fps: int,
         crf: int,
         preset: str,
     ) -> None:
-        seg_calls.append((image, audio, output, duration, pre_silence, pad_seconds))
+        seg_calls.append((image, audio, output, duration))
 
     monkeypatch.setattr("slidesonnet.render.compose_segment", fake_segment)
     monkeypatch.setattr("slidesonnet.render.concatenate_segments", lambda segments, output: None)
@@ -203,7 +201,6 @@ def test_compose_video_with_audio_uses_real_durations(
     assert [(c[0], c[1]) for c in seg_calls] == list(zip(images, audios, strict=True))
     # Segment length comes from the audio file, with no extra padding or lead.
     assert [c[3] for c in seg_calls] == [1.0, 2.0, 3.0, 4.0]
-    assert all(c[4] == 0.0 and c[5] == 0.0 for c in seg_calls)
 
 
 def test_tts_timeline_uses_supplied_durations() -> None:

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from slidesonnet.gui.state import EditorState, cue_start
+from slidesonnet.narration.format import parse_segments, serialize_body
 from tests.conftest import simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -134,13 +135,13 @@ def test_poll_sources_picks_up_external_sidecar_edit(tmp_path: Path) -> None:
     sidecar.write_text(simple_narration("@intro-title\nChanged externally.\n"), encoding="utf-8")
     _bump_mtime(sidecar)
     assert state.poll_sources() is True
-    assert "Changed externally." in state.body_text
+    assert "Changed externally." in serialize_body(state.current_block)
     assert state.poll_sources() is False  # baseline refreshed
 
 
 def test_own_save_does_not_trigger_reload(tmp_path: Path) -> None:
     state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
-    state.set_body("Edited in the GUI.")
+    state.replace_block(parse_segments("Edited in the GUI."))
     assert state.poll_sources() is False
 
 
@@ -244,7 +245,7 @@ def test_duplicate_blocks_are_disambiguated_not_frozen(tmp_path: Path) -> None:
     state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nFirst.\n\n@a\nSecond.\n\n@b\nBye.\n")
     assert "a-2" in state.deck.narration  # the second @a block was disambiguated
     state.go(1)  # onto slide b
-    assert state.set_body("edited b") is True
+    assert state.replace_block(parse_segments("edited b")) is True
     text = (tmp_path / "deck.narration").read_text(encoding="utf-8")
     assert "First." in text and "Second." in text  # both blocks preserved
     assert "edited b" in text
@@ -252,7 +253,7 @@ def test_duplicate_blocks_are_disambiguated_not_frozen(tmp_path: Path) -> None:
 
 def test_save_returns_true_on_normal_write(tmp_path: Path) -> None:
     state = _factory_state(tmp_path, ["a"], sidecar="@a\nHi.\n")
-    assert state.set_body("Hello.") is True
+    assert state.replace_block(parse_segments("Hello.")) is True
     assert "Hello." in (tmp_path / "deck.narration").read_text(encoding="utf-8")
 
 
@@ -261,7 +262,7 @@ def test_save_on_unmarked_page_is_a_safe_noop(tmp_path: Path) -> None:
     state = _factory_state(tmp_path, ["a", "", "b"], sidecar="@a\nHi.\n")
     state.go(1)
     assert state.current_id == ""
-    assert state.set_body("typed on an unmarked page") is False
+    assert state.replace_block(parse_segments("typed on an unmarked page")) is False
     text = (tmp_path / "deck.narration").read_text(encoding="utf-8")
     assert "typed on an unmarked page" not in text
     state.reload()  # the sidecar must still parse
@@ -345,7 +346,7 @@ def test_save_does_not_mask_concurrent_pdf_change(tmp_path: Path) -> None:
     # must still happen (save refreshes only the sidecar baseline)
     state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n")
     _recompile(state, ["a", "b", "c"])
-    state.set_body("Hi there.")
+    state.replace_block(parse_segments("Hi there."))
     assert state.poll_sources() is True
     assert state.page_count == 3
 

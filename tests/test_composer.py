@@ -75,7 +75,6 @@ def test_compose_segment(work_dir):
         audio=audio,
         output=output,
         duration=2.0,
-        pad_seconds=0.5,
         resolution="640x480",
         fps=24,
         crf=28,
@@ -83,8 +82,8 @@ def test_compose_segment(work_dir):
 
     assert output.exists()
     dur = get_duration(output)
-    # expected: 1.0 (pre) + 2.0 (audio) + 0.5 (pad) = 3.5s
-    assert 3.35 <= dur <= 3.65
+    # expected: exactly the audio duration (lead/tail live in the page audio)
+    assert 1.85 <= dur <= 2.15
 
 
 @pytest.mark.integration
@@ -123,8 +122,6 @@ def test_concatenate_segments(work_dir):
             audio=audio,
             output=seg,
             duration=1.0,
-            pad_seconds=0.0,
-            pre_silence=0.0,
             resolution="640x480",
             fps=24,
             crf=28,
@@ -156,8 +153,6 @@ def test_concatenate_segments_xfade_output_duration(work_dir):
             audio=audio,
             output=seg,
             duration=dur,
-            pad_seconds=0.0,
-            pre_silence=0.0,
             resolution="640x480",
             fps=24,
             crf=28,
@@ -199,8 +194,6 @@ def test_concatenate_segments_xfade_mixed_audio(work_dir):
             audio=audio,
             output=seg,
             duration=2.0,
-            pad_seconds=0.0,
-            pre_silence=0.0,
             resolution="640x480",
             fps=24,
             crf=28,
@@ -235,8 +228,6 @@ def test_get_duration_stream_video(work_dir):
         audio=audio,
         output=seg,
         duration=2.0,
-        pad_seconds=0.5,
-        pre_silence=0.5,
         resolution="640x480",
         fps=24,
         crf=28,
@@ -266,8 +257,6 @@ def test_compose_segment_streams_match(work_dir):
         audio=audio,
         output=output,
         duration=2.0,
-        pad_seconds=0.5,
-        pre_silence=1.0,
         resolution="640x480",
         fps=24,
         crf=28,
@@ -295,8 +284,6 @@ def test_multi_segment_concat_no_drift(work_dir):
             audio=audio,
             output=seg,
             duration=1.5,
-            pad_seconds=0.3,
-            pre_silence=0.5,
             resolution="640x480",
             fps=24,
             crf=28,
@@ -307,9 +294,9 @@ def test_multi_segment_concat_no_drift(work_dir):
     concatenate_segments(segments, output)
 
     dur = get_duration(output)
-    # expected: 10 × (0.5 + 1.5 + 0.3) = 23.0s
+    # expected: 10 × 1.5 = 15.0s
     # AAC frame quantization (~23ms/frame) can add up to ~50ms per segment
-    assert 22.85 <= dur <= 23.5, f"Expected ~23.0s, got {dur:.3f}s"
+    assert 14.85 <= dur <= 15.5, f"Expected ~15.0s, got {dur:.3f}s"
 
 
 @pytest.mark.integration
@@ -327,8 +314,6 @@ def test_multi_segment_xfade_no_drift(work_dir):
             audio=audio,
             output=seg,
             duration=1.5,
-            pad_seconds=0.3,
-            pre_silence=0.5,
             resolution="640x480",
             fps=24,
             crf=28,
@@ -340,8 +325,8 @@ def test_multi_segment_xfade_no_drift(work_dir):
     concatenate_segments_xfade(segments, output, crossfade=crossfade, crf=28)
 
     dur = get_duration(output)
-    # expected: 10 × 2.3 - 9 × 0.2 = 21.2s (minus offset margins)
-    assert 20.8 <= dur <= 21.6, f"Expected ~21.2s, got {dur:.3f}s"
+    # expected: 10 × 1.5 - 9 × 0.2 = 13.2s (minus offset margins)
+    assert 12.8 <= dur <= 13.6, f"Expected ~13.2s, got {dur:.3f}s"
 
 
 def _ffprobe_json(path: Path) -> dict:
@@ -419,7 +404,6 @@ class TestComposeSegmentMocked:
             audio=audio,
             output=output,
             duration=3.0,
-            pad_seconds=0.5,
             resolution="1920x1080",
             fps=24,
             crf=23,
@@ -451,18 +435,16 @@ class TestComposeSegmentMocked:
         assert "yuv420p" in scale_filter
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
-    def test_duration_includes_padding(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+    def test_duration_is_exact(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
         compose_segment(
             image=tmp_path / "s.png",
             audio=tmp_path / "a.wav",
             output=tmp_path / "o.mp4",
             duration=2.0,
-            pad_seconds=0.7,
-            pre_silence=0.5,
         )
         cmd = mock_ffmpeg.call_args[0][0]
         t_idx = cmd.index("-t")
-        assert cmd[t_idx + 1] == str(3.2)  # pre_silence + duration + pad
+        assert cmd[t_idx + 1] == str(2.0)  # display time == page-audio duration
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
     def test_codec_flags(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:

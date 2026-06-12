@@ -168,6 +168,9 @@ def compose_video(
     render_dir: Path,
 ) -> Path:
     """Compose page images + per-page audio (or silence) into the final MP4."""
+    # Lazy module-qualified import so tests can patch get_duration at source.
+    from slidesonnet.video import composer
+
     v = config.video
     seg_dir = render_dir / "segments"
     seg_dir.mkdir(parents=True, exist_ok=True)
@@ -185,15 +188,11 @@ def compose_video(
                 preset=v.preset,
             )
         else:
-            from slidesonnet.video.composer import get_duration
-
             compose_segment(
                 page_images[i],
                 page_audios[i],
                 seg,
-                duration=get_duration(page_audios[i]),
-                pre_silence=0.0,
-                pad_seconds=0.0,
+                duration=composer.get_duration(page_audios[i]),
                 resolution=v.resolution,
                 fps=v.fps,
                 crf=v.crf,
