@@ -76,4 +76,5 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 markers = [
     "integration: requires external tools (ffmpeg, pdftoppm, latexmk, kokoro)",
+    "browser: heavy real-browser (Playwright) GUI journey tests; local-only, never in CI",
 ]

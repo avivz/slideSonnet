@@ -162,18 +162,25 @@ def synthesize_deck(
     config_path: Path | None = None,
     engine: Engine | None = None,
     only_ids: set[str] | None = None,
+    force: bool = False,
     progress: ProgressFn | None = None,
 ) -> int:
     """Synthesize narration into the content-addressed cache (cache-aware).
 
     Returns the number of speech segments newly synthesized (not from cache).
+    ``force`` re-synthesizes the targeted segments even when already cached.
     """
     from slidesonnet.audio.synth import synthesize as _synth
     from slidesonnet.cache import audio_dir
 
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
     results = _synth(
-        deck, config, audio_dir=audio_dir(pdf_path), only_ids=only_ids, progress=progress
+        deck,
+        config,
+        audio_dir=audio_dir(pdf_path),
+        only_ids=only_ids,
+        force=force,
+        progress=progress,
     )
     return sum(1 for r in results.values() if not r.from_cache)
 

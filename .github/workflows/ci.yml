@@ -52,7 +52,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest tests/ -m "not integration" -v
+      # CI runs the fast unit tier only — no heavy tests (integration or
+      # browser), to stay within the free-tier minute budget.
+      - run: pytest tests/ -m "not integration and not browser" -v
 
   build:
     runs-on: ubuntu-latest

@@ -59,7 +59,7 @@ slidesonnet clean <deck.pdf> --keep nothing        # Nuke the deck's cache
 
 - **NEVER run tests or builds against ElevenLabs** — it costs real money (API credits). Use `--engine kokoro` for integration testing, and mocked unit tests (a fake `TTSEngine`) for ElevenLabs functionality.
 - **Prefer `make clean-*` over `make purge-*`** — clean keeps cached API audio (which costs money to regenerate), purge nukes everything. Only use purge when explicitly asked.
-- **No integration tests in CI** — GitHub Actions free tier has limited minutes. CI runs lint, typecheck, unit tests, and wheel build only. Integration tests (`make test`) are local-only.
+- **No heavy tests in CI** — GitHub Actions free tier has limited minutes, and we stay on it. CI runs lint, typecheck, the fast unit tier (`pytest -m "not integration and not browser"`), and the wheel build only. Heavy tests are local-only: `integration` (`make test`, external tools) and `browser` (real-browser Playwright GUI journeys).
 
 ## Example Videos
 
@@ -87,5 +87,5 @@ v1 rewrite lives on the `v2` branch until merged to `main`.
 
 - Python 3.12+, line length 100 (Ruff)
 - `mypy --strict` must pass on all source files. Untyped external libraries (elevenlabs, dotenv, kokoro, fitz, nicegui) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
-- Integration tests marked with `@pytest.mark.integration` (export/render and GUI-with-Kokoro tests). GUI logic is unit-tested via NiceGUI's in-process `user` simulation (selenium-free `nicegui.testing.user_plugin`, loaded in `tests/conftest.py`).
+- Heavy tests are local-only (never in CI): `@pytest.mark.integration` (export/render and GUI-with-Kokoro) and `@pytest.mark.browser` (real-browser Playwright GUI journeys). GUI logic is also unit-tested via NiceGUI's in-process `user` simulation (selenium-free `nicegui.testing.user_plugin`, loaded in `tests/conftest.py`) — fast, but blind to focus/blur and value-sync timing, which is what the browser tier covers.
 - External tool dependencies: ffmpeg, ffprobe, pdftoppm, kokoro (Python package); latexmk + pdflatex to compile your own deck (use `slidesonnet doctor` to check)

@@ -283,12 +283,13 @@ class EditorState:
         return len(uncached_targets(self.deck, self.config, audio_dir(self.pdf_path)))
 
     # ---- actions -------------------------------------------------------
-    def synth_current(self) -> int:
+    def synth_current(self, *, force: bool = False) -> int:
         return api.synthesize_deck(
             self.pdf_path,
             sidecar_path=self.sidecar_path,
             engine=self.config.tts.backend,
             only_ids={self.current_id},
+            force=force,
         )
 
     def synth_all(self) -> int:

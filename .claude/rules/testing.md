@@ -7,6 +7,9 @@ paths:
 
 - **NEVER run tests or builds against ElevenLabs** — it costs real money (API credits). Use `--engine kokoro` for integration testing, and mocked unit tests (a fake `TTSEngine`) for ElevenLabs functionality.
 - **Prefer `make clean-*` over `make purge-*`** — clean keeps cached API audio (which costs money to regenerate), purge nukes everything. Only use purge when explicitly asked.
-- Integration tests marked with `@pytest.mark.integration` (export/render in `test_export_integration.py`, rasterize in `test_pdf_reader.py`, GUI-with-Kokoro in `test_gui.py`). Run the unit tier with `-m "not integration"`.
-- GUI logic is tested via NiceGUI's in-process `user` simulation (`tests/conftest.py` loads `nicegui.testing.user_plugin`; the page is registered in `tests/gui_main.py`).
+- **Heavy tests are local-only, never in CI** (free-tier minutes). Two heavy markers:
+  - `@pytest.mark.integration` — needs external tools (export/render in `test_export_integration.py`, rasterize in `test_pdf_reader.py`, GUI-with-Kokoro in `test_gui.py`).
+  - `@pytest.mark.browser` — real-browser Playwright GUI journeys (focus/blur, value-sync timing, playback re-render) that the in-process sim structurally cannot catch.
+  The CI unit tier is `pytest -m "not integration and not browser"`.
+- GUI coverage has two tiers: fast **in-process** `user` simulation (`tests/conftest.py` loads `nicegui.testing.user_plugin`; page registered in `tests/gui_main.py`) for wiring/logic — but it writes widget `.value` synchronously, so it CANNOT see focus/blur or websocket-timing bugs; and the **browser** tier for those. Put timing-sensitive journeys in the browser tier.
 - External tool dependencies: ffmpeg, ffprobe, pdftoppm, kokoro (latexmk/pdflatex only to compile demo decks).

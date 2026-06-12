@@ -92,6 +92,18 @@ def test_synthesize_second_run_hits_cache(tmp_path: Path, monkeypatch) -> None: 
     assert engine.calls == 1  # second run did not re-synthesize
 
 
+def test_force_resynthesizes_cached_segments(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """force=True overwrites a cached clip — the 'regenerate' affordance."""
+    engine = FakeEngine()
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: engine)
+    deck = _deck()
+    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)
+    assert engine.calls == 1
+    results = synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, force=True)
+    assert engine.calls == 2  # re-synthesized despite the cache hit
+    assert results[("a", 0)].from_cache is False
+
+
 def test_page_speech_clips_alignment(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
     deck = _deck()

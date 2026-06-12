@@ -85,12 +85,16 @@ def synthesize(
     *,
     audio_dir: Path,
     only_ids: set[str] | None = None,
+    force: bool = False,
     progress: ProgressFn | None = None,
 ) -> dict[tuple[str, int], SynthResult]:
     """Synthesize (or reuse cached) audio for the deck's speech segments.
 
     Returns a map ``(slide_id, speech_index) -> SynthResult``. ``only_ids``
     restricts synthesis to those slide-ids (others are skipped entirely).
+    ``force`` re-synthesizes every targeted segment, overwriting cached clips
+    (the editor's "regenerate" action — useful for a fresh take from a
+    non-deterministic engine, or to refresh a stale cache entry).
     """
     audio_dir.mkdir(parents=True, exist_ok=True)
     refs = [r for r in speech_refs(deck, config) if only_ids is None or r.slide_id in only_ids]
@@ -100,7 +104,7 @@ def synthesize(
     for i, ref in enumerate(refs):
         engine = _engine_for_pace(config.tts, ref.pace, engines)
         target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
-        cached = audio_cache_path_or_alt(target)
+        cached = None if force else audio_cache_path_or_alt(target)
         if cached is not None:
             result = SynthResult(path=cached, duration=get_duration(cached), from_cache=True)
         else:

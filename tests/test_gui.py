@@ -176,9 +176,10 @@ async def test_generate_and_preview(
     user.find(marker="gen-slide").click()
     # synthesis runs off the event loop now; allow up to 30s for kokoro
     await user.should_see("Synthesized", retries=300)
-    # everything cached now: the generate button has nothing left to do
+    # everything cached now: the button stays live but flips to "re-generate"
     gen = next(iter(user.find(marker="gen-slide").elements))
-    assert isinstance(gen, ui.button) and not gen.enabled
+    assert isinstance(gen, ui.button) and gen.enabled
+    assert gen.props.get("icon") == "autorenew"
     # audio cache now exists for intro-title
     from slidesonnet.cache import audio_dir
 
@@ -474,6 +475,31 @@ async def test_transport_grays_out_play_and_generate_when_pointless(
     user.find("Next").click()  # euler-setup has no narration
     assert not play.enabled
     assert not gen.enabled
+
+
+async def test_generate_button_flips_to_regenerate_when_cached(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once a slide is fully cached the generate icon stays live as 're-generate',
+    and clicking it forces a fresh synthesis (force=True)."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(EditorState, "uncached_count", lambda self, sid: 0)  # pretend cached
+    forces: list[bool] = []
+    monkeypatch.setattr(
+        EditorState,
+        "synth_current",
+        lambda self, *, force=False: (forces.append(force), 1)[1],
+    )
+    await user.open("/")
+    gen = next(iter(user.find(marker="gen-slide").elements))
+    assert isinstance(gen, ui.button) and gen.enabled
+    assert gen.props.get("icon") == "autorenew"  # re-generate affordance, not grayed out
+    user.find(marker="gen-slide").click()
+    await user.should_see("Re-generated")
+    assert forces == [True]  # the click forced a fresh take
 
 
 async def test_paid_engine_preview_asks_before_synthesis(
