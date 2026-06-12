@@ -15,6 +15,8 @@
 
 ## Project Terms
 
+**id**: eye-dee
+**ids**: eye-dees
 **slideSonnet**: slide-sonnet
 **TTS**: T-T-S
 **MP4**: M-P-4
