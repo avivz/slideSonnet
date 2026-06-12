@@ -30,6 +30,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   label so the field name doesn't overlay it.
 
 ### Fixed
+- **Misplaced keys in `slidesonnet.toml` no longer vanish silently.** A
+  top-level key written below a `[table]` header (TOML scopes it to that
+  table) now logs a warning naming the key and the fix. Both bundled demos
+  had `pronunciation = [...]` below a `[voices.*]` header — their
+  pronunciation dictionaries (Euler, slideSonnet, id, …) had never actually
+  loaded; a test now guards the example configs.
 - **Saving no longer destroys hand-edited sidecar formatting.** The parser
   now remembers each block's raw text, and a save rewrites only blocks whose
   content actually changed — `#` comments, blank lines, and hand-wrapped

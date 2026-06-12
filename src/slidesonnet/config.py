@@ -26,6 +26,7 @@ Example ``slidesonnet.toml``::
 
 from __future__ import annotations
 
+import logging
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +35,8 @@ from typing import Any
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.models import TTSConfig, VideoConfig, VoiceConfig
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
+
+logger = logging.getLogger(__name__)
 
 CONFIG_FILENAME = "slidesonnet.toml"
 _KNOWN_BACKENDS = {"kokoro", "elevenlabs"}
@@ -133,6 +136,16 @@ def _parse_voices(raw: dict[str, Any]) -> dict[str, VoiceConfig]:
             )
         elif isinstance(value, dict):
             mapping = {k: str(v) for k, v in value.items() if k in _KNOWN_BACKENDS}
+            for stray in value.keys() - _KNOWN_BACKENDS:
+                # TOML scopes everything after a [table] header to that table,
+                # so a top-level key written below [voices.x] lands here
+                logger.warning(
+                    "slidesonnet.toml: ignoring unknown key '%s' in [voices.%s] — "
+                    "if it's meant to be a top-level setting (e.g. 'pronunciation'), "
+                    "move it above the table headers",
+                    stray,
+                    name,
+                )
             voices[name] = VoiceConfig(name=name, backend_voices=mapping)
         else:
             raise ConfigError(

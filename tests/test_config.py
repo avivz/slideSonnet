@@ -101,3 +101,29 @@ def test_invalid_voice_value_raises(tmp_path: Path) -> None:
     (tmp_path / "slidesonnet.toml").write_text("[voices]\nalice = 3\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="must be a string or table"):
         load_config(tmp_path / "deck.pdf")
+
+
+def test_unknown_voice_table_key_warns(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A key misplaced under [voices.x] (e.g. top-level `pronunciation` written
+    after a table header) must not vanish silently."""
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[voices.alex]\nkokoro = "am_michael"\npronunciation = ["pron.md"]\n',
+        encoding="utf-8",
+    )
+    with caplog.at_level("WARNING"):
+        load_config(tmp_path / "deck.pdf")
+    assert any("pronunciation" in r.message and "alex" in r.message for r in caplog.records)
+
+
+EXAMPLES = Path(__file__).parent.parent / "examples"
+
+
+@pytest.mark.parametrize("deck", ["showcase/showcase.pdf", "basel-problem/basel-problem.pdf"])
+def test_example_deck_pronunciation_is_wired(deck: str) -> None:
+    """Guard the bundled demos: their pronunciation dictionaries must load.
+
+    (Both once had `pronunciation = [...]` after a [voices.x] table header,
+    which TOML scopes to that table — the dictionaries silently never loaded.)
+    """
+    cfg = load_config(EXAMPLES / deck)
+    assert cfg.pronunciation, f"{deck}: no pronunciation entries loaded"
