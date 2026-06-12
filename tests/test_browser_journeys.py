@@ -197,7 +197,7 @@ def test_typing_then_generating_without_blur_uses_the_typed_text(
     box.click()
     box.fill("")
     box.press_sequentially("Brand new words.")
-    marked(page, "gen-slide").click()  # straight to Generate — no blur-click elsewhere
+    marked(page, "gen-seg-0").click()  # straight to Generate — no blur-click elsewhere
     expect(page.get_by_text("Synthesized").first).to_be_visible(timeout=30_000)
     assert "Brand new words." in _sidecar(tmp_path)
     new_hash = text_hash("Brand new words.")
@@ -255,7 +255,7 @@ def test_generate_cache_regenerate_and_blur_edit_with_real_kokoro(
     pytest.importorskip("kokoro")
     pdf = _prep(tmp_path, "@intro-title\nWelcome to the deck.\n")
     page.goto(editor_server(pdf, real_tts=True))
-    gen = marked(page, "gen-slide")
+    gen = marked(page, "gen-seg-0")
     expect(gen).to_contain_text("graphic_eq")  # nothing cached: plain generate
 
     gen.click()

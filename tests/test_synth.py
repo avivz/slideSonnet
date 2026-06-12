@@ -81,6 +81,47 @@ def test_uncached_targets_only_ids(tmp_path: Path, monkeypatch) -> None:  # type
     assert len(synth_mod.uncached_targets(deck, Config(), tmp_path, only_ids={"a"})) == 1
 
 
+def _two_line_deck() -> Deck:
+    return Deck(
+        pdf_path=Path("x.pdf"),
+        sidecar_path=Path("x.narration"),
+        pages=["a", "b"],
+        narration={
+            "a": PageNarration("a", [Segment.speech("One."), Segment.speech("Two.")]),
+            "b": PageNarration("b", [Segment.speech("Three.")]),
+        },
+    )
+
+
+def test_only_segments_targets_one_utterance(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The editor's per-utterance generate synthesizes exactly the targeted pair."""
+    engine = FakeEngine()
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: engine)
+    deck = _two_line_deck()
+    results = synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_segments={("a", 1)})
+    assert engine.calls == 1
+    assert set(results) == {("a", 1)}
+
+
+def test_cached_speech_flags_align_to_speech_segments(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    deck = _two_line_deck()
+    assert synth_mod.cached_speech_flags(deck, Config(), tmp_path, "a") == [False, False]
+    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_segments={("a", 1)})
+    assert synth_mod.cached_speech_flags(deck, Config(), tmp_path, "a") == [False, True]
+    assert synth_mod.cached_speech_flags(deck, Config(), tmp_path, "b") == [False]
+
+
+def test_ungenerated_ids_shrink_as_slides_complete(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    deck = _two_line_deck()
+    assert synth_mod.ungenerated_ids(deck, Config(), tmp_path) == {"a", "b"}
+    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_ids={"b"})
+    assert synth_mod.ungenerated_ids(deck, Config(), tmp_path) == {"a"}
+    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_ids={"a"})
+    assert synth_mod.ungenerated_ids(deck, Config(), tmp_path) == set()
+
+
 def test_synthesize_second_run_hits_cache(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     engine = FakeEngine()
     monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: engine)

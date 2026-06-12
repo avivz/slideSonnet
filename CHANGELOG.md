@@ -6,6 +6,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Per-utterance generation.** Each utterance card has its own generate
+  button that doubles as the audio indicator: amber wave = no audio yet,
+  green refresh = generated (click again for a fresh take). It synthesizes
+  just that line and stays in sync as you edit. The per-slide generate
+  button in the transport is gone; the console button is now **"Generate
+  missing (N)"** — it shows exactly how many clips a click will make,
+  disables as "All audio generated" when there's nothing to do, and never
+  re-makes (or re-bills) existing audio. Filmstrip thumbs wear a small
+  amber audio badge while a slide still has ungenerated speech (the
+  colored dot remains the diagnostics light).
+- **Stage divider.** A draggable splitter between the slide image and the
+  narration cards apportions the stage vertically (20–85%).
+- **Ctrl+S saves in place** from any narration field (utterance text,
+  director's note, pause/crossfade seconds) without leaving the field.
+- **Footer status flash replaces popup pills.** All editor messages
+  ("Preview ready", "Synthesized…", errors) now glide through a
+  color-coded footer area that fades after a few seconds (warnings and
+  errors linger longer) — nothing pops over the transport or steals
+  clicks anymore.
+- The voice box shows the deck default (e.g. "af_heart (default)") as a
+  placeholder when an utterance has no explicit voice, with a stacked
+  label so the field name doesn't overlay it.
+
+### Fixed
+- **Audio-changing actions reset the preview player.** Re-generating,
+  adding/deleting/reordering cards, and editing pause length, voice, pace,
+  or transitions now stop and rewind a rolling preview — previously the
+  stale track kept playing and replay *resumed* it, so e.g. a longer pause
+  was never heard no matter how often you replayed.
+- The autosave "saved" flash no longer logs an error when the save was
+  triggered from a card that got rebuilt before the flash faded.
 - **Structured narration: attributed utterances, pauses, and transitions.**
   A slide's narration is now an ordered list of *utterance* and *pause*
   blocks. Each utterance carries its own `voice`, `pace`, and free-text

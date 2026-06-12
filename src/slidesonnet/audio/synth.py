@@ -85,19 +85,27 @@ def synthesize(
     *,
     audio_dir: Path,
     only_ids: set[str] | None = None,
+    only_segments: set[tuple[str, int]] | None = None,
     force: bool = False,
     progress: ProgressFn | None = None,
 ) -> dict[tuple[str, int], SynthResult]:
     """Synthesize (or reuse cached) audio for the deck's speech segments.
 
     Returns a map ``(slide_id, speech_index) -> SynthResult``. ``only_ids``
-    restricts synthesis to those slide-ids (others are skipped entirely).
-    ``force`` re-synthesizes every targeted segment, overwriting cached clips
-    (the editor's "regenerate" action — useful for a fresh take from a
-    non-deterministic engine, or to refresh a stale cache entry).
+    restricts synthesis to those slide-ids (others are skipped entirely);
+    ``only_segments`` narrows further to specific ``(slide_id, speech_index)``
+    pairs (the editor's per-utterance generate). ``force`` re-synthesizes every
+    targeted segment, overwriting cached clips (the editor's "regenerate"
+    action — useful for a fresh take from a non-deterministic engine, or to
+    refresh a stale cache entry).
     """
     audio_dir.mkdir(parents=True, exist_ok=True)
-    refs = [r for r in speech_refs(deck, config) if only_ids is None or r.slide_id in only_ids]
+    refs = [
+        r
+        for r in speech_refs(deck, config)
+        if (only_ids is None or r.slide_id in only_ids)
+        and (only_segments is None or (r.slide_id, r.speech_index) in only_segments)
+    ]
     engines: dict[float, TTSEngine] = {}
     results: dict[tuple[str, int], SynthResult] = {}
 
@@ -117,6 +125,18 @@ def synthesize(
     return results
 
 
+def _ref_targets(deck: Deck, config: Config, audio_dir: Path) -> list[tuple[SpeechRef, Path]]:
+    """Every speech segment paired with its content-addressed cache path."""
+    engines: dict[float, TTSEngine] = {}
+    out: list[tuple[SpeechRef, Path]] = []
+    for ref in speech_refs(deck, config):
+        engine = _engine_for_pace(config.tts, ref.pace, engines)
+        out.append(
+            (ref, audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice))
+        )
+    return out
+
+
 def uncached_targets(
     deck: Deck,
     config: Config,
@@ -129,16 +149,33 @@ def uncached_targets(
     Never synthesizes — lets callers count (or pre-create) what a synthesis
     run would actually generate, e.g. to warn before spending API credits.
     """
-    engines: dict[float, TTSEngine] = {}
-    targets: list[Path] = []
-    for ref in speech_refs(deck, config):
-        if only_ids is not None and ref.slide_id not in only_ids:
-            continue
-        engine = _engine_for_pace(config.tts, ref.pace, engines)
-        target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
-        if audio_cache_path_or_alt(target) is None:
-            targets.append(target)
-    return targets
+    return [
+        target
+        for ref, target in _ref_targets(deck, config, audio_dir)
+        if (only_ids is None or ref.slide_id in only_ids)
+        and audio_cache_path_or_alt(target) is None
+    ]
+
+
+def cached_speech_flags(deck: Deck, config: Config, audio_dir: Path, slide_id: str) -> list[bool]:
+    """Aligned to *slide_id*'s speech segments: True where cached audio exists.
+
+    Never synthesizes — drives the editor's per-utterance generated indicator.
+    """
+    return [
+        audio_cache_path_or_alt(target) is not None
+        for ref, target in _ref_targets(deck, config, audio_dir)
+        if ref.slide_id == slide_id
+    ]
+
+
+def ungenerated_ids(deck: Deck, config: Config, audio_dir: Path) -> set[str]:
+    """Slide-ids that still have at least one speech segment without cached audio."""
+    return {
+        ref.slide_id
+        for ref, target in _ref_targets(deck, config, audio_dir)
+        if audio_cache_path_or_alt(target) is None
+    }
 
 
 def page_speech_durations(

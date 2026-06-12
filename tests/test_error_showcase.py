@@ -153,16 +153,16 @@ async def test_control_slide_editable_despite_duplicate_blocks(
 async def test_play_and_generate_disabled_on_speechless_slide(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A slide with nothing to say can't be played or generated — buttons gray out."""
+    """A slide with nothing to say can't be played, and offers nothing to generate."""
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(_prep(tmp_path)))
     await user.open("/")
     user.find(marker="thumb-2").click()  # silent-stage: no narration at all
     await user.should_see("no speech on this slide")
     play = next(iter(user.find(marker="play-slide").elements))
-    gen = next(iter(user.find(marker="gen-slide").elements))
-    assert isinstance(play, ui.button) and isinstance(gen, ui.button)
+    assert isinstance(play, ui.button)
     assert not play.enabled
-    assert not gen.enabled
+    # no utterance cards → no per-line generate buttons on this slide
+    await user.should_not_see(marker="gen-seg-0")
 
 
 @pytest.mark.integration

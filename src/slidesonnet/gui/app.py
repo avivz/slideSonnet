@@ -410,13 +410,19 @@ body{
 .ss-dot-warning{background:var(--ss-warn)}
 .ss-dot-error{background:var(--ss-err);box-shadow:0 0 8px var(--ss-err)}
 .ss-dot-empty{background:transparent;border:1.5px solid var(--ss-dim)}
+/* "audio missing" badge on a thumb: this slide still has un-generated speech */
+.ss-thumb-audio{position:absolute;top:4px;left:5px;font-size:12px;color:var(--ss-warn);
+  background:rgba(20,17,15,.85);border-radius:4px;padding:0 1px}
 .ss-stage{width:100%;height:100%;padding:16px 24px 10px;align-items:center}
 .ss-stage-inner{
   height:100%;
   width:min(100%, max(620px, calc((100vh - 230px) * .6667 * var(--ss-ar, 1.7778))))}
+.ss-stage-split{flex:1 1 0;min-height:0;width:100%}
 .ss-stage-view{
-  flex:2 1 0;min-height:0;width:100%;
-  display:flex;justify-content:center}
+  height:100%;min-height:0;width:100%;
+  display:flex;justify-content:center;padding-bottom:6px}
+.ss-edit-pane{height:100%;min-height:0;padding-top:8px}
+.ss-grip-h{transform:rotate(90deg)}
 .ss-stage-img{width:100%;height:100%}
 .ss-stage-img img{border-radius:6px}
 .ss-counter{font-size:12px;color:var(--ss-dim);padding:0 8px;min-width:96px;text-align:center}
@@ -471,6 +477,13 @@ body{
   color:var(--ss-dim);flex:0 0 auto}
 .ss-trans-secs{width:84px}
 .q-field--filled .q-field__control{background:var(--ss-raised)!important;border-radius:8px}
+/* footer status flash: replaces popup pills — colored by outcome, fades on a timer */
+.ss-flash{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:opacity .3s}
+.ss-flash-ok{color:var(--ss-ok)}
+.ss-flash-info{color:var(--ss-dim)}
+.ss-flash-warn{color:var(--ss-warn)}
+.ss-flash-err{color:var(--ss-err);font-weight:600}
 .ss-diag{font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.4}
 .ss-diag-err{color:var(--ss-err)}
 .ss-diag-warn{color:var(--ss-warn)}
@@ -557,7 +570,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     with strip_split.separator:
         ui.icon("drag_indicator").classes("ss-grip")
 
-    thumb_cards: list[tuple[Any, Any]] = []
+    thumb_cards: list[tuple[Any, Any, Any]] = []  # (card, status dot, audio-missing badge)
     with strip_split.before, ui.column().classes("ss-side no-wrap gap-0"):
         with ui.row().classes("ss-side-head w-full items-center justify-between no-wrap"):
             ui.label("Slides").classes("ss-section")
@@ -582,9 +595,12 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     else:
                         ui.label(sid or f"page {i + 1}").classes("ss-thumb-fallback ss-mono")
                     dot = ui.element("div").classes("ss-dot")
+                    audio_badge = ui.icon("graphic_eq").classes("ss-thumb-audio hidden")
+                    audio_badge.mark(f"thumb-audio-{i}")
+                    audio_badge.tooltip("Some audio on this slide isn't generated yet")
                     ui.label(str(i + 1)).classes("ss-thumb-num")
                 card.on("click", lambda _e=None, i=i: _jump(i))
-                thumb_cards.append((card, dot))
+                thumb_cards.append((card, dot, audio_badge))
 
     _build_strip()
 
@@ -600,22 +616,31 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
 
         with console_split.before, ui.column().classes("ss-stage no-wrap gap-0"):
             with ui.column().classes("ss-stage-inner gap-3 no-wrap"):
-                with ui.element("div").classes("ss-stage-view"):
+                # slide above, narration cards below — the divider apportions the
+                # stage between them, like the side panes do horizontally
+                stage_split = ui.splitter(horizontal=True, value=58, limits=(20, 85)).classes(
+                    "ss-stage-split"
+                )
+                stage_split.mark("split-stage")
+                with stage_split.separator:
+                    ui.icon("drag_indicator").classes("ss-grip ss-grip-h")
+                with stage_split.before, ui.element("div").classes("ss-stage-view"):
                     slide_img = ui.image().classes("ss-stage-img").props('fit="contain" no-spinner')
-                with ui.row().classes("w-full items-center no-wrap gap-3"):
-                    id_label = ui.label().classes("ss-id ss-mono")
-                    ui.space()
-                    add_line_btn = ui.button(
-                        "Line", icon="add", on_click=lambda: _add_segment("speech")
-                    )
-                    add_line_btn.props("flat dense no-caps").mark("add-utterance")
-                    add_line_btn.tooltip("Add a spoken line")
-                    add_pause_btn = ui.button(
-                        "Pause", icon="hourglass_empty", on_click=lambda: _add_segment("pause")
-                    )
-                    add_pause_btn.props("flat dense no-caps").mark("add-pause")
-                    add_pause_btn.tooltip("Add a silent pause")
-                blocks_col = ui.column().classes("ss-blocks no-wrap gap-2 w-full")
+                with stage_split.after, ui.column().classes("ss-edit-pane no-wrap gap-2 w-full"):
+                    with ui.row().classes("w-full items-center no-wrap gap-3"):
+                        id_label = ui.label().classes("ss-id ss-mono")
+                        ui.space()
+                        add_line_btn = ui.button(
+                            "Line", icon="add", on_click=lambda: _add_segment("speech")
+                        )
+                        add_line_btn.props("flat dense no-caps").mark("add-utterance")
+                        add_line_btn.tooltip("Add a spoken line")
+                        add_pause_btn = ui.button(
+                            "Pause", icon="hourglass_empty", on_click=lambda: _add_segment("pause")
+                        )
+                        add_pause_btn.props("flat dense no-caps").mark("add-pause")
+                        add_pause_btn.tooltip("Add a silent pause")
+                    blocks_col = ui.column().classes("ss-blocks no-wrap gap-2 w-full")
                 with ui.row().classes("w-full items-center no-wrap gap-1"):
                     prev_btn = ui.button(icon="chevron_left").props("flat round dense")
                     prev_btn.mark("Previous").tooltip("Back (←)")
@@ -623,10 +648,6 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                     next_btn = ui.button(icon="chevron_right").props("flat round dense")
                     next_btn.mark("Next").tooltip("Forward (→)")
                     ui.element("div").classes("ss-vsep")
-                    gen_btn = ui.button(icon="graphic_eq").props("flat round dense")
-                    gen_btn.mark("gen-slide")
-                    with gen_btn:  # one tooltip, retext-ed when the button flips mode
-                        gen_tip = ui.tooltip("Generate this slide's audio")
                     play_one = ui.button(icon="play_arrow").props("flat round dense")
                     play_one.mark("play-slide").tooltip("Hear this slide")
                     play_all = ui.button(icon="playlist_play").props("flat round dense")
@@ -656,18 +677,47 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             tray_box.mark("orphan-tray")
             tray_box.visible = False
             ui.space()
-            gen_all_btn = ui.button("Generate all", icon="library_music").classes("w-full")
-            gen_all_btn.props("flat no-caps")
+            gen_all_btn = ui.button("Generate missing", icon="library_music").classes("w-full")
+            gen_all_btn.props("flat no-caps").mark("gen-missing")
+            gen_all_btn.tooltip(
+                "Makes only the clips that don't exist yet — finished audio is left untouched"
+            )
             export_btn = ui.button("Export video", icon="movie").classes("w-full ss-export")
             export_btn.props("unelevated no-caps color=primary")
 
-    # --- footer: engine · sidecar · hints ---
+    # --- footer: engine · sidecar · status flash · hints ---
     with ui.footer().classes("ss-footer no-wrap"):
         ui.label(f"engine {state.config.tts.backend}").classes("ss-mono ss-foot")
         ui.element("div").classes("ss-vsep")
         ui.label(state.sidecar_path.name).classes("ss-mono ss-foot")
         ui.space()
-        ui.label("←→ or ↑↓ slides · drag dividers · saves automatically").classes("ss-mono ss-foot")
+        flash_label = ui.label("").classes("ss-mono ss-flash")
+        flash_label.mark("flash")
+        ui.space()
+        ui.label(
+            "←→ or ↑↓ slides · drag dividers · saves automatically · Ctrl+S saves now"
+        ).classes("ss-mono ss-foot")
+
+    # status messages glide through the footer instead of popping up as pills
+    # (pills stack over the transport and steal clicks). Last message wins; a
+    # token keeps an old fade timer from wiping a newer message early.
+    _FLASH_COLORS = "ss-flash-ok ss-flash-info ss-flash-warn ss-flash-err"
+    flash_token = {"n": 0}
+
+    def _flash(message: str, kind: str = "info") -> None:
+        flash_token["n"] += 1
+        token = flash_token["n"]
+        css = {"positive": "ss-flash-ok", "warning": "ss-flash-warn", "negative": "ss-flash-err"}
+        flash_label.set_text(message)
+        flash_label.classes(remove=_FLASH_COLORS, add=css.get(kind, "ss-flash-info"))
+
+        def _fade() -> None:
+            if flash_token["n"] == token:
+                flash_label.set_text("")
+
+        linger = 8.0 if kind in ("warning", "negative") else 4.0
+        with flash_label:  # park the timer in a slot that outlives any card rebuild
+            ui.timer(linger, _fade, once=True)
 
     # ---- rendering helpers ----
     cues: list[tuple[float, str]] = []
@@ -677,6 +727,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     scrubbing = False  # user is dragging the seek handle; don't fight them
     # collectors for the structured block editor, refreshed by _render_blocks()
     seg_collectors: list[Callable[[], Segment]] = []
+    seg_gen_controls: list[tuple[Any, Any, int]] = []  # (button, tooltip, speech index)
     transition_getters: dict[str, Callable[[], Transition]] = {}
 
     def _pace_value(v: str | None) -> Pace | None:
@@ -705,7 +756,8 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 slide_img.set_source(_media_url(state, img))
         except Exception as exc:  # rasterize may fail without pdftoppm
             logger.warning("image render failed: %s", exc)
-        for i, (card, dot) in enumerate(thumb_cards):
+        ungenerated = state.ungenerated_ids()
+        for i, (card, dot, audio_badge) in enumerate(thumb_cards):
             if i >= len(state.deck.pages):
                 break  # strip is briefly stale after a recompile; poll rebuilds it
             if i == state.index:
@@ -713,11 +765,16 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             else:
                 card.classes(remove="ss-active")
             dot.classes(remove=_ALL_DOTS, add=f"ss-dot-{state.status_for(state.deck.pages[i])}")
+            if state.deck.pages[i] in ungenerated:
+                audio_badge.classes(remove="hidden")
+            else:
+                audio_badge.classes(add="hidden")
         _scroll_strip()
         _render_diagnostics()
         _render_audio_status()
         _render_orphan_tray()
         _sync_transport()
+        _sync_seg_gen_buttons()
 
     # While a narration field holds keyboard focus, playback auto-advance must
     # not rebuild the block editor — that would destroy the field mid-typing
@@ -747,8 +804,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             if disabled:
                 kind.disable()
                 secs.disable()
-            kind.on_value_change(lambda: _commit())
-            secs.on("blur", lambda: _commit())
+            kind.on_value_change(lambda: _commit_audible())
+            secs.on("blur", lambda: _commit_audible())
+            secs.on("keydown.ctrl.s.prevent", lambda: _commit_audible())
             _track_editing(secs)
 
         def collect() -> Transition:
@@ -776,7 +834,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         if disabled:
             trash.disable()
 
-    def _utterance_card(index: int, seg: Segment, disabled: bool) -> Callable[[], Segment]:
+    def _utterance_card(
+        index: int, seg: Segment, disabled: bool, speech_index: int
+    ) -> Callable[[], Segment]:
         with ui.card().classes("ss-card ss-utterance w-full").mark(f"utterance-{index}"):
             with ui.row().classes("w-full items-start no-wrap gap-1"):
                 with ui.column().classes("gap-0 ss-seg-controls"):
@@ -789,6 +849,20 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 )
                 with ui.column().classes("gap-0 ss-seg-controls"):
                     _delete_control(index, disabled)
+                    # generate button doubles as the audio indicator: amber = no
+                    # audio yet, green = generated (click again for a fresh take)
+                    gen = ui.button(icon="graphic_eq")
+                    gen.props("flat round dense size=sm color=warning").mark(f"gen-seg-{index}")
+                    with gen:  # one tooltip, retext-ed as the state flips
+                        gen_tip = ui.tooltip("No audio yet · click to generate")
+                    if disabled:
+                        gen.disable()
+                    gen.on_click(
+                        lambda: _run(
+                            gen, lambda: _generate_segment(speech_index), stops_player=True
+                        )
+                    )
+                    seg_gen_controls.append((gen, gen_tip, speech_index))
             voice_choices = state.voice_options()
             if seg.voice and seg.voice not in voice_choices:
                 voice_choices = [seg.voice, *voice_choices]  # keep an off-list value visible
@@ -801,12 +875,15 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                         with_input=True,  # type to filter the voice list
                     )
                     .props(
-                        "filled dense options-dense clearable hide-bottom-space "
+                        "filled dense options-dense clearable hide-bottom-space stack-label "
                         'title="Voice (type to filter; clear for the deck default)"'
                     )
                     .classes("ss-mono ss-uvoice")
                     .mark(f"uvoice-{index}")
                 )
+                fallback = state.default_voice()
+                if fallback:  # an unset voice isn't "no voice" — show what will speak
+                    voice.props(f'placeholder="{fallback} (default)"')
                 pace = (
                     ui.select(["slow", "normal", "fast"], value=seg.pace or "normal", label="Pace")
                     .props("filled dense options-dense hide-bottom-space")
@@ -827,9 +904,11 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 if disabled:
                     w.disable()
             text.on("blur", lambda: _commit())
-            voice.on_value_change(lambda: _commit())
-            pace.on_value_change(lambda: _commit())
+            text.on("keydown.ctrl.s.prevent", lambda: _commit())  # save without leaving
+            voice.on_value_change(lambda: _commit_audible())
+            pace.on_value_change(lambda: _commit_audible())
             direct.on("blur", lambda: _commit())
+            direct.on("keydown.ctrl.s.prevent", lambda: _commit())
             for w in (text, voice, direct):  # keystroke-holding fields
                 _track_editing(w)
 
@@ -860,7 +939,8 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 _delete_control(index, disabled)
             if disabled:
                 secs.disable()
-            secs.on("blur", lambda: _commit())
+            secs.on("blur", lambda: _commit_audible())
+            secs.on("keydown.ctrl.s.prevent", lambda: _commit_audible())
             _track_editing(secs)
 
         def collect() -> Segment:
@@ -872,6 +952,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         editing["active"] = False  # the rebuild destroys any focused field
         blocks_col.clear()
         seg_collectors.clear()
+        seg_gen_controls.clear()
         transition_getters.clear()
         block = state.current_block
         disabled = not state.current_id
@@ -882,14 +963,17 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 ).classes("ss-diag ss-diag-warn")
                 return
             _transition_row("in", block.transition_in, disabled)
+            speech_i = 0
             for i, seg in enumerate(block.segments):
                 if seg.is_speech:
-                    seg_collectors.append(_utterance_card(i, seg, disabled))
+                    seg_collectors.append(_utterance_card(i, seg, disabled, speech_i))
+                    speech_i += 1
                 else:
                     seg_collectors.append(_pause_card(i, seg, disabled))
             if not block.segments:
                 ui.label("(empty — add a line or a pause above)").classes("ss-diag ss-diag-info")
             _transition_row("out", block.transition_out, disabled)
+        _sync_seg_gen_buttons()
 
     def _collect() -> tuple[list[Segment], Transition, Transition]:
         segs = [c() for c in seg_collectors]
@@ -897,26 +981,29 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         tout = transition_getters["out"]() if "out" in transition_getters else Transition()
         return segs, tin, tout
 
+    def _apply_structure(segs: list[Segment], tin: Transition, tout: Transition) -> None:
+        """Commit an add/delete/move — the loaded track no longer matches the deck."""
+        if state.replace_block(segs, transition_in=tin, transition_out=tout):
+            _stop_playback()
+            render()
+
     def _add_segment(kind: str) -> None:
         segs, tin, tout = _collect()
         segs.append(Segment.speech("") if kind == "speech" else Segment.pause(1.0))
-        if state.replace_block(segs, transition_in=tin, transition_out=tout):
-            render()
+        _apply_structure(segs, tin, tout)
 
     def _delete_segment(index: int) -> None:
         segs, tin, tout = _collect()
         if 0 <= index < len(segs):
             del segs[index]
-        if state.replace_block(segs, transition_in=tin, transition_out=tout):
-            render()
+        _apply_structure(segs, tin, tout)
 
     def _move_segment(index: int, delta: int) -> None:
         segs, tin, tout = _collect()
         j = index + delta
         if 0 <= index < len(segs) and 0 <= j < len(segs):
             segs[index], segs[j] = segs[j], segs[index]
-            if state.replace_block(segs, transition_in=tin, transition_out=tout):
-                render()
+            _apply_structure(segs, tin, tout)
 
     def _render_orphan_tray() -> None:
         """Narration whose slide vanished in a recompile: keep it visible and actionable."""
@@ -967,22 +1054,22 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
 
     def _copy_text(text: str) -> None:
         ui.clipboard.write(text)
-        ui.notify("Copied narration text", type="info")
+        _flash("Copied narration text", "info")
 
     def _append_orphan_here(orphan_id: str) -> None:
         target = state.current_id
         try:
             state.append_orphan_to_current(orphan_id)
         except ValueError as exc:
-            ui.notify(str(exc), type="warning")
+            _flash(str(exc), "warning")
             return
-        ui.notify(f"Appended '@{orphan_id}' to '{target}'", type="positive")
+        _flash(f"Appended '@{orphan_id}' to '{target}'", "positive")
         render()
 
     def _attach_orphan_dialog(orphan_id: str) -> None:
         candidates = state.unnarrated_pages()
         if not candidates:
-            ui.notify("No un-narrated slide to attach to", type="warning")
+            _flash("No un-narrated slide to attach to", "warning")
             return
         with ui.dialog() as dialog, ui.card():
             ui.label(f"Attach narration '@{orphan_id}' to which slide?")
@@ -994,9 +1081,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 try:
                     state.attach_orphan(orphan_id, str(target.value))
                 except ValueError as exc:
-                    ui.notify(str(exc), type="warning")
+                    _flash(str(exc), "warning")
                     return
-                ui.notify(f"Narration attached to '{target.value}'", type="positive")
+                _flash(f"Narration attached to '{target.value}'", "positive")
                 render()
 
             with ui.row().classes("w-full justify-end"):
@@ -1016,9 +1103,9 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 try:
                     state.delete_orphan(orphan_id)
                 except ValueError as exc:
-                    ui.notify(str(exc), type="warning")
+                    _flash(str(exc), "warning")
                     return
-                ui.notify(f"Deleted narration '@{orphan_id}'", type="info")
+                _flash(f"Deleted narration '@{orphan_id}'", "info")
                 render()
 
             with ui.row().classes("w-full justify-end"):
@@ -1030,6 +1117,11 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         dialog.open()
 
     def _render_audio_status() -> None:
+        # deck-wide: the button promises exactly what a click will do — only the
+        # missing clips are made; existing audio is never re-made or re-billed
+        missing = state.uncached_total()
+        gen_all_btn.set_text(f"Generate missing ({missing})" if missing else "All audio generated")
+        gen_all_btn.set_enabled(missing > 0)
         total = len(state.current_block.speech_segments)
         audio_status.classes(remove="ss-diag-ok ss-diag-warn ss-diag-info")
         if total == 0:
@@ -1062,18 +1154,27 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 )
                 ui.label(f"{d.severity}: {d.message}").classes(f"ss-diag {css}")
 
-    def save_current() -> None:
+    def save_current() -> bool:
         """Flush the open editor widgets to disk without rebuilding the cards."""
         if not seg_collectors and "in" not in transition_getters:
-            return  # nothing built (e.g. unmarked page)
+            return False  # nothing built (e.g. unmarked page)
         segs, tin, tout = _collect()
-        if state.replace_block(segs, transition_in=tin, transition_out=tout):
+        changed = state.replace_block(segs, transition_in=tin, transition_out=tout)
+        if changed:
             saved_flash.classes(remove="opacity-0")
-            ui.timer(1.2, lambda: saved_flash.classes(add="opacity-0"), once=True)
+            with saved_flash:  # park the timer in a slot that outlives card rebuilds
+                ui.timer(1.2, lambda: saved_flash.classes(add="opacity-0"), once=True)
             _render_side()
+        return changed
 
     def _commit() -> None:
         save_current()
+
+    def _commit_audible() -> None:
+        """Commit a knob that changes what plays (pause length, voice, pace,
+        transition): once the block differs, a loaded track is stale."""
+        if save_current():
+            _stop_playback()
 
     # ---- navigation (each saves first) ----
     def _jump(index: int) -> None:
@@ -1173,31 +1274,34 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             _go(delta)
 
     # ---- actions (saved first, run off the event loop, one at a time) ----
-    async def _run(btn: Any, work: Callable[[], str]) -> None:
+    async def _run(btn: Any, work: Callable[[], str], *, stops_player: bool = False) -> None:
         nonlocal busy
         if busy:
             return
         busy = True
+        if stops_player:  # the action replaces audio: a rolling preview is stale
+            _stop_playback()
         save_current()
         btn.props("loading")
         try:
-            ui.notify(await run.io_bound(work), type="positive")
+            _flash(await run.io_bound(work), "positive")
         except NotImplementedError as exc:
-            ui.notify(str(exc), type="warning")
+            _flash(str(exc), "warning")
         except Exception as exc:  # surface backend errors without crashing the UI
             logger.exception("action failed")
-            ui.notify(f"Error: {exc}", type="negative")
+            _flash(f"Error: {exc}", "negative")
         finally:
             busy = False
             btn.props(remove="loading")
             render()
 
-    def _generate_one() -> str:
-        # Fully cached → the button is a re-generate affordance: force a fresh take.
-        force = state.current_block.has_speech and state.uncached_count(state.current_id) == 0
-        n = state.synth_current(force=force)
+    def _generate_segment(speech_index: int) -> str:
+        # Already generated → the press means "fresh take": force a re-synthesis.
+        flags = state.speech_cached_flags()
+        force = speech_index < len(flags) and flags[speech_index]
+        state.synth_segment(speech_index, force=force)
         verb = "Re-generated" if force else "Synthesized"
-        return f"{verb} {n} clip(s) for {state.current_id}"
+        return f"{verb} line {speech_index + 1} of {state.current_id}"
 
     def _generate_all() -> str:
         n = state.synth_all()
@@ -1223,22 +1327,33 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     def _sync_transport() -> None:
         """Play buttons mirror the player: the loaded track's button shows pause.
 
-        Play grays out when the slide has no speech. Generate stays live whenever
-        there's speech: with uncached segments it generates; once everything is
-        cached it flips to a re-generate affordance (fresh take / refresh cache).
+        Play grays out when the slide has no speech.
         """
         one_active = playback.playing and playback.loaded_key == state.current_id
         play_one.props(f"icon={'pause' if one_active else 'play_arrow'}")
         deck_active = playback.playing and playback.loaded_key == "deck"
         play_all.props(f"icon={'pause' if deck_active else 'playlist_play'}")
-        has_speech = state.current_block.has_speech
-        play_one.set_enabled(has_speech)
-        regenerate = has_speech and state.uncached_count(state.current_id) == 0
-        gen_btn.set_enabled(has_speech)
-        gen_btn.props(f"icon={'autorenew' if regenerate else 'graphic_eq'}")
-        gen_tip.set_text(
-            "Re-generate this slide's audio" if regenerate else "Generate this slide's audio"
-        )
+        play_one.set_enabled(state.current_block.has_speech)
+
+    def _sync_seg_gen_buttons() -> None:
+        """Each utterance's generate button doubles as its audio indicator:
+        amber wave = no audio yet, green refresh = generated (fresh take)."""
+        if not seg_gen_controls:
+            return
+        flags = state.speech_cached_flags()
+        speeches = state.current_block.speech_segments
+        for btn, tip, si in seg_gen_controls:
+            cached = si < len(flags) and flags[si]
+            btn.props(
+                f"icon={'autorenew' if cached else 'graphic_eq'} "
+                f"color={'positive' if cached else 'warning'}"
+            )
+            tip.set_text(
+                "Generated · click for a fresh take"
+                if cached
+                else "No audio yet · click to generate"
+            )
+            btn.set_enabled(si < len(speeches) and bool(speeches[si].text.strip()))
 
     def _fmt_clock(t: float) -> str:
         s = max(0, int(t))
@@ -1270,7 +1385,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         """
         nonlocal busy
         if not whole_deck and not state.current_block.has_speech:
-            ui.notify("This slide has no narration to play", type="info")
+            _flash("This slide has no narration to play", "info")
             return
         key = "deck" if whole_deck else state.current_id
         action = playback.press_action(key)
@@ -1313,7 +1428,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             )
             with client:
                 if not playback.may_start(token):  # user pressed Stop while building
-                    ui.notify("Preview stopped", type="info")
+                    _flash("Preview stopped", "info")
                     return
                 cues = preview.cues if whole_deck else []
                 # every preview renders to the same track path — vary the URL so
@@ -1327,11 +1442,11 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
                 audio.play()
                 playback.set_playing(True)  # optimistic; the browser event confirms
                 _sync_transport()
-                ui.notify(f"Preview ready ({preview.total_duration:.1f}s)", type="positive")
+                _flash(f"Preview ready ({preview.total_duration:.1f}s)", "positive")
         except Exception as exc:
             logger.exception("preview failed")
             with client:
-                ui.notify(f"Error: {exc}", type="negative")
+                _flash(f"Error: {exc}", "negative")
         finally:
             busy = False
             with client:
@@ -1385,8 +1500,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
     play_one.on_click(lambda: _request_preview(play_one, False))
     play_all.on_click(lambda: _request_preview(play_all, True))
     stop_btn.on_click(lambda: _stop_playback())
-    gen_btn.on_click(lambda: _run(gen_btn, _generate_one))
-    gen_all_btn.on_click(lambda: _run(gen_all_btn, _generate_all))
+    gen_all_btn.on_click(lambda: _run(gen_all_btn, _generate_all, stops_player=True))
     export_btn.on_click(lambda: _run(export_btn, _export_work))
 
     # ---- live reload of deck sources (PDF recompile, sidecar/config edits) ----
@@ -1409,7 +1523,7 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
             pass  # _build_strip degrades to id tiles
         _build_strip()
         render()
-        ui.notify("Deck files changed on disk — reloaded", type="info")
+        _flash("Deck files changed on disk — reloaded", "info")
 
     ui.timer(1.0, _poll_sources)
 

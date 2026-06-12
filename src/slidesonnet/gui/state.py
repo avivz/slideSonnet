@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from slidesonnet import api
-from slidesonnet.audio.synth import uncached_targets
+from slidesonnet.audio.synth import cached_speech_flags, uncached_targets, ungenerated_ids
 from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import default_config_path, load_config
 from slidesonnet.deck import default_sidecar_path, load_deck, save_deck
@@ -266,6 +266,12 @@ class EditorState:
             opts += [v for v in KOKORO_VOICES if v not in opts]
         return opts
 
+    def default_voice(self) -> str | None:
+        """The deck-wide voice an utterance with no explicit voice falls back to."""
+        if self.config.tts.backend == "kokoro":
+            return self.config.tts.kokoro_voice
+        return self.config.tts.elevenlabs_voice_id or None
+
     # ---- synthesis cost ---------------------------------------------------
     @property
     def tts_is_paid(self) -> bool:
@@ -282,6 +288,18 @@ class EditorState:
         """How many speech segments across the deck a synthesis run would generate."""
         return len(uncached_targets(self.deck, self.config, audio_dir(self.pdf_path)))
 
+    def speech_cached_flags(self) -> list[bool]:
+        """Per speech segment of the current slide: True where its audio is cached."""
+        if not self.current_id:
+            return []
+        return cached_speech_flags(
+            self.deck, self.config, audio_dir(self.pdf_path), self.current_id
+        )
+
+    def ungenerated_ids(self) -> set[str]:
+        """Slide-ids with at least one speech segment that has no cached audio."""
+        return ungenerated_ids(self.deck, self.config, audio_dir(self.pdf_path))
+
     # ---- actions -------------------------------------------------------
     def synth_current(self, *, force: bool = False) -> int:
         return api.synthesize_deck(
@@ -289,6 +307,16 @@ class EditorState:
             sidecar_path=self.sidecar_path,
             engine=self.config.tts.backend,
             only_ids={self.current_id},
+            force=force,
+        )
+
+    def synth_segment(self, speech_index: int, *, force: bool = False) -> int:
+        """Synthesize one speech segment of the current slide (by speech index)."""
+        return api.synthesize_deck(
+            self.pdf_path,
+            sidecar_path=self.sidecar_path,
+            engine=self.config.tts.backend,
+            only_segments={(self.current_id, speech_index)},
             force=force,
         )
 

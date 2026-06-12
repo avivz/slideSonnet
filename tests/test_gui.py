@@ -104,6 +104,54 @@ async def test_per_utterance_voice_and_pace_persist(
     assert "direct: warmly" in sidecar
 
 
+async def test_voice_box_shows_deck_default_when_unset(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An utterance with no explicit voice shows the deck default, not an empty box."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[tts.kokoro]\nvoice = "bm_george"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    voice = next(iter(user.find(marker="uvoice-0").elements))
+    assert voice.value is None  # unset stays unset — the sidecar isn't touched
+    assert voice.props.get("placeholder") == "bm_george (default)"
+
+
+async def test_action_messages_flash_on_the_bottom_bar(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Status messages land in the footer flash area, not as popup pills."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    flash = next(iter(user.find(marker="flash").elements))
+    assert flash.text == ""  # quiet until something happens
+
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    assert "Preview ready" in flash.text  # the message is the footer's, not a popup
+
+
+async def test_ctrl_s_saves_the_field_being_typed(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl+S commits the field under the cursor without leaving it."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nOld words.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(ui.textarea).clear().type("Fresh words, mid-edit.")
+    user.find(marker="utext-0").trigger("keydown.ctrl.s.prevent")  # no blur, no nav
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "Fresh words, mid-edit." in sidecar
+
+
 async def test_diagnostics_visible(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -173,11 +221,11 @@ async def test_generate_and_preview(
     )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
-    user.find(marker="gen-slide").click()
+    user.find(marker="gen-seg-0").click()
     # synthesis runs off the event loop now; allow up to 30s for kokoro
     await user.should_see("Synthesized", retries=300)
-    # everything cached now: the button stays live but flips to "re-generate"
-    gen = next(iter(user.find(marker="gen-slide").elements))
+    # the utterance is cached now: its button flips to the re-generate affordance
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
     assert isinstance(gen, ui.button) and gen.enabled
     assert gen.props.get("icon") == "autorenew"
     # audio cache now exists for intro-title
@@ -418,6 +466,121 @@ async def test_seek_bar_tracks_position_and_resets_on_stop(
     assert "disable" in seek.props
 
 
+async def test_generate_resets_rolling_player(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-generating audio stops a rolling preview and rewinds the transport."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [True])
+    monkeypatch.setattr(EditorState, "synth_segment", lambda self, i, *, force=False: 1)
+    await user.open("/")
+    play_btn = next(iter(user.find(marker="play-slide").elements))
+    seek = next(iter(user.find(marker="seek").elements))
+
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    user.find(marker="preview-audio").trigger("timeupdate", args=2.0)
+    await user.should_see("0:02 / 0:04")  # mid-run
+    assert play_btn.props.get("icon") == "pause"
+
+    user.find(marker="gen-seg-0").click()
+    await user.should_see("Re-generated", retries=300)
+    assert play_btn.props.get("icon") == "play_arrow"  # stopped, not lingering paused
+    assert seek.value == 0.0  # rewound
+    assert "disable" in seek.props
+
+
+async def test_structural_edit_resets_player(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding/deleting a segment card changes what should be heard: player resets."""
+    import asyncio
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    play_btn = next(iter(user.find(marker="play-slide").elements))
+    seek = next(iter(user.find(marker="seek").elements))
+    audio = next(iter(user.find(marker="preview-audio").elements))
+
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    assert play_btn.props.get("icon") == "pause"
+
+    user.find(marker="add-pause").click()  # mid-run: the audible content just changed
+    assert play_btn.props.get("icon") == "play_arrow"
+    assert seek.value == 0.0
+    assert "disable" in seek.props
+
+    first = str(audio.props.get("src"))
+    user.find(marker="play-slide").click()  # must rebuild — the player was reset, not paused
+    for _ in range(100):
+        if str(audio.props.get("src")) != first:
+            break
+        await asyncio.sleep(0.05)
+    assert str(audio.props.get("src")) != first
+    assert play_btn.props.get("icon") == "pause"
+
+    user.find(marker="seg-del-1").click()  # delete the pause card mid-run
+    assert play_btn.props.get("icon") == "play_arrow"
+    assert "disable" in seek.props
+
+
+async def test_pause_length_edit_resets_player_so_replay_rebuilds(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Changing a pause's seconds mid-run changes what should be heard.
+
+    Regression: the edit saved, but the player kept rolling and the old track
+    stayed loaded — so replaying resumed the stale audio and the new silence
+    was never heard, no matter how many times play was pressed.
+    """
+    import asyncio
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello. [pause 1] World.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    play_btn = next(iter(user.find(marker="play-slide").elements))
+    seek = next(iter(user.find(marker="seek").elements))
+    audio = next(iter(user.find(marker="preview-audio").elements))
+
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    assert play_btn.props.get("icon") == "pause"
+
+    # mid-run: stretch the silence from 1s to 3s and leave the field
+    next(iter(user.find(marker="pause-secs-1").elements)).set_value(3.0)
+    user.find(marker="pause-secs-1").trigger("blur")
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "pause: 3" in sidecar  # the edit itself saved
+    assert play_btn.props.get("icon") == "play_arrow"  # player stopped...
+    assert "disable" in seek.props  # ...and rewound
+
+    first = str(audio.props.get("src"))
+    user.find(marker="play-slide").click()  # replay must rebuild, not resume the stale track
+    for _ in range(100):
+        if str(audio.props.get("src")) != first:
+            break
+        await asyncio.sleep(0.05)
+    assert str(audio.props.get("src")) != first
+
+
 async def test_orphan_tray_lists_unattached_narration(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -487,43 +650,101 @@ async def test_typing_survives_recompile_that_drops_the_slide(
 async def test_transport_grays_out_play_and_generate_when_pointless(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Generate sits in the transport; play/generate disable when there's nothing to do."""
+    """Generate lives on each utterance card; play disables when there's nothing to hear."""
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     play = next(iter(user.find(marker="play-slide").elements))
-    gen = next(iter(user.find(marker="gen-slide").elements))
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
     assert isinstance(play, ui.button) and isinstance(gen, ui.button)
     # narrated slide, nothing cached: both actions make sense
     assert play.enabled and gen.enabled
+    assert gen.props.get("icon") == "graphic_eq"  # amber "no audio yet" state
     user.find("Next").click()  # euler-setup has no narration
     assert not play.enabled
-    assert not gen.enabled
+    await user.should_see("empty — add a line or a pause above")  # no cards, no gen buttons
 
 
-async def test_generate_button_flips_to_regenerate_when_cached(
+async def test_segment_generate_button_flips_to_regenerate_when_cached(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Once a slide is fully cached the generate icon stays live as 're-generate',
-    and clicking it forces a fresh synthesis (force=True)."""
+    """Once an utterance's audio is cached its button turns into the green
+    re-generate affordance, and clicking it forces a fresh synthesis (force=True)."""
     from slidesonnet.gui.state import EditorState
 
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
-    monkeypatch.setattr(EditorState, "uncached_count", lambda self, sid: 0)  # pretend cached
+    monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [True])
     forces: list[bool] = []
     monkeypatch.setattr(
         EditorState,
-        "synth_current",
-        lambda self, *, force=False: (forces.append(force), 1)[1],
+        "synth_segment",
+        lambda self, i, *, force=False: (forces.append(force), 1)[1],
     )
     await user.open("/")
-    gen = next(iter(user.find(marker="gen-slide").elements))
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
     assert isinstance(gen, ui.button) and gen.enabled
     assert gen.props.get("icon") == "autorenew"  # re-generate affordance, not grayed out
-    user.find(marker="gen-slide").click()
+    assert gen.props.get("color") == "positive"  # green = generated
+    user.find(marker="gen-seg-0").click()
     await user.should_see("Re-generated")
     assert forces == [True]  # the click forced a fresh take
+
+
+async def test_generate_missing_shows_count_and_rests_when_done(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deck-wide button says exactly how much work a click means."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello. [pause 1] World.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    btn = next(iter(user.find(marker="gen-missing").elements))
+    assert isinstance(btn, ui.button) and btn.enabled
+    assert btn.text == "Generate missing (2)"  # two uncached utterances
+
+
+async def test_generate_missing_disabled_when_nothing_to_do(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(EditorState, "uncached_total", lambda self: 0)
+    await user.open("/")
+    btn = next(iter(user.find(marker="gen-missing").elements))
+    assert isinstance(btn, ui.button) and not btn.enabled
+    assert btn.text == "All audio generated"
+
+
+async def test_filmstrip_flags_slides_with_ungenerated_audio(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A thumb wears the amber audio badge only while its speech isn't generated."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(EditorState, "ungenerated_ids", lambda self: {"intro-title"})
+    await user.open("/")
+    badges = {
+        m: next(iter(user.find(marker=m).elements)) for m in ("thumb-audio-0", "thumb-audio-1")
+    }
+    assert "hidden" not in badges["thumb-audio-0"].classes  # intro-title: ungenerated speech
+    assert "hidden" in badges["thumb-audio-1"].classes  # euler-setup: nothing to generate
+
+
+async def test_stage_has_draggable_slide_editor_divider(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The slide view and the narration cards share the stage via a splitter."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    split = next(iter(user.find(marker="split-stage").elements))
+    assert isinstance(split, ui.splitter)
+    assert split.props.get("horizontal") is True
+    assert float(split.value) > 0
 
 
 async def test_paid_engine_preview_asks_before_synthesis(
