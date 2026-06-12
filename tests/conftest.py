@@ -15,6 +15,17 @@ pytest_plugins = ["nicegui.testing.user_plugin"]
 _SENTINEL_KEY = "unit-test-no-real-calls"
 
 
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Run the browser tier last (the sort is stable: order within tiers keeps).
+
+    Playwright's sync API parks a running asyncio loop in the main thread for
+    the life of its session-scoped fixtures, so once one browser test has run,
+    any later pytest-asyncio setup — every nicegui ``user`` test — dies with
+    "Runner.run() cannot be called from a running event loop".
+    """
+    items.sort(key=lambda item: item.get_closest_marker("browser") is not None)
+
+
 class _GuardedElevenLabs:
     """Stand-in for the real ElevenLabs client: any construction is a test bug.
 

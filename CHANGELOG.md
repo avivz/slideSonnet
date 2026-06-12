@@ -5,6 +5,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed (June 2026 full-codebase review)
+- **`slidesonnet clean --keep current`/`api` no longer deletes the cached
+  audio of paced utterances.** Clean compared cache filenames computed at the
+  base speed, while synthesis embeds the pace-multiplied speed — so every
+  `pace: slow`/`fast` clip looked stale and was removed (re-billable on paid
+  engines). Clean now derives filenames the same pace-aware way synthesis does.
+- **Two decks in one directory no longer interleave render artifacts.** Render
+  output moved to a per-deck `.slidesonnet/render/<deck-stem>/`; previously the
+  shared `render/` mixed both decks' positionally-named files (page-0001.wav,
+  seg-0001.mp4, …), corrupting previews and exports.
+- **Editor actions follow a live-edited config's engine.** Generate / preview /
+  export re-read the on-disk `slidesonnet.toml` backend instead of pinning the
+  one loaded when the editor started.
+- **Broken external edits are reported, not silently ignored.** Saving a
+  `slidesonnet.toml` or sidecar with a syntax error while the editor is open
+  now flashes the parse error in the footer (the last good deck stays on
+  screen); before, the editor silently kept retrying and edits seemed to do
+  nothing.
+- ffprobe/ffmpeg failures now raise slideSonnet's `FFmpegError` (clean CLI
+  message) instead of a bare `RuntimeError` traceback.
+
+### Changed (June 2026 full-codebase review)
+- **External tools run with a timeout** (10 min per invocation): a wedged
+  ffmpeg/ffprobe/pdftoppm can no longer hang an export or the editor forever.
+- **Sidecar format version header.** `slidesonnet init` now stamps
+  `# slidesonnet-format: 1` at the top of new sidecars (a comment — older
+  parsers skip it); reading a file with a *greater* version logs an upgrade
+  warning instead of failing cryptically.
+- **Editor performance:** page-ids are cached on the PDF's mtime (committing
+  an edit no longer re-parses the whole PDF), the deck-wide audio-cache scan
+  is computed once per render tick instead of three times, redundant ffprobe
+  spawns per exported slide were cut, and Kokoro WAV writes use a vectorized
+  numpy path (~50× faster than the old per-sample loop on long utterances).
+- Internal: the TTS backend registry is now the single source for CLI
+  choices, config validation, cache extensions, and clean's paid-engine set;
+  the editor view was decomposed into components (`PaneLayout`,
+  `PreviewPlayer`, `BlockEditor`, `OrphanTray`); editor CSS/fonts/JS moved to
+  package static files; the test suite hard-fails any accidental real
+  ElevenLabs API call.
+
+### Removed (June 2026 full-codebase review)
+- The unused `pad_seconds` video-config knob (parsed but never affected
+  output).
+- The `rich` dependency (never imported).
+- The `examples/basel-problem-he` Hebrew demo (pre-1.0 format, unbuildable
+  since the rewrite; Hebrew support is paused).
+
 ### Added
 - **Per-utterance generation.** Each utterance card has its own generate
   button that doubles as the audio indicator: amber wave = no audio yet,

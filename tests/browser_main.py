@@ -60,6 +60,16 @@ class StubEngine(TTSEngine):
     def cache_key(self) -> str:
         return "stub"
 
+    # the editor's voice picker asks the engine; impersonate Kokoro's set so
+    # voice journeys (pick af_bella, see the default placeholder) work stubbed
+    def list_voices(self) -> tuple[str, ...]:
+        from slidesonnet.tts.kokoro import KOKORO_VOICES
+
+        return KOKORO_VOICES
+
+    def default_voice(self) -> str | None:
+        return "af_heart"
+
 
 def _patch_tts(seconds: float) -> None:
     """Replace ``create_tts`` everywhere it was imported with a stub factory."""

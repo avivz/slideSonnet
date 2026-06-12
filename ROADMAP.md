@@ -23,11 +23,12 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    ("OK — no issues"); human reviewed the MP4s: visuals approved, audio
    "decent but not amazing" — acceptable for the a1 launch artifact, to be
    superseded by the Inworld HQ re-render (Next #7).
-3. [ ] **Full-codebase review remediation (2026-06-12)** — five PR groups
-   (bugs/safety, dead-code sweep, test suite, editor perf, refactors).
-   Working tracker with per-item checkboxes lives in
-   `dev/REVIEW-2026-06.md` (untracked) — if this effort is interrupted
-   midway, resume from the unchecked items there. **[agent]**
+3. [x] **Full-codebase review remediation (2026-06-12)** — five PR groups
+   (bugs/safety, dead-code sweep, test suite, editor perf, refactors), all
+   landed the same day; per-item record in `dev/REVIEW-2026-06.md`
+   (untracked). Highlights: paced-clip clean bug, per-deck render dirs,
+   test-suite ElevenLabs guard, backend registry, sidecar format-version
+   header, editor perf pass, `EditorView` decomposition. **[agent]**
 
 ## Next — publish 1.0.0a1
 
@@ -64,7 +65,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `build_timeline` to learn overlap (it assumes back-to-back cuts); a
    legacy unwired `concatenate_segments_xfade` sits in
    `src/slidesonnet/video/composer.py` — predates the v1 rewrite, don't
-   assume it's drop-in. **[agent]**
+   assume it's drop-in (deliberately kept through the 2026-06 dead-code
+   sweep for this item). **[agent]**
 5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads (typing during a recompile
