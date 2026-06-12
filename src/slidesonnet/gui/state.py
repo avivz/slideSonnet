@@ -21,7 +21,7 @@ from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import rasterize, read_page_ids
-from slidesonnet.tts import create_tts
+from slidesonnet.tts import BACKENDS, create_tts
 
 # Audio cache-status scans stat() every speech segment; renders ask several
 # questions per repaint. One scan is shared for this long before re-checking.
@@ -287,28 +287,24 @@ class EditorState:
     def voice_options(self) -> list[str]:
         """Voice choices for the editor: named presets first, then engine voices.
 
-        For Kokoro this is the model's fixed English voice set; for any backend
-        it also includes the deck's named presets from ``slidesonnet.toml``. The
-        per-utterance voice is otherwise None (the deck default).
+        The engine reports its own pickable voice set (Kokoro's fixed English
+        voices; cloud engines with account-specific ids report none), plus the
+        deck's named presets from ``slidesonnet.toml``. The per-utterance voice
+        is otherwise None (the deck default).
         """
-        from slidesonnet.tts.kokoro import KOKORO_VOICES
-
         opts: list[str] = sorted(self.config.voices)  # named presets
-        if self.config.tts.backend == "kokoro":
-            opts += [v for v in KOKORO_VOICES if v not in opts]
+        opts += [v for v in create_tts(self.config.tts).list_voices() if v not in opts]
         return opts
 
     def default_voice(self) -> str | None:
         """The deck-wide voice an utterance with no explicit voice falls back to."""
-        if self.config.tts.backend == "kokoro":
-            return self.config.tts.kokoro_voice
-        return self.config.tts.elevenlabs_voice_id or None
+        return create_tts(self.config.tts).default_voice()
 
     # ---- synthesis cost ---------------------------------------------------
     @property
     def tts_is_paid(self) -> bool:
         """True when the configured TTS backend spends API credits."""
-        return create_tts(self.config.tts).paid
+        return BACKENDS[self.config.tts.backend].paid
 
     def _audio_status(self) -> list[tuple[SpeechRef, bool]]:
         """Deck-wide (segment, is_cached) scan, shared across a render tick.

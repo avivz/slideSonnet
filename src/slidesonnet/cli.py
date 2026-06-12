@@ -12,6 +12,7 @@ import click
 
 from slidesonnet import __version__
 from slidesonnet.diagnostics import Diagnostic, count_by_severity, has_errors
+from slidesonnet.tts import BACKENDS
 from slidesonnet.exceptions import SlideSonnetError
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ _NARRATION_OPT = click.option(
 )
 _ENGINE_OPT = click.option(
     "--engine",
-    type=click.Choice(["kokoro", "elevenlabs"]),
+    type=click.Choice(sorted(BACKENDS)),
     help="TTS backend (default: config; kokoro = free/local)",
 )
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from slidesonnet.narration.format import (
@@ -274,3 +276,33 @@ def test_negative_pause_rejected() -> None:
 def test_negative_transition_rejected() -> None:
     with pytest.raises(ValueError, match="non-negative"):
         Transition("crossfade", -1.0)
+
+
+class TestFormatVersionHeader:
+    def test_current_version_parses_silently(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        from slidesonnet.narration.format import FORMAT_VERSION
+
+        text = f"# slidesonnet-format: {FORMAT_VERSION}\n@a\n  utterance:\n    text: Hi.\n"
+        with caplog.at_level(logging.WARNING):
+            blocks = parse_sidecar(text)
+        assert blocks[0].slide_id == "a"
+        assert "slidesonnet-format" not in caplog.text
+
+    def test_future_version_warns_but_parses(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        text = "# slidesonnet-format: 99\n@a\n  utterance:\n    text: Hi.\n"
+        with caplog.at_level(logging.WARNING):
+            blocks = parse_sidecar(text)
+        assert blocks[0].slide_id == "a"  # best-effort read, never a hard fail
+        assert "slidesonnet-format" in caplog.text and "99" in caplog.text
+
+    def test_scaffold_declares_format_version(self, tmp_path: Path) -> None:
+        from slidesonnet.api import scaffold_text
+        from slidesonnet.narration.format import FORMAT_VERSION
+
+        text = scaffold_text(tmp_path / "deck.pdf", ["a", "b"])
+        assert f"# slidesonnet-format: {FORMAT_VERSION}" in text
+        parse_sidecar(text)  # and it round-trips through the parser

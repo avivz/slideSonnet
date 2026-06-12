@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from slidesonnet.models import (
-    API_BACKENDS,
     TTSConfig,
     VideoConfig,
     VoiceConfig,
@@ -57,6 +56,8 @@ class TestResolveVoice:
 
 class TestAPIBackends:
     def test_elevenlabs_is_api_kokoro_is_not(self) -> None:
+        from slidesonnet.tts import API_BACKENDS
+
         assert "elevenlabs" in API_BACKENDS
         assert "kokoro" not in API_BACKENDS
 
@@ -134,3 +135,36 @@ class TestVideoConfigValidation:
     def test_zero_paddings_accepted(self) -> None:
         cfg = VideoConfig(pre_silence=0.0, tail_seconds=0.0)
         assert cfg.pre_silence == 0.0
+
+
+class TestBackendRegistry:
+    """The runtime registry and the static Literal must stay in sync."""
+
+    def test_registry_matches_backend_literal(self) -> None:
+        from typing import get_args
+
+        from slidesonnet.models import Backend
+        from slidesonnet.tts import BACKENDS
+
+        assert set(BACKENDS) == set(get_args(Backend))
+
+    def test_registry_specs(self) -> None:
+        from slidesonnet.tts import BACKENDS
+
+        kokoro = BACKENDS["kokoro"]
+        eleven = BACKENDS["elevenlabs"]
+        assert (kokoro.extension, kokoro.paid) == (".wav", False)
+        assert (eleven.extension, eleven.paid) == (".mp3", True)
+
+    def test_engine_voice_introspection(self) -> None:
+        from slidesonnet.models import TTSConfig
+        from slidesonnet.tts import create_tts
+        from slidesonnet.tts.kokoro import KOKORO_VOICES
+
+        kokoro = create_tts(TTSConfig(backend="kokoro", kokoro_voice="af_nova"))
+        assert kokoro.list_voices() == KOKORO_VOICES
+        assert kokoro.default_voice() == "af_nova"
+
+        eleven = create_tts(TTSConfig(backend="elevenlabs", elevenlabs_voice_id="v9"))
+        assert eleven.list_voices() == ()
+        assert eleven.default_voice() == "v9"

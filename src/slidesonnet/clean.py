@@ -19,7 +19,8 @@ from slidesonnet.cache import audio_dir, cache_root, render_dir
 from slidesonnet.config import load_config
 from slidesonnet.deck import load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
-from slidesonnet.models import API_BACKENDS, resolve_voice
+from slidesonnet.models import resolve_voice
+from slidesonnet.tts import API_BACKENDS
 from slidesonnet.narration.model import Pace
 from slidesonnet.tts.base import TTSEngine
 

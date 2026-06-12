@@ -39,3 +39,15 @@ class TTSEngine(ABC):
         changing backend parameters invalidates cached audio files.
         """
         ...
+
+    def list_voices(self) -> tuple[str, ...]:
+        """Voice names this engine can offer in a picker (empty if open-ended).
+
+        Cloud engines with account-specific voice ids return () — the editor
+        then offers only the deck's named presets.
+        """
+        return ()
+
+    def default_voice(self) -> str | None:
+        """The voice used when an utterance has no explicit one, if known."""
+        return None

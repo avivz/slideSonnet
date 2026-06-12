@@ -33,6 +33,7 @@ canonically; comments above it and at end-of-file still survive).
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable
 
@@ -43,6 +44,16 @@ from slidesonnet.narration.model import (
     Transition,
     TransitionKind,
 )
+
+logger = logging.getLogger(__name__)
+
+# The sidecar grammar version this slidesonnet reads and writes. Declared in
+# files as a plain comment (`# slidesonnet-format: N`) so older versions skip
+# it harmlessly; a parser seeing a greater N warns that directives introduced
+# later may be misread (a future directive after `text:` would otherwise be
+# swallowed as a text continuation — and spoken aloud).
+FORMAT_VERSION = 1
+_FORMAT_RE = re.compile(r"^#\s*slidesonnet-format:\s*(?P<version>\d+)\s*$")
 
 _HEADER_RE = re.compile(r"^@(?P<id>\S+)\s*$")
 _KV_RE = re.compile(r"^(?P<key>[a-z][a-z-]*)\s*:\s*(?P<value>.*?)\s*$")
@@ -171,6 +182,14 @@ def parse_sidecar(text: str) -> list[PageNarration]:  # noqa: C901
         return current
 
     for lineno, raw in enumerate(text.splitlines(), start=1):
+        fmt = _FORMAT_RE.match(raw.strip())
+        if fmt and int(fmt.group("version")) > FORMAT_VERSION:
+            logger.warning(
+                "sidecar declares slidesonnet-format %s but this version understands %s — "
+                "newer directives may be misread; upgrade slidesonnet",
+                fmt.group("version"),
+                FORMAT_VERSION,
+            )
         line = _strip_comment(raw).strip()
         if not line:
             pending.append(raw)

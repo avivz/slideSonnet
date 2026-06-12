@@ -12,7 +12,9 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 
-API_BACKENDS: frozenset[str] = frozenset({"elevenlabs"})
+# The typed source of backend names. mypy can't derive a Literal from the
+# runtime registry (tts.BACKENDS); a test pins the two in sync.
+Backend = Literal["kokoro", "elevenlabs"]
 
 
 @dataclass
@@ -55,7 +57,7 @@ def resolve_voice(
 class TTSConfig:
     """TTS backend configuration."""
 
-    backend: Literal["kokoro", "elevenlabs"] = "kokoro"
+    backend: Backend = "kokoro"
     kokoro_voice: str = "af_heart"
     kokoro_speed: float = 1.0
     elevenlabs_api_key_env: str = "ELEVENLABS_API_KEY"

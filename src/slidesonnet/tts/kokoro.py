@@ -117,6 +117,12 @@ class KokoroTTS(TTSEngine):
             key += f":{self.speed}"
         return key
 
+    def list_voices(self) -> tuple[str, ...]:
+        return KOKORO_VOICES
+
+    def default_voice(self) -> str | None:
+        return self.voice
+
 
 def _write_wav(path: Path, samples: list[float]) -> None:
     """Write float samples in [-1, 1] as 16-bit mono PCM at 24 kHz."""

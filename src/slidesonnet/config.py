@@ -33,13 +33,14 @@ from pathlib import Path
 from typing import Any
 
 from slidesonnet.exceptions import ConfigError
+from slidesonnet.tts import BACKENDS
 from slidesonnet.models import TTSConfig, VideoConfig, VoiceConfig
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
 
 logger = logging.getLogger(__name__)
 
 CONFIG_FILENAME = "slidesonnet.toml"
-_KNOWN_BACKENDS = {"kokoro", "elevenlabs"}
+_KNOWN_BACKENDS = frozenset(BACKENDS)
 
 
 @dataclass

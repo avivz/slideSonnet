@@ -18,12 +18,15 @@ from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
 
+from slidesonnet.models import Backend
+
 if TYPE_CHECKING:
     from slidesonnet.config import Config
     from slidesonnet.narration.model import Deck
     from slidesonnet.render import DeckTimeline
 
-Engine = Literal["kokoro", "elevenlabs"]
+# Re-export of models.Backend, kept under the public name api.Engine.
+Engine = Backend
 ProgressFn = Callable[[str, int, int], None]
 
 __all__ = [
@@ -70,7 +73,10 @@ def _unique_real(pages: list[str]) -> list[str]:
 
 def scaffold_text(pdf_path: Path, pages: list[str]) -> str:
     """Build a blank sidecar: one ``@<id>`` block per page with a page-number comment."""
+    from slidesonnet.narration.format import FORMAT_VERSION
+
     lines = [
+        f"# slidesonnet-format: {FORMAT_VERSION}",
         f"# slideSonnet narration — deck: {pdf_path.name}",
         "# Fill in narration under each @slide-id. '[pause N]' inserts N seconds of silence.",
         "",

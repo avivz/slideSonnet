@@ -113,6 +113,9 @@ class ElevenLabsTTS(TTSEngine):
             key += f":{self.speed}"
         return key
 
+    def default_voice(self) -> str | None:
+        return self.voice_id or None
+
 
 def _get_audio_duration(path: Path) -> float:
     """Get audio duration using ffprobe."""

@@ -15,10 +15,9 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-_BACKEND_EXTENSIONS: dict[str, str] = {
-    "kokoro": ".wav",
-    "elevenlabs": ".mp3",
-}
+from slidesonnet.tts import BACKENDS
+
+_BACKEND_EXTENSIONS: dict[str, str] = {name: spec.extension for name, spec in BACKENDS.items()}
 
 _VALID_EXTENSIONS: frozenset[str] = frozenset(_BACKEND_EXTENSIONS.values())
 
@@ -33,6 +32,10 @@ def text_hash(text: str, voice: str | None = None) -> str:
 
     Includes voice so the same text with different voices
     produces different cache entries.
+
+    TRIPWIRE: a segment's ``direct:`` notes are NOT hashed (engines ignore
+    them today). The day an engine honors direction, add it to this hash —
+    otherwise every previously-cached clip is silently stale.
     """
     h = text
     if voice:
