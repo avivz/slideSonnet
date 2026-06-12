@@ -1,11 +1,11 @@
 % slideSonnet showcase — teaches the tool, in the tool's own format.
 %
 % Compile:  slidesonnet sty && latexmk -pdf showcase.tex
-% Render:   slidesonnet export showcase.pdf -o showcase.mp4 --engine piper
+% Render:   slidesonnet export showcase.pdf -o showcase.mp4 --engine kokoro
 %
-% A two-voice dialog: ALEX asks (overlay step 1), the NARRATOR answers
-% (overlay step 2). Each step is its own \ssid page with its own narration —
-% and, in the sidecar, its own :voice.
+% A two-voice dialog drawn as chat bubbles: ALEX asks (overlay step 1), the
+% NARRATOR answers (overlay step 2). Each step is its own \ssid page; in the
+% sidecar each utterance carries its own voice.
 \documentclass[aspectratio=169]{beamer}
 \usepackage{slidesonnet}
 \usepackage{listings}
@@ -61,6 +61,26 @@
         xleftmargin=12pt,framexleftmargin=8pt,
         aboveskip=0.8\baselineskip,belowskip=0.8\baselineskip}
 
+% Dialogue as chat bubbles: Alex asks on the left (accent-tinted), the
+% narrator answers on the right (ink-tinted). The same split lives in the
+% sidecar as per-utterance voices.
+\setbeamercolor{askbubble}{bg=accent!14, fg=ink}
+\setbeamercolor{answerbubble}{bg=ink!8, fg=ink}
+\newcommand{\asks}[1]{%
+  \begin{flushleft}%
+    \begin{beamercolorbox}[rounded=true, sep=10pt, wd=0.8\textwidth]{askbubble}
+      {\scriptsize\bfseries\textcolor{accent}{ALEX}}\\[3pt]
+      \itshape #1
+    \end{beamercolorbox}%
+  \end{flushleft}}
+\newcommand{\answers}[1]{%
+  \begin{flushright}%
+    \begin{beamercolorbox}[rounded=true, sep=10pt, wd=0.8\textwidth]{answerbubble}
+      {\scriptsize\bfseries\textcolor{ink!60}{NARRATOR}}\\[3pt]
+      #1
+    \end{beamercolorbox}%
+  \end{flushright}}
+
 \title{slideSonnet}
 \subtitle{Narration for your slides --- as editable text}
 \author{A self-narrated tour}
@@ -83,19 +103,19 @@
 \begin{frame}{What is this?}
   \ssid<1>{intro-q}
   \ssid<2>{intro-a}
-  \onslide<1->{\textbf{Alex:} So what does slideSonnet actually do?}
-  \onslide<2->{\medskip\textbf{Narrator:} You bring a finished PDF of your slides.
-    slideSonnet turns it into a narrated video --- and the narration you're
-    hearing right now lives in a plain text file next to that PDF.}
+  \asks{So what does slideSonnet actually do?}
+  \onslide<2->{\answers{It turns your slide deck into a narrated lecture
+    video. Voices, page timing, subtitles --- all driven by one plain text
+    file.}}
 \end{frame}
 
 \begin{frame}{Why a sidecar file?}
   \ssid<1>{why-q}
   \ssid<2>{why-a}
-  \onslide<1->{\textbf{Alex:} Why not just put the narration inside the slides?}
-  \onslide<2->{\medskip\textbf{Narrator:} Because the PDF is your frozen artifact.
-    Keeping narration in a separate, git-diffable file means you can rewrite a
-    line and re-render in seconds --- no recompiling, no re-recording.}
+  \asks{Why not just put the narration inside the slides?}
+  \onslide<2->{\answers{Because the PDF is your frozen artifact. Keeping
+    narration in a separate, git-diffable file means you can rewrite a line
+    and re-render in seconds --- no recompiling, no re-recording.}}
 \end{frame}
 
 \begin{frame}[fragile]{Step 1 --- mark your slides}
@@ -125,35 +145,37 @@ slidesonnet init deck.pdf
 \begin{frame}[fragile]{The sidecar format}
   \ssid{format}
   \begin{lstlisting}
-@euler-setup
-:voice narrator
-We want the sum of one over n squared. [pause 0.8]
-
-@euler-trick
-:pace slow
-Watch the denominators. [pause 1] This is the trick.
+@format
+  utterance:
+    text: Each slide id gets a block of utterances and pauses.
+  utterance:
+    voice: alex
+    text: Wait. Is that the block we're hearing right now?
+  utterance:
+    pace: slow
+    text: Yes. Word for word.
   \end{lstlisting}
-  \texttt{@id} headers, optional \texttt{:voice}/\texttt{:pace}, and
-  \texttt{[pause N]} --- the one timing primitive.
+  One block per slide id; every utterance carries its own \texttt{voice:} and
+  \texttt{pace:} --- a single slide can host this whole exchange.
 \end{frame}
 
 \begin{frame}{Step 3 --- edit and preview}
   \ssid<1>{edit-q}
   \ssid<2>{edit-a}
-  \onslide<1->{\textbf{Alex:} Do I have to write that text file by hand?}
-  \onslide<2->{\medskip\textbf{Narrator:} You can --- or run
-    \texttt{slidesonnet edit deck.pdf} for a local editor. Page through the
-    deck, type narration beside each slide, and preview the whole thing. The
-    preview bakes in your pauses, so it plays exactly like the final video.}
+  \asks{Do I have to write that text file by hand?}
+  \onslide<2->{\answers{You can --- or run \texttt{slidesonnet edit deck.pdf}
+    for a local editor. Page through the deck, type narration beside each
+    slide, and preview the whole thing. The preview bakes in your pauses, so
+    it plays exactly like the final video.}}
 \end{frame}
 
 \begin{frame}[fragile]{Step 4 --- render}
   \ssid{export}
   \begin{lstlisting}
-slidesonnet export deck.pdf -o deck.mp4 --engine piper
+slidesonnet export deck.pdf -o deck.mp4 --engine kokoro
   \end{lstlisting}
   \begin{itemize}
-    \item \texttt{--engine piper} --- free, local. \texttt{elevenlabs} --- cloud, high quality.
+    \item \texttt{--engine kokoro} --- free, local, natural. \texttt{elevenlabs} --- cloud, high quality.
     \item \texttt{--silent} or \texttt{--timing estimate} --- a fast rough cut, no TTS.
     \item Subtitles (\texttt{.srt}/\texttt{.vtt}) are written alongside the video.
   \end{itemize}
@@ -162,11 +184,10 @@ slidesonnet export deck.pdf -o deck.mp4 --engine piper
 \begin{frame}{Only what changed}
   \ssid<1>{cache-q}
   \ssid<2>{cache-a}
-  \onslide<1->{\textbf{Alex:} Doesn't re-rendering get slow?}
-  \onslide<2->{\medskip\textbf{Narrator:} Audio is cached by content. Edit one
-    block and only that line is re-synthesized; everything else is reused. And
-    swapping Piper for ElevenLabs never throws away the audio you already paid
-    for.}
+  \asks{Doesn't re-rendering get slow?}
+  \onslide<2->{\answers{Audio is cached by content. Edit one block and only
+    that line is re-synthesized; everything else is reused. And switching
+    engines never throws away audio you already paid for.}}
 \end{frame}
 
 \begin{frame}[fragile]{The whole workflow}
@@ -189,7 +210,7 @@ slidesonnet export deck.pdf -o deck.mp4
   \vspace{0.6em}
   \sslogo{0.5\textwidth}\\[1.6em]
   Mark your slides. Write narration. Render.\\[1.1em]
-  {\color{accent}\texttt{pip install slidesonnet}}
+  {\color{accent}\texttt{uv tool install "slidesonnet[kokoro]"}}
 \end{frame}
 }
 

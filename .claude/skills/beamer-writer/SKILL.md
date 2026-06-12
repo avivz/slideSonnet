@@ -72,31 +72,46 @@ Rules:
 
 ## The narration sidecar (`<deck>.narration`)
 
-A flat, line-oriented, git-diffable file. Scaffold it from the compiled PDF with
-`slidesonnet init deck.pdf`, then fill in each block:
+An indented, line-oriented, git-diffable block format. Scaffold it from the
+compiled PDF with `slidesonnet init deck.pdf`, then fill in each block:
 
 ```
 # comments start with '#' (line-leading, or trailing ' #...')
 @euler-setup
-We want the sum of one over n squared. [pause 0.8]
+  utterance:
+    voice: narrator              # optional per-utterance directives
+    pace: slow                   # slow | normal | fast
+    direct: deliberate, calm     # director's note (forward-compat; local engine ignores it)
+    text: We want the sum of one over n squared.
+  pause: 0.8                     # explicit silence, in seconds
 
 @euler-trick
-:voice narrator
-:pace slow
-Watch the denominators carefully. [pause 1] This is the whole trick.
+  utterance:
+    text: Watch the denominators carefully.
+  pause: 1
+  utterance:
+    voice: alex
+    text: This is the whole trick.
+  transition-out: crossfade 0.5  # optional; default is a cut
 
 @intro-overview
-[pause 3]            # silent slide — held 3 seconds, no speech
+  pause: 3                       # silent slide — held 3 seconds, no speech
 ```
 
-- `@<slide-id>` starts a block (must match an id in the PDF).
-- `:voice <name>` / `:pace slow|normal|fast` — optional per-block directives.
-  Voices are defined in `slidesonnet.toml`. **Voice is per-block**: to switch
-  voice mid-slide (e.g. a quote in another voice), split it into a separate
-  `\ssid` overlay step.
-- `[pause N]` is the single timing primitive: a mid-sentence pause, an
-  end-of-slide hold, or — as a block's only content — a silent slide.
-- Body lines within a block join with spaces.
+- `@<slide-id>` starts a block (must match an id in the PDF). Its body is an
+  ordered list of `utterance:` and `pause:` entries, optionally bracketed by
+  `transition-in:` / `transition-out:` lines.
+- Each `utterance:` carries its own `voice:`, `pace:`, `direct:`, and `text:`.
+  **Voice is per-utterance** — one slide can mix voices (a dialogue works on a
+  single page; each utterance is its own synthesis call). Named voices are
+  defined in `slidesonnet.toml`; a raw engine voice id (e.g. `am_michael`)
+  also works.
+- `pause: N` is the timing primitive: between utterances, an end-of-slide
+  hold, or — as a block's only content — a silent slide.
+- Wrapped `text:` lines are fine: a line that isn't a known directive
+  continues the text (don't start a wrapped line with a word + colon).
+- Hand-edits survive GUI saves: only blocks whose content changes are
+  rewritten; comments and wrapping are preserved.
 
 ## Optional config (`slidesonnet.toml`)
 
@@ -146,7 +161,7 @@ pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
   explanation in the sidecar.
 - **Pacing** — 2–4 sentences per block (~10–30s). Split dense material across
   steps rather than cramming.
-- **Title/closing pages** can be silent: a block with just `[pause N]`.
+- **Title/closing pages** can be silent: a block with just `pause: N`.
 
 ## Typical file structure
 
@@ -201,21 +216,28 @@ lecture/
 
 ```
 @title
-Welcome. Today we'll cover the basics of graph theory. [pause 0.5]
+  utterance:
+    text: Welcome. Today we'll cover the basics of graph theory.
+  pause: 0.5
 
 @graph-def
-A graph is a mathematical structure with two parts: a set of vertices, which
-represent objects, and a set of edges, which represent connections between them.
+  utterance:
+    text: A graph is a mathematical structure with two parts: a set of
+      vertices, which represent objects, and a set of edges, which represent
+      connections between them.
 
 @graph-degree
-The degree of a vertex counts how many edges touch it.
+  utterance:
+    text: The degree of a vertex counts how many edges touch it.
 
 @handshake
-The handshaking lemma says the sum of all vertex degrees equals twice the number
-of edges — because each edge adds one to the degree of each of its two endpoints.
+  utterance:
+    text: The handshaking lemma says the sum of all vertex degrees equals
+      twice the number of edges — because each edge adds one to the degree
+      of each of its two endpoints.
 
 @closing
-[pause 1.5]
+  pause: 1.5
 ```
 
 $ARGUMENTS
