@@ -1355,7 +1355,10 @@ def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorStat
         if track_duration > 0:
             audio.seek(float(e.args) * track_duration)
 
-    audio.on("timeupdate", _on_timeupdate, args=["target.currentTime"])
+    # NiceGUI's `args` filter only reaches top-level event keys, so a real
+    # browser can't deliver `event.target.currentTime` that way (the handler
+    # would receive an empty dict). Transform client-side and emit the number.
+    audio.on("timeupdate", _on_timeupdate, js_handler="(e) => emit(e.target.currentTime)")
     audio.on("play", lambda: _on_player_state(True))
     audio.on("pause", lambda: _on_player_state(False))
     audio.on("ended", lambda: _on_player_state(False))

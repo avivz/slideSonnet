@@ -35,6 +35,9 @@ dev = [
     "pytest>=8.0",
     "pytest-cov",
     "pytest-asyncio",
+    "pytest-timeout",
+    "playwright",
+    "pytest-playwright",
     "ruff",
     "mypy",
 ]

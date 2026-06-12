@@ -1,7 +1,7 @@
 VENV := .venv/bin
 SLIDESONNET := $(VENV)/slidesonnet
 
-.PHONY: install test test-unit lint fmt typecheck clean \
+.PHONY: install test test-unit test-browser lint fmt typecheck clean \
 	demos basel showcase \
 	check-basel check-showcase \
 	clean-basel clean-showcase clean-examples \
@@ -14,7 +14,10 @@ test:
 	$(VENV)/pytest tests/
 
 test-unit:
-	$(VENV)/pytest tests/ -m "not integration"
+	$(VENV)/pytest tests/ -m "not integration and not browser"
+
+test-browser:
+	$(VENV)/pytest tests/ -m browser
 
 lint:
 	$(VENV)/ruff check src/ tests/
