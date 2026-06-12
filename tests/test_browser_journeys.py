@@ -27,7 +27,7 @@ from playwright.sync_api import Locator, Page, expect
 
 from slidesonnet.cache import audio_dir
 from slidesonnet.hashing import text_hash
-from tests.conftest import simple_narration
+from tests.conftest import prep_marked_deck as _prep, simple_narration
 
 pytestmark = pytest.mark.browser
 
@@ -117,14 +117,6 @@ def marked(page: Page, name: str) -> Locator:
     the block editor's destructive re-renders.
     """
     return page.locator(f".ss-marker-{name}")
-
-
-def _prep(tmp_path: Path, sidecar: str = "") -> Path:
-    pdf = tmp_path / "marked.pdf"
-    pdf.write_bytes(MARKED.read_bytes())
-    if sidecar:
-        (tmp_path / "marked.narration").write_text(simple_narration(sidecar), encoding="utf-8")
-    return pdf
 
 
 def _sidecar(tmp_path: Path) -> str:

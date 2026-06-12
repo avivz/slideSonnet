@@ -12,7 +12,7 @@ import pytest
 
 from slidesonnet import api
 from slidesonnet.video.composer import get_duration
-from tests.conftest import simple_narration
+from tests.conftest import prep_marked_deck
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -27,10 +27,7 @@ Here is the setup.
 
 
 def _prep(tmp_path: Path) -> Path:
-    pdf = tmp_path / "marked.pdf"
-    pdf.write_bytes(MARKED.read_bytes())
-    (tmp_path / "marked.narration").write_text(simple_narration(_SIDECAR), encoding="utf-8")
-    return pdf
+    return prep_marked_deck(tmp_path, _SIDECAR)
 
 
 pytestmark = pytest.mark.integration

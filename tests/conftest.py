@@ -1,5 +1,6 @@
 """Shared test fixtures."""
 
+import base64
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,47 @@ def _no_real_elevenlabs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """
     monkeypatch.setenv("ELEVENLABS_API_KEY", _SENTINEL_KEY)
     monkeypatch.setattr("slidesonnet.tts.elevenlabs.ElevenLabs", _GuardedElevenLabs)
+    yield
+
+
+# 1x1 black pixel — a valid PNG for stubbing rasterized page images
+_TINY_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQAB"
+    "h6FO1AAAAABJRU5ErkJggg=="
+)
+
+
+@pytest.fixture(autouse=True)
+def _stub_page_rasterize(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """Replace per-test pdftoppm rasterization with stub PNGs in the unit tier.
+
+    GUI unit tests would otherwise shell out to pdftoppm for every test (the
+    suite's main time sink) — and silently exercise a different code path in
+    CI, where poppler isn't installed. Real rasterization stays covered by the
+    integration tier (test_pdf_reader.py), which this fixture leaves alone.
+    """
+    if request.node.get_closest_marker("integration") or request.node.get_closest_marker("browser"):
+        yield
+        return
+
+    from slidesonnet.cache import render_dir
+    from slidesonnet.gui.state import EditorState
+
+    def fake_ensure_images(self: EditorState) -> list[Path]:
+        if self._images is None:
+            out = render_dir(self.pdf_path) / "pages"
+            out.mkdir(parents=True, exist_ok=True)
+            images: list[Path] = []
+            for i in range(len(self.deck.pages)):
+                page = out / f"page-{i + 1}.png"
+                page.write_bytes(_TINY_PNG)
+                images.append(page)
+            self._images = images
+        return self._images
+
+    monkeypatch.setattr(EditorState, "ensure_images", fake_ensure_images)
     yield
 
 
@@ -117,6 +159,23 @@ def simple_narration(text: str) -> str:
             body.append(stripped)
     flush()
     return serialize_sidecar(blocks)
+
+
+MARKED_PDF = FIXTURES_DIR / "marked.pdf"
+
+
+def prep_marked_deck(tmp_path: Path, sidecar: str = "") -> Path:
+    """Copy the marked fixture PDF into *tmp_path*, optionally seeding a sidecar.
+
+    *sidecar* uses the concise legacy flat grammar (see simple_narration).
+    The canonical deck-prep helper — test files should use this instead of
+    re-implementing the copy-and-seed dance.
+    """
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED_PDF.read_bytes())
+    if sidecar:
+        (tmp_path / "marked.narration").write_text(simple_narration(sidecar), encoding="utf-8")
+    return pdf
 
 
 @pytest.fixture

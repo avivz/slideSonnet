@@ -22,9 +22,11 @@ MARKED = FIXTURES / "marked.pdf"
 
 
 def test_version() -> None:
+    import slidesonnet
+
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "1.0.0a0" in result.output
+    assert slidesonnet.__version__ in result.output
 
 
 def test_sty_writes_macro(tmp_path: Path) -> None:
@@ -88,8 +90,15 @@ def test_check_errors_on_orphan(tmp_path: Path) -> None:
     assert "ghost" in result.output and "no matching" in result.output.lower()
 
 
-def test_doctor_runs() -> None:
+def test_doctor_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Stub the checks: the real ones probe external tools and run load_dotenv
+    # (which would pull the developer's .env into the test process).
+    from slidesonnet.doctor import CheckResult
+
+    ok = CheckResult("ffmpeg", "ok", "7.0", "", "")
+    monkeypatch.setattr("slidesonnet.doctor.run_all_checks", lambda: [("Core", [ok])])
     result = CliRunner().invoke(main, ["doctor"])
+    assert result.exit_code == 0
     assert "ffmpeg" in result.output
 
 

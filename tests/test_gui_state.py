@@ -10,18 +10,14 @@ import pytest
 
 from slidesonnet.gui.state import EditorState, cue_start
 from slidesonnet.narration.format import parse_segments, serialize_body
-from tests.conftest import simple_narration
+from tests.conftest import prep_marked_deck, simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
 
 
 def _state(tmp_path: Path, sidecar: str = "") -> EditorState:
-    pdf = tmp_path / "marked.pdf"
-    pdf.write_bytes(MARKED.read_bytes())
-    if sidecar:
-        (tmp_path / "marked.narration").write_text(simple_narration(sidecar), encoding="utf-8")
-    return EditorState(pdf)
+    return EditorState(prep_marked_deck(tmp_path, sidecar))
 
 
 def test_actions_let_on_disk_config_pick_the_engine(

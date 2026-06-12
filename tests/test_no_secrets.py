@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import re
 import subprocess
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).parent.parent
 
 
 def _tracked_files() -> list[str]:
     """Return list of all git-tracked file paths."""
-    result = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        ["git", "ls-files"], capture_output=True, text=True, check=True, cwd=REPO_ROOT
+    )
     return [f for f in result.stdout.splitlines() if f]
 
 
 def _read_text_safe(path: str) -> str | None:
     """Read a file as UTF-8, returning None for binary files."""
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(REPO_ROOT / path, encoding="utf-8") as f:
             return f.read()
     except (UnicodeDecodeError, OSError):
         return None
@@ -32,7 +37,7 @@ def test_no_dotenv_files_tracked():
 
 def test_gitignore_excludes_dotenv():
     """.gitignore at repo root must exclude .env."""
-    with open(".gitignore") as f:
+    with open(REPO_ROOT / ".gitignore") as f:
         lines = [line.strip() for line in f if not line.startswith("#")]
     assert ".env" in lines, ".env not found in .gitignore"
 

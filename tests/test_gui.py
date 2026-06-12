@@ -11,20 +11,12 @@ from nicegui import ui
 from nicegui.testing import User
 
 from slidesonnet import api
-from tests.conftest import simple_narration
+from tests.conftest import prep_marked_deck as _prep, simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
 
 pytestmark = pytest.mark.nicegui_main_file("tests/gui_main.py")
-
-
-def _prep(tmp_path: Path, sidecar: str = "") -> Path:
-    pdf = tmp_path / "marked.pdf"
-    pdf.write_bytes(MARKED.read_bytes())
-    if sidecar:
-        (tmp_path / "marked.narration").write_text(simple_narration(sidecar), encoding="utf-8")
-    return pdf
 
 
 async def test_editor_loads(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
