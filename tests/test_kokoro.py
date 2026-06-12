@@ -161,14 +161,14 @@ class TestFactoryAndConfig:
         assert isinstance(engine, KokoroTTS)  # default backend is kokoro
 
     def test_pace_scales_kokoro_speed(self) -> None:
-        from slidesonnet.audio.synth import _engine_for_pace
+        from slidesonnet.audio.synth import engine_for_pace
         from slidesonnet.models import TTSConfig
         from slidesonnet.narration.format import pace_to_speed
         from slidesonnet.tts.base import TTSEngine
 
         cfg = TTSConfig(backend="kokoro", kokoro_speed=1.0)
         cache: dict[float, TTSEngine] = {}
-        engine = _engine_for_pace(cfg, "fast", cache)
+        engine = engine_for_pace(cfg, "fast", cache)
         assert isinstance(engine, KokoroTTS)
         assert engine.speed == pytest.approx(pace_to_speed("fast"))
 

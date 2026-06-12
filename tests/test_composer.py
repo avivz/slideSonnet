@@ -218,7 +218,7 @@ def test_concatenate_segments_xfade_mixed_audio(work_dir):
 
 @pytest.mark.integration
 def test_get_duration_nonexistent():
-    with pytest.raises(RuntimeError, match="ffprobe failed"):
+    with pytest.raises(FFmpegError, match="ffprobe failed"):
         get_duration(Path("/nonexistent.mp4"))
 
 
@@ -620,7 +620,7 @@ class TestGetDurationMocked:
 
     @patch("slidesonnet.video.composer.subprocess.run", side_effect=FileNotFoundError)
     def test_ffprobe_not_found(self, mock_run: MagicMock) -> None:
-        with pytest.raises(RuntimeError, match="ffprobe.*not found"):
+        with pytest.raises(FFmpegError, match="ffprobe.*not found"):
             get_duration(Path("test.mp4"))
 
     @patch(
@@ -628,25 +628,25 @@ class TestGetDurationMocked:
         side_effect=subprocess.CalledProcessError(1, "ffprobe"),
     )
     def test_ffprobe_error(self, mock_run: MagicMock) -> None:
-        with pytest.raises(RuntimeError, match="ffprobe failed"):
+        with pytest.raises(FFmpegError, match="ffprobe failed"):
             get_duration(Path("test.mp4"))
 
     @patch("slidesonnet.video.composer.subprocess.run")
     def test_bad_json(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout="not json")
-        with pytest.raises(RuntimeError, match="invalid JSON"):
+        with pytest.raises(FFmpegError, match="invalid JSON"):
             get_duration(Path("test.mp4"))
 
     @patch("slidesonnet.video.composer.subprocess.run")
     def test_missing_key(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=json.dumps({"format": {}}))
-        with pytest.raises(RuntimeError, match="missing.*format.duration"):
+        with pytest.raises(FFmpegError, match="missing.*format.duration"):
             get_duration(Path("test.mp4"))
 
     @patch("slidesonnet.video.composer.subprocess.run")
     def test_non_numeric_duration(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(stdout=json.dumps({"format": {"duration": "N/A"}}))
-        with pytest.raises(RuntimeError, match="non-numeric duration"):
+        with pytest.raises(FFmpegError, match="non-numeric duration"):
             get_duration(Path("test.mp4"))
 
 
@@ -896,7 +896,7 @@ class TestGetDurationStreamMocked:
         mock_run.return_value = MagicMock(
             stdout=json.dumps({"streams": [{"codec_type": "video", "duration": "N/A"}]})
         )
-        with pytest.raises(RuntimeError, match="non-numeric duration"):
+        with pytest.raises(FFmpegError, match="non-numeric duration"):
             get_duration(Path("test.mp4"), stream="video")
 
 
@@ -926,7 +926,7 @@ class TestComposeSegmentMismatchWarning:
         assert "stream mismatch" in caplog.text
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
-    @patch("slidesonnet.video.composer.get_duration", side_effect=RuntimeError("no probe"))
+    @patch("slidesonnet.video.composer.get_duration", side_effect=FFmpegError("no probe"))
     def test_mismatch_probe_failure_silent(
         self,
         mock_dur: MagicMock,

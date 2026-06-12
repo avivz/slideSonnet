@@ -23,6 +23,11 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    ("OK — no issues"); human reviewed the MP4s: visuals approved, audio
    "decent but not amazing" — acceptable for the a1 launch artifact, to be
    superseded by the Inworld HQ re-render (Next #7).
+3. [ ] **Full-codebase review remediation (2026-06-12)** — five PR groups
+   (bugs/safety, dead-code sweep, test suite, editor perf, refactors).
+   Working tracker with per-item checkboxes lives in
+   `dev/REVIEW-2026-06.md` (untracked) — if this effort is interrupted
+   midway, resume from the unchecked items there. **[agent]**
 
 ## Next — publish 1.0.0a1
 

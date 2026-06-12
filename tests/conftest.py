@@ -1,7 +1,8 @@
 """Shared test fixtures."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import fitz  # type: ignore[import-untyped]
 import pytest
@@ -9,6 +10,38 @@ import pytest
 # NiceGUI's in-process `user` fixture (no selenium). The combined plugin pulls
 # in selenium for the `screen` fixture, so load only the user plugin.
 pytest_plugins = ["nicegui.testing.user_plugin"]
+
+_SENTINEL_KEY = "unit-test-no-real-calls"
+
+
+class _GuardedElevenLabs:
+    """Stand-in for the real ElevenLabs client: any construction is a test bug.
+
+    Tests that need a client mock ``@patch("slidesonnet.tts.elevenlabs.ElevenLabs")``
+    over this, so only an unmocked (would-be real, would-be billed) construction
+    ever reaches here.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        raise AssertionError(
+            "test constructed a real ElevenLabs client — this would call the paid API; "
+            "mock slidesonnet.tts.elevenlabs.ElevenLabs instead"
+        )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_elevenlabs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Make a real ElevenLabs call impossible from any test.
+
+    Two layers: the API key env var is pinned to a sentinel (load_dotenv won't
+    override an existing var, so doctor's ``load_dotenv()`` can't leak the real
+    key from the repo-root ``.env`` into the suite), and the client class is
+    replaced with one that fails fast on construction.
+    """
+    monkeypatch.setenv("ELEVENLABS_API_KEY", _SENTINEL_KEY)
+    monkeypatch.setattr("slidesonnet.tts.elevenlabs.ElevenLabs", _GuardedElevenLabs)
+    yield
+
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

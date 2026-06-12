@@ -208,6 +208,31 @@ def test_keep_exact_resolves_block_voice_preset(tmp_path: Path) -> None:
     assert not (ad / unvoiced).exists()  # default-voice variant is not the exact name
 
 
+def test_keep_exact_keeps_paced_utterance_cache(tmp_path: Path) -> None:
+    """Paced utterances embed the multiplied speed in the cache key — exact-keep
+    must predict that name, not the base engine's, or it deletes paid audio."""
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    blocks = [
+        PageNarration("intro-title", [Segment.speech(HELLO, pace="fast")]),
+        PageNarration("euler-setup", [Segment.speech(SECOND)]),
+    ]
+    (tmp_path / "marked.narration").write_text(serialize_sidecar(blocks), encoding="utf-8")
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True)
+    # fast pace -> kokoro_speed 1.0 * 1.15, which lands in the cache key
+    paced = audio_filename(HELLO, "kokoro", "kokoro:af_heart:1.15")
+    unpaced = audio_filename(SECOND, "kokoro", "kokoro:af_heart")
+    stale = audio_filename(HELLO, "kokoro", "kokoro:af_heart")  # pace-less variant is stale
+    for name in (paced, unpaced, stale):
+        (ad / name).write_bytes(b"a")
+
+    clean(pdf, keep="exact")
+    assert (ad / paced).exists()  # the clip synthesis actually uses
+    assert (ad / unpaced).exists()
+    assert not (ad / stale).exists()
+
+
 def test_keep_exact_missing_audio_dir_and_subdirs(tmp_path: Path) -> None:
     pdf = _seed_deck(tmp_path)
     rd = render_dir(pdf)

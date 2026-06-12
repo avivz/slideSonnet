@@ -67,7 +67,7 @@ def speech_refs(deck: Deck, config: Config) -> list[SpeechRef]:
     return refs
 
 
-def _engine_for_pace(tts: TTSConfig, pace: Pace | None, cache: dict[float, TTSEngine]) -> TTSEngine:
+def engine_for_pace(tts: TTSConfig, pace: Pace | None, cache: dict[float, TTSEngine]) -> TTSEngine:
     speed = pace_to_speed(pace)
     if speed not in cache:
         cfg = replace(
@@ -110,7 +110,7 @@ def synthesize(
     results: dict[tuple[str, int], SynthResult] = {}
 
     for i, ref in enumerate(refs):
-        engine = _engine_for_pace(config.tts, ref.pace, engines)
+        engine = engine_for_pace(config.tts, ref.pace, engines)
         target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
         cached = None if force else audio_cache_path_or_alt(target)
         if cached is not None:
@@ -130,7 +130,7 @@ def _ref_targets(deck: Deck, config: Config, audio_dir: Path) -> list[tuple[Spee
     engines: dict[float, TTSEngine] = {}
     out: list[tuple[SpeechRef, Path]] = []
     for ref in speech_refs(deck, config):
-        engine = _engine_for_pace(config.tts, ref.pace, engines)
+        engine = engine_for_pace(config.tts, ref.pace, engines)
         out.append(
             (ref, audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice))
         )
@@ -215,7 +215,7 @@ def cached_durations(
     refs = speech_refs(deck, config)
     by_page: dict[int, dict[int, float]] = {}
     for ref in refs:
-        engine = _engine_for_pace(config.tts, ref.pace, engines)
+        engine = engine_for_pace(config.tts, ref.pace, engines)
         target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
         cached = audio_cache_path_or_alt(target)
         if cached is not None:

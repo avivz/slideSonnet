@@ -134,8 +134,8 @@ def compose_segment(
                 aud_dur,
                 delta,
             )
-    except RuntimeError:
-        pass  # probing may fail in mocked tests
+    except FFmpegError:
+        pass  # the mismatch check is diagnostic only; never fail a finished compose
 
 
 def compose_silent_segment(
@@ -383,7 +383,7 @@ def get_duration(media_path: Path, *, stream: str | None = None) -> float:
             instead of the container format duration.  This matters for xfade
             offset calculation where video and audio durations may differ.
 
-    Raises RuntimeError if ffprobe is missing, the file cannot be probed,
+    Raises FFmpegError if ffprobe is missing, the file cannot be probed,
     or the output doesn't contain a valid duration.
     """
     show_flag = "-show_streams" if stream else "-show_format"
@@ -399,14 +399,14 @@ def get_duration(media_path: Path, *, stream: str | None = None) -> float:
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
     except FileNotFoundError:
-        raise RuntimeError("'ffprobe' not found. Install ffmpeg.")
+        raise FFmpegError("'ffprobe' not found. Install ffmpeg.")
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ffprobe failed for '{media_path}': {e.stderr}") from e
+        raise FFmpegError(f"ffprobe failed for '{media_path}': {e.stderr}") from e
 
     try:
         info = json.loads(result.stdout)
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"ffprobe returned invalid JSON for '{media_path}'") from e
+        raise FFmpegError(f"ffprobe returned invalid JSON for '{media_path}'") from e
 
     if stream:
         for s in info.get("streams", []):
@@ -418,7 +418,7 @@ def get_duration(media_path: Path, *, stream: str | None = None) -> float:
     try:
         duration_str = info["format"]["duration"]
     except KeyError:
-        raise RuntimeError(f"ffprobe output missing 'format.duration' for '{media_path}'")
+        raise FFmpegError(f"ffprobe output missing 'format.duration' for '{media_path}'")
 
     return _parse_duration(duration_str, media_path)
 
@@ -428,7 +428,7 @@ def _parse_duration(value: str, media_path: Path) -> float:
     try:
         return float(value)
     except (ValueError, TypeError) as e:
-        raise RuntimeError(
+        raise FFmpegError(
             f"ffprobe returned non-numeric duration '{value}' for '{media_path}'"
         ) from e
 

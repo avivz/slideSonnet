@@ -23,6 +23,52 @@ def _state(tmp_path: Path, sidecar: str = "") -> EditorState:
     return EditorState(pdf)
 
 
+def test_actions_let_on_disk_config_pick_the_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Synthesis/preview/export must not pin the editor's cached backend.
+
+    The user can edit slidesonnet.toml between the 1s config polls; passing the
+    stale cached backend could run the wrong (possibly paid) engine. Passing
+    engine=None makes api re-read the on-disk config at action time.
+    """
+    from slidesonnet.gui import state as state_mod
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    captured: dict[str, object] = {}
+
+    def fake_synthesize_deck(pdf: Path, **kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    def fake_build_preview(pdf: Path, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    def fake_export(pdf: Path, output: Path, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(state_mod.api, "synthesize_deck", fake_synthesize_deck)
+    monkeypatch.setattr(state_mod.api, "build_preview", fake_build_preview)
+    monkeypatch.setattr(state_mod.api, "export", fake_export)
+
+    for action in (
+        lambda: state.synth_current(),
+        lambda: state.synth_segment(0),
+        lambda: state.synth_all(),
+        lambda: state.preview_current(),
+        lambda: state.preview_deck(),
+        lambda: state.export(tmp_path / "out.mp4"),
+    ):
+        captured.clear()
+        action()
+        assert captured.get("engine", "MISSING") in (None, "MISSING"), (
+            f"action pinned engine={captured.get('engine')!r} instead of "
+            "deferring to on-disk config"
+        )
+
+
 def test_has_narration(tmp_path: Path) -> None:
     state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
     assert state.has_narration("intro-title")

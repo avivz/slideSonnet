@@ -313,11 +313,13 @@ class EditorState:
         return ungenerated_ids(self.deck, self.config, audio_dir(self.pdf_path))
 
     # ---- actions -------------------------------------------------------
+    # Actions pass engine=None so api re-reads the on-disk config at action
+    # time — the editor's cached config can be up to one poll interval stale,
+    # and running a stale (possibly paid) backend is a money-relevant surprise.
     def synth_current(self, *, force: bool = False) -> int:
         return api.synthesize_deck(
             self.pdf_path,
             sidecar_path=self.sidecar_path,
-            engine=self.config.tts.backend,
             only_ids={self.current_id},
             force=force,
         )
@@ -327,35 +329,26 @@ class EditorState:
         return api.synthesize_deck(
             self.pdf_path,
             sidecar_path=self.sidecar_path,
-            engine=self.config.tts.backend,
             only_segments={(self.current_id, speech_index)},
             force=force,
         )
 
     def synth_all(self) -> int:
-        return api.synthesize_deck(
-            self.pdf_path, sidecar_path=self.sidecar_path, engine=self.config.tts.backend
-        )
+        return api.synthesize_deck(self.pdf_path, sidecar_path=self.sidecar_path)
 
     def preview_current(self) -> api.Preview:
         return api.build_preview(
-            self.pdf_path,
-            sidecar_path=self.sidecar_path,
-            engine=self.config.tts.backend,
-            only_id=self.current_id,
+            self.pdf_path, sidecar_path=self.sidecar_path, only_id=self.current_id
         )
 
     def preview_deck(self) -> api.Preview:
-        return api.build_preview(
-            self.pdf_path, sidecar_path=self.sidecar_path, engine=self.config.tts.backend
-        )
+        return api.build_preview(self.pdf_path, sidecar_path=self.sidecar_path)
 
     def export(self, output: Path, *, silent: bool = False) -> api.ExportResult:
         return api.export(
             self.pdf_path,
             output,
             sidecar_path=self.sidecar_path,
-            engine=None if silent else self.config.tts.backend,
             silent=silent,
         )
 
