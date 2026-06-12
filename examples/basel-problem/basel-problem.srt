@@ -1,303 +1,303 @@
 1
-00:00:00,300 --> 00:00:04,288
+00:00:00,300 --> 00:00:05,593
 Today I want to tell you about one of my favorite stories in mathematics:
 
 2
-00:00:04,288 --> 00:00:05,272
+00:00:05,593 --> 00:00:06,899
 the Basel problem.
 
 3
-00:00:05,272 --> 00:00:08,058
+00:00:06,899 --> 00:00:10,597
 A sum that resisted solution for eighty-five years,
 
 4
-00:00:08,058 --> 00:00:12,374
+00:00:10,597 --> 00:00:16,325
 before a young mathematician finally cracked it with a beautifully simple idea.
 
 5
-00:00:14,074 --> 00:00:15,463
+00:00:18,025 --> 00:00:19,410
 Here's the question.
 
 6
-00:00:15,463 --> 00:00:20,878
+00:00:19,410 --> 00:00:24,812
 Take every perfect square — one, four, nine, sixteen, twenty-five, and so on —
 
 7
-00:00:20,878 --> 00:00:23,655
+00:00:24,812 --> 00:00:27,582
 flip each one over, and add them all up.
 
 8
-00:00:23,655 --> 00:00:27,612
-Does this infinite sum converge? And if it does, to what?
+00:00:27,582 --> 00:00:31,875
+Does this infinite sum converge? And if it does, then to what?
 
 9
-00:00:28,712 --> 00:00:32,494
+00:00:32,975 --> 00:00:37,313
 The problem was first posed by Pietro Mengoli in 1650.
 
 10
-00:00:32,494 --> 00:00:34,105
+00:00:37,313 --> 00:00:39,161
 The sum does converge —
 
 11
-00:00:34,105 --> 00:00:39,219
+00:00:39,161 --> 00:00:45,025
 you can check that by comparison with the integral of one over x squared.
 
 12
-00:00:39,219 --> 00:00:43,001
+00:00:45,025 --> 00:00:49,363
 Add the first thousand terms and you get about 1.6439.
 
 13
-00:00:43,001 --> 00:00:47,834
+00:00:49,363 --> 00:00:54,906
 It clearly approaches something near 1.6449. But what is this number?
 
 14
-00:00:47,834 --> 00:00:49,726
+00:00:54,906 --> 00:00:57,075
 Nobody could figure it out.
 
 15
-00:00:50,826 --> 00:00:55,914
+00:00:58,175 --> 00:01:04,234
 Even Jakob Bernoulli, one of the greatest mathematicians of his era,
 
 16
-00:00:55,914 --> 00:00:57,710
+00:01:04,234 --> 00:01:06,373
 admitted defeat in 1689.
 
 17
-00:00:57,710 --> 00:00:58,384
+00:01:06,373 --> 00:01:07,175
 He wrote:
 
 18
-00:00:59,884 --> 00:01:02,662
+00:01:08,675 --> 00:01:11,525
 If anyone finds, and communicates to us,
 
 19
-00:01:02,662 --> 00:01:07,732
+00:01:11,525 --> 00:01:16,725
 that which thus far has eluded our efforts — great will be our gratitude.
 
 20
-00:01:08,832 --> 00:01:11,840
+00:01:17,825 --> 00:01:21,467
 For eighty-five years, nobody could solve it.
 
 21
-00:01:11,840 --> 00:01:15,783
+00:01:21,467 --> 00:01:26,242
 Then in 1734, a twenty-seven year old named Leonhard Euler,
 
 22
-00:01:15,783 --> 00:01:20,663
+00:01:26,242 --> 00:01:32,150
 working at the Academy of Sciences in Saint Petersburg, found the answer.
 
 23
-00:01:21,763 --> 00:01:25,038
+00:01:33,250 --> 00:01:37,403
 The sum equals pi squared over six. And that was shocking.
 
 24
-00:01:25,038 --> 00:01:28,483
+00:01:37,403 --> 00:01:41,770
 Pi is the ratio of a circle's circumference to its diameter —
 
 25
-00:01:28,483 --> 00:01:31,927
+00:01:41,770 --> 00:01:46,137
 why on earth would it show up in a sum of reciprocal squares?
 
 26
-00:01:31,927 --> 00:01:33,791
+00:01:46,137 --> 00:01:48,500
 Let me show you Euler's argument.
 
 27
-00:01:34,891 --> 00:01:39,667
+00:01:49,600 --> 00:01:55,263
 Euler's proof starts with something you might not expect — the sine function.
 
 28
-00:01:39,667 --> 00:01:44,568
+00:01:55,263 --> 00:02:01,074
 We know the Taylor series for sine of x: x, minus x cubed over three factorial,
 
 29
-00:01:44,568 --> 00:01:47,731
+00:02:01,074 --> 00:02:04,825
 plus x to the fifth over five factorial, and so on.
 
 30
-00:01:48,831 --> 00:01:52,283
+00:02:05,925 --> 00:02:10,176
 For any fixed nonzero x, divide that series by x.
 
 31
-00:01:52,283 --> 00:01:56,580
+00:02:10,176 --> 00:02:15,468
 We get sine of x over x equals one, minus x squared over six,
 
 32
-00:01:56,580 --> 00:01:58,270
+00:02:15,468 --> 00:02:17,550
 plus higher-order terms.
 
 33
-00:01:59,370 --> 00:02:03,117
+00:02:18,650 --> 00:02:23,683
 Hold onto that coefficient of x squared — it's negative one sixth.
 
 34
-00:02:03,117 --> 00:02:05,047
+00:02:23,683 --> 00:02:26,275
 That number is going to come back.
 
 35
-00:02:06,547 --> 00:02:08,365
+00:02:27,775 --> 00:02:30,221
 Now here's Euler's bold move.
 
 36
-00:02:08,365 --> 00:02:12,941
+00:02:30,221 --> 00:02:36,377
 The function sine of x over x equals zero whenever x is plus or minus pi,
 
 37
-00:02:12,941 --> 00:02:16,451
+00:02:36,377 --> 00:02:41,100
 plus or minus two pi, plus or minus three pi, and so on.
 
 38
-00:02:17,551 --> 00:02:19,064
+00:02:42,200 --> 00:02:44,121
 Euler reasoned by analogy.
 
 39
-00:02:19,064 --> 00:02:21,975
+00:02:44,121 --> 00:02:47,815
 Just as a polynomial can be factored by its roots,
 
 40
-00:02:21,975 --> 00:02:24,827
+00:02:47,815 --> 00:02:51,436
 he wrote sine of x over x as an infinite product,
 
 41
-00:02:24,827 --> 00:02:26,806
+00:02:51,436 --> 00:02:53,948
 one factor for each pair of roots.
 
 42
-00:02:26,806 --> 00:02:30,822
+00:02:53,948 --> 00:02:59,046
 This was an assumption, not a proof — the rigorous justification came
 
 43
-00:02:30,822 --> 00:02:34,548
+00:02:59,046 --> 00:03:03,775
 over a century later with the Weierstrass factorization theorem.
 
 44
-00:02:35,648 --> 00:02:39,560
+00:03:04,875 --> 00:03:09,373
 Before the infinite product, see why this works for a finite one.
 
 45
-00:02:39,560 --> 00:02:40,704
+00:03:09,373 --> 00:03:10,688
 Take three factors.
 
 46
-00:02:40,704 --> 00:02:44,977
+00:03:10,688 --> 00:03:15,602
 An x squared term only appears when you pick the negative a-k x squared
 
 47
-00:02:44,977 --> 00:02:49,009
+00:03:15,602 --> 00:03:20,239
 piece from exactly one factor, and the one from every other factor.
 
 48
-00:02:49,009 --> 00:02:53,523
+00:03:20,239 --> 00:03:25,429
 So the x squared coefficient is just the sum a-one plus a-two plus a-three,
 
 49
-00:02:53,523 --> 00:02:54,607
+00:03:25,429 --> 00:03:26,675
 with a minus sign.
 
 50
-00:02:55,707 --> 00:02:57,901
+00:03:27,775 --> 00:03:30,501
 Extend this to the infinite product.
 
 51
-00:02:57,901 --> 00:03:02,655
+00:03:30,501 --> 00:03:36,409
 By the same reasoning, the x squared coefficient is minus one over pi squared,
 
 52
-00:03:02,655 --> 00:03:03,996
+00:03:36,409 --> 00:03:38,075
 times our mystery sum.
 
 53
-00:03:05,096 --> 00:03:06,016
+00:03:39,175 --> 00:03:40,334
 Now we compare.
 
 54
-00:03:06,016 --> 00:03:10,553
+00:03:40,334 --> 00:03:46,050
 The Taylor series told us the x squared coefficient is negative one sixth.
 
 55
-00:03:11,653 --> 00:03:15,600
+00:03:47,150 --> 00:03:52,030
 And the infinite product told us it's negative one over pi squared,
 
 56
-00:03:15,600 --> 00:03:16,425
+00:03:52,030 --> 00:03:53,050
 times our sum.
 
 57
-00:03:17,525 --> 00:03:22,147
+00:03:54,150 --> 00:03:59,735
 Both are power series for the same function, and a power series is unique.
 
 58
-00:03:22,147 --> 00:03:24,083
+00:03:59,735 --> 00:04:02,075
 So the coefficients must match.
 
 59
-00:03:24,083 --> 00:03:27,393
+00:04:02,075 --> 00:04:06,075
 One over pi squared, times the sum, equals one sixth.
 
 60
-00:03:28,493 --> 00:03:31,726
+00:04:07,175 --> 00:04:11,266
 Multiply both sides by pi squared, and there it is.
 
 61
-00:03:31,726 --> 00:03:35,909
+00:04:11,266 --> 00:04:16,561
 One plus one fourth plus one ninth plus one sixteenth, on forever,
 
 62
-00:03:35,909 --> 00:03:37,620
+00:04:16,561 --> 00:04:18,727
 equals pi squared over six.
 
 63
-00:03:37,620 --> 00:03:42,183
+00:04:18,727 --> 00:04:24,503
 That mysterious 1.6449 that nobody could pin down for eighty-five years.
 
 64
-00:03:42,183 --> 00:03:45,479
+00:04:24,503 --> 00:04:28,675
 The circle constant was hiding in the sum all along.
 
 65
-00:03:47,079 --> 00:03:50,405
+00:04:30,275 --> 00:04:34,559
 Should we worry that Euler cut corners? Mathematicians did.
 
 66
-00:03:50,405 --> 00:03:54,634
+00:04:34,559 --> 00:04:40,004
 It took over a century before Weierstrass made the factoring step rigorous.
 
 67
-00:03:54,634 --> 00:03:58,863
+00:04:40,004 --> 00:04:45,450
 But the answer was never in doubt. Sometimes intuition runs ahead of proof.
 
 68
-00:03:59,963 --> 00:04:04,086
+00:04:46,550 --> 00:04:51,622
 What we computed is a special value of the Riemann zeta function,
 
 69
-00:04:04,086 --> 00:04:05,100
+00:04:51,622 --> 00:04:52,870
 at s equals two.
 
 70
-00:04:05,100 --> 00:04:09,667
+00:04:52,870 --> 00:04:58,489
 Euler showed all the even values are rational multiples of powers of pi.
 
 71
-00:04:09,667 --> 00:04:14,615
+00:04:58,489 --> 00:05:04,575
 But the odd values? Zeta of three, zeta of five? Still mysterious to this day.
 
 72
-00:04:15,715 --> 00:04:16,857
+00:05:05,675 --> 00:05:07,085
 So what did we learn?
 
 73
-00:04:16,857 --> 00:04:20,121
+00:05:07,085 --> 00:05:11,113
 A simple question can hide an answer of extraordinary depth.
 
 74
-00:04:20,121 --> 00:04:24,200
+00:05:11,113 --> 00:05:16,147
 Euler's genius was the boldness to try something that had no right to work,
 
 75
-00:04:24,200 --> 00:04:26,485
+00:05:16,147 --> 00:05:18,967
 and the taste to see beauty in the result.
 
 76
-00:04:26,485 --> 00:04:30,401
+00:05:18,967 --> 00:05:23,800
 And at the heart of it, pi, quietly connecting circles to whole numbers.

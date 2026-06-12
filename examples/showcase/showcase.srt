@@ -1,211 +1,211 @@
 1
-00:00:00,300 --> 00:00:01,853
+00:00:00,300 --> 00:00:01,847
 Welcome to slideSonnet.
 
 2
-00:00:01,853 --> 00:00:06,985
+00:00:01,847 --> 00:00:06,960
 Everything you're about to hear was written as plain text in a sidecar file,
 
 3
-00:00:06,985 --> 00:00:09,213
+00:00:06,960 --> 00:00:09,180
 and rendered straight from a PDF.
 
 4
-00:00:09,213 --> 00:00:10,563
+00:00:09,180 --> 00:00:10,525
 Let me show you how.
 
 5
-00:00:11,963 --> 00:00:14,169
+00:00:11,925 --> 00:00:14,875
 So what does slideSonnet actually do?
 
 6
-00:00:15,069 --> 00:00:17,717
+00:00:15,775 --> 00:00:18,427
 You bring a finished PDF of your slides,
 
 7
-00:00:17,717 --> 00:00:20,828
+00:00:18,427 --> 00:00:21,543
 and slideSonnet turns it into a narrated video.
 
 8
-00:00:20,828 --> 00:00:25,196
+00:00:21,543 --> 00:00:25,920
 The narration you're hearing right now lives in a plain text file,
 
 9
-00:00:25,196 --> 00:00:27,248
+00:00:25,920 --> 00:00:27,975
 sitting right next to that PDF.
 
 10
-00:00:28,148 --> 00:00:31,341
+00:00:28,875 --> 00:00:33,075
 Why not just put the narration inside the slides themselves?
 
 11
-00:00:32,241 --> 00:00:35,025
+00:00:33,975 --> 00:00:36,800
 Because the PDF is your frozen artifact.
 
 12
-00:00:35,025 --> 00:00:37,252
+00:00:36,800 --> 00:00:39,060
 Keeping narration in a separate,
 
 13
-00:00:37,252 --> 00:00:42,263
+00:00:39,060 --> 00:00:44,145
 git-diffable file means you can rewrite a line and re-render in seconds.
 
 14
-00:00:42,263 --> 00:00:46,161
+00:00:44,145 --> 00:00:48,100
 No recompiling the slides, no re-recording a microphone.
 
 15
-00:00:47,061 --> 00:00:48,898
+00:00:48,1000 --> 00:00:50,736
 Step one: mark your slides.
 
 16
-00:00:48,898 --> 00:00:52,300
+00:00:50,736 --> 00:00:53,950
 Add the slideSonnet package to your Beamer source,
 
 17
-00:00:52,300 --> 00:00:56,655
+00:00:53,950 --> 00:00:58,064
 and give every slide a stable id with the ess-ess-eye-dee macro.
 
 18
-00:00:56,655 --> 00:01:01,759
+00:00:58,064 --> 00:01:02,886
 The id gets stamped invisibly onto each page, so narration binds to the id,
 
 19
-00:01:01,759 --> 00:01:05,637
+00:01:02,886 --> 00:01:06,550
 not to a page number that shifts when you insert a slide.
 
 20
-00:01:06,537 --> 00:01:08,718
+00:01:07,450 --> 00:01:09,620
 Step two: scaffold the sidecar.
 
 21
-00:01:08,718 --> 00:01:11,533
+00:01:09,620 --> 00:01:12,420
 Run slidesonnet init on your PDF, and it
 
 22
-00:01:11,533 --> 00:01:14,488
+00:01:12,420 --> 00:01:15,360
 reads the ids straight out of the document
 
 23
-00:01:14,488 --> 00:01:17,162
+00:01:15,360 --> 00:01:18,020
 and writes a blank narration file, one
 
 24
-00:01:17,162 --> 00:01:20,117
+00:01:18,020 --> 00:01:20,960
 block per slide, ready for you to fill in.
 
 25
-00:01:20,117 --> 00:01:21,665
+00:01:20,960 --> 00:01:22,500
 By hand, or by an LLM.
 
 26
-00:01:22,565 --> 00:01:26,992
+00:01:23,400 --> 00:01:27,681
 The format is simple. An at-sign and the slide id starts a block.
 
 27
-00:01:26,992 --> 00:01:31,693
+00:01:27,681 --> 00:01:32,226
 Optional voice and pace directives go on lines starting with a colon.
 
 28
-00:01:31,693 --> 00:01:35,575
+00:01:32,226 --> 00:01:35,980
 And square-bracket pause, with a number, inserts silence.
 
 29
-00:01:35,575 --> 00:01:39,117
+00:01:35,980 --> 00:01:39,405
 That one primitive covers a pause between sentences,
 
 30
-00:01:39,117 --> 00:01:43,068
+00:01:39,405 --> 00:01:43,225
 a hold at the end of a slide, or an entirely silent slide.
 
 31
-00:01:43,968 --> 00:01:46,604
+00:01:44,125 --> 00:01:47,625
 Do I really have to write that text file by hand?
 
 32
-00:01:47,504 --> 00:01:51,445
+00:01:48,525 --> 00:01:52,374
 You can, or you can run slidesonnet edit for a local editor.
 
 33
-00:01:51,445 --> 00:01:55,123
+00:01:52,374 --> 00:01:55,966
 Page through the deck, type narration beside each slide,
 
 34
-00:01:55,123 --> 00:01:56,963
+00:01:55,966 --> 00:01:57,762
 and preview the whole thing.
 
 35
-00:01:56,963 --> 00:01:59,130
+00:01:57,762 --> 00:01:59,879
 The preview bakes in your pauses,
 
 36
-00:01:59,130 --> 00:02:02,480
+00:01:59,879 --> 00:02:03,150
 so it plays back exactly like the final video will.
 
 37
-00:02:03,380 --> 00:02:04,719
+00:02:04,050 --> 00:02:05,326
 Step four: render.
 
 38
-00:02:04,719 --> 00:02:09,703
+00:02:05,326 --> 00:02:10,076
 Run slidesonnet export with the piper engine for free local speech,
 
 39
-00:02:09,703 --> 00:02:12,976
+00:02:10,076 --> 00:02:13,196
 or elevenlabs for high quality cloud voices.
 
 40
-00:02:12,976 --> 00:02:14,612
+00:02:13,196 --> 00:02:14,755
 Want a fast rough cut?
 
 41
-00:02:14,612 --> 00:02:19,149
+00:02:14,755 --> 00:02:19,080
 Use silent mode, or estimate timing, to skip speech entirely.
 
 42
-00:02:19,149 --> 00:02:23,315
+00:02:19,080 --> 00:02:23,050
 Subtitles are written alongside the video automatically.
 
 43
-00:02:24,215 --> 00:02:26,363
+00:02:23,950 --> 00:02:27,125
 Doesn't re-rendering everything get slow?
 
 44
-00:02:27,263 --> 00:02:29,291
+00:02:28,025 --> 00:02:29,946
 Audio is cached by content.
 
 45
-00:02:29,291 --> 00:02:35,301
+00:02:29,946 --> 00:02:35,640
 Edit one block, and only that line is re-synthesized. Everything else is reused.
 
 46
-00:02:35,301 --> 00:02:38,231
+00:02:35,640 --> 00:02:38,415
 And swapping piper for elevenlabs never
 
 47
-00:02:38,231 --> 00:02:41,462
+00:02:38,415 --> 00:02:41,475
 throws away the audio you already paid for.
 
 48
-00:02:42,362 --> 00:02:44,131
+00:02:42,375 --> 00:02:44,106
 That's the whole workflow.
 
 49
-00:02:44,131 --> 00:02:48,826
+00:02:44,106 --> 00:02:48,698
 Mark your slides, scaffold the narration, check that the ids line up,
 
 50
-00:02:48,826 --> 00:02:50,935
+00:02:48,698 --> 00:02:50,762
 write and preview, then export.
 
 51
-00:02:50,935 --> 00:02:54,950
+00:02:50,762 --> 00:02:54,689
 Every step is scriptable, so an LLM or a Makefile can drive
 
 52
-00:02:54,950 --> 00:02:58,488
+00:02:54,689 --> 00:02:58,150
 the entire pipeline without ever opening the editor.
 
 53
-00:02:59,388 --> 00:03:04,995
+00:02:59,050 --> 00:03:03,875
 Mark your slides. Write narration. Render. Give slideSonnet a try.

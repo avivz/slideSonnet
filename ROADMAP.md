@@ -10,19 +10,20 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — last gaps before publishing
 
-1. [ ] **Non-destructive sidecar save.** *Story:* As an author who hand-edits
-   the `.narration` file, I want GUI saves to rewrite only the blocks I
-   actually changed, so my comments and wrapping survive and diffs stay
-   reviewable. *Acceptance examples:* (a) open a deck whose sidecar has `#`
-   comments and hand-wrapped lines, navigate slides without editing → the
-   file is byte-identical; (b) edit only `@intro`'s text → the diff touches
-   only `@intro`'s block; (c) a comment line above an edited block survives
-   the save. *Appetite:* one day. The format's core promise
-   ("human-readable, git-diffable") — ship before a1. **[agent]**
+1. [x] **Non-destructive sidecar save** (shipped 2026-06-12). All three
+   acceptance examples are covered by tests: unedited saves are
+   byte-identical (`test_no_change_save_is_byte_identical`), edits rewrite
+   only the touched block, and comments above an edited block survive.
+   Bonus: hand-wrapped `text:` lines now parse as continuations. **[agent]**
 2. [ ] **Re-verify both demos end-to-end with Kokoro** — `make basel`,
    `make showcase`, `make check-basel`, `make check-showcase`; validates the
    structured narration format + metropolis restyle + `.latexmkrc` + Kokoro
    changes together. Human watches the resulting MP4s. **[agent→human]**
+   *Agent side done 2026-06-12:* both decks compiled, rendered, and
+   reconciled clean ("OK — no issues"). **Awaiting your review** of
+   `examples/basel-problem/basel-problem.mp4` (8.8 MB) and
+   `examples/showcase/showcase.mp4` (5.5 MB) — check voice quality, slide
+   timing, and the metropolis restyle. Check off when satisfied.
 
 ## Next — publish 1.0.0a1
 
