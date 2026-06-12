@@ -136,6 +136,87 @@ def test_text_with_colon_survives() -> None:
     assert block.segments[0].text == "The ratio is 2:1, precisely."
 
 
+# ---- raw round-trip preservation (non-destructive save) --------------------
+
+MESSY = """\
+# deck-wide notes: keep the tone warm
+# (reviewed 2026-06-12)
+
+@intro-title
+  utterance:
+    text: Welcome to the course
+      on the Basel problem.
+  pause: 1.5
+
+# the overview slide stays silent on purpose
+@intro-overview
+  pause: 3   # hold while they read
+
+@euler-setup
+  utterance:
+    voice: narrator
+    text: Here is the setup.
+
+# postscript: re-record euler-setup with more energy
+"""
+
+
+def test_unedited_roundtrip_is_byte_identical() -> None:
+    assert serialize_sidecar(parse_sidecar(MESSY)) == MESSY
+
+
+def test_wrapped_text_joins_continuation_lines() -> None:
+    intro = parse_sidecar(MESSY)[0]
+    assert intro.segments[0].text == "Welcome to the course on the Basel problem."
+
+
+def test_edited_block_rewrites_only_itself() -> None:
+    blocks = parse_sidecar(MESSY)
+    blocks[1].segments = [Segment.pause(4)]
+    out = serialize_sidecar(blocks)
+    # the edited block is canonical now...
+    assert "@intro-overview\n  pause: 4\n" in out
+    # ...but its neighbours keep their raw text, wrapping included
+    assert "    text: Welcome to the course\n      on the Basel problem.\n" in out
+    assert "  pause: 3   # hold while they read" not in out
+
+
+def test_comment_above_edited_block_survives() -> None:
+    blocks = parse_sidecar(MESSY)
+    blocks[1].segments = [Segment.pause(4)]
+    out = serialize_sidecar(blocks)
+    assert "# the overview slide stays silent on purpose\n@intro-overview\n" in out
+
+
+def test_trailing_comment_survives_edit_of_last_block() -> None:
+    blocks = parse_sidecar(MESSY)
+    blocks[2].segments = [Segment.speech("Redone.", voice="narrator")]
+    out = serialize_sidecar(blocks)
+    assert "# postscript: re-record euler-setup with more energy\n" in out
+    assert "    text: Redone.\n" in out
+
+
+def test_reverted_edit_restores_raw_text() -> None:
+    blocks = parse_sidecar(MESSY)
+    original = blocks[1].segments
+    blocks[1].segments = [Segment.pause(4)]
+    blocks[1].segments = original
+    assert serialize_sidecar(blocks) == MESSY
+
+
+def test_directive_like_line_inside_text_is_continuation() -> None:
+    block = parse_sidecar("@a\n  utterance:\n    text: First.\n    nb: second line\n")[0]
+    assert block.segments[0].text == "First. nb: second line"
+
+
+def test_fresh_blocks_still_serialize_canonically() -> None:
+    blocks = [
+        PageNarration(slide_id="a", segments=[Segment.speech("Hi.")]),
+        PageNarration(slide_id="b", segments=[Segment.pause(1)]),
+    ]
+    assert serialize_sidecar(blocks) == "@a\n  utterance:\n    text: Hi.\n\n@b\n  pause: 1\n"
+
+
 # ---- error paths -----------------------------------------------------------
 
 

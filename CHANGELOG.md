@@ -30,6 +30,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   label so the field name doesn't overlay it.
 
 ### Fixed
+- **Saving no longer destroys hand-edited sidecar formatting.** The parser
+  now remembers each block's raw text, and a save rewrites only blocks whose
+  content actually changed — `#` comments, blank lines, and hand-wrapped
+  narration survive untouched. Comments above an edited block (and trailing
+  end-of-file comments) are kept even when that block is rewritten. Wrapped
+  `text:` lines now parse: after a `text:` line, any line that isn't a known
+  directive continues the text.
 - **Audio-changing actions reset the preview player.** Re-generating,
   adding/deleting/reordering cards, and editing pause length, voice, pace,
   or transitions now stop and rewind a rolling preview — previously the

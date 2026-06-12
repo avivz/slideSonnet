@@ -363,3 +363,57 @@ def test_cue_start_finds_slide() -> None:
     assert cue_start(cues, "b") == 3.5
     assert cue_start(cues, "a") == 0.0
     assert cue_start(cues, "zzz") is None
+
+
+# ---- non-destructive save (hand-edited sidecars survive GUI saves) ---------
+
+HAND_EDITED = """\
+# lecture notes — keep the pacing relaxed
+
+@a
+  utterance:
+    text: Hello from slide a,
+      wrapped by hand.
+
+# slide b is the punchline
+@b
+  utterance:
+    text: Bye.
+"""
+
+
+def _hand_edited_state(tmp_path: Path) -> EditorState:
+    from tests.conftest import write_pdf
+
+    pdf = write_pdf(tmp_path / "deck.pdf", ["a", "b"])
+    (tmp_path / "deck.narration").write_text(HAND_EDITED, encoding="utf-8")
+    return EditorState(pdf)
+
+
+def test_no_change_save_is_byte_identical(tmp_path: Path) -> None:
+    from slidesonnet.narration.model import Segment
+
+    state = _hand_edited_state(tmp_path)
+    # an autosave that changes nothing (the GUI fires these on blur/navigation)
+    block = state.current_block
+    assert state.replace_block(
+        list(block.segments),
+        transition_in=block.transition_in,
+        transition_out=block.transition_out,
+    )
+    assert (tmp_path / "deck.narration").read_text(encoding="utf-8") == HAND_EDITED
+    assert isinstance(block.segments[0], Segment)  # sanity: we round-tripped real content
+
+
+def test_editing_one_block_leaves_the_other_raw(tmp_path: Path) -> None:
+    from slidesonnet.narration.model import Segment
+
+    state = _hand_edited_state(tmp_path)
+    state.go(1)
+    state.replace_block([Segment.speech("Goodbye, rewritten.")])
+    text = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    # slide a keeps its hand wrapping and the file header comment
+    assert "# lecture notes — keep the pacing relaxed\n" in text
+    assert "    text: Hello from slide a,\n      wrapped by hand.\n" in text
+    # the comment above the edited block survives, the body is canonical
+    assert "# slide b is the punchline\n@b\n  utterance:\n    text: Goodbye, rewritten.\n" in text

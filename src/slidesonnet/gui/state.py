@@ -168,11 +168,19 @@ class EditorState:
         if empty:
             self.deck.narration.pop(self.current_id, None)
         else:
+            old = self.deck.narration.get(self.current_id)
             self.deck.narration[self.current_id] = PageNarration(
                 slide_id=self.current_id,
                 segments=list(segments),
                 transition_in=tin,
                 transition_out=tout,
+                # round-trip bookkeeping: a save re-emits the author's raw text
+                # when the content is unchanged, and keeps the comments above
+                # the block either way
+                source=old.source if old else None,
+                canon=old.canon if old else None,
+                lead=old.lead if old else None,
+                tail=old.tail if old else None,
             )
             if tout.kind != "cut":
                 nxt = self._next_page_id()
@@ -222,6 +230,8 @@ class EditorState:
             segments=block.segments,
             transition_in=block.transition_in,
             transition_out=block.transition_out,
+            lead=block.lead,  # comments above the block travel with it
+            tail=block.tail,
         )
         self._write_and_reload()
 
@@ -243,6 +253,8 @@ class EditorState:
             segments=[*target.segments, *orphan.segments],
             transition_in=target.transition_in,
             transition_out=target.transition_out,
+            lead=target.lead,
+            tail=target.tail,
         )
         self._write_and_reload()
 

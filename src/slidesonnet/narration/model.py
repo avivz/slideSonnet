@@ -87,12 +87,26 @@ class Segment:
 
 @dataclass
 class PageNarration:
-    """Narration for a single slide-id: attributed segments plus transitions."""
+    """Narration for a single slide-id: attributed segments plus transitions.
+
+    The last four fields are round-trip bookkeeping set by the parser, so a
+    save can re-emit a block exactly as the author wrote it (comments, hand
+    wrapping) when its content didn't change: ``source`` is the block's raw
+    text (header line included), ``canon`` its canonical serialization at
+    parse time (the change detector), ``lead`` the comment/blank lines above
+    the header (``None`` marks a block never read from a file), and ``tail``
+    any trailing end-of-file comments owned by the last block. ``lead`` and
+    ``tail`` are emitted even when the block's body is rewritten.
+    """
 
     slide_id: str
     segments: list[Segment] = field(default_factory=list)
     transition_in: Transition = field(default_factory=Transition)
     transition_out: Transition = field(default_factory=Transition)
+    source: str | None = field(default=None, compare=False, repr=False)
+    canon: str | None = field(default=None, compare=False, repr=False)
+    lead: str | None = field(default=None, compare=False, repr=False)
+    tail: str | None = field(default=None, compare=False, repr=False)
 
     @property
     def speech_segments(self) -> list[Segment]:
