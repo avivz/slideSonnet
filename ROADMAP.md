@@ -10,11 +10,28 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — publish 1.0.0a1
 
-1. [ ] **Repo public pre-flight, then flip visibility** — secrets scan,
-   license check, README accuracy pass by agent (drop or caveat the
-   ElevenLabs install section pending the Inworld switch below); human runs
-   `gh repo edit --visibility public`. Must precede the PyPI tag (the package
-   links to the GitHub URL). **[agent→human]**
+1. [ ] **Repo public pre-flight, then flip visibility.** Pre-flight pass run
+   2026-06-15 — concrete blockers found, must clear before flipping:
+   - **Add a `LICENSE` file.** `pyproject.toml` and README both declare MIT but
+     there is no license file (must-fix for a public MIT project).
+   - **User docs describe the *removed* sidecar grammar.** Both
+     `README.md` (the "The narration sidecar" section) and `docs/authoring.md`
+     show the old flat `:voice`/`:pace` + inline-`[pause N]` body format that the
+     v1 rewrite deleted. Rewrite both to the current block format
+     (`utterance:` / `text:` / `pause: N` / `transition-in`/`-out`). This is the
+     biggest item — the "full authoring guide" is wrong end-to-end.
+   - **Decide the ElevenLabs README section** — drop or caveat it pending the
+     Inworld switch (Next #1).
+   - **Note the PyMuPDF (AGPL-3.0) dependency** — slideSonnet's own code is MIT,
+     but a copyleft dependency is worth a conscious decision + a line in the
+     README/docs so downstream users know.
+   - ✅ **Clean already:** no secrets in tree or across 232 commits of history,
+     `.env` never tracked + gitignored (guarded by `tests/test_no_secrets.py`),
+     `dev/` never committed, logo + `docs/authoring.md` + `--keep exact` all
+     present/accurate.
+
+   Then human runs `gh repo edit --visibility public`. Must precede the PyPI tag
+   (the package links to the GitHub URL). **[agent→human]**
 2. [ ] **Tag `v1.0.0a1` and push** — bump `src/slidesonnet/__init__.py`, move
    CHANGELOG Unreleased → a1, push tag; triggers TestPyPI → PyPI → GitHub
    Release. Ship with the Kokoro-rendered demo videos; don't block on the
