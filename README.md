@@ -43,7 +43,10 @@ deck.narration  ──(@slide-id blocks)────┘                       (p
 PyMuPDF (PDF id extraction) and NiceGUI (the editor) install as Python
 dependencies. After installing, run `slidesonnet doctor`.
 
-### Install slideSonnet
+### Install for use
+
+Install slideSonnet as an isolated, global CLI — its own virtualenv, separate
+from your system Python and any source checkout:
 
 ```bash
 uv tool install "slidesonnet[kokoro]"    # or: pipx install "slidesonnet[kokoro]"
@@ -51,7 +54,13 @@ uv tool install "slidesonnet[kokoro]"    # or: pipx install "slidesonnet[kokoro]
 
 The `[kokoro]` extra adds [Kokoro](https://github.com/hexgrad/kokoro) (82M,
 Apache-2.0) for free, natural-sounding local speech (~2x real-time on CPU;
-the model downloads on first use). Use `[elevenlabs]` for cloud voices (needs `ELEVENLABS_API_KEY`).
+the model downloads on first use). Use `[elevenlabs]` for cloud voices (needs
+`ELEVENLABS_API_KEY`), or `[kokoro,elevenlabs]` for both. Then run
+`slidesonnet doctor` to confirm the external tools above are visible.
+
+Upgrade with `uv tool upgrade slidesonnet`; remove with `uv tool uninstall
+slidesonnet`. To hack on slideSonnet itself instead, see
+[Development](#development) for the editable install.
 
 ## Quick start
 
