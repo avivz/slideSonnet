@@ -152,7 +152,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    PDF whose consecutive pages are overlay incrementals of one logical
    slide). Composite the transition during the FFmpeg video step; needs a
    way to mark which page boundaries are sub-slide steps vs. real slide
-   changes, plus a per-transition type/duration knob.
+   changes, plus a per-transition type/duration knob. FFmpeg's `xfade`
+   filter already implements a large gallery of transitions
+   (<https://trac.ffmpeg.org/wiki/Xfade>) — expose the full set if it's
+   cheap to wire the transition name straight through to `xfade`.
 
 ## Done (v1 rewrite)
 
