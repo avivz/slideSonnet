@@ -20,6 +20,7 @@ Read these sources (skip any that don't exist):
 ### Planning artifacts
 - `ROADMAP.md` — curated prioritized plan (Now/Next/Later tiers + Done section). This is the source of truth for what's planned.
 - `dev/INBOX.md` — unsorted ideas, observations, and review findings (untracked). Read this to find items that should be promoted to the roadmap.
+- `dev/KNOWN_ISSUES.md` — bug tracker for issues found while using the product (untracked). Each entry has a symptom, cause, fix, repro test, and a status (`☐` open · `◐` repro test written · `✅` fixed). This is the source of truth for **bugs**. Open/`◐` entries are active risks; `✅` entries are fixed-but-maybe-unshipped (verify they reach `CHANGELOG.md`).
 - `CHANGELOG.md` — what's been shipped (Keep a Changelog format)
 - GitHub issues: run `gh issue list --limit 20 --state open` (skip if `gh` unavailable)
 - GitHub milestones: run `gh api repos/{owner}/{repo}/milestones --jq '.[] | select(.state=="open") | .title + ": " + (.description // "no description")'` (skip on error)
@@ -48,9 +49,11 @@ Categorize what you find into four buckets:
 | **Stable** | Working, tested, no known issues. Don't touch unless necessary. |
 | **In Progress** | Active work visible in commits, branches, or uncommitted changes. |
 | **Incomplete** | Claimed in README/TODO but not yet implemented or tested. |
-| **Risks** | Tech debt, missing tests, fragile areas, dependency issues, CI failures. |
+| **Risks** | Tech debt, missing tests, fragile areas, dependency issues, CI failures, **open bugs in `dev/KNOWN_ISSUES.md`**. |
 
 Be specific: name files, features, and test gaps — not vague categories.
+
+Fold `dev/KNOWN_ISSUES.md` into the buckets: `☐`/`◐` entries are **Risks** (and the `◐` ones are partway to **In Progress** — repro test exists, fix pending); `✅` entries are **Stable** once shipped, but **Incomplete** if the fix isn't yet in `CHANGELOG.md` or still lacks a regression test.
 
 ## 3. Prioritize
 
@@ -68,8 +71,17 @@ Important but not urgent. Features, improvements, and debt that should land befo
 ### Later (5–10 items) — backlog
 Nice-to-haves, speculative features, large refactors. Include but don't over-invest in planning these.
 
+### Maintain `dev/KNOWN_ISSUES.md`
+
+This is the one file the PM skill may write to (see Rules). Keep it honest and current:
+
+- **Reconcile status** — for each entry, verify the status against reality: does the repro test exist and pass? is the fix actually in the source? If an entry is marked `☐`/`◐` but the code already fixes it (and a test proves it), flag it and update to `✅`. If marked `✅` but the test is missing or red, downgrade it and call it out.
+- **Promote open bugs** — every `☐`/`◐` entry should appear in the **Now** tier (bugs are priority-1) unless it's trivial/cosmetic, in which case Next. Surface any open bug that's missing from `ROADMAP.md`.
+- **Retire shipped fixes** — once a `✅` entry is in `CHANGELOG.md` and on a release, it can be pruned from `KNOWN_ISSUES.md` (the changelog/git history is its permanent record). Recommend prunes; don't delete entries the user might still be tracking without saying so.
+- **Each open bug needs a repro test path** — if an entry has no repro test named, that's the first action for it (reproduce before fixing, per the project's workflow).
+
 **Prioritization criteria** (in order):
-1. Broken things (CI failures, known bugs)
+1. Broken things (CI failures, open bugs in `dev/KNOWN_ISSUES.md`)
 2. Nearly-done work (finish what's started)
 3. User-facing gaps (documented but missing features)
 4. Developer experience (testing, tooling, docs)
@@ -128,8 +140,8 @@ Also flag any existing Now/Next roadmap item that lacks acceptance examples as "
 
 ## Rules
 
-- **Read-only** — never modify files, run builds, or make commits. (After the report, the user may ask you to update `ROADMAP.md` with your recommendations — that's a separate step.)
-- **Triage inbox → roadmap** — if `dev/INBOX.md` contains items not yet in `ROADMAP.md`, call them out and recommend where they belong (Now/Next/Later) or whether to drop them. Items recommended for Now/Next must be phrased as a story + acceptance examples + appetite (see §3).
+- **Read-only, with one exception** — never modify source, run builds, or make commits. The *only* file you may write is `dev/KNOWN_ISSUES.md`, and only for status hygiene (reconcile statuses, fix repro-test names, recommend/apply prunes of shipped fixes — see §3 Maintain). When you edit it, summarize every change you made. (After the report, the user may ask you to update `ROADMAP.md` with your recommendations — that's a separate step.)
+- **Triage inbox + known-issues → roadmap** — if `dev/INBOX.md` or `dev/KNOWN_ISSUES.md` contains items not yet in `ROADMAP.md`, call them out and recommend where they belong (open bugs default to Now). Feature items recommended for Now/Next must be phrased as a story + acceptance examples + appetite (see §3); bug items just need a one-line symptom + the repro-test path.
 - **Be concrete** — "Add integration test for `clean --keep current` in `test_cli.py`" not "Improve test coverage."
 - **Be honest** — if the project is in good shape, say so. Don't manufacture urgency.
 - **Respect cost constraints** — never run commands that cost money (API calls, cloud builds). Check CLAUDE.md for project-specific cost rules.
