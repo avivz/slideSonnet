@@ -10,12 +10,12 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — last gaps before publishing
 
-1. [x] **Non-destructive sidecar save** (shipped 2026-06-12). All three
+5. [x] **Non-destructive sidecar save** (shipped 2026-06-12). All three
    acceptance examples are covered by tests: unedited saves are
    byte-identical (`test_no_change_save_is_byte_identical`), edits rewrite
    only the touched block, and comments above an edited block survive.
    Bonus: hand-wrapped `text:` lines now parse as continuations. **[agent]**
-2. [x] **Re-verify both demos end-to-end with Kokoro** — `make basel`,
+6. [x] **Re-verify both demos end-to-end with Kokoro** — `make basel`,
    `make showcase`, `make check-basel`, `make check-showcase`; validates the
    structured narration format + metropolis restyle + `.latexmkrc` + Kokoro
    changes together. Human watches the resulting MP4s. **[agent→human]**
@@ -23,7 +23,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    ("OK — no issues"); human reviewed the MP4s: visuals approved, audio
    "decent but not amazing" — acceptable for the a1 launch artifact, to be
    superseded by the Inworld HQ re-render (Next #7).
-3. [x] **Full-codebase review remediation (2026-06-12)** — five PR groups
+7. [x] **Full-codebase review remediation (2026-06-12)** — five PR groups
    (bugs/safety, dead-code sweep, test suite, editor perf, refactors), all
    landed the same day; per-item record in `dev/REVIEW-2026-06.md`
    (untracked). Highlights: paced-clip clean bug, per-deck render dirs,
@@ -98,6 +98,14 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 10. [ ] **README refresh** — new video links, Kokoro install instructions,
     editor screenshots of the new dark studio theme. **[agent]**
 
+    Some nice to have features for ux flow:
+0. [ ] **minor ux fixes**. 
+   1. [ ] when text in narration is edited, immediately (before loss of focus) change regenerate icon for the box into generate. consider the slide not up to date. if changes undone, while typing, revert.
+1. [ ] **play at 1.5 or 2x speed option for preview**  
+2. [ ] **do generation of kokoro lowkey in the background after text is stable for some time?**
+3. [ ] **let preview all start even before all are generated, and pause if it ever catches up**
+4. [ ] **currently no way to interrupt generate all (as it takes place in play all -- not checked about generate all button)
+
 ## Later — before 1.0 final
 
 1. **Narration schema validation** (decided 2026-06-12): publish an EBNF
@@ -139,6 +147,12 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    interface). (Qwen3-TTS and Inworld promoted to Next on 2026-06-11.)
 5. **Multi-deck playlists** — concatenate several PDFs into one video.
 6. **`--json` output** for CI/automation.
+7. **Slide transitions** — fade and wipe (left/right/up/down) transitions
+   between pages, giving limited animation for Beamer-style sub-slides (a
+   PDF whose consecutive pages are overlay incrementals of one logical
+   slide). Composite the transition during the FFmpeg video step; needs a
+   way to mark which page boundaries are sub-slide steps vs. real slide
+   changes, plus a per-transition type/duration knob.
 
 ## Done (v1 rewrite)
 
