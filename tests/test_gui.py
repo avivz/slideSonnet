@@ -573,6 +573,194 @@ async def test_pause_length_edit_resets_player_so_replay_rebuilds(
     assert str(audio.props.get("src")) != first
 
 
+async def test_pdf_only_refresh_keeps_narration_field(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repro #1: a PDF-only recompile must not rebuild the block editor — that
+    would revert whatever the user is mid-typing. The editor (and its live
+    textarea) is left intact; only PDF-side surfaces refresh."""
+    from tests.conftest import write_pdf
+
+    pdf = write_pdf(tmp_path / "deck.pdf", ["a", "b"])
+    (tmp_path / "deck.narration").write_text(
+        simple_narration("@a\nHi.\n\n@b\nBye.\n"), encoding="utf-8"
+    )
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Slide 1 / 2")
+    before = next(iter(user.find(ui.textarea).elements))
+
+    write_pdf(pdf, ["a", "b"])  # recompile, same ids — narration on disk untouched
+    later = time.time() + 5
+    os.utime(pdf, (later, later))
+    await user.should_see("Deck files changed on disk — reloaded", retries=300)
+
+    after = next(iter(user.find(ui.textarea).elements))
+    assert before is after  # same widget → not rebuilt → in-progress typing survives
+
+
+async def test_text_edit_revokes_loaded_track(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repro #3: editing an utterance's words while a preview is loaded must drop
+    the stale track so the next Play rebuilds with the new narration."""
+    import asyncio
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    play_btn = next(iter(user.find(marker="play-slide").elements))
+    seek = next(iter(user.find(marker="seek").elements))
+    audio = next(iter(user.find(marker="preview-audio").elements))
+
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    assert play_btn.props.get("icon") == "pause"
+
+    # change the spoken words and leave the field
+    user.find(marker="utext-0").clear().type("Completely different words.")
+    user.find(marker="utext-0").trigger("blur")
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "Completely different words." in sidecar  # the edit saved
+    assert play_btn.props.get("icon") == "play_arrow"  # player stopped...
+    assert "disable" in seek.props  # ...and rewound
+
+    first = str(audio.props.get("src"))
+    user.find(marker="play-slide").click()  # replay must rebuild, not resume the stale track
+    for _ in range(100):
+        if str(audio.props.get("src")) != first:
+            break
+        await asyncio.sleep(0.05)
+    assert str(audio.props.get("src")) != first
+
+
+async def test_no_op_blur_keeps_playing(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guard for #3's fix: blurring a field *without* changing it must not stop
+    playback (a no-op save reports "unchanged")."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    await user.open("/")
+    play_btn = next(iter(user.find(marker="play-slide").elements))
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    assert play_btn.props.get("icon") == "pause"
+
+    user.find(marker="utext-0").trigger("blur")  # focus left, nothing typed
+    assert play_btn.props.get("icon") == "pause"  # still playing
+
+
+async def test_ctrl_s_saves_without_rebuilding_field(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repro #4: Ctrl-S saves the field in place — same widget, no rebuild (so
+    focus is retained) — and persists the edit to disk."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    before = next(iter(user.find(marker="utext-0").elements))
+    user.find(marker="utext-0").clear().type("Saved with a keystroke.")
+    user.find(marker="utext-0").trigger("keydown.ctrl.s.prevent")
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "Saved with a keystroke." in sidecar
+    after = next(iter(user.find(marker="utext-0").elements))
+    assert before is after  # field not rebuilt → focus is kept
+
+
+async def test_play_all_starts_at_current_slide(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repro #5: whole-deck playback begins at the current slide, not slide 1."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+
+    def instant_build(self: EditorState) -> api.Preview:
+        return _fake_preview(self.pdf_path, [(0.0, "intro-title"), (2.0, "euler-setup")])
+
+    monkeypatch.setattr(EditorState, "preview_deck", instant_build)
+    await user.open("/")
+    user.find("Next").click()  # move to slide 2 (euler-setup)
+    await user.should_see("Slide 2 / 6")
+    audio = next(iter(user.find(marker="preview-audio").elements))
+    seek = next(iter(user.find(marker="seek").elements))
+
+    user.find(marker="play-deck").click()
+    await user.should_see("Preview ready", retries=300)
+    # euler-setup's cue is 2.0s into a 4.0s track → seek there, not to 0
+    assert "#t=2.0" in str(audio.props.get("src"))
+    assert float(seek.value or 0.0) == pytest.approx(0.5)
+
+
+async def test_generate_missing_keeps_unaffected_playback(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repro #6: generating *other* slides' audio must not stop the narration
+    currently playing when that slide isn't among what's regenerated."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    # the playing slide is fully cached; only the *other* slide needs audio
+    monkeypatch.setattr(
+        EditorState, "uncached_count", lambda self, sid: 0 if sid == "intro-title" else 1
+    )
+    monkeypatch.setattr(EditorState, "uncached_total", lambda self: 1)
+    monkeypatch.setattr(EditorState, "synth_all", lambda self: 1)
+    await user.open("/")
+    play_btn = next(iter(user.find(marker="play-slide").elements))
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    assert play_btn.props.get("icon") == "pause"  # intro-title is playing
+
+    user.find(marker="gen-missing").click()
+    await user.should_see("Synthesized", retries=300)
+    assert play_btn.props.get("icon") == "pause"  # untouched slide keeps playing
+
+
+async def test_slide_image_refetches_after_recompile(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Repro #7: a recompile reuses page-N.png paths, so without a cache-bust the
+    browser keeps showing the stale (now-dropped) slide. The image URL must
+    change when the underlying page image is re-rendered."""
+    from tests.conftest import write_pdf
+
+    pdf = write_pdf(tmp_path / "deck.pdf", ["a", "b", "c"])
+    (tmp_path / "deck.narration").write_text(
+        simple_narration("@a\nA.\n\n@b\nB.\n\n@c\nC.\n"), encoding="utf-8"
+    )
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Slide 1 / 3")
+    img = next(iter(user.find(marker="stage-img").elements))
+    before = str(img.props.get("src"))
+
+    write_pdf(pdf, ["a", "b"])  # recompile drops a slide; pages re-rasterize in place
+    later = time.time() + 5
+    os.utime(pdf, (later, later))
+    await user.should_see("Deck files changed on disk — reloaded", retries=300)
+
+    after = str(img.props.get("src"))
+    assert before != after  # cache-busted → the browser refetches the fresh image
+    assert before.split("?")[0] == after.split("?")[0]  # same path, new version query
+
+
 async def test_orphan_tray_lists_unattached_narration(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

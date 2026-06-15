@@ -227,6 +227,26 @@ def _recompile(state: EditorState, ids: list[str]) -> None:
     _bump_mtime(state.pdf_path)
 
 
+def test_poll_detects_same_mtime_size_change(tmp_path: Path) -> None:
+    """Repro #2: a recompile the filesystem reports with an unchanged mtime
+    (coarse-granularity mounts, same-second rebuilds) must still be detected —
+    a size change gives it away. Mtime-only watching missed these entirely."""
+    from tests.conftest import write_pdf
+
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@b\nBye.\n")
+    pdf = state.pdf_path
+    baseline_mtime = pdf.stat().st_mtime
+    old_size = pdf.stat().st_size
+
+    write_pdf(pdf, ["a", "b", "c"])  # recompile: a third slide changes the byte size
+    os.utime(pdf, (baseline_mtime, baseline_mtime))  # pin mtime so only size differs
+    assert pdf.stat().st_size != old_size, "sanity: the recompile changed the file size"
+    assert pdf.stat().st_mtime == baseline_mtime, "sanity: mtime is unchanged"
+
+    assert state.poll_sources() is True
+    assert state.page_count == 3
+
+
 def test_recompile_added_slide_flags_missing_narration(tmp_path: Path) -> None:
     state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@b\nBye.\n")
     assert state.error_count == 0
@@ -487,13 +507,15 @@ def _hand_edited_state(tmp_path: Path) -> EditorState:
     return EditorState(pdf)
 
 
-def test_no_change_save_is_byte_identical(tmp_path: Path) -> None:
+def test_no_change_save_is_a_noop(tmp_path: Path) -> None:
     from slidesonnet.narration.model import Segment
 
     state = _hand_edited_state(tmp_path)
-    # an autosave that changes nothing (the GUI fires these on blur/navigation)
+    # an autosave that changes nothing (the GUI fires these on blur/navigation):
+    # it must report "unchanged" so callers don't flash "saved" or revoke a
+    # playing preview, and it must leave the hand-edited file byte-identical.
     block = state.current_block
-    assert state.replace_block(
+    assert not state.replace_block(
         list(block.segments),
         transition_in=block.transition_in,
         transition_out=block.transition_out,

@@ -37,6 +37,15 @@ _AUDIO_SCAN_TTL = 1.0
 SlideStatus = Literal["error", "warning", "ready", "empty"]
 
 
+def _stat_stamp(path: Path) -> tuple[float, int]:
+    """A (mtime, size) change-detection signature for *path*; (0, 0) if missing."""
+    try:
+        st = path.stat()
+    except OSError:
+        return (0.0, 0)
+    return (st.st_mtime, st.st_size)
+
+
 class EditorState:
     """Mutable state behind the narration editor."""
 
@@ -46,12 +55,12 @@ class EditorState:
         self.config = load_config(self.pdf_path)
         self.index = 0
         self._images: list[Path] | None = None
-        # (pdf mtime, deduped page ids, dedupe diagnostics)
-        self._page_cache: tuple[float, list[str], list[Diagnostic]] | None = None
+        # (pdf (mtime, size) stamp, deduped page ids, dedupe diagnostics)
+        self._page_cache: tuple[tuple[float, int], list[str], list[Diagnostic]] | None = None
         self._audio_scan: tuple[float, list[tuple[SpeechRef, bool]]] | None = None
         self.source_error: str | None = None
         self.reload()
-        self._mtimes = self._source_mtimes()
+        self._stamps = self._source_stamps()
 
     # ---- loading -------------------------------------------------------
     def reload(self) -> None:
@@ -66,26 +75,24 @@ class EditorState:
         Every commit saves and reloads; without this, each text-field blur
         re-opens the PDF and walks every page — a visible stall on big decks.
         """
-        try:
-            mtime = self.pdf_path.stat().st_mtime
-        except OSError:
-            mtime = 0.0
-        if self._page_cache is None or self._page_cache[0] != mtime:
+        stamp = _stat_stamp(self.pdf_path)
+        if self._page_cache is None or self._page_cache[0] != stamp:
             ids, diags = dedupe_page_ids(read_page_ids(self.pdf_path))
-            self._page_cache = (mtime, ids, diags)
+            self._page_cache = (stamp, ids, diags)
         _, ids, diags = self._page_cache
         return list(ids), list(diags)
 
     # ---- source watching -------------------------------------------------
-    def _source_mtimes(self) -> dict[str, float]:
+    def _source_stamps(self) -> dict[str, tuple[float, int]]:
+        """A (mtime, size) signature per source file.
+
+        Mtime alone misses a recompile when the filesystem reports a coarse
+        timestamp (e.g. a PDF rebuilt within the same second, or WSL's
+        second-granularity mtimes on Windows-mounted drives); a size change
+        catches those. A missing file is a stable (0, 0).
+        """
         sources = (self.pdf_path, self.sidecar_path, default_config_path(self.pdf_path))
-        out: dict[str, float] = {}
-        for path in sources:
-            try:
-                out[str(path)] = path.stat().st_mtime
-            except OSError:  # missing file counts as a (stable) timestamp of 0
-                out[str(path)] = 0.0
-        return out
+        return {str(path): _stat_stamp(path) for path in sources}
 
     def poll_sources(self) -> bool:
         """Reload when the PDF, sidecar, or config changed on disk; True if so.
@@ -94,8 +101,8 @@ class EditorState:
         sidecar) appear live. Saves made through this state refresh the
         baseline themselves and never trigger a reload.
         """
-        current = self._source_mtimes()
-        if current == self._mtimes:
+        current = self._source_stamps()
+        if current == self._stamps:
             return False
         try:
             config = load_config(self.pdf_path)
@@ -106,16 +113,16 @@ class EditorState:
             # A parseable-but-broken source (bad TOML, bad sidecar grammar)
             # won't fix itself by waiting — keep the last good deck but tell
             # the user. Absorb the baseline so this reports once, not per tick.
-            self._mtimes = current
+            self._stamps = current
             self.source_error = str(exc)
             return True
         except Exception:
             # mid-recompile: the PDF (or config) is missing or half-written.
             # Keep showing the last good deck; the next tick retries.
             return False
-        if current[str(self.pdf_path)] != self._mtimes[str(self.pdf_path)]:
+        if current[str(self.pdf_path)] != self._stamps[str(self.pdf_path)]:
             self._images = None  # page images are stale; re-rasterize on demand
-        self._mtimes = current
+        self._stamps = current
         self.config = config
         self.deck, self.diagnostics = deck, diagnostics
         self.source_error = None
@@ -125,13 +132,13 @@ class EditorState:
 
     def external_changes(self) -> set[str]:
         """Which sources changed on disk since the last baseline: pdf/sidecar/config."""
-        current = self._source_mtimes()
+        current = self._source_stamps()
         labels = {
             str(self.pdf_path): "pdf",
             str(self.sidecar_path): "sidecar",
             str(default_config_path(self.pdf_path)): "config",
         }
-        return {labels[key] for key, mtime in current.items() if mtime != self._mtimes[key]}
+        return {labels[key] for key, stamp in current.items() if stamp != self._stamps[key]}
 
     def ensure_images(self) -> list[Path]:
         """Rasterize page images on first use (needs pdftoppm)."""
@@ -192,18 +199,26 @@ class EditorState:
         tin = transition_in or Transition()
         tout = transition_out or Transition()
         empty = not segments and tin.kind == "cut" and tout.kind == "cut"
+        old = self.deck.narration.get(self.current_id)
         if empty:
-            self.deck.narration.pop(self.current_id, None)
-        else:
-            old = self.deck.narration.get(self.current_id)
-            base = old if old is not None else PageNarration(slide_id=self.current_id)
-            self.deck.narration[self.current_id] = base.with_content(
-                segments, transition_in=tin, transition_out=tout
-            )
-            if tout.kind != "cut":
-                nxt = self._next_page_id()
-                if nxt and nxt in self.deck.narration:
-                    self.deck.narration[nxt].transition_in = Transition()
+            if old is None:
+                return False  # already absent — nothing to save, nothing to revoke
+            self.deck.narration.pop(self.current_id)
+            self._write_and_reload()
+            return True
+        base = old if old is not None else PageNarration(slide_id=self.current_id)
+        new_block = base.with_content(segments, transition_in=tin, transition_out=tout)
+        nxt = self._next_page_id() if tout.kind != "cut" else None
+        clears_next = bool(
+            nxt
+            and nxt in self.deck.narration
+            and self.deck.narration[nxt].transition_in.kind != "cut"
+        )
+        if old == new_block and not clears_next:
+            return False  # a no-op blur/save: don't reload, flash, or revoke the track
+        self.deck.narration[self.current_id] = new_block
+        if clears_next and nxt is not None:
+            self.deck.narration[nxt].transition_in = Transition()
         self._write_and_reload()
         return True
 
@@ -215,10 +230,7 @@ class EditorState:
         """
         save_deck(self.deck)
         self.reload()
-        try:
-            self._mtimes[str(self.sidecar_path)] = self.sidecar_path.stat().st_mtime
-        except OSError:
-            self._mtimes[str(self.sidecar_path)] = 0.0
+        self._stamps[str(self.sidecar_path)] = _stat_stamp(self.sidecar_path)
 
     # ---- unattached narration (slide dropped/renamed by a recompile) -------
     def orphan_blocks(self) -> list[PageNarration]:

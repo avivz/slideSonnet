@@ -163,9 +163,23 @@ def toggled_width(current: float, remembered: float, *, default: float) -> tuple
     return (remembered if remembered > 2.0 else default), remembered
 
 
-def _media_url(state: EditorState, path: Path) -> str:
+def _media_url(state: EditorState, path: Path, *, cache_bust: bool = False) -> str:
+    """URL for a render artifact under the deck's media dir.
+
+    Page images are re-rasterized to the same ``page-N.png`` paths on every
+    recompile, so without a version query the browser serves the stale cached
+    image (you'd still see a dropped/old slide). ``cache_bust`` appends a
+    ``(mtime, size)`` stamp so a re-render changes the URL and forces a refetch.
+    """
     rel = path.resolve().relative_to(render_dir(state.pdf_path).resolve())
-    return f"{_MEDIA_URL}/{rel.as_posix()}"
+    url = f"{_MEDIA_URL}/{rel.as_posix()}"
+    if cache_bust:
+        try:
+            st = path.stat()
+            url = f"{url}?v={st.st_mtime_ns}-{st.st_size}"
+        except OSError:
+            pass
+    return url
 
 
 def _serve_media(state: EditorState) -> None:
@@ -388,15 +402,26 @@ class PreviewPlayer:
                     view.flash("Preview stopped", "info")
                     return
                 self.cues = preview.cues if whole_deck else []
+                # whole-deck playback starts where the user is, not back at slide 1:
+                # seek to the current slide's cue (a #t= media fragment so the
+                # browser starts there on load).
+                start_at = (cue_start(self.cues, state.current_id) or 0.0) if whole_deck else 0.0
                 # every preview renders to the same track path — vary the URL so
                 # the browser refetches instead of replaying the previous audio
-                self.audio.set_source(f"{_media_url(state, preview.track)}?v={token}")
+                src = f"{_media_url(state, preview.track)}?v={token}"
+                if start_at > 0:
+                    src = f"{src}#t={start_at}"
+                self.audio.set_source(src)
                 self.playback.mark_loaded("deck" if whole_deck else state.current_id)
                 self.track_duration = preview.total_duration
-                self.pos_slider.value = 0.0
+                self.pos_slider.value = (
+                    start_at / self.track_duration if self.track_duration else 0.0
+                )
                 self.pos_slider.props(remove="disable")
-                self._sync_clock(0.0)
+                self._sync_clock(start_at)
                 self.audio.play()
+                if start_at > 0:
+                    self.audio.seek(start_at)  # belt-and-suspenders for browsers that ignore #t=
                 self.playback.set_playing(True)  # optimistic; the browser event confirms
                 self.sync_transport()
                 view.flash(f"Preview ready ({preview.total_duration:.1f}s)", "positive")
@@ -599,12 +624,15 @@ class BlockEditor:
             for w in (text, voice, pace, direct):
                 if disabled:
                     w.disable()
-            text.on("blur", lambda: self.commit())
-            text.on("keydown.ctrl.s.prevent", lambda: self.commit())  # save without leaving
+            # text and director's note both change what gets spoken, so a loaded
+            # preview track is stale the moment they differ — commit_audible drops
+            # it so the next Play rebuilds instead of replaying the old narration.
+            text.on("blur", lambda: self.commit_audible())
+            text.on("keydown.ctrl.s.prevent", lambda: self.commit_audible())  # save w/o leaving
             voice.on_value_change(lambda: self.commit_audible())
             pace.on_value_change(lambda: self.commit_audible())
-            direct.on("blur", lambda: self.commit())
-            direct.on("keydown.ctrl.s.prevent", lambda: self.commit())
+            direct.on("blur", lambda: self.commit_audible())
+            direct.on("keydown.ctrl.s.prevent", lambda: self.commit_audible())
             for w in (text, voice, direct):  # keystroke-holding fields
                 self._track_editing(w)
 
@@ -966,7 +994,10 @@ class EditorView:
                         ui.icon("drag_indicator").classes("ss-grip ss-grip-h")
                     with stage_split.before, ui.element("div").classes("ss-stage-view"):
                         self.slide_img = (
-                            ui.image().classes("ss-stage-img").props('fit="contain" no-spinner')
+                            ui.image()
+                            .classes("ss-stage-img")
+                            .props('fit="contain" no-spinner')
+                            .mark("stage-img")
                         )
                     with (
                         stage_split.after,
@@ -1084,7 +1115,9 @@ class EditorView:
         stop_btn.on_click(lambda: self.player.stop_playback())
         gen_all_btn = self.gen_all_btn
         gen_all_btn.on_click(
-            lambda: self.run_action(gen_all_btn, self._generate_all, stops_player=True)
+            lambda: self.run_action(
+                gen_all_btn, self._generate_all, stops_player=self._gen_all_affects_player
+            )
         )
         export_btn.on_click(lambda: self.run_action(export_btn, self._export_work))
 
@@ -1117,7 +1150,7 @@ class EditorView:
             for i, sid in enumerate(state.deck.pages):
                 with ui.element("div").classes("ss-thumb").mark(f"thumb-{i}") as card:
                     if i < len(images):
-                        ui.image(_media_url(state, images[i])).classes("w-full")
+                        ui.image(_media_url(state, images[i], cache_bust=True)).classes("w-full")
                     else:
                         ui.label(sid or f"page {i + 1}").classes("ss-thumb-fallback ss-mono")
                     dot = ui.element("div").classes("ss-dot")
@@ -1184,7 +1217,7 @@ class EditorView:
         try:
             img = state.current_image()
             if img is not None:
-                self.slide_img.set_source(_media_url(state, img))
+                self.slide_img.set_source(_media_url(state, img, cache_bust=True))
         except Exception as exc:  # rasterize may fail without pdftoppm
             logger.warning("image render failed: %s", exc)
         ungenerated = state.ungenerated_ids()
@@ -1265,12 +1298,19 @@ class EditorView:
 
     # ---- actions (saved first, run off the event loop, one at a time) ----
     async def run_action(
-        self, btn: Any, work: Callable[[], str], *, stops_player: bool = False
+        self,
+        btn: Any,
+        work: Callable[[], str],
+        *,
+        stops_player: bool | Callable[[], bool] = False,
     ) -> None:
         if self.busy:
             return
         self.busy = True
-        if stops_player:  # the action replaces audio: a rolling preview is stale
+        # The action may replace audio, making a rolling preview stale — but only
+        # stop playback when it actually touches the loaded track (a predicate
+        # decides at click time; a plain True always stops).
+        if stops_player() if callable(stops_player) else stops_player:
             self.player.stop_playback()
         self.blocks.save_current()
         btn.props("loading")
@@ -1294,6 +1334,20 @@ class EditorView:
         state.synth_segment(speech_index, force=force)
         verb = "Re-generated" if force else "Synthesized"
         return f"{verb} line {speech_index + 1} of {state.current_id}"
+
+    def _gen_all_affects_player(self) -> bool:
+        """Whether 'Generate missing' would change the currently-loaded track.
+
+        A single-slide preview is stale only if *that* slide has clips to
+        generate; the deck track is stale if anything across the deck does.
+        Otherwise the running narration is untouched and must keep playing.
+        """
+        key = self.player.playback.loaded_key
+        if key is None:
+            return False
+        if key == "deck":
+            return self.state.uncached_total() > 0
+        return self.state.uncached_count(key) > 0
 
     def _generate_all(self) -> str:
         n = self.state.synth_all()
@@ -1329,6 +1383,7 @@ class EditorView:
             # dropped slide survives as an unattached block instead of vanishing.
             # (never on sidecar changes — that would clobber the external edit)
             self.blocks.save_current()
+        prev_id = state.current_id
         if not await run.io_bound(state.poll_sources):
             return
         if state.source_error is not None:
@@ -1342,7 +1397,14 @@ class EditorView:
         except Exception:
             pass  # build_strip degrades to id tiles
         self.build_strip()
-        self.render()
+        # A PDF/config-only recompile leaves the narration untouched on disk, so
+        # rebuilding the block editor would only revert whatever the user is
+        # mid-typing. Refresh everything *but* the editor — unless our own slide
+        # moved (dropped/renamed/reordered), where the cards must follow it.
+        if "sidecar" in changes or state.current_id != prev_id:
+            self.render()
+        else:
+            self.render_side()
         self.flash("Deck files changed on disk — reloaded", "info")
 
 
