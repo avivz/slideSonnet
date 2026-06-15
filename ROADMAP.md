@@ -8,53 +8,18 @@ Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
 (paid, irreversible, or account-bound).
 
-## Now — last gaps before publishing
-
-5. [x] **Non-destructive sidecar save** (shipped 2026-06-12). All three
-   acceptance examples are covered by tests: unedited saves are
-   byte-identical (`test_no_change_save_is_byte_identical`), edits rewrite
-   only the touched block, and comments above an edited block survive.
-   Bonus: hand-wrapped `text:` lines now parse as continuations. **[agent]**
-6. [x] **Re-verify both demos end-to-end with Kokoro** — `make basel`,
-   `make showcase`, `make check-basel`, `make check-showcase`; validates the
-   structured narration format + metropolis restyle + `.latexmkrc` + Kokoro
-   changes together. Human watches the resulting MP4s. **[agent→human]**
-   *Done 2026-06-12.* Both decks compiled, rendered, and reconciled clean
-   ("OK — no issues"); human reviewed the MP4s: visuals approved, audio
-   "decent but not amazing" — acceptable for the a1 launch artifact, to be
-   superseded by the Inworld HQ re-render (Next #7).
-7. [x] **Full-codebase review remediation (2026-06-12)** — five PR groups
-   (bugs/safety, dead-code sweep, test suite, editor perf, refactors), all
-   landed the same day; per-item record in `dev/REVIEW-2026-06.md`
-   (untracked). Highlights: paced-clip clean bug, per-deck render dirs,
-   test-suite ElevenLabs guard, backend registry, sidecar format-version
-   header, editor perf pass, `EditorView` decomposition. **[agent]**
-
-## Next — publish 1.0.0a1
+## Now — publish 1.0.0a1
 
 1. [ ] **Repo public pre-flight, then flip visibility** — secrets scan,
    license check, README accuracy pass by agent (drop or caveat the
-   ElevenLabs install section pending #3 below); human runs
+   ElevenLabs install section pending the Inworld switch below); human runs
    `gh repo edit --visibility public`. Must precede the PyPI tag (the package
    links to the GitHub URL). **[agent→human]**
 2. [ ] **Tag `v1.0.0a1` and push** — bump `src/slidesonnet/__init__.py`, move
    CHANGELOG Unreleased → a1, push tag; triggers TestPyPI → PyPI → GitHub
    Release. Ship with the Kokoro-rendered demo videos; don't block on the
    paid HQ render. **[human]**
-3. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS** — Inworld beats
-   ElevenLabs on control *and* price (~$0.009/min vs ~$0.10–0.27/min), with
-   Markdown-style emotion control, top quality-to-price on the 2026 arena,
-   and instant own-voice cloning from a ~5–15 s clip (consent attestation
-   standard; voice + clip leave the machine). Researched 2026-06-10. Agent
-   implements the engine behind the engine interface (mocked unit tests, a
-   `[tts.inworld]` config section + extra); human supplies the API key, runs
-   a small paid smoke test, and judges voice quality. Decision point: keep
-   ElevenLabs as a legacy optional backend or remove it outright (as was
-   done with Piper). **Needs acceptance examples before build** — e.g.
-   "given `[tts.inworld]` with a key, `slidesonnet tts deck.pdf --engine
-   inworld` synthesizes one clip per utterance, content-addressed cached"
-   plus a mocked API-failure example. **[agent→human]**
-4. [ ] **Crossfade compositing.** *Story:* As a deck author, I want the
+3. [ ] **Crossfade compositing.** *Story:* As a deck author, I want the
    `crossfade: N` transition I set in the editor to render as an actual
    crossfade in the MP4, so the export matches what the editor promises.
    Today it's stored, edited, and conflict-checked but renders as a hard
@@ -67,21 +32,39 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `src/slidesonnet/video/composer.py` — predates the v1 rewrite, don't
    assume it's drop-in (deliberately kept through the 2026-06 dead-code
    sweep for this item). **[agent]**
-5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+
+## Next — after a1
+
+1. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS** — Inworld beats
+   ElevenLabs on control *and* price (~$0.009/min vs ~$0.10–0.27/min), with
+   Markdown-style emotion control, top quality-to-price on the 2026 arena,
+   and instant own-voice cloning from a ~5–15 s clip (consent attestation
+   standard; voice + clip leave the machine). Researched 2026-06-10. Agent
+   implements the engine behind the engine interface (mocked unit tests, a
+   `[tts.inworld]` config section + extra); human supplies the API key, runs
+   a small paid smoke test, and judges voice quality. Decision point: keep
+   ElevenLabs as a legacy optional backend or remove it outright (as was
+   done with Piper). **Needs acceptance examples before build** — e.g.
+   "given `[tts.inworld]` with a key, `slidesonnet tts deck.pdf --engine
+   inworld` synthesizes one clip per utterance, content-addressed cached"
+   plus a mocked API-failure example. **[agent→human]**
+2. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
-   pending edits before PDF-triggered reloads (typing during a recompile
-   still loses unsaved keystrokes; never auto-save on sidecar-triggered
-   reloads). *Appetite:* half a day each. **[agent]**
-6. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
+   pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
+   part is now mostly handled — a PDF/config-only refresh keeps the field
+   (editor pass #1); what remains is saving edits before a *sidecar*-triggered
+   reload, and never auto-saving on those. *Appetite:* half a day each.
+   **[agent]**
+3. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
    gaps to fill deliberately: export timing modes end-to-end, `check`
    diagnostics on real overlay decks, editor save/reload paths. Finish with
    a joint human+AI review of coverage and quality. **[agent→human]**
-7. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
+4. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
    ElevenLabs render (don't pay ElevenLabs for renders we're about to drop).
    Human triggers the paid render; agent uploads to the `v0.0.0` GitHub
    Release (`gh release upload --clobber`) and refreshes README links.
    **[human→agent]**
-8. [ ] **Qwen3-TTS own-voice engine (third optional backend)** — narrate
+5. [ ] **Qwen3-TTS own-voice engine (third optional backend)** — narrate
    decks in the user's own voice from a ~10 s reference clip. Qwen3-TTS
    (Apache 2.0) clones via a tiny reusable prompt artifact (~100 KB `.pt`:
    codec tokens + speaker embedding); quality clearly above Piper. Runs
@@ -92,19 +75,25 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `dev/voice-profile/`. Agent implements behind the engine interface as an
    optional extra; human records the reference clip and judges the cloned
    voice. **[agent→human]**
-9. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
+6. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
    an unlisted-vs-public decision; agent preps titles, descriptions, and
    chapter markers from the narration sidecars. **[human]**
-10. [ ] **README refresh** — new video links, Kokoro install instructions,
-    editor screenshots of the new dark studio theme. **[agent]**
-
-    Some nice to have features for ux flow:
-0. [ ] **minor ux fixes**. 
-   1. [ ] when text in narration is edited, immediately (before loss of focus) change regenerate icon for the box into generate. consider the slide not up to date. if changes undone, while typing, revert.
-1. [ ] **play at 1.5 or 2x speed option for preview**  
-2. [ ] **do generation of kokoro lowkey in the background after text is stable for some time?**
-3. [ ] **let preview all start even before all are generated, and pause if it ever catches up**
-4. [ ] **currently no way to interrupt generate all (as it takes place in play all -- not checked about generate all button)
+7. [ ] **README refresh** — new video links, Kokoro install instructions,
+   editor screenshots of the new dark studio theme. **[agent]**
+8. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+   own little PR:
+   - When narration text is edited, immediately (before blur) flip the box's
+     regenerate icon to *generate* and mark the slide not-up-to-date; if the
+     edit is undone while typing, revert. (Partly related to editor pass #3,
+     which already revokes the loaded track on edit — this is the per-box icon
+     + dirty-state half that's still open.)
+   - Play at 1.5×/2× speed for preview.
+   - Generate Kokoro audio quietly in the background once text has been stable
+     for a while.
+   - Let "play all" start before everything is generated, and pause if
+     playback ever catches up to the generation frontier.
+   - Make "generate all" interruptible (it currently can't be stopped mid-run;
+     also verify the same for generation inside "play all").
 
 ## Later — before 1.0 final
 
@@ -159,6 +148,24 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Editor reliability pass** (2026-06-15): seven bugs found running a real
+  course deck through the editor, each reproduced in a test first, then fixed —
+  PDF/config refresh no longer dumps unsaved narration, `(mtime,size)` change
+  detection catches same-second recompiles, mid-playback edits revoke the loaded
+  track, Ctrl-S saves in place, "play all" starts at the current slide,
+  "generate missing" leaves unaffected playback alone, and slide images cache-
+  bust after a recompile. An eighth (recompile→top-slide) was closed
+  won't-reproduce. Per-bug record in `dev/KNOWN_ISSUES.md`; commit `f932525`.
+- [x] **Non-destructive sidecar save** (shipped 2026-06-12). Unedited saves are
+  byte-identical, edits rewrite only the touched block, comments above an edited
+  block survive, and hand-wrapped `text:` lines parse as continuations.
+- [x] **Re-verified both demos end-to-end with Kokoro** (2026-06-12) — `make
+  basel`/`showcase` + `check-*`; reconciled clean, human approved the MP4s
+  (audio "decent but not amazing", acceptable for a1, to be superseded by the
+  HQ re-render).
+- [x] **Full-codebase review remediation** (2026-06-12) — five PR groups
+  (bugs/safety, dead-code sweep, test suite, editor perf, refactors); per-item
+  record in `dev/REVIEW-2026-06.md`.
 - [x] **v2 converged and merged to `main`** (2026-06-12): editor UX pass
   (structured utterances/pauses/transitions, block editor, per-utterance
   generation, unattached-narration tray, transport rework, live reload),

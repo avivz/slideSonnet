@@ -5,6 +5,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed (editor reliability pass, June 2026)
+Bugs found running slideSonnet over a real course deck:
+- **A PDF/config-only refresh no longer dumps unsaved narration edits.** Typing
+  in a narration field while an external recompile lands used to rebuild the
+  block editor from disk and revert in-progress text; a refresh now repaints
+  only the slide/diagnostics (`render_side()`) unless the sidecar itself changed
+  or the current slide moved.
+- **PDF updates that share a timestamp now trigger a refresh.** Change detection
+  keyed on mtime alone missed same-second rebuilds (WSL/Windows-mount second
+  granularity); sources are now stamped on `(mtime, size)`.
+- **Editing narration mid-playback no longer replays stale audio.** Changing an
+  utterance's text or director's note immediately revokes the loaded track (it
+  used the non-invalidating save path before), so the next play synthesizes and
+  plays the new words. A no-op blur no longer falsely stops playback.
+- **Ctrl-S saves the focused field in place** without a focus loss or a browser
+  Save dialog (saves via the silent path, never rebuilding the textarea).
+- **"Play all" starts at the current slide,** not slide 1 — the whole-deck
+  preview seeks to the current slide's cue (`#t=` fragment + audio seek) and
+  reflects it in the position slider and clock.
+- **"Generate missing" no longer stops unaffected playback.** It stops the
+  player only when the currently-loaded track actually has clips to generate.
+- **Stale slide image after a recompile is gone.** The stage image and filmstrip
+  thumbnails carry a `(mtime, size)` cache-busting query, so a re-rendered (or
+  renumbered, after a dropped slide) `page-N.png` is refetched instead of served
+  from the browser cache.
+
 ### Fixed (June 2026 full-codebase review)
 - **`slidesonnet clean --keep current`/`api` no longer deletes the cached
   audio of paced utterances.** Clean compared cache filenames computed at the
