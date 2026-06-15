@@ -68,6 +68,7 @@ module = [
     "elevenlabs.*",
     "dotenv.*",
     "kokoro.*",
+    "numpy.*",
     "fitz.*",
     "nicegui.*",
 ]

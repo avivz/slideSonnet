@@ -148,6 +148,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **CI typecheck fix** (2026-06-15): `main`'s `typecheck` job had been red
+  since 2026-06-12 — `mypy` couldn't find `numpy` (`kokoro.py:132`), which ships
+  only with the `[kokoro]` extra while CI's typecheck installs `.[dev]`. Added
+  `numpy.*` to `[[tool.mypy.overrides]]`. KNOWN_ISSUES #9.
 - [x] **Editor reliability pass** (2026-06-15): seven bugs found running a real
   course deck through the editor, each reproduced in a test first, then fixed —
   PDF/config refresh no longer dumps unsaved narration, `(mtime,size)` change
@@ -169,7 +173,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 - [x] **v2 converged and merged to `main`** (2026-06-12): editor UX pass
   (structured utterances/pauses/transitions, block editor, per-utterance
   generation, unattached-narration tray, transport rework, live reload),
-  real-browser Playwright test tier, CI green on `main`. Stale branches
+  real-browser Playwright test tier, CI green on `main` *at merge time* (the
+  typecheck job later regressed — see Now #1 / KNOWN_ISSUES #9). Stale branches
   (`v2`, `ux-pass`) deleted.
 - [x] **Python floor set to 3.13** (2026-06-12) — CI only ever tested 3.13;
   `requires-python` now matches instead of advertising an untested 3.12.
