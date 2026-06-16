@@ -72,6 +72,24 @@ def test_has_narration(tmp_path: Path) -> None:
     assert not state.has_narration("euler-setup")
 
 
+def test_generation_target_helpers(tmp_path: Path) -> None:
+    """all_targets / targets_for_sweep / targets_for_slide back the job queue and
+    auto-build: every clip is uncached in a fresh deck, with the right exclusions."""
+    state = _state(tmp_path, sidecar="@intro-title\nHello. [pause 1] World.\n\n@euler-setup\nHi.\n")
+    everything = {("intro-title", 0), ("intro-title", 1), ("euler-setup", 0)}
+
+    assert state.all_targets() == everything
+    assert state.all_targets(only_id="euler-setup") == {("euler-setup", 0)}
+
+    # nothing is cached yet, so the sweep is the whole deck minus any exclusion
+    assert state.targets_for_sweep() == everything
+    assert state.targets_for_sweep(exclude_id="intro-title") == {("euler-setup", 0)}
+
+    # per-slide, with the mid-edit utterance skippable
+    assert state.targets_for_slide("intro-title") == {("intro-title", 0), ("intro-title", 1)}
+    assert state.targets_for_slide("intro-title", exclude_speech=1) == {("intro-title", 0)}
+
+
 def test_status_ready_for_narrated_slide(tmp_path: Path) -> None:
     state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
     assert state.status_for("intro-title") == "ready"

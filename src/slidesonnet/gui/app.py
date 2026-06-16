@@ -18,7 +18,8 @@ from nicegui import app, background_tasks, run, ui
 from nicegui.events import KeyEventArguments
 
 from slidesonnet.audio.track import Cue
-from slidesonnet.cache import render_dir
+from slidesonnet.cache import audio_dir, render_dir
+from slidesonnet.gui.jobs import JobQueue
 from slidesonnet.gui.launch import (
     app_invocation,
     browser_invocation,
@@ -202,6 +203,10 @@ _HEAD_RESIZE = (_STATIC_DIR / "resize.html").read_text(encoding="utf-8")
 
 _ALL_DOTS = "ss-dot-error ss-dot-warning ss-dot-ready ss-dot-empty"
 _FLASH_COLORS = "ss-flash-ok ss-flash-info ss-flash-warn ss-flash-err"
+
+# Auto-build waits this long after the last edit before generating a slide's
+# audio, so we synthesize once the text is stable — not on every keystroke-blur.
+AUTO_BUILD_DEBOUNCE_S = 2.5
 
 
 def _pace_value(v: str | None) -> Pace | None:
@@ -394,6 +399,10 @@ class PreviewPlayer:
                 with client:
                     if count and not await view.confirm_paid_synth(count):
                         return
+            # If the clips we need are already generating in the background, wait
+            # for those jobs instead of racing or launching a duplicate synth.
+            scope = None if whole_deck else state.current_id
+            await view.jobs.await_targets(state.all_targets(only_id=scope))
             preview = await run.io_bound(
                 state.preview_deck if whole_deck else state.preview_current
             )
@@ -495,13 +504,17 @@ class BlockEditor:
         # not rebuild the block editor — that would destroy the field mid-typing
         # and lose everything typed after the rebuild. Tracked per focus/blur.
         self.editing_active = False
+        # Which utterance is being edited right now (None = none/pause/transition),
+        # so auto-build can skip the half-typed line the user is still in.
+        self.focused_speech_index: int | None = None
 
-    def _set_editing(self, active: bool) -> None:
+    def _set_editing(self, active: bool, speech_index: int | None = None) -> None:
         self.editing_active = active
+        self.focused_speech_index = speech_index if active else None
 
-    def _track_editing(self, widget: Any) -> None:
-        widget.on("focus", lambda: self._set_editing(True))
-        widget.on("blur", lambda: self._set_editing(False))
+    def _track_editing(self, widget: Any, speech_index: int | None = None) -> None:
+        widget.on("focus", lambda: self._set_editing(True, speech_index))
+        widget.on("blur", lambda: self._set_editing(False, speech_index))
 
     def _transition_row(self, which: str, transition: Transition, disabled: bool) -> None:
         label = "Transition in" if which == "in" else "Transition out"
@@ -576,13 +589,7 @@ class BlockEditor:
                         gen_tip = ui.tooltip("No audio yet · click to generate")
                     if disabled:
                         gen.disable()
-                    gen.on_click(
-                        lambda: view.run_action(
-                            gen,
-                            lambda: view.generate_segment(speech_index),
-                            stops_player=True,
-                        )
-                    )
+                    gen.on_click(lambda: view.enqueue_segment(speech_index))
                     self.seg_gen_controls.append((gen, gen_tip, speech_index))
             voice_choices = state.voice_options()
             if seg.voice and seg.voice not in voice_choices:
@@ -634,7 +641,7 @@ class BlockEditor:
             direct.on("blur", lambda: self.commit_audible())
             direct.on("keydown.ctrl.s.prevent", lambda: self.commit_audible())
             for w in (text, voice, direct):  # keystroke-holding fields
-                self._track_editing(w)
+                self._track_editing(w, speech_index)
 
         def collect() -> Segment:
             return Segment.speech(
@@ -674,6 +681,7 @@ class BlockEditor:
 
     def render(self) -> None:
         self.editing_active = False  # the rebuild destroys any focused field
+        self.focused_speech_index = None
         state = self.view.state
         self.blocks_col.clear()
         self.seg_collectors.clear()
@@ -736,10 +744,12 @@ class BlockEditor:
         if not self.seg_collectors and "in" not in self.transition_getters:
             return False  # nothing built (e.g. unmarked page)
         segs, tin, tout = self.collect()
+        slide_id = self.view.state.current_id
         changed = self.view.state.replace_block(segs, transition_in=tin, transition_out=tout)
         if changed:
             self.view.show_saved_flash()
             self.view.render_side()
+            self.view.schedule_auto_build(slide_id)
         return changed
 
     def commit(self) -> None:
@@ -753,13 +763,22 @@ class BlockEditor:
 
     def sync_gen_buttons(self) -> None:
         """Each utterance's generate button doubles as its audio indicator:
-        amber wave = no audio yet, green refresh = generated (fresh take)."""
+        amber wave = no audio yet, green refresh = generated (fresh take), and a
+        spinner while a background job for that clip is queued or running."""
         if not self.seg_gen_controls:
             return
-        state = self.view.state
+        view = self.view
+        state = view.state
         flags = state.speech_cached_flags()
         speeches = state.current_block.speech_segments
         for btn, tip, si in self.seg_gen_controls:
+            handle = view.jobs.handle_for(state.current_id, si)
+            if handle is not None and handle.status in ("queued", "running"):
+                btn.props("loading color=primary")
+                tip.set_text("Generating…")
+                btn.set_enabled(False)
+                continue
+            btn.props(remove="loading")
             cached = si < len(flags) and flags[si]
             btn.props(
                 f"icon={'autorenew' if cached else 'graphic_eq'} "
@@ -911,12 +930,14 @@ class EditorView:
     player: PreviewPlayer
     layout: PaneLayout
     client: Any
+    jobs: JobQueue
 
     def __init__(self, state: EditorState) -> None:
         self.state = state
         self.busy = False  # one action (synth/export/preview build) at a time
         self._flash_token = 0  # keeps an old fade timer from wiping a newer message
         self.thumb_cards: list[tuple[Any, Any, Any]] = []  # (card, dot, audio-missing badge)
+        self._auto_build_timers: dict[str, Any] = {}  # per-slide debounce timers
 
     def build(self) -> None:
         """Build the widget tree, attach the components, and wire all events."""
@@ -1059,6 +1080,20 @@ class EditorView:
                 tray_box.mark("orphan-tray")
                 tray_box.visible = False
                 ui.space()
+                auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
+                auto_build.props("dense").mark("auto-build")
+                auto_build.bind_value(app.storage.general, "auto_build")
+                if state.tts_is_paid:
+                    auto_build.set_value(False)
+                    auto_build.disable()
+                    auto_build.tooltip(
+                        "Local (Kokoro) voices only — a paid engine would bill on every save"
+                    )
+                else:
+                    auto_build.tooltip(
+                        "Quietly generate each slide's audio in the background after you edit it"
+                    )
+                auto_build.on_value_change(lambda e: self._on_auto_build_toggle(bool(e.value)))
                 self.gen_all_btn = ui.button("Generate missing", icon="library_music").classes(
                     "w-full"
                 )
@@ -1096,6 +1131,16 @@ class EditorView:
         self.layout = PaneLayout(strip_split, console_split, strip_toggle, console_toggle)
         self.client = ui.context.client  # background tasks must re-enter the page's slot stack
 
+        # background generation: keep the editor live while clips render
+        self.jobs = JobQueue(
+            deck_provider=lambda: (state.deck, state.config, audio_dir(state.pdf_path)),
+            synth=lambda targets, force: state.synth_targets(targets, force=force),
+            is_paid=lambda: state.tts_is_paid,
+            on_change=self._on_jobs_changed,
+        )
+        self.jobs.start()
+        self.client.on_disconnect(self.jobs.stop)
+
         # --- event wiring -----------------------------------------------------
         # NiceGUI's `args` filter only reaches top-level event keys, so a real
         # browser can't deliver `event.target.currentTime` that way (the handler
@@ -1114,11 +1159,7 @@ class EditorView:
         play_all.on_click(lambda: self.player.request_preview(play_all, True))
         stop_btn.on_click(lambda: self.player.stop_playback())
         gen_all_btn = self.gen_all_btn
-        gen_all_btn.on_click(
-            lambda: self.run_action(
-                gen_all_btn, self._generate_all, stops_player=self._gen_all_affects_player
-            )
-        )
+        gen_all_btn.on_click(lambda: self.enqueue_missing())
         export_btn.on_click(lambda: self.run_action(export_btn, self._export_work))
 
         ui.timer(1.0, self._poll_sources)
@@ -1134,6 +1175,8 @@ class EditorView:
 
         self.render()
         self.layout.sync_toggles()
+        if self.auto_build_active():  # deck opened with auto-build already on: fill it
+            self._sweep_auto_build()
 
     # ---- filmstrip -----------------------------------------------------
     def build_strip(self) -> None:
@@ -1326,32 +1369,87 @@ class EditorView:
             btn.props(remove="loading")
             self.render()
 
-    def generate_segment(self, speech_index: int) -> str:
-        # Already generated → the press means "fresh take": force a re-synthesis.
+    def enqueue_segment(self, speech_index: int) -> None:
+        """Queue (re)generation of one utterance — non-blocking; the editor stays live.
+
+        A cached clip means the press is a "fresh take" (force). Manual generation
+        is an explicit user action, so it may bill a paid engine (unlike the
+        unattended auto-build path). A rolling preview of the affected slide/deck
+        is stopped so the next play rebuilds with the new audio.
+        """
         state = self.state
         flags = state.speech_cached_flags()
         force = speech_index < len(flags) and flags[speech_index]
-        state.synth_segment(speech_index, force=force)
-        verb = "Re-generated" if force else "Synthesized"
-        return f"{verb} line {speech_index + 1} of {state.current_id}"
+        handles = self.jobs.enqueue(
+            {(state.current_id, speech_index)}, force=force, allow_paid=True
+        )
+        if handles and self.player.playback.loaded_key in ("deck", state.current_id):
+            self.player.stop_playback()
+        self.blocks.sync_gen_buttons()
 
-    def _gen_all_affects_player(self) -> bool:
-        """Whether 'Generate missing' would change the currently-loaded track.
+    def enqueue_missing(self) -> None:
+        """Queue every uncached clip across the deck — non-blocking background fill."""
+        targets = self.state.targets_for_sweep()
+        if not targets:
+            return
+        self.jobs.enqueue(targets, allow_paid=True)
+        self.render_side()
 
-        A single-slide preview is stale only if *that* slide has clips to
-        generate; the deck track is stale if anything across the deck does.
-        Otherwise the running narration is untouched and must keep playing.
+    def _on_jobs_changed(self) -> None:
+        """A background job changed state — repaint clip indicators and audio status.
+
+        Runs from the worker task (outside any slot), so re-enter the page client.
         """
-        key = self.player.playback.loaded_key
-        if key is None:
-            return False
-        if key == "deck":
-            return self.state.uncached_total() > 0
-        return self.state.uncached_count(key) > 0
+        try:
+            with self.client:
+                self.render_side()
+        except Exception:  # the client may have disconnected mid-job
+            logger.debug("jobs UI refresh failed (client gone?)", exc_info=True)
 
-    def _generate_all(self) -> str:
-        n = self.state.synth_all()
-        return f"Synthesized {n} new clip(s) across the deck"
+    # ---- auto-build (opt-in background generation as you edit) ------------
+    def auto_build_active(self) -> bool:
+        """Whether to quietly generate audio in the background after edits.
+
+        Off by default; persisted per user. Local-only: a paid engine would bill
+        on every save, so the checkbox is disabled and this stays False there.
+        """
+        enabled = bool(app.storage.general.get("auto_build", False))
+        return enabled and not self.state.tts_is_paid
+
+    def _sweep_auto_build(self) -> None:
+        """One-time fill: queue every uncached clip except the focused slide's."""
+        targets = self.state.targets_for_sweep(exclude_id=self.state.current_id)
+        if targets:
+            self.jobs.enqueue(targets)  # allow_paid stays False — never bills
+            self.render_side()
+
+    def _on_auto_build_toggle(self, enabled: bool) -> None:
+        # read the toggle's new value directly (storage may not have synced yet)
+        if enabled and not self.state.tts_is_paid:
+            self._sweep_auto_build()
+
+    def schedule_auto_build(self, slide_id: str) -> None:
+        """Debounce an edited slide's background generation (restart its timer)."""
+        if not self.auto_build_active():
+            return
+        existing = self._auto_build_timers.pop(slide_id, None)
+        if existing is not None:
+            existing.cancel()
+        with self.saved_flash:  # park in a slot that outlives card rebuilds
+            self._auto_build_timers[slide_id] = ui.timer(
+                AUTO_BUILD_DEBOUNCE_S, lambda: self._run_auto_build(slide_id), once=True
+            )
+
+    def _run_auto_build(self, slide_id: str) -> None:
+        self._auto_build_timers.pop(slide_id, None)
+        if not self.auto_build_active():
+            return
+        # skip the utterance the user is still editing on this slide
+        exclude = self.blocks.focused_speech_index if slide_id == self.state.current_id else None
+        targets = self.state.targets_for_slide(slide_id, exclude_speech=exclude)
+        if targets:
+            self.jobs.enqueue(targets)
+            self.render_side()
 
     def _export_work(self) -> str:
         out = self.state.pdf_path.with_suffix(".mp4")

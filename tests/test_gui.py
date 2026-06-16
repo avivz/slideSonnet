@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,17 @@ FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
 
 pytestmark = pytest.mark.nicegui_main_file("tests/gui_main.py")
+
+
+@pytest.fixture(autouse=True)
+def _reset_auto_build_storage() -> Iterator[None]:
+    """app.storage.general is process-global — clear the auto-build flag between
+    tests so one test enabling it can't leak into another."""
+    from nicegui import app
+
+    app.storage.general.pop("auto_build", None)
+    yield
+    app.storage.general.pop("auto_build", None)
 
 
 async def test_editor_loads(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,6 +217,8 @@ async def test_recompile_while_editing_updates_deck_live(
 async def test_generate_and_preview(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import asyncio
+
     # a SECOND narrated slide stays ungenerated: single-slide preview must not
     # trip over its missing clips (regression: IndexError in page_pieces)
     pdf = _prep(
@@ -213,17 +227,23 @@ async def test_generate_and_preview(
     )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
-    user.find(marker="gen-seg-0").click()
-    # synthesis runs off the event loop now; allow up to 30s for kokoro
-    await user.should_see("Synthesized", retries=300)
-    # the utterance is cached now: its button flips to the re-generate affordance
-    gen = next(iter(user.find(marker="gen-seg-0").elements))
-    assert isinstance(gen, ui.button) and gen.enabled
-    assert gen.props.get("icon") == "autorenew"
-    # audio cache now exists for intro-title
     from slidesonnet.cache import audio_dir
 
+    user.find(marker="gen-seg-0").click()
+    # synthesis runs on the background queue now; wait for the cache file to land
+    for _ in range(600):  # up to ~30s for real kokoro
+        if any(audio_dir(pdf).glob("*.wav")):
+            break
+        await asyncio.sleep(0.05)
     assert any(audio_dir(pdf).glob("*.wav"))
+    # once the job finishes the queue repaints the button to the re-generate state
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
+    assert isinstance(gen, ui.button)
+    for _ in range(100):
+        if gen.props.get("icon") == "autorenew" and gen.enabled:
+            break
+        await asyncio.sleep(0.05)
+    assert gen.props.get("icon") == "autorenew" and gen.enabled
     user.find(marker="play-slide").click()
     await user.should_see("Preview ready", retries=300)
 
@@ -470,7 +490,8 @@ async def test_generate_resets_rolling_player(
         EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
     )
     monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [True])
-    monkeypatch.setattr(EditorState, "synth_segment", lambda self, i, *, force=False: 1)
+    # the queue drives synthesis off the worker — stub it so no real Kokoro runs
+    monkeypatch.setattr(EditorState, "synth_targets", lambda self, t, *, force=False: 1)
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
     seek = next(iter(user.find(marker="seek").elements))
@@ -481,8 +502,9 @@ async def test_generate_resets_rolling_player(
     await user.should_see("0:02 / 0:04")  # mid-run
     assert play_btn.props.get("icon") == "pause"
 
+    # Re-generating the playing slide's clip makes the rolling track stale, so the
+    # transport resets at click time (before the background job even finishes).
     user.find(marker="gen-seg-0").click()
-    await user.should_see("Re-generated", retries=300)
     assert play_btn.props.get("icon") == "play_arrow"  # stopped, not lingering paused
     assert seek.value == 0.0  # rewound
     assert "disable" in seek.props
@@ -707,8 +729,11 @@ async def test_play_all_starts_at_current_slide(
 async def test_generate_missing_keeps_unaffected_playback(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Repro #6: generating *other* slides' audio must not stop the narration
-    currently playing when that slide isn't among what's regenerated."""
+    """Repro #6: filling *other* slides' missing audio in the background must not
+    stop the narration currently playing — generation no longer touches the
+    transport at all (the queue runs off the busy gate)."""
+    import asyncio
+
     from slidesonnet.gui.state import EditorState
 
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
@@ -721,7 +746,13 @@ async def test_generate_missing_keeps_unaffected_playback(
         EditorState, "uncached_count", lambda self, sid: 0 if sid == "intro-title" else 1
     )
     monkeypatch.setattr(EditorState, "uncached_total", lambda self: 1)
-    monkeypatch.setattr(EditorState, "synth_all", lambda self: 1)
+    monkeypatch.setattr(EditorState, "targets_for_sweep", lambda self, **k: {("euler-setup", 0)})
+    calls: list[set[tuple[str, int]]] = []
+    monkeypatch.setattr(
+        EditorState,
+        "synth_targets",
+        lambda self, t, *, force=False: (calls.append(set(t)), 1)[1],
+    )
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
     user.find(marker="play-slide").click()
@@ -729,8 +760,12 @@ async def test_generate_missing_keeps_unaffected_playback(
     assert play_btn.props.get("icon") == "pause"  # intro-title is playing
 
     user.find(marker="gen-missing").click()
-    await user.should_see("Synthesized", retries=300)
-    assert play_btn.props.get("icon") == "pause"  # untouched slide keeps playing
+    for _ in range(100):  # let the background job synthesize the other slide
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+    assert calls == [{("euler-setup", 0)}]  # only the uncached slide was generated
+    assert play_btn.props.get("icon") == "pause"  # untouched playback keeps going
 
 
 async def test_slide_image_refetches_after_recompile(
@@ -849,7 +884,10 @@ async def test_segment_generate_button_flips_to_regenerate_when_cached(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Once an utterance's audio is cached its button turns into the green
-    re-generate affordance, and clicking it forces a fresh synthesis (force=True)."""
+    re-generate affordance, and clicking it forces a fresh synthesis (force=True)
+    through the background queue."""
+    import asyncio
+
     from slidesonnet.gui.state import EditorState
 
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
@@ -858,8 +896,8 @@ async def test_segment_generate_button_flips_to_regenerate_when_cached(
     forces: list[bool] = []
     monkeypatch.setattr(
         EditorState,
-        "synth_segment",
-        lambda self, i, *, force=False: (forces.append(force), 1)[1],
+        "synth_targets",
+        lambda self, t, *, force=False: (forces.append(force), 1)[1],
     )
     await user.open("/")
     gen = next(iter(user.find(marker="gen-seg-0").elements))
@@ -867,8 +905,186 @@ async def test_segment_generate_button_flips_to_regenerate_when_cached(
     assert gen.props.get("icon") == "autorenew"  # re-generate affordance, not grayed out
     assert gen.props.get("color") == "positive"  # green = generated
     user.find(marker="gen-seg-0").click()
-    await user.should_see("Re-generated")
+    for _ in range(100):  # the worker runs the forced re-synthesis off the loop
+        if forces:
+            break
+        await asyncio.sleep(0.05)
     assert forces == [True]  # the click forced a fresh take
+
+
+async def test_play_awaits_in_flight_generation_without_double_triggering(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story: press play right after generating. Play must wait for the in-flight
+    job and reuse its clip — never launch a second synthesis of the same clip."""
+    import asyncio
+    import threading
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [False])
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    gate = threading.Event()
+    calls: list[set[tuple[str, int]]] = []
+
+    def synth(self: EditorState, targets: set[tuple[str, int]], *, force: bool = False) -> int:
+        calls.append(set(targets))
+        gate.wait(timeout=5)  # hold the job "in flight" until the test releases it
+        return 1
+
+    monkeypatch.setattr(EditorState, "synth_targets", synth)
+    await user.open("/")
+
+    user.find(marker="gen-seg-0").click()  # enqueue; the worker blocks inside synth
+    for _ in range(100):  # wait until the job is actually running
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+    assert calls == [{("intro-title", 0)}]
+
+    user.find(marker="play-slide").click()  # play must await the in-flight job
+    await asyncio.sleep(0.2)
+    await user.should_not_see("Preview ready")  # still waiting on the job, not built yet
+
+    gate.set()  # let the generation finish
+    await user.should_see("Preview ready", retries=300)
+    assert calls == [{("intro-title", 0)}]  # one synthesis total — play didn't duplicate
+
+
+async def test_editor_stays_live_and_queues_while_a_clip_generates(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story: generation no longer freezes the editor. While one clip renders you
+    can navigate and queue another — the old single busy gate is gone."""
+    import asyncio
+    import threading
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [False])
+    gate = threading.Event()
+    calls: list[set[tuple[str, int]]] = []
+
+    def synth(self: EditorState, targets: set[tuple[str, int]], *, force: bool = False) -> int:
+        calls.append(set(targets))
+        gate.wait(timeout=5)  # every job blocks until released
+        return 1
+
+    monkeypatch.setattr(EditorState, "synth_targets", synth)
+    await user.open("/")
+
+    user.find(marker="gen-seg-0").click()  # job A starts and blocks in the worker
+    for _ in range(100):
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+
+    user.find("Next").click()  # UI stays responsive mid-generation
+    await user.should_see("Slide 2 / 6")
+    user.find(marker="gen-seg-0").click()  # queue job B — no busy lock rejects it
+    await asyncio.sleep(0.1)
+    assert len(calls) == 1  # serial worker: B is queued behind the still-running A
+
+    gate.set()  # release both jobs
+    for _ in range(100):
+        if len(calls) == 2:
+            break
+        await asyncio.sleep(0.05)
+    assert {("intro-title", 0)} in calls and {("euler-setup", 0)} in calls
+
+
+async def test_auto_build_disabled_for_paid_engine(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story: auto-build is local-only. On a paid engine the checkbox is disabled
+    and nothing is generated in the background, even if the flag was stored on."""
+    import asyncio
+
+    from nicegui import app
+
+    from slidesonnet.gui.state import EditorState
+
+    monkeypatch.setattr(EditorState, "tts_is_paid", property(lambda self: True))
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    app.storage.general["auto_build"] = True  # even if persisted on for a paid deck…
+    calls: list[set[tuple[str, int]]] = []
+    monkeypatch.setattr(
+        EditorState, "synth_targets", lambda self, t, *, force=False: (calls.append(set(t)), 1)[1]
+    )
+    await user.open("/")
+    cb = next(iter(user.find(marker="auto-build").elements))
+    assert isinstance(cb, ui.checkbox)
+    assert not cb.enabled  # disabled for paid engines
+    await asyncio.sleep(0.1)
+    assert calls == []  # …no background billing happens
+
+
+async def test_enabling_auto_build_sweeps_uncached_clips_except_current(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story: turning auto-build on fills the deck in the background — every
+    uncached clip except the slide you're currently on."""
+    import asyncio
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    calls: list[set[tuple[str, int]]] = []
+    monkeypatch.setattr(
+        EditorState, "synth_targets", lambda self, t, *, force=False: (calls.append(set(t)), 1)[1]
+    )
+    await user.open("/")  # opens on intro-title with auto-build off
+    user.find(marker="auto-build").click()  # enable → sweep
+    for _ in range(100):
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+    flat = set().union(*calls)
+    assert ("euler-setup", 0) in flat  # the other slide gets filled
+    assert ("intro-title", 0) not in flat  # the current slide is skipped
+
+
+async def test_auto_build_generates_edited_slide_after_debounce(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story: with auto-build on, editing a slide and moving on quietly generates
+    that slide's audio after a debounce — no explicit generate click."""
+    import asyncio
+
+    from slidesonnet.gui import app as app_module
+    from slidesonnet.gui.state import EditorState
+
+    monkeypatch.setattr(app_module, "AUTO_BUILD_DEBOUNCE_S", 0.1)  # don't wait 2.5s in a test
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    calls: list[set[tuple[str, int]]] = []
+    monkeypatch.setattr(
+        EditorState, "synth_targets", lambda self, t, *, force=False: (calls.append(set(t)), 1)[1]
+    )
+    await user.open("/")
+    user.find(marker="auto-build").click()  # enable (sweeps euler-setup)
+    for _ in range(100):
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+    calls.clear()  # ignore the one-time sweep; focus on the incremental path
+
+    # edit the current slide, then navigate away — the save schedules a build
+    user.find(marker="utext-0").clear().type("Hello again, world.")
+    user.find("Next").click()
+    for _ in range(100):
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+    assert calls == [{("intro-title", 0)}]  # only the edited slide was generated
 
 
 async def test_generate_missing_shows_count_and_rests_when_done(

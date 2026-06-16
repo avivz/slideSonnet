@@ -355,6 +355,61 @@ class EditorState:
             force=force,
         )
 
+    def synth_targets(self, targets: set[tuple[str, int]], *, force: bool = False) -> int:
+        """Synthesize specific ``(slide_id, speech_index)`` segments — the worker's call.
+
+        Re-reads the on-disk config (engine=None) like the other actions, so a
+        live config edit takes effect. UI-free: the background queue drives this.
+        """
+        self._audio_scan = None
+        return api.synthesize_deck(
+            self.pdf_path,
+            sidecar_path=self.sidecar_path,
+            only_segments=set(targets),
+            force=force,
+        )
+
+    def targets_for_slide(
+        self, slide_id: str, *, exclude_speech: int | None = None
+    ) -> set[tuple[str, int]]:
+        """Uncached ``(slide_id, speech_index)`` clips of *slide_id* (auto-build).
+
+        *exclude_speech* drops the utterance the user is mid-editing, so we never
+        synthesize half-typed text.
+        """
+        return {
+            (ref.slide_id, ref.speech_index)
+            for ref, cached in self._audio_status()
+            if ref.slide_id == slide_id and not cached and ref.speech_index != exclude_speech
+        }
+
+    def all_targets(self, *, only_id: str | None = None) -> set[tuple[str, int]]:
+        """Every ``(slide_id, speech_index)`` in the deck (or just *only_id*'s).
+
+        Play awaits the in-flight jobs covering these so it never races a
+        background generation of a clip it's about to need.
+        """
+        out: set[tuple[str, int]] = set()
+        for slide_id in self.deck.pages:
+            if only_id is not None and slide_id != only_id:
+                continue
+            block = self.deck.page_narration(slide_id)
+            for i in range(len(block.speech_segments)):
+                out.add((slide_id, i))
+        return out
+
+    def targets_for_sweep(self, *, exclude_id: str | None = None) -> set[tuple[str, int]]:
+        """Every uncached clip across the deck except those on *exclude_id*.
+
+        The one-time fill when auto-build is enabled: skip the focused slide
+        (its own edits drive the incremental path) and queue the rest.
+        """
+        return {
+            (ref.slide_id, ref.speech_index)
+            for ref, cached in self._audio_status()
+            if not cached and ref.slide_id != exclude_id
+        }
+
     def synth_all(self) -> int:
         self._audio_scan = None
         return api.synthesize_deck(self.pdf_path, sidecar_path=self.sidecar_path)
