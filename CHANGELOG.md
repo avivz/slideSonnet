@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.0.0a1] — 2026-06-15
+
+First public alpha. The repository went public for this release.
+
 ### Fixed (editor reliability pass, June 2026)
 Bugs found running slideSonnet over a real course deck:
 - **A PDF/config-only refresh no longer dumps unsaved narration edits.** Typing
