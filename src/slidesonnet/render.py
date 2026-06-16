@@ -7,11 +7,13 @@ exported video, the preview cue sheet, and the subtitles.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from slidesonnet.audio.track import Cue, assemble_track, build_page_audio, cue_sheet
+from slidesonnet.audio.track import Cue, assemble_track, build_page_audio, cue_sheet, page_pieces
 from slidesonnet.config import Config
 from slidesonnet.models import VideoConfig
 from slidesonnet.narration import transitions as transitions_mod
@@ -139,6 +141,26 @@ def subtitle_entries(
     return entries
 
 
+def _page_fingerprint(timing: PageTiming, speech_clips: list[Path]) -> str:
+    """A content key for one page's rendered audio.
+
+    Captures everything :func:`build_page_audio` consumes — the ordered pieces
+    (silence durations) and each speech clip's identity + size/mtime — so a page
+    whose inputs are unchanged can reuse its WAV instead of re-running ffmpeg.
+    """
+    parts: list[str] = [timing.slide_id]
+    for piece in page_pieces(timing, speech_clips):
+        if piece.kind == "speech" and piece.path is not None:
+            try:
+                st = piece.path.stat()
+                parts.append(f"s:{piece.path}:{st.st_size}:{st.st_mtime_ns}")
+            except OSError:
+                parts.append(f"s:{piece.path}:missing")
+        else:
+            parts.append(f"z:{piece.seconds:.4f}")
+    return hashlib.sha256("\x00".join(parts).encode()).hexdigest()
+
+
 def render_audio_track(
     timeline: DeckTimeline,
     page_clips: list[list[Path]],
@@ -147,18 +169,49 @@ def render_audio_track(
 ) -> tuple[Path, list[Path]]:
     """Build per-page audio (lead+segments+tail) and the assembled deck track.
 
-    Returns ``(track_path, page_audio_paths)``.
+    The assembly is fingerprint-cached (``track.cache.json``): a page WAV is
+    rebuilt only when its clips or timing change, and the whole-deck ``track.wav``
+    is re-concatenated only when some page changed — so a repeat preview of an
+    unchanged deck does no ffmpeg work at all. Returns ``(track_path,
+    page_audio_paths)``.
     """
     render_dir.mkdir(parents=True, exist_ok=True)
     silence_dir = render_dir / "silence"
     silence_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_path = render_dir / "track.cache.json"
+    old: dict[str, object] = {}
+    if manifest_path.exists():
+        try:
+            old = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            old = {}
+    raw_pages = old.get("pages")
+    old_pages: dict[str, str] = raw_pages if isinstance(raw_pages, dict) else {}
+
     page_audios: list[Path] = []
+    new_pages: dict[str, str] = {}
     for i, page in enumerate(timeline.pages):
         out = render_dir / f"page-{i + 1:04d}.wav"
-        build_page_audio(page, page_clips[i], out, silence_dir=silence_dir)
+        fp = _page_fingerprint(page, page_clips[i])
+        if not (out.exists() and old_pages.get(out.name) == fp):
+            build_page_audio(page, page_clips[i], out, silence_dir=silence_dir)
+        new_pages[out.name] = fp
         page_audios.append(out)
+
     track = render_dir / "track.wav"
-    assemble_track(page_audios, track)
+    track_fp = hashlib.sha256(
+        "\x00".join(new_pages[p.name] for p in page_audios).encode()
+    ).hexdigest()
+    if not (track.exists() and old.get("track") == track_fp):
+        assemble_track(page_audios, track)
+
+    try:
+        manifest_path.write_text(
+            json.dumps({"pages": new_pages, "track": track_fp}), encoding="utf-8"
+        )
+    except OSError:
+        pass
     return track, page_audios
 
 

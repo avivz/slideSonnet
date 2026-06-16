@@ -122,6 +122,80 @@ def test_render_audio_track_orchestration(tmp_path: Path, monkeypatch: pytest.Mo
     assert track_calls == [(page_audios, track)]
 
 
+def test_render_audio_track_caches_unchanged_pages_and_track(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
+    page_calls: list[str] = []
+    track_calls: list[Path] = []
+
+    def fake_build_page_audio(
+        timing: PageTiming, speech_clips: list[Path], out_path: Path, *, silence_dir: Path
+    ) -> float:
+        page_calls.append(timing.slide_id)
+        out_path.write_bytes(b"wav")  # the cache only reuses a page whose file exists
+        return timing.duration
+
+    def fake_assemble_track(page_audios: list[Path], out_path: Path) -> float:
+        track_calls.append(out_path)
+        out_path.write_bytes(b"track")
+        return sum(tl.page_durations)
+
+    monkeypatch.setattr("slidesonnet.render.build_page_audio", fake_build_page_audio)
+    monkeypatch.setattr("slidesonnet.render.assemble_track", fake_assemble_track)
+
+    render_dir = tmp_path / "render"
+    a, c = tmp_path / "a.wav", tmp_path / "c.wav"
+    a.write_bytes(b"a")
+    c.write_bytes(b"c")
+    clips = [[a], [], [c], []]
+
+    render_audio_track(tl, clips, render_dir=render_dir)
+    assert len(page_calls) == 4 and len(track_calls) == 1  # cold build: every page + track
+
+    page_calls.clear()
+    track_calls.clear()
+    render_audio_track(tl, clips, render_dir=render_dir)
+    assert page_calls == [] and track_calls == []  # nothing changed: no ffmpeg at all
+
+    page_calls.clear()
+    track_calls.clear()
+    a.write_bytes(b"a-regenerated")  # slide 'a' clip changed (new size/mtime)
+    render_audio_track(tl, clips, render_dir=render_dir)
+    assert page_calls == ["a"]  # only the touched page rebuilds
+    assert len(track_calls) == 1  # and the deck track re-assembles because a page changed
+
+
+def test_render_audio_track_rebuilds_when_output_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
+    page_calls: list[str] = []
+
+    def fake_build_page_audio(
+        timing: PageTiming, speech_clips: list[Path], out_path: Path, *, silence_dir: Path
+    ) -> float:
+        page_calls.append(timing.slide_id)
+        out_path.write_bytes(b"wav")
+        return timing.duration
+
+    monkeypatch.setattr("slidesonnet.render.build_page_audio", fake_build_page_audio)
+    monkeypatch.setattr(
+        "slidesonnet.render.assemble_track", lambda audios, out: out.write_bytes(b"t") or 0.0
+    )
+
+    render_dir = tmp_path / "render"
+    a, c = tmp_path / "a.wav", tmp_path / "c.wav"
+    a.write_bytes(b"a")
+    c.write_bytes(b"c")
+    clips = [[a], [], [c], []]
+    render_audio_track(tl, clips, render_dir=render_dir)
+    page_calls.clear()
+    (render_dir / "page-0002.wav").unlink()  # a stale/missing file must not be trusted
+    render_audio_track(tl, clips, render_dir=render_dir)
+    assert page_calls == ["b"]  # only the deleted page is rebuilt
+
+
 def test_compose_video_silent_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
     silent_calls: list[tuple[Path, Path, float, str, int, int, str]] = []
