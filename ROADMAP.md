@@ -105,8 +105,23 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    chapter markers from the narration sidecars. **[human]**
 7. [ ] **README refresh** — new video links, Kokoro install instructions,
    editor screenshots of the new dark studio theme. **[agent]**
-8. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
-   own little PR:
+8. [ ] **Async generation job queue** (non-blocking regenerate + play
+   coordination). *Story:* As an editor user, I want audio generation to run in
+   the background so I can keep typing, navigating slides, and editing other
+   cards while a clip synthesizes, and I want **play** to coalesce with any
+   in-flight job for that clip instead of freezing the UI or double-generating.
+   *Acceptance examples:* (a) click regenerate on an utterance, then immediately
+   edit another card — the UI stays responsive (no spinner-lock) while the clip
+   synthesizes; (b) click regenerate, then click play before it finishes → play
+   *awaits that same job* and then plays, and **no second synth job** is launched
+   for the same clip; (c) two regenerate clicks on one clip in quick succession
+   produce exactly one synthesis job (coalesced); (d) with no in-flight job, play
+   behaves byte-for-byte as today. *Appetite:* ~two–three days — introduces a
+   per-clip async job-state machine (dedup/coalesce + await-pending) that the
+   #9 minor-UX bullets (background-generate, play-all-before-generated,
+   interruptible generate-all) then become thin consumers of. **[agent]**
+9. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+   own little PR (several depend on the #8 job queue, noted inline):
    - When narration text is edited, immediately (before blur) flip the box's
      regenerate icon to *generate* and mark the slide not-up-to-date; if the
      edit is undone while typing, revert. (Partly related to editor pass #3,
@@ -114,11 +129,11 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      + dirty-state half that's still open.)
    - Play at 1.5×/2× speed for preview.
    - Generate Kokoro audio quietly in the background once text has been stable
-     for a while.
+     for a while. *(depends on #8 job queue)*
    - Let "play all" start before everything is generated, and pause if
-     playback ever catches up to the generation frontier.
+     playback ever catches up to the generation frontier. *(depends on #8)*
    - Make "generate all" interruptible (it currently can't be stopped mid-run;
-     also verify the same for generation inside "play all").
+     also verify the same for generation inside "play all"). *(depends on #8)*
 
 ## Later — before 1.0 final
 
