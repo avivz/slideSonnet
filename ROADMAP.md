@@ -10,45 +10,53 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — publish 1.0.0a1
 
-1. [ ] **Repo public pre-flight, then flip visibility.** Pre-flight pass run
-   2026-06-15 — concrete blockers found, must clear before flipping:
-   - **Add a `LICENSE` file.** `pyproject.toml` and README both declare MIT but
-     there is no license file (must-fix for a public MIT project).
-   - **User docs describe the *removed* sidecar grammar.** Both
-     `README.md` (the "The narration sidecar" section) and `docs/authoring.md`
-     show the old flat `:voice`/`:pace` + inline-`[pause N]` body format that the
-     v1 rewrite deleted. Rewrite both to the current block format
-     (`utterance:` / `text:` / `pause: N` / `transition-in`/`-out`). This is the
-     biggest item — the "full authoring guide" is wrong end-to-end.
-   - **Decide the ElevenLabs README section** — drop or caveat it pending the
-     Inworld switch (Next #1).
-   - **Note the PyMuPDF (AGPL-3.0) dependency** — slideSonnet's own code is MIT,
-     but a copyleft dependency is worth a conscious decision + a line in the
-     README/docs so downstream users know.
-   - ✅ **Clean already:** no secrets in tree or across 232 commits of history,
-     `.env` never tracked + gitignored (guarded by `tests/test_no_secrets.py`),
-     `dev/` never committed, logo + `docs/authoring.md` + `--keep exact` all
-     present/accurate.
+1. [ ] **Flip visibility to public.** Pre-flight pass run 2026-06-15 — all
+   blockers cleared, only the human action remains:
+   - ✅ **`LICENSE`** — exists, valid MIT, tracked (the earlier "missing"
+     finding was a false alarm from a shell glob error).
+   - ✅ **Sidecar-grammar docs rewritten** — `README.md` and `docs/authoring.md`
+     converted from the removed flat `:voice`/`:pace`/inline-`[pause]` format to
+     the v1 block format (`utterance:`/`text:`/`pause: N`/`transition-*`).
+   - ✅ **ElevenLabs dropped** from both docs (pending the Inworld switch,
+     Next #1).
+   - ✅ **PyMuPDF AGPL-3.0 note** added to the README License section.
+   - ✅ **Secrets** — none in tree or across 232 commits of history; `.env`
+     never tracked + gitignored (guarded by `tests/test_no_secrets.py`); `dev/`
+     never committed; logo + `--keep exact` present/accurate.
 
-   Then human runs `gh repo edit --visibility public`. Must precede the PyPI tag
+   Remaining: human runs `gh repo edit --visibility public`. Must precede the PyPI tag
    (the package links to the GitHub URL). **[agent→human]**
 2. [ ] **Tag `v1.0.0a1` and push** — bump `src/slidesonnet/__init__.py`, move
    CHANGELOG Unreleased → a1, push tag; triggers TestPyPI → PyPI → GitHub
    Release. Ship with the Kokoro-rendered demo videos; don't block on the
    paid HQ render. **[human]**
-3. [ ] **Crossfade compositing.** *Story:* As a deck author, I want the
-   `crossfade: N` transition I set in the editor to render as an actual
-   crossfade in the MP4, so the export matches what the editor promises.
-   Today it's stored, edited, and conflict-checked but renders as a hard
-   cut. *Acceptance examples:* (a) two-slide deck with
-   `transition-out: crossfade 1.0` → exported video blends for 1 s and total
-   duration shrinks by 1 s; (b) audio acrossfades with no click; (c)
-   all-`cut` decks export identically to today. *Appetite:* two days. Needs
-   `build_timeline` to learn overlap (it assumes back-to-back cuts); a
-   legacy unwired `concatenate_segments_xfade` sits in
-   `src/slidesonnet/video/composer.py` — predates the v1 rewrite, don't
-   assume it's drop-in (deliberately kept through the 2026-06 dead-code
-   sweep for this item). **[agent]**
+3. [ ] **Transition gallery (full `xfade` set).** *Story:* As a deck author, I
+   want to pick from FFmpeg's whole `xfade` transition gallery — not just a
+   crossfade but `fade`, `wipeleft/right/up/down`, `slide*`, `dissolve`,
+   `circleopen`, `pixelize`, etc. — set per page boundary, and have the export
+   render exactly that. Across real slide changes a transition is a flourish;
+   across **sub-slide steps** (consecutive PDF pages that are overlay
+   incrementals of one logical Beamer/Typst slide) a wipe/slide reads as a
+   *build animation*, recovering the motion a flat PDF throws away. Today only
+   `cut`/`crossfade` exist in the model and even `crossfade` renders as a hard
+   cut. *Acceptance examples:* (a) `transition-out: wipeleft 0.6` →
+   exported video wipes left over 0.6 s and total duration shrinks by 0.6 s;
+   (b) `crossfade N` still works (now just one entry in the gallery, mapped to
+   xfade `fade`/`dissolve`); (c) an unknown/misspelled transition name is a
+   `check` error, not a silent cut; (d) all-`cut` decks export byte-identically
+   to today; (e) the editor's transition picker offers the full gallery as a
+   dropdown. *Appetite:* ~three days (the gallery itself is nearly free once
+   one xfade type is wired — the cost is the model/grammar/editor plumbing).
+   *Design notes:* `TransitionKind` (`narration/model.py`) grows from
+   `cut|crossfade` to carry an xfade transition name; the sidecar grammar
+   `transition-out: <name> <seconds>` passes `<name>` straight through to
+   xfade's `transition=` param. `build_timeline` must learn overlap (it assumes
+   back-to-back cuts); a legacy unwired `concatenate_segments_xfade` sits in
+   `src/slidesonnet/video/composer.py` (predates the v1 rewrite — don't assume
+   it's drop-in). Audio: acrossfade across real slide changes; across a
+   sub-slide build the narration is usually continuous, so don't force an audio
+   blend there. Gallery reference: <https://trac.ffmpeg.org/wiki/Xfade>.
+   **[agent]**
 
 ## Next — after a1
 
@@ -153,15 +161,9 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    interface). (Qwen3-TTS and Inworld promoted to Next on 2026-06-11.)
 5. **Multi-deck playlists** — concatenate several PDFs into one video.
 6. **`--json` output** for CI/automation.
-7. **Slide transitions** — fade and wipe (left/right/up/down) transitions
-   between pages, giving limited animation for Beamer-style sub-slides (a
-   PDF whose consecutive pages are overlay incrementals of one logical
-   slide). Composite the transition during the FFmpeg video step; needs a
-   way to mark which page boundaries are sub-slide steps vs. real slide
-   changes, plus a per-transition type/duration knob. FFmpeg's `xfade`
-   filter already implements a large gallery of transitions
-   (<https://trac.ffmpeg.org/wiki/Xfade>) — expose the full set if it's
-   cheap to wire the transition name straight through to `xfade`.
+7. *(Promoted & merged into Now #3 "Transition gallery" on 2026-06-15 — the
+   sub-slide-animation use case and the full xfade gallery are now part of that
+   item, not a separate backlog entry.)*
 
 ## Done (v1 rewrite)
 
