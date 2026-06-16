@@ -1,36 +1,18 @@
 # Roadmap
 
-Current version: 1.0.0a0 (alpha) — the PDF + narration-sidecar editor rewrite.
+Current version: 1.0.0a1 (alpha, published to PyPI 2026-06-16) — the PDF +
+narration-sidecar editor rewrite. Repo is public.
 
-See `CHANGELOG.md` for shipped changes.
+See `CHANGELOG.md` for shipped changes. Post-a1 work (background generation
+queue + auto-build) sits in CHANGELOG `[Unreleased]`, on `main`, untagged.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
 (paid, irreversible, or account-bound).
 
-## Now — publish 1.0.0a1
+## Now — next feature work (toward 1.0.0a2)
 
-1. [ ] **Flip visibility to public.** Pre-flight pass run 2026-06-15 — all
-   blockers cleared, only the human action remains:
-   - ✅ **`LICENSE`** — exists, valid MIT, tracked (the earlier "missing"
-     finding was a false alarm from a shell glob error).
-   - ✅ **Sidecar-grammar docs rewritten** — `README.md` and `docs/authoring.md`
-     converted from the removed flat `:voice`/`:pace`/inline-`[pause]` format to
-     the v1 block format (`utterance:`/`text:`/`pause: N`/`transition-*`).
-   - ✅ **ElevenLabs dropped** from both docs (pending the Inworld switch,
-     Next #1).
-   - ✅ **PyMuPDF AGPL-3.0 note** added to the README License section.
-   - ✅ **Secrets** — none in tree or across 232 commits of history; `.env`
-     never tracked + gitignored (guarded by `tests/test_no_secrets.py`); `dev/`
-     never committed; logo + `--keep exact` present/accurate.
-
-   Remaining: human runs `gh repo edit --visibility public`. Must precede the PyPI tag
-   (the package links to the GitHub URL). **[agent→human]**
-2. [ ] **Tag `v1.0.0a1` and push** — bump `src/slidesonnet/__init__.py`, move
-   CHANGELOG Unreleased → a1, push tag; triggers TestPyPI → PyPI → GitHub
-   Release. Ship with the Kokoro-rendered demo videos; don't block on the
-   paid HQ render. **[human]**
-3. [ ] **Transition gallery (full `xfade` set).** *Story:* As a deck author, I
+1. [ ] **Transition gallery (full `xfade` set).** *Story:* As a deck author, I
    want to pick from FFmpeg's whole `xfade` transition gallery — not just a
    crossfade but `fade`, `wipeleft/right/up/down`, `slide*`, `dissolve`,
    `circleopen`, `pixelize`, etc. — set per page boundary, and have the export
@@ -58,38 +40,103 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    blend there. Gallery reference: <https://trac.ffmpeg.org/wiki/Xfade>.
    **[agent]**
 
-## Next — after a1
-
-1. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS** — Inworld beats
+2. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
+   deck author who wants studio-grade narration, I want a `--engine inworld`
+   cloud backend that synthesizes one cached clip per utterance, so I can
+   render an HQ demo without paying ElevenLabs' ~10× rate. Inworld beats
    ElevenLabs on control *and* price (~$0.009/min vs ~$0.10–0.27/min), with
    Markdown-style emotion control, top quality-to-price on the 2026 arena,
    and instant own-voice cloning from a ~5–15 s clip (consent attestation
-   standard; voice + clip leave the machine). Researched 2026-06-10. Agent
-   implements the engine behind the engine interface (mocked unit tests, a
-   `[tts.inworld]` config section + extra); human supplies the API key, runs
-   a small paid smoke test, and judges voice quality. Decision point: keep
-   ElevenLabs as a legacy optional backend or remove it outright (as was
-   done with Piper). **Needs acceptance examples before build** — e.g.
-   "given `[tts.inworld]` with a key, `slidesonnet tts deck.pdf --engine
-   inworld` synthesizes one clip per utterance, content-addressed cached"
-   plus a mocked API-failure example. **[agent→human]**
-2. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+   standard; voice + clip leave the machine). Researched 2026-06-10. This is
+   also the debt behind "ElevenLabs dropped pending the switch" in the a1 docs.
+   *Acceptance examples:* (a) given `[tts.inworld]` with an API key, `slidesonnet
+   tts deck.pdf --engine inworld` synthesizes one clip per utterance, each
+   content-addressed cached (re-run makes zero API calls); (b) a mocked API
+   failure surfaces as a clean `TTSError`, not a traceback, and leaves no
+   half-written cache file (atomic write, like Kokoro); (c) `slidesonnet doctor`
+   reports the engine as configured/unconfigured from the key's presence;
+   (d) every Inworld test uses a mocked client — the suite never makes a real
+   paid call (same guard pattern as the ElevenLabs conftest sentinel).
+   *Appetite:* ~two days for the agent's engine + mocked tests. Agent implements
+   behind the engine interface (a `[tts.inworld]` config section + extra); human
+   supplies the key, runs a small paid smoke test, and judges voice quality.
+   Decision point: keep ElevenLabs as a legacy optional backend or remove it
+   outright (as was done with Piper). **[agent→human]**
+3. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
+   author proofing narration, I want to play the preview faster so I can review
+   a long deck without sitting through every clip at 1×. *Acceptance examples:*
+   (a) a speed control in the transport (e.g. 1× / 1.25× / 1.5× / 2×, or a
+   cycling button) sets the audio element's playback rate live — pressing it
+   mid-play speeds up immediately with **no re-synthesis** and no cache write;
+   (b) the chosen speed sticks across slide changes and across both
+   *play-slide* and *play-all* (whole-deck preview), and the deck preview's
+   automatic slide flips still land on cue at the faster rate; (c) the seek bar
+   and elapsed/total clock stay consistent with the audio's media timeline while
+   sped up (a 2× pass over a 10 s clip finishes in ~5 s of wall-clock);
+   (d) speed is **preview-only** — it never affects the synthesized cache, the
+   `pace:` directive, or the exported video. *Appetite:* an afternoon. *Design
+   note:* this is HTML5 `audio.playbackRate` on the transport's player, not a
+   TTS-level change — distinct from the per-utterance `pace:` directive, which
+   re-synthesizes. Browser pitch-correction (`preservesPitch`) is on by default,
+   so 2× stays natural, not chipmunked. **[agent]**
+4. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+   own little PR (the background job queue they build on shipped — see Done).
+   *Appetite:* an afternoon each.
+   - When narration text is edited, immediately (before blur) flip the box's
+     regenerate icon to *generate* and mark the slide not-up-to-date; if the
+     edit is undone while typing, revert. (Partly related to editor pass #3,
+     which already revokes the loaded track on edit — this is the per-box icon
+     + dirty-state half that's still open.) *Acceptance:* typing in an utterance
+     flips its badge to amber within a keystroke; Ctrl-Z back to the original
+     text restores the green badge without a save.
+   - Let "play all" start before everything is generated, and pause if
+     playback ever catches up to the generation frontier. *(builds on the queue)*
+     *Acceptance:* pressing play-all on a half-generated deck starts immediately
+     and pauses (not errors) when it reaches the first ungenerated clip, resuming
+     once the queue catches up.
+   - Make "generate all" / a queued background generation interruptible (today a
+     queued sweep runs to completion; add a cancel/stop for the queue).
+     *Acceptance:* a "Stop" on the sweep drains the queue and leaves already-made
+     clips intact.
+5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
    (editor pass #1); what remains is saving edits before a *sidecar*-triggered
-   reload, and never auto-saving on those. *Appetite:* half a day each.
+   reload, and never auto-saving on those. *Acceptance:* a sidecar edited on
+   disk while you have unsaved field text saves your text first (no silent loss),
+   and never auto-saves on a sidecar-triggered reload. *Appetite:* half a day each.
    **[agent]**
-3. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
+6. [ ] **Open / switch decks from within the editor.** *Story:* As a user with
+   several decks, I want to open another deck from inside `slidesonnet edit`
+   without quitting and relaunching on a new path, so I can move between projects
+   in one session. *Acceptance examples:* (a) an "Open deck…" control accepts
+   another deck PDF (same or another directory) and re-points the whole editor —
+   filmstrip, sidecar, diagnostics, audio cache, live-reload poller — onto it;
+   (b) switching while the current deck has unsaved narration edits saves them
+   first (or prompts), never silently dropping them (shares the save-before-reload
+   guard with Now #5); (c) the new deck's `slidesonnet.toml` engine/voices take
+   effect (re-read, not the prior deck's); (d) the transport is stopped and
+   rewound on switch — no audio from the previous deck bleeds into the new one;
+   (e) decks are discoverable: a path input plus, if cheap, a list of sibling
+   `*.pdf` that have a `.narration` sidecar in the launch directory. *Appetite:*
+   ~one to two days. *Design note:* today `build_editor` constructs a single
+   `EditorState` from the launch path and starts one live-reload poller; switching
+   means tearing down that poller and re-initializing state in place (or routing
+   to a fresh page) rather than assuming one deck per process. **[agent]**
+
+## Next — toward 1.0 final
+
+1. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
    gaps to fill deliberately: export timing modes end-to-end, `check`
    diagnostics on real overlay decks, editor save/reload paths. Finish with
    a joint human+AI review of coverage and quality. **[agent→human]**
-4. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
+2. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
    ElevenLabs render (don't pay ElevenLabs for renders we're about to drop).
-   Human triggers the paid render; agent uploads to the `v0.0.0` GitHub
-   Release (`gh release upload --clobber`) and refreshes README links.
-   **[human→agent]**
-5. [ ] **Qwen3-TTS own-voice engine (third optional backend)** — narrate
+   Blocked on Now #2 (the Inworld engine). Human triggers the paid render;
+   agent uploads to the `v0.0.0` GitHub Release (`gh release upload --clobber`)
+   and refreshes README links. **[human→agent]**
+3. [ ] **Qwen3-TTS own-voice engine (third optional backend)** — narrate
    decks in the user's own voice from a ~10 s reference clip. Qwen3-TTS
    (Apache 2.0) clones via a tiny reusable prompt artifact (~100 KB `.pt`:
    codec tokens + speaker embedding); quality clearly above Piper. Runs
@@ -100,23 +147,11 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `dev/voice-profile/`. Agent implements behind the engine interface as an
    optional extra; human records the reference clip and judges the cloned
    voice. **[agent→human]**
-6. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
+4. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
    an unlisted-vs-public decision; agent preps titles, descriptions, and
    chapter markers from the narration sidecars. **[human]**
-7. [ ] **README refresh** — new video links, Kokoro install instructions,
+5. [ ] **README refresh** — new video links, Kokoro install instructions,
    editor screenshots of the new dark studio theme. **[agent]**
-8. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
-   own little PR (the background job queue they build on shipped — see Done):
-   - When narration text is edited, immediately (before blur) flip the box's
-     regenerate icon to *generate* and mark the slide not-up-to-date; if the
-     edit is undone while typing, revert. (Partly related to editor pass #3,
-     which already revokes the loaded track on edit — this is the per-box icon
-     + dirty-state half that's still open.)
-   - Play at 1.5×/2× speed for preview.
-   - Let "play all" start before everything is generated, and pause if
-     playback ever catches up to the generation frontier. *(builds on the queue)*
-   - Make "generate all" / a queued background generation interruptible (today a
-     queued sweep runs to completion; add a cancel/stop for the queue).
 
 ## Later — before 1.0 final
 
@@ -165,6 +200,16 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Published 1.0.0a1 — first public alpha** (2026-06-16): repo flipped to
+  public, `v1.0.0a1` tagged and pushed; the publish workflow shipped TestPyPI →
+  PyPI → GitHub Release (CI + Publish both green at 02:07 / 03:04 UTC). All
+  pre-flight blockers (LICENSE, sidecar-grammar docs rewrite, ElevenLabs dropped
+  from docs, PyMuPDF AGPL note, secrets scan) cleared first. Shipped with the
+  Kokoro-rendered demo videos; the HQ re-render is deferred to Next (post-Inworld).
+- [x] **All editor-pass known issues resolved** (KNOWN_ISSUES #1–#9, 2026-06-15):
+  the seven editor-reliability bugs + the recompile won't-repro (#8) + the CI
+  typecheck regression (#9) are all fixed with green tests and recorded in
+  CHANGELOG a1. `dev/KNOWN_ISSUES.md` retired (empty).
 - [x] **Background generation job queue + auto-build on save** (2026-06-15):
   audio synthesis moved off the editor's single busy gate onto a background
   worker (`gui/jobs.py`), keyed on the content-addressed cache filename so two
