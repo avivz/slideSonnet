@@ -224,7 +224,7 @@ def export(
 
     if any(b.has_nondefault_transitions for b in deck.narration.values()):
         logging.getLogger(__name__).warning(
-            "crossfade transitions are recorded but not yet composited — "
+            "slide transitions are recorded but not yet composited — "
             "rendering them as hard cuts for now"
         )
 
