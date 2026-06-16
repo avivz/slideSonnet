@@ -227,13 +227,16 @@ def _morph_schedule(
 
 def _single_slide_morph(
     block: PageNarration,
+    incoming: Transition,
     index: int,
     images: Sequence[Path],
     total: float,
     media_url: Callable[[Path], str],
 ) -> list[dict[str, Any]]:
-    """Morph steps for a *single-slide* preview: its own in- and out-transition.
+    """Morph steps for a *single-slide* preview: its in- and out-transition.
 
+    *incoming* is the effective transition entering this slide (its boundary with
+    the previous slide); ``block.transition_out`` is the boundary with the next.
     The in-transition morphs the previous slide into this one as playback opens;
     the out-transition morphs this slide into the next as it closes. A missing
     neighbour (the deck's first/last slide) morphs against a black frame
@@ -248,10 +251,9 @@ def _single_slide_morph(
     if here is None:  # no rasterized image — nothing to morph
         return []
     steps: list[dict[str, Any]] = []
-    t_in = block.transition_in
-    if t_in.is_animated:
-        d = max(0.05, min(t_in.seconds, total / 2))
-        steps.append({"at": d, "dur": d, "kind": t_in.kind, "from": url(index - 1), "to": here})
+    if incoming.is_animated:
+        d = max(0.05, min(incoming.seconds, total / 2))
+        steps.append({"at": d, "dur": d, "kind": incoming.kind, "from": url(index - 1), "to": here})
     t_out = block.transition_out
     if t_out.is_animated:
         d = max(0.05, min(t_out.seconds, total / 2))
@@ -446,7 +448,9 @@ class PreviewPlayer:
         if whole_deck:
             steps = _morph_schedule(self.cues, state.deck, images, url)
         else:
-            steps = _single_slide_morph(state.current_block, state.index, images, total, url)
+            steps = _single_slide_morph(
+                state.current_block, state.incoming_transition, state.index, images, total, url
+            )
         if not steps:
             self._run_js("window.ssMorph && window.ssMorph.stop()")
             return
@@ -837,7 +841,10 @@ class BlockEditor:
                     "This page has no slide-id — add \\ssid in the source to narrate it."
                 ).classes("ss-diag ss-diag-warn")
                 return
-            self._transition_row("in", block.transition_in, disabled)
+            # the incoming transition is the boundary with the previous slide, so
+            # it mirrors that slide's "out" — show the effective value, not a stale
+            # per-block field that could disagree with the previous slide
+            self._transition_row("in", state.incoming_transition, disabled)
             speech_i = 0
             for i, seg in enumerate(block.segments):
                 if seg.is_speech:

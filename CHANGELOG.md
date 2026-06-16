@@ -34,6 +34,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   unattended trigger must never bill per save.
 
 ### Fixed
+- **A slide's "Transition in" now matches the previous slide's "Transition out".**
+  The two are the same boundary, but the editor stored and showed them as
+  independent fields, so they could disagree (set an outgoing wipe on one slide
+  and the next slide's incoming still read "cut"). The incoming control now
+  reflects the boundary with the previous slide and edits it in place (stored
+  canonically on the earlier slide's outgoing transition), so the two faces stay
+  identical. The first slide keeps its own incoming transition (the deck open).
 - **Auto-generate now covers external changes and structural edits.** Two gaps
   left slides ungenerated with "Auto-generate as I edit" on: (1) a recompile or a
   sidecar edit from another tool didn't trigger a fill, so newly-added/changed

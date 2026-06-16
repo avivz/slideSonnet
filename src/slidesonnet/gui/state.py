@@ -23,7 +23,7 @@ from slidesonnet.deck import (
     save_deck,
     unique_real_ids,
 )
-from slidesonnet.diagnostics import Diagnostic
+from slidesonnet.diagnostics import Diagnostic, boundary_transition
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import PageNarration, Segment, Transition
@@ -177,6 +177,53 @@ class EditorState:
         nxt = self.index + 1
         return self.deck.pages[nxt] if nxt < self.page_count else None
 
+    def _prev_page_id(self) -> str | None:
+        prv = self.index - 1
+        return self.deck.pages[prv] if prv >= 0 else None
+
+    @property
+    def incoming_transition(self) -> Transition:
+        """The effective transition *entering* the current slide.
+
+        A boundary is one transition shared by two slides; it lives canonically on
+        the earlier slide's ``transition_out`` (see
+        :func:`diagnostics.boundary_transition`). So a slide's incoming transition
+        is its boundary with the previous slide — they are the same thing, and the
+        editor shows them as such. The first slide has no previous, so its own
+        ``transition_in`` stands alone as the deck-open animation.
+        """
+        prev_id = self._prev_page_id()
+        if prev_id is None:
+            return self.current_block.transition_in
+        return boundary_transition(self.deck.page_narration(prev_id), self.current_block)
+
+    def _set_transition_out(self, slide_id: str, tr: Transition) -> bool:
+        """Set *slide_id*'s ``transition_out`` (dropping an emptied block); changed?"""
+        old = self.deck.narration.get(slide_id)
+        base = old if old is not None else PageNarration(slide_id=slide_id)
+        if base.transition_out == tr:
+            return False
+        new = base.with_content(base.segments, transition_out=tr)
+        if new.is_empty:
+            if old is None:
+                return False
+            self.deck.narration.pop(slide_id)
+        else:
+            self.deck.narration[slide_id] = new
+        return True
+
+    def _clear_transition_in(self, slide_id: str) -> bool:
+        """Reset *slide_id*'s ``transition_in`` to a cut (dropping an emptied block)."""
+        old = self.deck.narration.get(slide_id)
+        if old is None or old.transition_in.kind == "cut":
+            return False
+        new = old.with_content(old.segments, transition_in=Transition())
+        if new.is_empty:
+            self.deck.narration.pop(slide_id)
+        else:
+            self.deck.narration[slide_id] = new
+        return True
+
     def replace_block(
         self,
         segments: list[Segment],
@@ -187,38 +234,52 @@ class EditorState:
         """Replace the current slide's block wholesale, then persist; False if unsafe.
 
         Unsafe: the page has no slide-id to key the block ("@" would corrupt the
-        sidecar grammar). A block that ends up empty (no segments, plain cuts)
-        is dropped from the sidecar entirely.
+        sidecar grammar). A block that ends up empty (no segments, plain cuts) is
+        dropped from the sidecar entirely.
 
-        Setting a non-cut ``transition_out`` clears the *next* slide's
-        ``transition_in`` so a boundary is only ever specified on the earlier
-        slide (see :func:`diagnostics.boundary_transition`).
+        A boundary is only ever stored on the earlier slide's ``transition_out``,
+        so the two transition controls stay consistent: *transition_in* is the
+        boundary with the previous slide — a real change to it is written to that
+        slide's ``transition_out`` (and this slide's own ``transition_in`` cleared),
+        and a non-cut *transition_out* clears the *next* slide's ``transition_in``.
+        The first slide keeps its own ``transition_in`` (the deck-open animation).
         """
         if not self.current_id:
             return False
         tin = transition_in or Transition()
         tout = transition_out or Transition()
-        empty = not segments and tin.kind == "cut" and tout.kind == "cut"
-        old = self.deck.narration.get(self.current_id)
-        if empty:
-            if old is None:
-                return False  # already absent — nothing to save, nothing to revoke
-            self.deck.narration.pop(self.current_id)
-            self._write_and_reload()
-            return True
-        base = old if old is not None else PageNarration(slide_id=self.current_id)
-        new_block = base.with_content(segments, transition_in=tin, transition_out=tout)
-        nxt = self._next_page_id() if tout.kind != "cut" else None
-        clears_next = bool(
-            nxt
-            and nxt in self.deck.narration
-            and self.deck.narration[nxt].transition_in.kind != "cut"
-        )
-        if old == new_block and not clears_next:
+        cur_id = self.current_id
+        prev_id = self._prev_page_id()
+        nxt_id = self._next_page_id()
+
+        changed = False
+        # The incoming transition belongs to the boundary with the previous slide.
+        # Only move it (onto that slide's out, clearing ours) when it actually
+        # changed — a plain blur/navigation must not rewrite the sidecar.
+        if prev_id is not None and tin != self.incoming_transition:
+            changed |= self._set_transition_out(prev_id, tin)
+            own_in = Transition()
+        elif prev_id is None:
+            own_in = tin  # first slide: its own deck-open transition
+        else:
+            own_in = self.current_block.transition_in  # unchanged: leave it in place
+
+        cur = self.deck.narration.get(cur_id)
+        cur_base = cur if cur is not None else PageNarration(slide_id=cur_id)
+        new_cur = cur_base.with_content(segments, transition_in=own_in, transition_out=tout)
+        if new_cur.is_empty:
+            if cur is not None:
+                self.deck.narration.pop(cur_id)
+                changed = True
+        elif cur != new_cur:
+            self.deck.narration[cur_id] = new_cur
+            changed = True
+
+        if tout.kind != "cut" and nxt_id is not None:
+            changed |= self._clear_transition_in(nxt_id)
+
+        if not changed:
             return False  # a no-op blur/save: don't reload, flash, or revoke the track
-        self.deck.narration[self.current_id] = new_block
-        if clears_next and nxt is not None:
-            self.deck.narration[nxt].transition_in = Transition()
         self._write_and_reload()
         return True
 

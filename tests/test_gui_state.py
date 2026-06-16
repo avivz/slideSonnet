@@ -485,6 +485,64 @@ def test_set_transition_out_clears_next_slide_in(tmp_path: Path) -> None:
     assert not any(d.code == "transition-conflict" for d in state.diagnostics)
 
 
+def test_incoming_transition_mirrors_previous_slide_out(tmp_path: Path) -> None:
+    """A slide's incoming transition is its boundary with the previous slide, so
+    it always equals that slide's outgoing transition (the bug: they disagreed)."""
+    from slidesonnet.narration.model import Segment, Transition
+
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@b\nBye.\n")
+    state.replace_block([Segment.speech("Hi.")], transition_out=Transition("wipeleft", 0.5))
+    state.go(1)  # move to b
+    assert state.incoming_transition == Transition("wipeleft", 0.5)  # matches a's out
+    assert state.current_block.transition_in == Transition()  # not duplicated on b
+
+
+def test_editing_incoming_transition_writes_to_previous_slide_out(tmp_path: Path) -> None:
+    """Editing a slide's 'in' edits the one boundary — stored on the previous
+    slide's 'out' — so the two faces never drift apart."""
+    from slidesonnet.narration.model import Segment, Transition
+
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@b\nBye.\n")
+    state.go(1)  # on b, set its incoming transition to a fade
+    assert (
+        state.replace_block([Segment.speech("Bye.")], transition_in=Transition("fade", 0.7)) is True
+    )
+    assert state.deck.page_narration("a").transition_out == Transition("fade", 0.7)  # the boundary
+    assert state.deck.page_narration("b").transition_in == Transition()  # stays cut on b
+    assert state.incoming_transition == Transition("fade", 0.7)
+    assert not any(d.code == "transition-conflict" for d in state.diagnostics)
+
+
+def test_first_slide_keeps_its_own_incoming_transition(tmp_path: Path) -> None:
+    """The deck's first slide has no previous, so its 'in' is its own (deck open)."""
+    from slidesonnet.narration.model import Segment, Transition
+
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n")
+    assert (
+        state.replace_block([Segment.speech("Hi.")], transition_in=Transition("fadeblack", 0.6))
+        is True
+    )
+    assert state.current_block.transition_in == Transition("fadeblack", 0.6)
+    assert state.incoming_transition == Transition("fadeblack", 0.6)
+
+
+def test_unchanged_incoming_does_not_rewrite_the_sidecar(tmp_path: Path) -> None:
+    """Re-saving a slide without touching its incoming transition is a no-op — it
+    must not migrate an externally-authored transition-in or flash 'saved'."""
+    from slidesonnet.narration.model import Segment, Transition
+
+    state = _factory_state(tmp_path, ["a", "b"], sidecar="@a\nHi.\n\n@b\nBye.\n")
+    state.replace_block([Segment.speech("Hi.")], transition_out=Transition("slideup", 0.5))
+    state.go(1)
+    before = (tmp_path / "deck.narration").read_text(encoding="utf-8")
+    # autosave on b with the same (effective) incoming value the editor showed
+    assert (
+        state.replace_block([Segment.speech("Bye.")], transition_in=state.incoming_transition)
+        is False
+    )
+    assert (tmp_path / "deck.narration").read_text(encoding="utf-8") == before
+
+
 def test_replace_block_succeeds_despite_duplicate_blocks(tmp_path: Path) -> None:
     from slidesonnet.narration.model import Segment
 

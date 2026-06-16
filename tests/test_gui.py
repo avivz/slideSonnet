@@ -91,14 +91,13 @@ def test_single_slide_morph_plays_in_and_out_transitions() -> None:
     from slidesonnet.gui.app import _single_slide_morph
     from slidesonnet.narration.model import PageNarration, Transition
 
-    block = PageNarration(
-        slide_id="b",
-        transition_in=Transition("fade", 0.5),
-        transition_out=Transition("wipeleft", 0.5),
-    )
+    block = PageNarration(slide_id="b", transition_out=Transition("wipeleft", 0.5))
+    incoming = Transition("fade", 0.5)  # the boundary with the previous slide
     images = [Path("a.png"), Path("b.png"), Path("c.png")]
 
-    steps = _single_slide_morph(block, 1, images, total=6.0, media_url=lambda p: f"/u/{p.name}")
+    steps = _single_slide_morph(
+        block, incoming, 1, images, total=6.0, media_url=lambda p: f"/u/{p.name}"
+    )
 
     assert len(steps) == 2
     intro, outro = steps
@@ -112,10 +111,13 @@ def test_single_slide_morph_uses_black_frame_at_deck_ends() -> None:
     from slidesonnet.gui.app import _single_slide_morph
     from slidesonnet.narration.model import PageNarration, Transition
 
-    block = PageNarration(slide_id="a", transition_in=Transition("fadeblack", 0.5))
+    block = PageNarration(slide_id="a")
+    incoming = Transition("fadeblack", 0.5)  # first slide: its own deck-open
     images = [Path("a.png"), Path("b.png")]
 
-    (intro,) = _single_slide_morph(block, 0, images, total=4.0, media_url=lambda p: p.name)
+    (intro,) = _single_slide_morph(
+        block, incoming, 0, images, total=4.0, media_url=lambda p: p.name
+    )
 
     assert intro["from"] is None  # first slide has no previous — morph against black
     assert intro["to"] == "a.png"

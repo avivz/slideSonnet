@@ -466,6 +466,29 @@ def test_transition_out_family_and_direction_persist(
     assert "transition-out: wipeup 1.2" in _sidecar(tmp_path)
 
 
+@pytest.mark.timeout(120)
+def test_incoming_transition_matches_previous_slide_out(
+    page: Page, editor_server: ServerFactory, tmp_path: Path
+) -> None:
+    """A slide's 'Transition in' mirrors the previous slide's 'Transition out' —
+    they are one boundary and must never disagree (the reported UI mismatch)."""
+    pdf = _prep(tmp_path, "@intro-title\nHi.\n\n@euler-setup\nThere.\n")
+    page.goto(editor_server(pdf))
+
+    # set slide 1's outgoing transition to a left wipe
+    marked(page, "trans-out").click()
+    page.get_by_role("option", name="Wipe", exact=True).click()
+    marked(page, "trans-out-dir").click()
+    page.get_by_role("option", name="Left", exact=True).click()
+    assert _eventually(lambda: "transition-out: wipeleft 0.5" in _sidecar(tmp_path))
+
+    # slide 2's incoming transition now shows that same boundary, not a stale cut
+    marked(page, "Next").click()
+    expect(page.get_by_text("Slide 2 / 6")).to_be_visible()
+    expect(marked(page, "trans-in")).to_contain_text("Wipe")
+    expect(marked(page, "trans-in-dir")).to_contain_text("Left")
+
+
 # --------------------------------------------------------------------------
 # journey 7: pane collapse / expand
 # --------------------------------------------------------------------------
