@@ -44,6 +44,7 @@ from slidesonnet.narration.model import (
     Transition,
     TransitionKind,
 )
+from slidesonnet.narration.transitions import TRANSITION_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ _KV_RE = re.compile(r"^(?P<key>[a-z][a-z-]*)\s*:\s*(?P<value>.*?)\s*$")
 _PAUSE_RE = re.compile(r"\[pause\s+(?P<sec>[0-9]*\.?[0-9]+)\]")
 _WS_RE = re.compile(r"\s+")
 _VALID_PACES: frozenset[str] = frozenset({"slow", "normal", "fast"})
-_VALID_TRANSITIONS: frozenset[str] = frozenset({"cut", "crossfade"})
+_VALID_TRANSITIONS: frozenset[str] = TRANSITION_NAMES
 
 _UTTERANCE_ATTRS: frozenset[str] = frozenset({"voice", "pace", "direct", "text"})
 _KNOWN_KEYS: frozenset[str] = (
@@ -96,11 +97,13 @@ def _format_seconds(seconds: float) -> str:
 def _parse_transition(value: str, lineno: int) -> Transition:
     parts = value.split()
     if not parts or parts[0] not in _VALID_TRANSITIONS:
+        name = parts[0] if parts else value
         raise SidecarError(
-            f"line {lineno}: invalid transition '{value}' "
-            f"(expected one of {sorted(_VALID_TRANSITIONS)})"
+            f"line {lineno}: invalid transition '{name}' "
+            f"(use cut, fade, dissolve, wipe/slide/cover/reveal + a direction, "
+            f"or circleopen/circleclose)"
         )
-    kind: TransitionKind = parts[0]  # type: ignore[assignment]
+    kind: TransitionKind = parts[0]
     seconds = 0.0
     if len(parts) > 1:
         try:
@@ -275,8 +278,8 @@ def parse_sidecar(text: str) -> list[PageNarration]:  # noqa: C901
 def _serialize_transition(label: str, transition: Transition) -> list[str]:
     if transition.kind == "cut" and transition.seconds == 0:
         return []  # the default; omit for clean files
-    if transition.is_crossfade and transition.seconds > 0:
-        return [f"  {label}: crossfade {_format_seconds(transition.seconds)}"]
+    if transition.is_animated and transition.seconds > 0:
+        return [f"  {label}: {transition.kind} {_format_seconds(transition.seconds)}"]
     return [f"  {label}: {transition.kind}"]
 
 

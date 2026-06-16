@@ -239,7 +239,7 @@ def test_invalid_pace_errors() -> None:
 
 def test_invalid_transition_errors() -> None:
     with pytest.raises(SidecarError, match="invalid transition"):
-        parse_sidecar("@a\n  transition-in: dissolve\n")
+        parse_sidecar("@a\n  transition-in: teleport\n")
 
 
 def test_non_numeric_pause_errors() -> None:

@@ -18,30 +18,38 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from slidesonnet.narration.transitions import TRANSITION_NAMES
+
 SegmentKind = Literal["speech", "pause"]
 Pace = Literal["slow", "normal", "fast"]
-TransitionKind = Literal["cut", "crossfade"]
+# A stored transition name from the curated gallery (``narration.transitions``):
+# ``cut`` (the default), the ``crossfade`` legacy alias, or an xfade name such
+# as ``wipeleft`` / ``slideup`` / ``circleopen``.
+TransitionKind = str
 
 
 @dataclass(frozen=True)
 class Transition:
-    """How a slide enters or leaves: a hard *cut* or a timed *crossfade*.
+    """How a slide enters or leaves: a hard *cut* or a timed xfade animation.
 
-    ``seconds`` is the crossfade duration; it is ignored for a cut. A crossfade
-    is accepted and persisted everywhere but currently renders as a cut until
-    the compositor learns it (a warning is logged at render time).
+    ``kind`` is a name from the curated gallery (see
+    :mod:`slidesonnet.narration.transitions`); ``seconds`` is the animation
+    duration, ignored for a cut.
     """
 
     kind: TransitionKind = "cut"
     seconds: float = 0.0
 
     def __post_init__(self) -> None:
+        if self.kind not in TRANSITION_NAMES:
+            raise ValueError(f"unknown transition '{self.kind}'")
         if self.seconds < 0:
             raise ValueError(f"transition seconds must be non-negative, got {self.seconds}")
 
     @property
-    def is_crossfade(self) -> bool:
-        return self.kind == "crossfade"
+    def is_animated(self) -> bool:
+        """True when this is a real transition (anything but a hard cut)."""
+        return self.kind != "cut"
 
 
 @dataclass(frozen=True)
@@ -172,7 +180,7 @@ class PageNarration:
     @property
     def has_nondefault_transitions(self) -> bool:
         """True if either transition differs from a plain cut."""
-        return self.transition_in.is_crossfade or self.transition_out.is_crossfade
+        return self.transition_in.is_animated or self.transition_out.is_animated
 
     @property
     def is_empty(self) -> bool:

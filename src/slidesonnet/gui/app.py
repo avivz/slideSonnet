@@ -542,7 +542,7 @@ class BlockEditor:
         def collect() -> Transition:
             k: str = kind.value or "cut"
             seconds = float(secs.value or 0.0) if k == "crossfade" else 0.0
-            return Transition(kind=k, seconds=seconds)  # type: ignore[arg-type]
+            return Transition(kind=k, seconds=seconds)
 
         self.transition_getters[which] = collect
 
