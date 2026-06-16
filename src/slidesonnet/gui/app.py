@@ -1377,6 +1377,9 @@ class EditorView:
         unattended auto-build path). A rolling preview of the affected slide/deck
         is stopped so the next play rebuilds with the new audio.
         """
+        # flush the (possibly typed-but-unblurred) field first: the worker
+        # re-reads the sidecar from disk, so it must see the current text
+        self.blocks.save_current()
         state = self.state
         flags = state.speech_cached_flags()
         force = speech_index < len(flags) and flags[speech_index]
@@ -1389,6 +1392,7 @@ class EditorView:
 
     def enqueue_missing(self) -> None:
         """Queue every uncached clip across the deck — non-blocking background fill."""
+        self.blocks.save_current()  # flush any open edit before the worker reads disk
         targets = self.state.targets_for_sweep()
         if not targets:
             return
