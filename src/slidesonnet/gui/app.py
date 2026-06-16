@@ -27,6 +27,7 @@ from slidesonnet.gui.launch import (
     launch_browser,
 )
 from slidesonnet.gui.state import EditorState, cue_start
+from slidesonnet.narration import transitions as trans
 from slidesonnet.narration.model import Pace, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
 
@@ -518,31 +519,56 @@ class BlockEditor:
 
     def _transition_row(self, which: str, transition: Transition, disabled: bool) -> None:
         label = "Transition in" if which == "in" else "Transition out"
+        family_key, direction = trans.decompose(transition.kind)
+        type_options = {f.key: f.label for f in trans.FAMILIES}
+        init_dirs = trans.directions_for(family_key) or trans.directions_for("wipe")
         with ui.row().classes("w-full items-center no-wrap gap-2 ss-transition"):
             ui.label(label).classes("ss-trans-label ss-mono")
             kind = (
-                ui.toggle(["cut", "crossfade"], value=transition.kind)
-                .props("dense no-caps unelevated")
+                ui.select(type_options, value=family_key)
+                .props("dense filled options-dense")
+                .classes("ss-trans-type")
                 .mark(f"trans-{which}")
+            )
+            dirs = (
+                ui.select(init_dirs, value=direction or init_dirs[0])
+                .props("dense filled options-dense")
+                .classes("ss-trans-dir")
+                .mark(f"trans-{which}-dir")
             )
             secs = (
                 ui.number(value=transition.seconds or 0.5, min=0, step=0.1, format="%.1f")
                 .props("dense filled")
                 .classes("ss-trans-secs")
             )
-            secs.bind_visibility_from(kind, "value", backward=lambda v: v == "crossfade")
+            dirs.bind_visibility_from(
+                kind, "value", backward=lambda k: bool(trans.directions_for(k))
+            )
+            secs.bind_visibility_from(kind, "value", backward=lambda k: k != "cut")
             if disabled:
                 kind.disable()
+                dirs.disable()
                 secs.disable()
-            kind.on_value_change(lambda: self.commit_audible())
+
+            def on_type_change() -> None:
+                opts = trans.directions_for(kind.value or "cut")
+                if opts:
+                    keep = dirs.value if dirs.value in opts else opts[0]
+                    dirs.set_options(opts, value=keep)
+                self.commit_audible()
+
+            kind.on_value_change(on_type_change)
+            dirs.on_value_change(lambda: self.commit_audible())
             secs.on("blur", lambda: self.commit_audible())
             secs.on("keydown.ctrl.s.prevent", lambda: self.commit_audible())
             self._track_editing(secs)
 
         def collect() -> Transition:
-            k: str = kind.value or "cut"
-            seconds = float(secs.value or 0.0) if k == "crossfade" else 0.0
-            return Transition(kind=k, seconds=seconds)
+            family: str = kind.value or "cut"
+            direction_label = dirs.value if trans.directions_for(family) else None
+            name = trans.compose(family, direction_label)
+            seconds = float(secs.value or 0.0) if name != "cut" else 0.0
+            return Transition(kind=name, seconds=seconds)
 
         self.transition_getters[which] = collect
 

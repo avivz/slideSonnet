@@ -144,6 +144,8 @@ body{
 .ss-transition{padding:2px 2px}
 .ss-trans-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;
   color:var(--ss-dim);flex:0 0 auto}
+.ss-trans-type{width:118px}
+.ss-trans-dir{width:104px}
 .ss-trans-secs{width:84px}
 .q-field--filled .q-field__control{background:var(--ss-raised)!important;border-radius:8px}
 /* footer status flash: replaces popup pills — colored by outcome, fades on a timer */

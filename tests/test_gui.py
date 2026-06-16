@@ -91,6 +91,21 @@ async def test_edit_persists(user: User, tmp_path: Path, monkeypatch: pytest.Mon
     assert "pause: 1" in sidecar  # default pause length
 
 
+async def test_transition_picker_family_and_direction_persist(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    # pick a family from the short Type list, then a direction; the stored name
+    # is the recomposed flat xfade name (wipe + Up -> wipeup).
+    next(iter(user.find(marker="trans-out").elements)).set_value("wipe")
+    next(iter(user.find(marker="trans-out-dir").elements)).set_value("Up")
+    user.find("Next").click()  # nav saves the current slide first
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "transition-out: wipeup 0.5" in sidecar
+
+
 async def test_per_utterance_voice_and_pace_persist(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

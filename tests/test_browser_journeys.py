@@ -378,28 +378,33 @@ def test_block_editing_add_attrs_reorder_delete(
 
 
 @pytest.mark.timeout(120)
-def test_transition_out_crossfade_persists_across_navigation(
+def test_transition_out_family_and_direction_persist(
     page: Page, editor_server: ServerFactory, tmp_path: Path
 ) -> None:
     pdf = _prep(tmp_path, "@intro-title\nHi.\n")
     page.goto(editor_server(pdf))
 
-    marked(page, "trans-out").get_by_text("crossfade", exact=True).click()
-    assert _eventually(lambda: "transition-out: crossfade 0.5" in _sidecar(tmp_path))
+    # pick a family from the short Type list, then a direction; stored as the
+    # recomposed flat xfade name (Wipe + Up -> wipeup).
+    marked(page, "trans-out").click()
+    page.get_by_role("option", name="Wipe", exact=True).click()
+    marked(page, "trans-out-dir").click()
+    page.get_by_role("option", name="Up", exact=True).click()
+    assert _eventually(lambda: "transition-out: wipeup 0.5" in _sidecar(tmp_path))
 
     row = page.locator(".ss-transition", has=marked(page, "trans-out"))
     secs = row.locator(".ss-trans-secs input")
     secs.click()
     secs.fill("1.2")
     page.locator(".ss-id").click()  # blur commits
-    assert _eventually(lambda: "transition-out: crossfade 1.2" in _sidecar(tmp_path))
+    assert _eventually(lambda: "transition-out: wipeup 1.2" in _sidecar(tmp_path))
 
     marked(page, "Next").click()
     expect(page.get_by_text("Slide 2 / 6")).to_be_visible()
     marked(page, "Previous").click()
     expect(page.get_by_text("Slide 1 / 6")).to_be_visible()
     expect(row.locator(".ss-trans-secs input")).to_have_value("1.2")
-    assert "transition-out: crossfade 1.2" in _sidecar(tmp_path)
+    assert "transition-out: wipeup 1.2" in _sidecar(tmp_path)
 
 
 # --------------------------------------------------------------------------
