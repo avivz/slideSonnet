@@ -54,9 +54,8 @@ uv tool install "slidesonnet[kokoro]"    # or: pipx install "slidesonnet[kokoro]
 
 The `[kokoro]` extra adds [Kokoro](https://github.com/hexgrad/kokoro) (82M,
 Apache-2.0) for free, natural-sounding local speech (~2x real-time on CPU;
-the model downloads on first use). Use `[elevenlabs]` for cloud voices (needs
-`ELEVENLABS_API_KEY`), or `[kokoro,elevenlabs]` for both. Then run
-`slidesonnet doctor` to confirm the external tools above are visible.
+the model downloads on first use). Then run `slidesonnet doctor` to confirm the
+external tools above are visible.
 
 Upgrade with `uv tool upgrade slidesonnet`; remove with `uv tool uninstall
 slidesonnet`. To hack on slideSonnet itself instead, see
@@ -107,29 +106,35 @@ warning, so it gets a real name.
 
 ## The narration sidecar
 
-A flat, line-oriented file (`deck.narration`):
+An indented, line-oriented, git-diffable file (`deck.narration`). Each slide is
+an `@id` block of one or more `utterance:` blocks and `pause:` lines:
 
 ```
-# comment
+# a comment
 @intro-title
-Welcome to the course on the Basel problem. [pause 1.5]
-Today we'll see how Euler summed the reciprocals of the squares.
+  utterance:
+    text: Welcome to the course on the Basel problem.
+  pause: 1.5
+  utterance:
+    text: Today we'll see how Euler summed the reciprocals of the squares.
 
 @intro-overview
-[pause 3]            # silent slide — held 3s while they read
-
-@euler-setup
-:voice narrator
-Here is the setup. [pause 0.8]
+  pause: 3                  # silent slide — held 3s while they read
 
 @euler-trick
-:pace slow
-Watch the denominators carefully. [pause 1] This is the trick.
+  utterance:
+    voice: bernoulli        # optional per-utterance voice
+    pace: slow              # slow | normal | fast
+    text: Watch the denominators carefully. This is the trick.
 ```
 
-- `@<slide-id>` starts a block. `:voice` / `:pace` are optional directives.
-- `[pause N]` is the single timing primitive: a mid-sentence pause, an
-  end-of-slide hold, or — as the only content — a silent slide.
+- `@<slide-id>` starts a block; each `utterance:` carries the spoken `text:`
+  plus optional `voice:` / `pace:` / `direct:` (a director's note engines
+  ignore). A slide can mix voices — each utterance is its own synthesis call.
+- `pause: N` is an explicit silence in seconds: between utterances, as an
+  end-of-slide hold, or alone as a silent slide.
+- A slide can bracket itself with `transition-in:` / `transition-out:` lines
+  (`cut`, the default, or `crossfade N`).
 
 The full authoring guide — marking overlay steps, the complete sidecar
 grammar, and the optional `slidesonnet.toml` config — is in
@@ -161,7 +166,7 @@ slidesonnet init   deck.pdf [--merge|--force]      scaffold a blank sidecar
 slidesonnet check  deck.pdf                         reconcile ids (exit≠0 on errors)
 slidesonnet tts    deck.pdf [--engine ...] [--id ID ...]   synthesize into the cache
 slidesonnet export deck.pdf -o OUT.mp4
-        [--engine kokoro|elevenlabs]   [--silent]
+        [--engine kokoro]              [--silent]
         [--timing tts|estimate|fixed:N] [--wpm N]
         [--subtitles srt|vtt|both|none] [--sub-granularity segment|slide]
 slidesonnet subs   deck.pdf -o OUT.srt [--format srt|vtt] [--timing ...]
@@ -202,9 +207,16 @@ make lint         # ruff
 make typecheck    # mypy --strict
 ```
 
-All source is fully typed (`mypy --strict`); ElevenLabs is never exercised in
-tests (it costs money) — Kokoro and mocks only.
+All source is fully typed (`mypy --strict`); paid cloud TTS is never exercised
+in tests (it costs money) — Kokoro and mocks only.
 
 ## License
 
-MIT
+slideSonnet's own code is **MIT** (see [`LICENSE`](LICENSE)).
+
+It depends on [PyMuPDF](https://pymupdf.readthedocs.io/) (for reading slide-ids),
+which is **AGPL-3.0** (or a commercial license from Artifex). AGPL is copyleft:
+if you redistribute slideSonnet or run it as a network service, the AGPL terms
+apply to the combined work. For local use or a normal open-source install this
+is a non-issue — it only matters if you want to build a *closed-source* product
+on top of it.

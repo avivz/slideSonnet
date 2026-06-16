@@ -56,28 +56,46 @@ text untouched); `init --force` overwrites.
 
 ## 3. Write narration
 
-`deck.narration` is a flat, line-oriented file:
+`deck.narration` is an indented, line-oriented, git-diffable file. Each slide is
+an `@id` block of `utterance:` blocks and `pause:` lines, optionally bracketed by
+transitions:
 
 ```
-# a comment (line-leading '#', or a trailing ' #...')
+# a comment (line-leading '#', or a trailing ' #...' on a content line)
 @euler-setup
-:voice narrator
-We want the sum of one over n squared. [pause 0.8]
+  utterance:
+    voice: narrator        # optional per-utterance directives
+    pace: slow             # slow | normal | fast
+    direct: warm, unhurried  # optional director's note; engines ignore it
+    text: We want the sum of one over n squared.
+  pause: 0.8
 
 @euler-trick
-:pace slow
-Watch the denominators. [pause 1] This is the trick.
+  transition-in: crossfade 0.5   # optional; default is a cut
+  utterance:
+    text: Watch the denominators.
+  pause: 1
+  utterance:
+    text: This is the trick.
 
 @intro-overview
-[pause 3]            # silent slide — held 3 seconds
+  pause: 3                 # silent slide — held 3 seconds
 ```
 
 - `@<slide-id>` starts a block.
-- `:voice <name>` / `:pace slow|normal|fast` are optional per-block directives.
-  Voices are defined in `slidesonnet.toml`.
-- `[pause N]` is the single timing primitive: a mid-sentence pause, an
-  end-of-slide hold, or — as the only content — a silent slide.
-- Body lines within a block join with spaces.
+- `utterance:` introduces one spoken line. Its `text:` holds the words; `voice:`,
+  `pace:` (`slow|normal|fast`), and `direct:` (a director's note the local engine
+  ignores) are optional. Voices are defined in `slidesonnet.toml`. A slide can
+  hold several utterances and mix voices — each is its own synthesis call.
+- `pause: N` is an explicit silence in seconds: between utterances, as an
+  end-of-slide hold, or alone as a silent slide.
+- `transition-in:` / `transition-out:` (`cut`, the default, or `crossfade N`)
+  bracket the slide. A boundary is written on only one side — setting an
+  outgoing transition clears the next slide's incoming one.
+- Indentation is cosmetic (lines are classified by their leading `key:` token).
+  After a `text:` line, any line that isn't a known directive continues the
+  text, so hand-wrapped narration parses; the file round-trips byte-for-byte
+  except for blocks you actually change.
 
 ## 4. Render
 
@@ -91,7 +109,7 @@ slidesonnet edit  deck.pdf                                  # GUI editor + previ
 
 ```toml
 [tts]
-backend = "kokoro"         # or "elevenlabs"
+backend = "kokoro"
 
 [tts.kokoro]
 voice = "af_heart"
@@ -100,9 +118,8 @@ voice = "af_heart"
 resolution = "1920x1080"
 fps = 24
 
-[voices.narrator]
+[voices.narrator]            # named voice → per-backend voice id
 kokoro = "af_heart"
-elevenlabs = "EXAVITQu4vr4xnSDxMaL"
 
 pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
 ```
