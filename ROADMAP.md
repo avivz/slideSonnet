@@ -105,35 +105,18 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    chapter markers from the narration sidecars. **[human]**
 7. [ ] **README refresh** — new video links, Kokoro install instructions,
    editor screenshots of the new dark studio theme. **[agent]**
-8. [ ] **Async generation job queue** (non-blocking regenerate + play
-   coordination). *Story:* As an editor user, I want audio generation to run in
-   the background so I can keep typing, navigating slides, and editing other
-   cards while a clip synthesizes, and I want **play** to coalesce with any
-   in-flight job for that clip instead of freezing the UI or double-generating.
-   *Acceptance examples:* (a) click regenerate on an utterance, then immediately
-   edit another card — the UI stays responsive (no spinner-lock) while the clip
-   synthesizes; (b) click regenerate, then click play before it finishes → play
-   *awaits that same job* and then plays, and **no second synth job** is launched
-   for the same clip; (c) two regenerate clicks on one clip in quick succession
-   produce exactly one synthesis job (coalesced); (d) with no in-flight job, play
-   behaves byte-for-byte as today. *Appetite:* ~two–three days — introduces a
-   per-clip async job-state machine (dedup/coalesce + await-pending) that the
-   #9 minor-UX bullets (background-generate, play-all-before-generated,
-   interruptible generate-all) then become thin consumers of. **[agent]**
-9. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
-   own little PR (several depend on the #8 job queue, noted inline):
+8. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+   own little PR (the background job queue they build on shipped — see Done):
    - When narration text is edited, immediately (before blur) flip the box's
      regenerate icon to *generate* and mark the slide not-up-to-date; if the
      edit is undone while typing, revert. (Partly related to editor pass #3,
      which already revokes the loaded track on edit — this is the per-box icon
      + dirty-state half that's still open.)
    - Play at 1.5×/2× speed for preview.
-   - Generate Kokoro audio quietly in the background once text has been stable
-     for a while. *(depends on #8 job queue)*
    - Let "play all" start before everything is generated, and pause if
-     playback ever catches up to the generation frontier. *(depends on #8)*
-   - Make "generate all" interruptible (it currently can't be stopped mid-run;
-     also verify the same for generation inside "play all"). *(depends on #8)*
+     playback ever catches up to the generation frontier. *(builds on the queue)*
+   - Make "generate all" / a queued background generation interruptible (today a
+     queued sweep runs to completion; add a cancel/stop for the queue).
 
 ## Later — before 1.0 final
 
@@ -182,6 +165,18 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Background generation job queue + auto-build on save** (2026-06-15):
+  audio synthesis moved off the editor's single busy gate onto a background
+  worker (`gui/jobs.py`), keyed on the content-addressed cache filename so two
+  requests for one clip coalesce and **play** awaits any in-flight job instead
+  of racing or double-synthesizing. Per-utterance generate, "generate missing",
+  and play all route through it; the per-clip button shows a queued/generating
+  spinner. New opt-in **"Auto-generate as I edit"** checkbox (off by default,
+  persisted, local-only) fills the deck in the background and regenerates each
+  edited slide after a debounce, skipping the utterance under the cursor. Kokoro
+  writes were made atomic (temp+rename) for safe concurrency. Covered by
+  `tests/test_jobs.py` + new GUI flow tests (responsiveness, play-awaits-job,
+  paid-disabled, sweep, debounced incremental). The former Next #8.
 - [x] **CI typecheck fix** (2026-06-15): `main`'s `typecheck` job had been red
   since 2026-06-12 — `mypy` couldn't find `numpy` (`kokoro.py:132`), which ships
   only with the `[kokoro]` extra while CI's typecheck installs `.[dev]`. Added

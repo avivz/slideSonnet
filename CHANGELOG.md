@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Background audio generation.** Generating a clip no longer freezes the
+  editor — synthesis runs on a background queue while you keep typing,
+  navigating, and editing. Each utterance's generate button shows a spinner
+  while its clip is queued or rendering, then settles green. Two requests for
+  the same clip (a double-click, or pressing play right after regenerate) share
+  one job instead of synthesizing twice, and **Play** waits for any in-flight
+  job for the clips it needs rather than racing it.
+- **Auto-generate as you edit** (opt-in, off by default). A console checkbox
+  quietly generates a slide's audio in the background after you edit it: enabling
+  it fills every uncached clip except the slide you're on, and thereafter each
+  edited slide is generated once its text has been stable for a couple of
+  seconds (the utterance you're actively typing in is skipped until you move on).
+  Local-only — with a paid cloud engine the checkbox is disabled, since an
+  unattended trigger must never bill per save.
+
+### Fixed
+- **Kokoro now writes audio atomically** (temp file + rename), so two concurrent
+  generations of the same clip — or a regenerate racing a queued job — can no
+  longer corrupt the cache file or expose a half-written WAV to a reader.
+
 ## [1.0.0a1] — 2026-06-15
 
 First public alpha. The repository went public for this release.
