@@ -82,7 +82,10 @@ def editor_server() -> Iterator[ServerFactory]:
         env["SLIDESONNET_TEST_STUB_SECONDS"] = str(stub_seconds)
         if real_tts:
             env["SLIDESONNET_TEST_REAL_TTS"] = "1"
-        proc = subprocess.Popen([sys.executable, str(LAUNCHER)], env=env)
+        # run from the deck's tmp dir so NiceGUI's app.storage.general (the
+        # auto-build checkbox persists there) lands in .nicegui/ under tmp_path
+        # — isolated per deck, never leaking the flag between browser subprocesses
+        proc = subprocess.Popen([sys.executable, str(LAUNCHER)], env=env, cwd=str(pdf.parent))
         procs.append(proc)
         url = f"http://127.0.0.1:{port}"
         deadline = time.time() + 30.0
@@ -190,13 +193,17 @@ def test_typing_then_generating_without_blur_uses_the_typed_text(
     box.fill("")
     box.press_sequentially("Brand new words.")
     marked(page, "gen-seg-0").click()  # straight to Generate — no blur-click elsewhere
-    expect(page.get_by_text("Synthesized").first).to_be_visible(timeout=30_000)
-    assert "Brand new words." in _sidecar(tmp_path)
+    # generation runs on the background queue (no toast); enqueue_segment flushes
+    # the typed text to disk first, so the worker synthesizes the NEW words
     new_hash = text_hash("Brand new words.")
-    cached = [f.name for f in audio_dir(pdf).glob("*.wav")]
-    assert any(name.startswith(new_hash) for name in cached), (
-        f"synthesized the stale text, not the typed one (cache: {cached})"
+    assert _eventually(
+        lambda: any(f.name.startswith(new_hash) for f in audio_dir(pdf).glob("*.wav")),
+        timeout=30.0,
+    ), (
+        "synthesized the stale text, not the typed one "
+        f"(cache: {[f.name for f in audio_dir(pdf).glob('*.wav')]})"
     )
+    assert "Brand new words." in _sidecar(tmp_path)
 
 
 # --------------------------------------------------------------------------
@@ -251,16 +258,19 @@ def test_generate_cache_regenerate_and_blur_edit_with_real_kokoro(
     expect(gen).to_contain_text("graphic_eq")  # nothing cached: plain generate
 
     gen.click()
-    expect(page.get_by_text("Synthesized").first).to_be_visible(timeout=540_000)
+    # background queue: the button spins, then settles on the re-generate
+    # affordance once the clip lands (no toast to wait on anymore)
+    expect(gen).to_contain_text("autorenew", timeout=540_000)  # fully cached
     wavs = list(audio_dir(pdf).glob("*.wav"))
     assert len(wavs) == 1, f"expected one cached clip, found {wavs}"
     clip = wavs[0]
     first_mtime = clip.stat().st_mtime_ns
-    expect(gen).to_contain_text("autorenew")  # fully cached: re-generate affordance
 
-    gen.click()
-    expect(page.get_by_text("Re-generated").first).to_be_visible(timeout=120_000)
-    assert clip.stat().st_mtime_ns != first_mtime, "force synth did not rewrite the clip"
+    gen.click()  # re-generate: force a fresh take
+    assert _eventually(lambda: clip.stat().st_mtime_ns != first_mtime, timeout=120.0), (
+        "force synth did not rewrite the clip"
+    )
+    expect(gen).to_contain_text("autorenew", timeout=120_000)  # cached again
 
     # a PROPER blur-edit: type, then click elsewhere so blur commits the text
     box = marked(page, "utext-0").locator("textarea")
@@ -271,14 +281,46 @@ def test_generate_cache_regenerate_and_blur_edit_with_real_kokoro(
     expect(gen).to_contain_text("graphic_eq")  # new text means uncached again
 
     gen.click()
-    # wait on the cache file itself — the "Synthesized" toast from the first
-    # generation may still be on screen, so its text can't be trusted here
     new_hash = text_hash("A different narration line.")
     assert _eventually(
         lambda: any(f.name.startswith(new_hash) for f in audio_dir(pdf).glob("*.wav")),
         timeout=120.0,
     ), "no cache entry for the blur-edited text"
     expect(gen).to_contain_text("autorenew", timeout=30_000)  # cached again
+
+
+# --------------------------------------------------------------------------
+# journey 4b: auto-build generates on a REAL blur after the debounce
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.timeout(120)
+def test_auto_build_generates_edited_slide_on_blur(
+    page: Page, editor_server: ServerFactory, tmp_path: Path
+) -> None:
+    """Story: with 'Auto-generate as I edit' on, typing a slide then blurring it
+    generates its audio in the background after the debounce — no generate click.
+
+    This is the focus/blur + debounce path the in-process sim can't see: it
+    writes widget values synchronously and never fires a real blur. Stub TTS, so
+    the only delay is the ~2.5s debounce.
+    """
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")  # only intro-title is narrated
+    page.goto(editor_server(pdf))
+    # enable auto-build; the one-time sweep finds no other narrated slide to fill
+    marked(page, "auto-build").click()
+    box = marked(page, "utext-0").locator("textarea")
+    box.click()
+    box.fill("")
+    box.press_sequentially("Quietly generated in the background.")
+    page.locator(".ss-id").click()  # real blur → save → debounced auto-build
+    new_hash = text_hash("Quietly generated in the background.")
+    assert _eventually(
+        lambda: any(f.name.startswith(new_hash) for f in audio_dir(pdf).glob("*.wav")),
+        timeout=20.0,  # ~2.5s debounce + stub synth + slack
+    ), "auto-build did not generate the edited slide's audio after blur"
+    # and it lands as the cached (green) state without any generate click
+    expect(marked(page, "gen-seg-0")).to_contain_text("autorenew", timeout=10_000)
 
 
 # --------------------------------------------------------------------------
