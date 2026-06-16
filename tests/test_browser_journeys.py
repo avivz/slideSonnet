@@ -271,6 +271,36 @@ def test_transition_morph_overlay_runs_during_deck_preview(
     assert _eventually(overlay_on, timeout=15.0), "morph overlay never activated during preview"
 
 
+@pytest.mark.timeout(120)
+def test_single_slide_preview_plays_its_in_and_out_transitions(
+    page: Page, editor_server: ServerFactory, tmp_path: Path
+) -> None:
+    """Playing one slide should animate its own in/out transitions, not flip."""
+    pdf = _prep(tmp_path, "@intro-title\nHello there friends.\n\n@euler-setup\nWorld.\n")
+    sidecar = tmp_path / "marked.narration"
+    text = sidecar.read_text(encoding="utf-8")
+    # slide 1 fades in and wipes out; preview-only, so write the sidecar directly
+    sidecar.write_text(
+        text.replace(
+            "@intro-title\n",
+            "@intro-title\n  transition-in: fade 0.8\n  transition-out: wipeleft 0.8\n",
+        ),
+        encoding="utf-8",
+    )
+    page.goto(editor_server(pdf, stub_seconds=2.0))
+    marked(page, "play-slide").click()
+    expect(page.get_by_text("Preview ready").first).to_be_visible(timeout=30_000)
+
+    def overlay_on() -> bool:
+        return bool(
+            page.evaluate(
+                "() => document.querySelector('.ss-morph')?.classList.contains('ss-on') ?? false"
+            )
+        )
+
+    assert _eventually(overlay_on, timeout=15.0), "single-slide morph never activated"
+
+
 # --------------------------------------------------------------------------
 # journey 4 (REAL KOKORO): generate → cache → re-generate → blur-edit
 # --------------------------------------------------------------------------

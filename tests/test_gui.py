@@ -87,6 +87,40 @@ def test_morph_schedule_clamps_duration_to_slide_span() -> None:
     assert step["dur"] == 1.0  # clamped to the span, never morphs over the boundary
 
 
+def test_single_slide_morph_plays_in_and_out_transitions() -> None:
+    from slidesonnet.gui.app import _single_slide_morph
+    from slidesonnet.narration.model import PageNarration, Transition
+
+    block = PageNarration(
+        slide_id="b",
+        transition_in=Transition("fade", 0.5),
+        transition_out=Transition("wipeleft", 0.5),
+    )
+    images = [Path("a.png"), Path("b.png"), Path("c.png")]
+
+    steps = _single_slide_morph(block, 1, images, total=6.0, media_url=lambda p: f"/u/{p.name}")
+
+    assert len(steps) == 2
+    intro, outro = steps
+    assert intro["kind"] == "fade" and intro["at"] == 0.5  # in-transition completes near the open
+    assert intro["from"] == "/u/a.png" and intro["to"] == "/u/b.png"
+    assert outro["kind"] == "wipeleft" and outro["at"] == 6.0  # out-transition lands at the end
+    assert outro["from"] == "/u/b.png" and outro["to"] == "/u/c.png"
+
+
+def test_single_slide_morph_uses_black_frame_at_deck_ends() -> None:
+    from slidesonnet.gui.app import _single_slide_morph
+    from slidesonnet.narration.model import PageNarration, Transition
+
+    block = PageNarration(slide_id="a", transition_in=Transition("fadeblack", 0.5))
+    images = [Path("a.png"), Path("b.png")]
+
+    (intro,) = _single_slide_morph(block, 0, images, total=4.0, media_url=lambda p: p.name)
+
+    assert intro["from"] is None  # first slide has no previous — morph against black
+    assert intro["to"] == "a.png"
+
+
 async def test_navigation(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pdf = _prep(tmp_path)
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))

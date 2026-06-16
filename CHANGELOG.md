@@ -8,13 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 - **Slide transition gallery.** `transition-out`/`transition-in` grew from
   `cut`/`crossfade` to FFmpeg's full `xfade` set, organized as a curated picker:
-  pick a **Type** (Fade, Dissolve, Wipe, Slide, Cover, Reveal, Circle) and, where
-  it applies, a **Direction** (Left/Right/Up/Down, or Open/Close). The editor
-  renders an in-place **preview morph** that approximates the chosen effect in the
-  browser and completes exactly at the slide boundary, so what you preview matches
-  the export's timing. On export the morph is *absorbed into the outgoing slide's
-  trailing hold* — the deck's total duration and audio are unchanged. (`crossfade`
-  still parses, as an alias for `fade`.)
+  pick a **Type** (Fade, Fade through black, Fade through white, Dissolve, Wipe,
+  Slide, Cover, Reveal, Circle) and, where it applies, a **Direction**
+  (Left/Right/Up/Down, or Open/Close). The editor renders an in-place **preview
+  morph** that approximates the chosen effect in the browser and completes exactly
+  at the slide boundary, so what you preview matches the export's timing — for the
+  whole-deck preview *and* a single-slide play (which shows that slide's own in/out
+  transitions, against a black frame at the deck's first/last slide). On export the
+  morph is *absorbed into the outgoing slide's trailing hold* — the deck's total
+  duration and audio are unchanged. (`cut` is an instant hard cut, no fade;
+  `crossfade` still parses, as an alias for `fade`.)
 - **Background audio generation.** Generating a clip no longer freezes the
   editor — synthesis runs on a background queue while you keep typing,
   navigating, and editing. Each utterance's generate button shows a spinner

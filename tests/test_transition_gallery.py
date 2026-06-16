@@ -44,10 +44,12 @@ def test_gallery_has_crossfade_alias_and_directional_names() -> None:
     assert {"circleopen", "circleclose"} <= T.TRANSITION_NAMES
 
 
-def test_curated_8_families() -> None:
+def test_curated_families() -> None:
     assert [f.label for f in T.FAMILIES] == [
         "Cut",
         "Fade",
+        "Fade through black",
+        "Fade through white",
         "Dissolve",
         "Wipe",
         "Slide",
@@ -55,6 +57,16 @@ def test_curated_8_families() -> None:
         "Reveal",
         "Circle",
     ]
+
+
+def test_fade_through_color_names_are_valid_xfade() -> None:
+    # fadeblack/fadewhite are real xfade transitions — pass straight through and
+    # decompose as their own non-directional families.
+    assert {"fadeblack", "fadewhite"} <= T.TRANSITION_NAMES
+    assert T.xfade_name("fadeblack") == "fadeblack"
+    assert T.xfade_name("fadewhite") == "fadewhite"
+    assert T.decompose("fadeblack") == ("fadeblack", None)
+    assert T.compose("fadewhite", None) == "fadewhite"
 
 
 # --- family <-> name decomposition (the picker) ----------------------------

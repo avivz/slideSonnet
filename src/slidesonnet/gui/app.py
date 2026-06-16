@@ -30,7 +30,7 @@ from slidesonnet.gui.launch import (
 )
 from slidesonnet.gui.state import EditorState, cue_start
 from slidesonnet.narration import transitions as trans
-from slidesonnet.narration.model import Deck, Pace, Segment, Transition
+from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
 
 logger = logging.getLogger(__name__)
@@ -225,6 +225,42 @@ def _morph_schedule(
     return steps
 
 
+def _single_slide_morph(
+    block: PageNarration,
+    index: int,
+    images: Sequence[Path],
+    total: float,
+    media_url: Callable[[Path], str],
+) -> list[dict[str, Any]]:
+    """Morph steps for a *single-slide* preview: its own in- and out-transition.
+
+    The in-transition morphs the previous slide into this one as playback opens;
+    the out-transition morphs this slide into the next as it closes. A missing
+    neighbour (the deck's first/last slide) morphs against a black frame
+    (``from``/``to`` is ``None``). Each is clamped to half the slide so the two
+    never overlap.
+    """
+
+    def url(j: int) -> str | None:
+        return media_url(images[j]) if 0 <= j < len(images) else None
+
+    here = url(index)
+    if here is None:  # no rasterized image — nothing to morph
+        return []
+    steps: list[dict[str, Any]] = []
+    t_in = block.transition_in
+    if t_in.is_animated:
+        d = max(0.05, min(t_in.seconds, total / 2))
+        steps.append({"at": d, "dur": d, "kind": t_in.kind, "from": url(index - 1), "to": here})
+    t_out = block.transition_out
+    if t_out.is_animated:
+        d = max(0.05, min(t_out.seconds, total / 2))
+        steps.append(
+            {"at": total, "dur": d, "kind": t_out.kind, "from": here, "to": url(index + 1)}
+        )
+    return steps
+
+
 def _serve_media(state: EditorState) -> None:
     rdir = render_dir(state.pdf_path)
     (rdir / "pages").mkdir(parents=True, exist_ok=True)
@@ -391,19 +427,25 @@ class PreviewPlayer:
         except Exception:
             pass
 
-    def _arm_morph(self, whole_deck: bool) -> None:
-        """Push the boundary-transition schedule to the client morph engine."""
-        if not whole_deck or not self.cues:
-            self._run_js("window.ssMorph && window.ssMorph.stop()")
-            return
+    def _arm_morph(self, whole_deck: bool, total: float) -> None:
+        """Push the morph schedule to the client engine.
+
+        Whole-deck preview plays each boundary transition (cue-aligned); a
+        single-slide preview plays just that slide's own in/out transitions.
+        """
         state = self.view.state
         try:
             images = state.ensure_images()
         except Exception:
             images = []
-        steps = _morph_schedule(
-            self.cues, state.deck, images, lambda p: _media_url(state, p, cache_bust=True)
-        )
+        url = lambda p: _media_url(state, p, cache_bust=True)  # noqa: E731
+        if whole_deck:
+            steps = _morph_schedule(self.cues, state.deck, images, url)
+        else:
+            steps = _single_slide_morph(state.current_block, state.index, images, total, url)
+        if not steps:
+            self._run_js("window.ssMorph && window.ssMorph.stop()")
+            return
         cfg = {
             "audioId": f"c{self.audio.id}",
             "stageId": f"c{self.view.stage_view.id}",
@@ -481,7 +523,7 @@ class PreviewPlayer:
                     view.flash("Preview stopped", "info")
                     return
                 self.cues = preview.cues if whole_deck else []
-                self._arm_morph(whole_deck)
+                self._arm_morph(whole_deck, preview.total_duration)
                 # whole-deck playback starts where the user is, not back at slide 1:
                 # seek to the current slide's cue (a #t= media fragment so the
                 # browser starts there on load).

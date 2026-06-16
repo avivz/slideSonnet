@@ -6,8 +6,9 @@
    COMPLETES at its boundary, matching the deck's absorb-into-hold timing. */
 (function () {
   var GRACE = 0.3; // hold the incoming frame briefly so a late cue-flip can't flash
+  var UNSET = {}; // distinct from any URL string and from null (a deliberate black layer)
   var raf = null, audio = null, overlay = null, layerA = null, layerB = null;
-  var steps = [], srcA = null, srcB = null;
+  var steps = [], srcA = UNSET, srcB = UNSET;
 
   function ensureOverlay(stage) {
     overlay = stage.querySelector(':scope > .ss-morph');
@@ -35,9 +36,20 @@
     for (var i = 0; i < fams.length; i++) {
       if (kind.indexOf(fams[i]) === 0) return { t: fams[i], d: kind.slice(fams[i].length) };
     }
+    if (kind === 'fadeblack') return { t: 'fadecolor', c: '#000' };
+    if (kind === 'fadewhite') return { t: 'fadecolor', c: '#fff' };
     if (kind === 'circleopen') return { t: 'circle', d: 'open' };
     if (kind === 'circleclose') return { t: 'circle', d: 'close' };
     return { t: 'fade' };
+  }
+
+  // a layer shows an image, or — when there is no neighbour slide (a single
+  // slide's first/last transition) — a solid black frame to morph against
+  function setLayer(layer, url, prev) {
+    if (url === prev) return prev;
+    if (url) { layer.src = url; layer.style.background = ''; }
+    else { layer.removeAttribute('src'); layer.style.background = '#000'; }
+    return url;
   }
 
   // incoming layer revealed from an edge via shrinking inset (top right bottom left)
@@ -68,15 +80,21 @@
   }
 
   function apply(step, p) {
-    if (srcA !== step.from) { layerA.src = step.from; srcA = step.from; }
-    if (srcB !== step.to) { layerB.src = step.to; srcB = step.to; }
+    srcA = setLayer(layerA, step.from, srcA);
+    srcB = setLayer(layerB, step.to, srcB);
     layerA.style.opacity = '1'; layerB.style.opacity = '1';
     layerA.style.transform = ''; layerB.style.transform = '';
     layerA.style.clipPath = ''; layerB.style.clipPath = '';
     layerA.style.zIndex = '1'; layerB.style.zIndex = '2';
+    overlay.style.background = '';
     var e = effect(step.kind);
     if (e.t === 'fade') {
       layerB.style.opacity = String(p);
+    } else if (e.t === 'fadecolor') {
+      // fade the outgoing down to the colour by mid-point, then the incoming up
+      overlay.style.background = e.c;
+      layerA.style.opacity = String(Math.max(0, 1 - 2 * p));
+      layerB.style.opacity = String(Math.max(0, 2 * p - 1));
     } else if (e.t === 'wipe') {
       layerB.style.clipPath = wipeClip(e.d, p);
     } else if (e.t === 'cover') {
@@ -125,7 +143,7 @@
       if (!stage || !audio) { steps = []; return; }
       ensureOverlay(stage);
       hide();
-      srcA = srcB = null;
+      srcA = srcB = UNSET;
       steps = cfg.steps || [];
       if (raf === null) raf = requestAnimationFrame(tick);
     },

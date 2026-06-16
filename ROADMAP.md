@@ -39,7 +39,11 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    clip produced); ✅ in-editor preview morph (a client-side overlay,
    `gui/static/morph.html` driven by `_morph_schedule`, approximates the xfade
    in the browser and **completes at the cue boundary** to match the export's
-   timing; `test_morph_schedule_*` + a browser journey). *Remaining follow-ups:*
+   timing — whole-deck *and* single-slide play, the latter showing the slide's
+   own in/out transitions against a black frame at the deck ends;
+   `test_morph_schedule_*`/`_single_slide_morph` + browser journeys); ✅
+   `fadeblack`/`fadewhite` families ("Fade through black/white"); ✅ the
+   preview audio track is fingerprint-cached so a repeat play does no ffmpeg. *Remaining follow-ups:*
    the transition is currently absorbed into the slide's `tail_seconds` hold only
    and **clamped** to it (a longer request is shortened + logged) — extend to
    also draw from the next slide's `pre_silence` lead and from trailing `pause:`

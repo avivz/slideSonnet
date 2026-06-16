@@ -61,6 +61,8 @@ def _lrud(prefix: str) -> tuple[tuple[str, str], ...]:
 FAMILIES: tuple[Family, ...] = (
     Family("cut", "Cut"),
     Family("fade", "Fade"),
+    Family("fadeblack", "Fade through black"),
+    Family("fadewhite", "Fade through white"),
     Family("dissolve", "Dissolve"),
     Family("wipe", "Wipe", _lrud("wipe")),
     Family("slide", "Slide", _lrud("slide")),
