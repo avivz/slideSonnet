@@ -173,6 +173,67 @@ def test_concatenate_segments_xfade_output_duration(work_dir):
 
 
 @pytest.mark.integration
+def test_compose_transition_clip_duration(work_dir):
+    from slidesonnet.video.composer import compose_transition_clip
+
+    a = work_dir / "a.png"
+    b = work_dir / "b.png"
+    _make_png(a)
+    _make_png(b)
+    out = work_dir / "trans.mp4"
+    compose_transition_clip(
+        a, b, out, duration=0.5, transition="wipeleft", resolution="640x480", crf=30
+    )
+    assert out.exists()
+    assert 0.4 <= get_duration(out) <= 0.7
+
+
+@pytest.mark.integration
+def test_compose_video_absorbs_transition_into_hold(work_dir):
+    """A transition is absorbed into the slide's tail hold, so the deck's total
+    length is unchanged vs an all-cut render — and a morph clip is produced."""
+    from slidesonnet.config import Config
+    from slidesonnet.models import VideoConfig
+    from slidesonnet.narration.model import Transition
+    from slidesonnet.render import DeckTimeline, compose_video
+    from slidesonnet.timing import PageTiming
+
+    images = []
+    audios = []
+    for i in range(2):
+        img = work_dir / f"img{i}.png"
+        aud = work_dir / f"a{i}.wav"
+        _make_png(img)
+        _make_wav(aud, duration_seconds=2.0)
+        images.append(img)
+        audios.append(aud)
+    tl = DeckTimeline(
+        pages=[
+            PageTiming(slide_id="a", duration=2.0, lead=0.3, tail=0.5),
+            PageTiming(slide_id="b", duration=2.0, lead=0.3, tail=0.5),
+        ]
+    )
+    config = Config(video=VideoConfig(resolution="640x480", crf=30))
+    rdir = work_dir / "r"
+
+    cut_out = work_dir / "cut.mp4"
+    compose_video(tl, images, cut_out, config=config, page_audios=audios, render_dir=rdir / "cut")
+    wipe_out = work_dir / "wipe.mp4"
+    compose_video(
+        tl,
+        images,
+        wipe_out,
+        config=config,
+        page_audios=audios,
+        render_dir=rdir / "wipe",
+        transitions=[Transition("wipeleft", 0.5)],
+    )
+
+    assert abs(get_duration(cut_out) - get_duration(wipe_out)) <= 0.25
+    assert (rdir / "wipe" / "segments" / "trans-0001.mp4").exists()
+
+
+@pytest.mark.integration
 def test_concatenate_segments_xfade_mixed_audio(work_dir):
     """xfade must handle segments with different audio sample rates and channels."""
     segments = []

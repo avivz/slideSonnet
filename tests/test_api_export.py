@@ -7,7 +7,6 @@ by the export integration tier.
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,7 @@ import pytest
 
 from slidesonnet import api
 from slidesonnet.audio.synth import SynthResult
+from slidesonnet.narration.model import Transition
 from tests.conftest import prep_marked_deck as _prep
 
 
@@ -38,9 +38,18 @@ def pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         return tmp_path / "track.wav", [tmp_path / "p.wav" for _ in timeline.pages]
 
     def fake_compose(
-        timeline: Any, images: Any, output: Path, *, config: Any, page_audios: Any, render_dir: Path
+        timeline: Any,
+        images: Any,
+        output: Path,
+        *,
+        config: Any,
+        page_audios: Any,
+        render_dir: Path,
+        transitions: Any = None,
     ) -> Path:
-        calls["compose"].append({"output": output, "page_audios": page_audios})
+        calls["compose"].append(
+            {"output": output, "page_audios": page_audios, "transitions": transitions}
+        )
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"mp4")
         return output
@@ -89,24 +98,21 @@ def test_export_writes_requested_subtitle_formats(tmp_path: Path, pipeline: dict
     assert result.subtitles == []
 
 
-def test_export_warns_once_about_uncomposited_crossfades(
-    tmp_path: Path, pipeline: dict[str, Any], caplog: pytest.LogCaptureFixture
+def test_export_passes_boundary_transitions_to_compose(
+    tmp_path: Path, pipeline: dict[str, Any]
 ) -> None:
-    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    # Two narrated slides with a wipe leaving the first: export hands compose the
+    # per-boundary transitions instead of dropping them (or warning).
+    pdf = _prep(tmp_path, "@intro-title\nHi.\n")
     sidecar = tmp_path / "marked.narration"
     text = sidecar.read_text(encoding="utf-8")
-    sidecar.write_text(text + "  transition-out: crossfade 1.0\n", encoding="utf-8")
+    sidecar.write_text(text + "  transition-out: wipeleft 0.5\n", encoding="utf-8")
 
-    with caplog.at_level(logging.WARNING):
-        api.export(pdf, tmp_path / "out.mp4")
-    assert "not yet composited" in caplog.text
-
-    caplog.clear()
-    (tmp_path / "plain").mkdir()
-    pdf2 = _prep(tmp_path / "plain", "@intro-title\nHello.\n")
-    with caplog.at_level(logging.WARNING):
-        api.export(pdf2, tmp_path / "plain.mp4")
-    assert "not yet composited" not in caplog.text  # all-cut decks stay quiet
+    api.export(pdf, tmp_path / "out.mp4")
+    transitions = pipeline["compose"][0]["transitions"]
+    assert transitions is not None
+    assert transitions[0] == Transition("wipeleft", 0.5)
+    assert all(t.kind == "cut" for t in transitions[1:])
 
 
 def test_build_preview_whole_deck(tmp_path: Path, pipeline: dict[str, Any]) -> None:

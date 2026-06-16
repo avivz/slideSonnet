@@ -133,6 +133,85 @@ def compose_silent_segment(
     _run_ffmpeg(cmd)
 
 
+def compose_transition_clip(
+    image_from: Path,
+    image_to: Path,
+    output: Path,
+    duration: float,
+    transition: str,
+    resolution: str = "1920x1080",
+    fps: int = 24,
+    crf: int = 23,
+    preset: str = "medium",
+) -> None:
+    """Render a *duration*-second silent clip that xfades *image_from*→*image_to*.
+
+    ``transition`` is an FFmpeg xfade name (``wipeleft``, ``slideup``, ``fade``,
+    …). The clip carries silent audio so it can be spliced between two per-slide
+    segments (see :func:`render.compose_video`): it replaces an equal slice of
+    the outgoing slide's trailing hold, so the deck's total duration and audio
+    waveform are unchanged — the morph just plays over otherwise-static hold
+    time.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+    logger.debug("transition: %s %.3fs %s→%s", transition, duration, image_from.name, image_to.name)
+    pad = _scale_pad_filter(resolution)
+    # Loop each still a hair longer than the xfade so offset+duration stays
+    # inside the input length — xfade is strict about that boundary.
+    src_len = duration + 0.3
+    filter_complex = (
+        f"[0:v]{pad},setsar=1[a];"
+        f"[1:v]{pad},setsar=1[b];"
+        f"[a][b]xfade=transition={transition}:duration={duration}:offset=0,fps={fps}[v]"
+    )
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-loop",
+        "1",
+        "-t",
+        str(src_len),
+        "-i",
+        str(image_from),
+        "-loop",
+        "1",
+        "-t",
+        str(src_len),
+        "-i",
+        str(image_to),
+        "-f",
+        "lavfi",
+        "-t",
+        str(duration),
+        "-i",
+        "anullsrc=r=44100:cl=stereo",
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[v]",
+        "-map",
+        "2:a",
+        "-c:v",
+        "libx264",
+        "-tune",
+        "stillimage",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-r",
+        str(fps),
+        "-preset",
+        preset,
+        "-crf",
+        str(crf),
+        "-t",
+        str(duration),
+        str(output),
+    ]
+    _run_ffmpeg(cmd)
+
+
 def concatenate_segments(segments: list[Path], output: Path) -> None:
     """Concatenate video segments into a single video using ffmpeg concat demuxer."""
     logger.debug("concatenate: %d segments → %s", len(segments), output.name)

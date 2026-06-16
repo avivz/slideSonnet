@@ -214,19 +214,12 @@ def export(
         synthesize as _synth,
     )
     from slidesonnet.cache import audio_dir, render_dir
+    from slidesonnet.diagnostics import boundary_transition
     from slidesonnet.render import build_timeline, compose_video, render_audio_track
     from slidesonnet.timing import TimingMode, parse_timing
 
-    import logging
-
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
-
-    if any(b.has_nondefault_transitions for b in deck.narration.values()):
-        logging.getLogger(__name__).warning(
-            "slide transitions are recorded but not yet composited — "
-            "rendering them as hard cuts for now"
-        )
 
     audible = (not silent) and mode.kind == "tts"
     if silent and mode.kind == "tts":
@@ -247,6 +240,11 @@ def export(
         )
     else:
         timeline = build_timeline(deck, mode, video=config.video)
+    pages = deck.pages
+    boundaries = [
+        boundary_transition(deck.page_narration(pages[i]), deck.page_narration(pages[i + 1]))
+        for i in range(len(pages) - 1)
+    ]
     compose_video(
         timeline,
         _images(pdf_path, rdir),
@@ -254,6 +252,7 @@ def export(
         config=config,
         page_audios=page_audios,
         render_dir=rdir,
+        transitions=boundaries,
     )
 
     subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)

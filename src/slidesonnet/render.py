@@ -7,13 +7,15 @@ exported video, the preview cue sheet, and the subtitles.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from slidesonnet.audio.track import Cue, assemble_track, build_page_audio, cue_sheet
 from slidesonnet.config import Config
 from slidesonnet.models import VideoConfig
-from slidesonnet.narration.model import Deck, PageNarration, Segment
+from slidesonnet.narration import transitions as transitions_mod
+from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 from slidesonnet.subtitles import SubtitleEntry, split_text
 from slidesonnet.timing import PageTiming, TimingMode, compute_page_timing
 from slidesonnet.video.composer import (
@@ -21,6 +23,8 @@ from slidesonnet.video.composer import (
     compose_silent_segment,
     concatenate_segments,
 )
+
+logger = logging.getLogger(__name__)
 
 # Default hold (seconds) for a page with no speech and no explicit pause.
 DEFAULT_HOLD = 2.5
@@ -166,22 +170,53 @@ def compose_video(
     config: Config,
     page_audios: list[Path] | None,
     render_dir: Path,
+    transitions: list[Transition] | None = None,
 ) -> Path:
-    """Compose page images + per-page audio (or silence) into the final MP4."""
+    """Compose page images + per-page audio (or silence) into the final MP4.
+
+    *transitions* (when given) holds the boundary transition between page ``i``
+    and ``i+1`` at index ``i`` (length ``len(pages) - 1``). An animated
+    transition of ``D`` seconds is *absorbed into the outgoing slide's trailing
+    hold*: that slide's segment is shortened by ``D`` (dropping only tail
+    silence) and a ``D``-second morph clip is spliced in, so the deck's total
+    duration and audio are unchanged. With no transitions (or all cuts) the
+    segments concatenate back-to-back exactly as before.
+    """
     # Lazy module-qualified import so tests can patch get_duration at source.
     from slidesonnet.video import composer
 
     v = config.video
     seg_dir = render_dir / "segments"
     seg_dir.mkdir(parents=True, exist_ok=True)
-    segments: list[Path] = []
+    boundaries = transitions or []
+    n = len(timeline.pages)
+    pieces: list[Path] = []
     for i, page in enumerate(timeline.pages):
+        out_tr = boundaries[i] if i < len(boundaries) else Transition()
+        xname = transitions_mod.xfade_name(out_tr.kind) if out_tr.is_animated else None
+        # Absorb the morph into this slide's trailing hold only (never over
+        # speech); clamp to the tail and note when a longer one was requested.
+        d_out = 0.0
+        if xname is not None and i + 1 < n:
+            d_out = min(out_tr.seconds, page.tail)
+            if d_out < out_tr.seconds:
+                logger.warning(
+                    "transition '%s' (%.2fs) exceeds slide %s's %.2fs tail hold; "
+                    "shortened to %.2fs — raise tail_seconds or add a trailing pause",
+                    out_tr.kind,
+                    out_tr.seconds,
+                    page.slide_id,
+                    page.tail,
+                    d_out,
+                )
+        full = page.duration if page_audios is None else composer.get_duration(page_audios[i])
+        seg_duration = max(0.1, full - d_out)
         seg = seg_dir / f"seg-{i + 1:04d}.mp4"
         if page_audios is None:
             compose_silent_segment(
                 page_images[i],
                 seg,
-                duration=page.duration,
+                duration=seg_duration,
                 resolution=v.resolution,
                 fps=v.fps,
                 crf=v.crf,
@@ -192,13 +227,27 @@ def compose_video(
                 page_images[i],
                 page_audios[i],
                 seg,
-                duration=composer.get_duration(page_audios[i]),
+                duration=seg_duration,
                 resolution=v.resolution,
                 fps=v.fps,
                 crf=v.crf,
                 preset=v.preset,
             )
-        segments.append(seg)
+        pieces.append(seg)
+        if d_out > 0 and xname is not None:
+            tclip = seg_dir / f"trans-{i + 1:04d}.mp4"
+            composer.compose_transition_clip(
+                page_images[i],
+                page_images[i + 1],
+                tclip,
+                duration=d_out,
+                transition=xname,
+                resolution=v.resolution,
+                fps=v.fps,
+                crf=v.crf,
+                preset=v.preset,
+            )
+            pieces.append(tclip)
     output.parent.mkdir(parents=True, exist_ok=True)
-    concatenate_segments(segments, output)
+    concatenate_segments(pieces, output)
     return output

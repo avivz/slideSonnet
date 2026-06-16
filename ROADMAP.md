@@ -21,24 +21,31 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    incrementals of one logical Beamer/Typst slide) a wipe/slide reads as a
    *build animation*, recovering the motion a flat PDF throws away. Today only
    `cut`/`crossfade` exist in the model and even `crossfade` renders as a hard
-   cut. *Acceptance examples:* (a) `transition-out: wipeleft 0.6` →
-   exported video wipes left over 0.6 s and total duration shrinks by 0.6 s;
-   (b) `crossfade N` still works (now just one entry in the gallery, mapped to
-   xfade `fade`/`dissolve`); (c) an unknown/misspelled transition name is a
-   `check` error, not a silent cut; (d) all-`cut` decks export byte-identically
-   to today; (e) the editor's transition picker offers the full gallery as a
-   dropdown. *Appetite:* ~three days (the gallery itself is nearly free once
-   one xfade type is wired — the cost is the model/grammar/editor plumbing).
-   *Design notes:* `TransitionKind` (`narration/model.py`) grows from
-   `cut|crossfade` to carry an xfade transition name; the sidecar grammar
-   `transition-out: <name> <seconds>` passes `<name>` straight through to
-   xfade's `transition=` param. `build_timeline` must learn overlap (it assumes
-   back-to-back cuts); a legacy unwired `concatenate_segments_xfade` sits in
-   `src/slidesonnet/video/composer.py` (predates the v1 rewrite — don't assume
-   it's drop-in). Audio: acrossfade across real slide changes; across a
-   sub-slide build the narration is usually continuous, so don't force an audio
-   blend there. Gallery reference: <https://trac.ffmpeg.org/wiki/Xfade>.
-   **[agent]**
+   cut. **Render model (decided 2026-06-16): absorb-into-hold** — a `D`-second
+   transition plays *during the outgoing slide's trailing hold*, so the deck's
+   total duration and audio are unchanged and preview stays aligned (no timeline
+   surgery). *Acceptance examples:* (a) `transition-out: wipeleft 0.5` → exported
+   video wipes left over 0.5 s during slide A's tail hold; total duration equals
+   the all-`cut` render (transition absorbed, not added/subtracted); (b)
+   `crossfade N` still works (now one entry in the gallery, mapped to xfade
+   `fade`); (c) an unknown/misspelled transition name is a `check`/parse error,
+   not a silent cut; (d) all-`cut` decks export byte-identically to today; (e)
+   the editor's transition picker offers the curated gallery via a short Type +
+   Direction picker. *Appetite:* ~three days.
+   *Progress (branch `feat/transition-gallery`):* ✅ contract (taxonomy module +
+   model/grammar, `test_transition_gallery.py`); ✅ picker UX (Type+Direction
+   selects, GUI + browser tests); ✅ rendering (`compose_transition_clip` +
+   `compose_video` absorb-into-hold, integration-tested: total unchanged, morph
+   clip produced). *Remaining follow-ups:* the transition is currently absorbed
+   into the slide's `tail_seconds` hold only and **clamped** to it (a longer
+   request is shortened + logged) — extend to also draw from the next slide's
+   `pre_silence` lead and from trailing `pause:` segments, and add the
+   "small added gap" fallback when a boundary has no hold; surface an
+   over-long-transition warning in `slidesonnet check`; and (nice-to-have) show
+   the morph in the in-editor preview (today the preview hard-flips at the same
+   instant the wipe completes — timing matches, visual doesn't). Audio is left
+   continuous (no acrossfade), which is correct for sub-slide builds. Gallery
+   reference: <https://trac.ffmpeg.org/wiki/Xfade>. **[agent]**
 
 2. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
    deck author who wants studio-grade narration, I want a `--engine inworld`
