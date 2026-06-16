@@ -34,6 +34,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   unattended trigger must never bill per save.
 
 ### Fixed
+- **Auto-generate now covers external changes and structural edits.** Two gaps
+  left slides ungenerated with "Auto-generate as I edit" on: (1) a recompile or a
+  sidecar edit from another tool didn't trigger a fill, so newly-added/changed
+  slides sat un-narrated — the editor now sweeps after any external reload; and
+  (2) committing a structural change (add/delete/reorder a block) flushed the
+  open utterance's text but never scheduled its generation, so typing a line then
+  adding a block saved the text without generating it.
 - **Kokoro now writes audio atomically** (temp file + rename), so two concurrent
   generations of the same clip — or a regenerate racing a queued job — can no
   longer corrupt the cache file or expose a half-written WAV to a reader.

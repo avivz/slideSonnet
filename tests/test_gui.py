@@ -1184,6 +1184,82 @@ async def test_auto_build_generates_edited_slide_after_debounce(
     assert calls == [{("intro-title", 0)}]  # only the edited slide was generated
 
 
+async def test_structural_edit_schedules_auto_build(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A structural commit (add/delete/reorder) flushes the open utterance, so it
+    must schedule generation too. Regression: typing a line then adding a block
+    saved the text but never auto-generated it."""
+    import asyncio
+
+    from slidesonnet.gui import app as app_module
+    from slidesonnet.gui.state import EditorState
+
+    monkeypatch.setattr(app_module, "AUTO_BUILD_DEBOUNCE_S", 0.1)
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    calls: list[set[tuple[str, int]]] = []
+    monkeypatch.setattr(
+        EditorState, "synth_targets", lambda self, t, *, force=False: (calls.append(set(t)), 1)[1]
+    )
+    await user.open("/")
+    user.find(marker="auto-build").click()  # enable (sweeps euler-setup)
+    for _ in range(100):
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+    calls.clear()  # ignore the one-time sweep
+
+    # type into the utterance, then commit a STRUCTURAL change (add a pause) —
+    # this flushes the typed text with no blur or navigation
+    user.find(marker="utext-0").clear().type("Hello again, world.")
+    user.find(marker="add-pause").click()
+    for _ in range(100):
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+    assert calls == [{("intro-title", 0)}]  # the edited utterance gets generated
+
+
+async def test_external_change_sweeps_when_auto_build_on(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With auto-build on, a sidecar edit from outside (recompile, another tool)
+    must fill the newly-changed slides. Regression: only the enable-time sweep
+    ran, so external changes sat ungenerated."""
+    import asyncio
+
+    from slidesonnet.gui import app as app_module
+    from slidesonnet.gui.state import EditorState
+
+    monkeypatch.setattr(app_module, "SOURCE_POLL_INTERVAL_S", 0.1)  # poll fast in the test
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    calls: list[set[tuple[str, int]]] = []
+    monkeypatch.setattr(
+        EditorState, "synth_targets", lambda self, t, *, force=False: (calls.append(set(t)), 1)[1]
+    )
+    await user.open("/")
+    user.find(marker="auto-build").click()
+    for _ in range(100):
+        if calls:
+            break
+        await asyncio.sleep(0.05)
+    calls.clear()
+
+    # an external tool rewrites the sidecar: euler-setup's new text is uncached
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(
+        simple_narration("@intro-title\nHello.\n\n@euler-setup\nWorld anew, friends.\n"),
+        encoding="utf-8",
+    )
+    for _ in range(100):  # wait for the source poll to notice and re-sweep
+        if any(("euler-setup", 0) in c for c in calls):
+            break
+        await asyncio.sleep(0.05)
+    assert any(("euler-setup", 0) in c for c in calls)
+
+
 async def test_generate_missing_shows_count_and_rests_when_done(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

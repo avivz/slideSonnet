@@ -287,6 +287,10 @@ _FLASH_COLORS = "ss-flash-ok ss-flash-info ss-flash-warn ss-flash-err"
 # audio, so we synthesize once the text is stable — not on every keystroke-blur.
 AUTO_BUILD_DEBOUNCE_S = 2.5
 
+# How often the editor polls the deck's source files (PDF/sidecar/config) for
+# external changes (a recompile, an edit in another tool).
+SOURCE_POLL_INTERVAL_S = 1.0
+
 
 def _pace_value(v: str | None) -> Pace | None:
     return None if v in (None, "", "normal") else v  # type: ignore[return-value]
@@ -855,8 +859,13 @@ class BlockEditor:
 
     def _apply_structure(self, segs: list[Segment], tin: Transition, tout: Transition) -> None:
         """Commit an add/delete/move — the loaded track no longer matches the deck."""
+        slide_id = self.view.state.current_id
         if self.view.state.replace_block(segs, transition_in=tin, transition_out=tout):
             self.view.player.stop_playback()
+            # a structural commit flushes any typed-but-unblurred utterance, so it
+            # must schedule auto-build too — otherwise text saved this way (type a
+            # line, then add/delete/reorder a block) never gets generated.
+            self.view.schedule_auto_build(slide_id)
             self.view.render()
 
     def add_segment(self, kind: str) -> None:
@@ -1306,7 +1315,7 @@ class EditorView:
         gen_all_btn.on_click(lambda: self.enqueue_missing())
         export_btn.on_click(lambda: self.run_action(export_btn, self._export_work))
 
-        ui.timer(1.0, self._poll_sources)
+        ui.timer(SOURCE_POLL_INTERVAL_S, self._poll_sources)
 
         strip_toggle.on_click(lambda: self.layout.toggle("strip"))
         console_toggle.on_click(lambda: self.layout.toggle("console"))
@@ -1651,6 +1660,12 @@ class EditorView:
             self.render()
         else:
             self.render_side()
+        # An external recompile/sidecar edit can introduce new un-narrated or
+        # newly-edited slides. With auto-build on, fill them too — the toggle's
+        # one-time sweep only ran when it was switched on, so without this a
+        # change from outside would sit ungenerated.
+        if self.auto_build_active():
+            self._sweep_auto_build()
         self.flash("Deck files changed on disk — reloaded", "info")
 
 
