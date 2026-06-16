@@ -197,3 +197,27 @@ class TestWriteWav:
         start = time.monotonic()
         _write_wav(tmp_path / "minute.wav", samples)
         assert time.monotonic() - start < 2.0  # byte-by-byte loop took far longer
+
+    def test_write_is_atomic_on_failure(self, tmp_path: Path) -> None:
+        """A write that fails at the final rename must not clobber an existing
+        file or leave a partial one — two concurrent generators of the same clip
+        would otherwise corrupt each other's output."""
+        from slidesonnet.tts.kokoro import _write_wav
+
+        out = tmp_path / "clip.wav"
+        out.write_bytes(b"ORIGINAL-GOOD-AUDIO")
+
+        with patch("os.replace", side_effect=OSError("boom")):
+            with pytest.raises(OSError):
+                _write_wav(out, [0.5] * 1000)
+
+        # The existing file survived untouched, and no temp file was left behind.
+        assert out.read_bytes() == b"ORIGINAL-GOOD-AUDIO"
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["clip.wav"]
+
+    def test_write_leaves_no_temp_files_on_success(self, tmp_path: Path) -> None:
+        from slidesonnet.tts.kokoro import _write_wav
+
+        _write_wav(tmp_path / "clip.wav", [0.5] * 1000)
+
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["clip.wav"]

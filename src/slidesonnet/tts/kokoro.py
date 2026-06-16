@@ -8,7 +8,10 @@ female "heart"); the first letter is the KPipeline language code. The model
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import tempfile
 import wave
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -141,8 +144,20 @@ def _write_wav(path: Path, samples: list[float]) -> None:
         if sys.byteorder == "big":
             pcm.byteswap()
         frames = pcm.tobytes()
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(_SAMPLE_RATE)
-        wf.writeframes(frames)
+    # Write to a temp file in the same directory, then atomically rename onto the
+    # target. Guarantees one writer per cache file: two background jobs (or a
+    # force-regenerate racing a queued job) can't corrupt each other's output, and
+    # a reader never sees a half-written WAV. Mirrors the elevenlabs backend.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=path.suffix)
+    try:
+        with os.fdopen(fd, "wb") as raw, wave.open(raw, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(_SAMPLE_RATE)
+            wf.writeframes(frames)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
