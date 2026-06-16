@@ -88,8 +88,18 @@ body{
   width:min(100%, max(620px, calc((100vh - 230px) * .6667 * var(--ss-ar, 1.7778))))}
 .ss-stage-split{flex:1 1 0;min-height:0;width:100%}
 .ss-stage-view{
+  position:relative;
   height:100%;min-height:0;width:100%;
   display:flex;justify-content:center;padding-bottom:6px}
+/* transition preview: a morph overlay stacked over the settled slide image. JS
+   drives the per-frame opacity/clip-path/transform; CSS just sizes the layers. */
+.ss-morph{
+  position:absolute;left:0;top:0;right:0;bottom:6px;z-index:5;
+  display:none;overflow:hidden;border-radius:6px;pointer-events:none}
+.ss-morph.ss-on{display:block}
+.ss-morph img{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:contain;border-radius:6px;will-change:opacity,transform,clip-path}
 .ss-edit-pane{height:100%;min-height:0;padding-top:8px}
 .ss-grip-h{transform:rotate(90deg)}
 .ss-stage-img{width:100%;height:100%}

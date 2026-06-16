@@ -10,7 +10,8 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -19,6 +20,7 @@ from nicegui.events import KeyEventArguments
 
 from slidesonnet.audio.track import Cue
 from slidesonnet.cache import audio_dir, render_dir
+from slidesonnet.diagnostics import boundary_transition
 from slidesonnet.gui.jobs import JobQueue
 from slidesonnet.gui.launch import (
     app_invocation,
@@ -28,7 +30,7 @@ from slidesonnet.gui.launch import (
 )
 from slidesonnet.gui.state import EditorState, cue_start
 from slidesonnet.narration import transitions as trans
-from slidesonnet.narration.model import Pace, Segment, Transition
+from slidesonnet.narration.model import Deck, Pace, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
 
 logger = logging.getLogger(__name__)
@@ -184,6 +186,45 @@ def _media_url(state: EditorState, path: Path, *, cache_bust: bool = False) -> s
     return url
 
 
+def _morph_schedule(
+    cues: Sequence[Cue],
+    deck: Deck,
+    images: Sequence[Path],
+    media_url: Callable[[Path], str],
+) -> list[dict[str, Any]]:
+    """Per-boundary morph steps for the preview's transition overlay.
+
+    Mirrors the export's absorb-into-hold model: each animated boundary's morph
+    *completes* at the next slide's cue start (``at``), running ``dur`` seconds
+    of the outgoing slide's trailing hold — so the preview's transition lands at
+    the same instant the cue flips, just as the rendered wipe does. Plain cuts
+    emit nothing. Returns JSON-able dicts the client-side engine plays against
+    the audio clock.
+    """
+    steps: list[dict[str, Any]] = []
+    index = {sid: i for i, sid in enumerate(deck.pages)}
+    for i in range(len(cues) - 1):
+        a_start, a_sid = cues[i]
+        b_start, b_sid = cues[i + 1]
+        tr = boundary_transition(deck.page_narration(a_sid), deck.page_narration(b_sid))
+        if not tr.is_animated:
+            continue
+        ia, ib = index.get(a_sid), index.get(b_sid)
+        if ia is None or ib is None or ia >= len(images) or ib >= len(images):
+            continue  # filmstrip not rasterized (no pdftoppm) — fall back to a flip
+        span = b_start - a_start
+        steps.append(
+            {
+                "at": b_start,
+                "dur": max(0.05, min(tr.seconds, span)),
+                "kind": tr.kind,
+                "from": media_url(images[ia]),
+                "to": media_url(images[ib]),
+            }
+        )
+    return steps
+
+
 def _serve_media(state: EditorState) -> None:
     rdir = render_dir(state.pdf_path)
     (rdir / "pages").mkdir(parents=True, exist_ok=True)
@@ -200,6 +241,7 @@ _STATIC_DIR = Path(__file__).parent / "static"
 _HEAD_CSS = (_STATIC_DIR / "editor.css").read_text(encoding="utf-8")
 _HEAD_FONTS = (_STATIC_DIR / "fonts.html").read_text(encoding="utf-8")
 _HEAD_RESIZE = (_STATIC_DIR / "resize.html").read_text(encoding="utf-8")
+_HEAD_MORPH = (_STATIC_DIR / "morph.html").read_text(encoding="utf-8")
 
 
 _ALL_DOTS = "ss-dot-error ss-dot-warning ss-dot-ready ss-dot-empty"
@@ -343,9 +385,36 @@ class PreviewPlayer:
             self.pos_slider.value = min(1.0, t / self.track_duration)
         self.time_label.set_text(f"{self._fmt_clock(t)} / {self._fmt_clock(self.track_duration)}")
 
+    def _run_js(self, script: str) -> None:
+        try:  # no JS client under the in-process test sim
+            ui.run_javascript(script)
+        except Exception:
+            pass
+
+    def _arm_morph(self, whole_deck: bool) -> None:
+        """Push the boundary-transition schedule to the client morph engine."""
+        if not whole_deck or not self.cues:
+            self._run_js("window.ssMorph && window.ssMorph.stop()")
+            return
+        state = self.view.state
+        try:
+            images = state.ensure_images()
+        except Exception:
+            images = []
+        steps = _morph_schedule(
+            self.cues, state.deck, images, lambda p: _media_url(state, p, cache_bust=True)
+        )
+        cfg = {
+            "audioId": f"c{self.audio.id}",
+            "stageId": f"c{self.view.stage_view.id}",
+            "steps": steps,
+        }
+        self._run_js(f"window.ssMorph && window.ssMorph.start({json.dumps(cfg)})")
+
     def stop_playback(self) -> None:
         self.playback.stop()  # cancels a pending play too — Stop always wins
         self.audio.pause()
+        self._run_js("window.ssMorph && window.ssMorph.stop()")
         self.cues = []
         self.track_duration = 0.0
         self.pos_slider.value = 0.0
@@ -412,6 +481,7 @@ class PreviewPlayer:
                     view.flash("Preview stopped", "info")
                     return
                 self.cues = preview.cues if whole_deck else []
+                self._arm_morph(whole_deck)
                 # whole-deck playback starts where the user is, not back at slide 1:
                 # seek to the current slide's cue (a #t= media fragment so the
                 # browser starts there on load).
@@ -982,7 +1052,9 @@ class EditorView:
         except Exception:  # never let a malformed page block the editor
             aspect = 16 / 9
         ar_css = f":root{{--ss-ar:{aspect:.4f}}}"
-        ui.add_head_html(_HEAD_FONTS + "<style>" + _HEAD_CSS + ar_css + "</style>" + _HEAD_RESIZE)
+        ui.add_head_html(
+            _HEAD_FONTS + "<style>" + _HEAD_CSS + ar_css + "</style>" + _HEAD_RESIZE + _HEAD_MORPH
+        )
 
         # --- header: wordmark · deck · save flash · error pill ---
         with ui.header().classes("ss-header items-center justify-between no-wrap"):
@@ -1039,7 +1111,11 @@ class EditorView:
                     stage_split.mark("split-stage")
                     with stage_split.separator:
                         ui.icon("drag_indicator").classes("ss-grip ss-grip-h")
-                    with stage_split.before, ui.element("div").classes("ss-stage-view"):
+                    with (
+                        stage_split.before,
+                        ui.element("div").classes("ss-stage-view") as stage_view,
+                    ):
+                        self.stage_view = stage_view
                         self.slide_img = (
                             ui.image()
                             .classes("ss-stage-img")

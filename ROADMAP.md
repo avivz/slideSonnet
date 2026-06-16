@@ -36,14 +36,17 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    model/grammar, `test_transition_gallery.py`); ✅ picker UX (Type+Direction
    selects, GUI + browser tests); ✅ rendering (`compose_transition_clip` +
    `compose_video` absorb-into-hold, integration-tested: total unchanged, morph
-   clip produced). *Remaining follow-ups:* the transition is currently absorbed
-   into the slide's `tail_seconds` hold only and **clamped** to it (a longer
-   request is shortened + logged) — extend to also draw from the next slide's
-   `pre_silence` lead and from trailing `pause:` segments, and add the
-   "small added gap" fallback when a boundary has no hold; surface an
-   over-long-transition warning in `slidesonnet check`; and (nice-to-have) show
-   the morph in the in-editor preview (today the preview hard-flips at the same
-   instant the wipe completes — timing matches, visual doesn't). Audio is left
+   clip produced); ✅ in-editor preview morph (a client-side overlay,
+   `gui/static/morph.html` driven by `_morph_schedule`, approximates the xfade
+   in the browser and **completes at the cue boundary** to match the export's
+   timing; `test_morph_schedule_*` + a browser journey). *Remaining follow-ups:*
+   the transition is currently absorbed into the slide's `tail_seconds` hold only
+   and **clamped** to it (a longer request is shortened + logged) — extend to
+   also draw from the next slide's `pre_silence` lead and from trailing `pause:`
+   segments, and add the "small added gap" fallback when a boundary has no hold;
+   surface an over-long-transition warning in `slidesonnet check`; and the
+   preview morph approximates a few families (e.g. `pixelize`/`dissolve` fall
+   back to a fade) — fine for proofing, only the export is pixel-exact. Audio is left
    continuous (no acrossfade), which is correct for sub-slide builds. Gallery
    reference: <https://trac.ffmpeg.org/wiki/Xfade>. **[agent]**
 

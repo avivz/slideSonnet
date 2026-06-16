@@ -1,0 +1,138 @@
+<script>
+/* Preview transition overlay. The server pushes a schedule of boundary morphs
+   (window.ssMorph.start), and this engine plays them against the preview
+   audio's clock with requestAnimationFrame — a browser-side approximation of
+   the exported FFmpeg xfade (fade/wipe/slide/cover/reveal/circle). Each morph
+   COMPLETES at its boundary, matching the deck's absorb-into-hold timing. */
+(function () {
+  var GRACE = 0.3; // hold the incoming frame briefly so a late cue-flip can't flash
+  var raf = null, audio = null, overlay = null, layerA = null, layerB = null;
+  var steps = [], srcA = null, srcB = null;
+
+  function ensureOverlay(stage) {
+    overlay = stage.querySelector(':scope > .ss-morph');
+    if (overlay) { layerA = overlay.children[0]; layerB = overlay.children[1]; return; }
+    overlay = document.createElement('div');
+    overlay.className = 'ss-morph';
+    layerA = document.createElement('img');
+    layerB = document.createElement('img');
+    overlay.appendChild(layerA);
+    overlay.appendChild(layerB);
+    stage.appendChild(overlay);
+  }
+
+  function hide() {
+    if (!overlay) return;
+    overlay.classList.remove('ss-on');
+    [layerA, layerB].forEach(function (l) {
+      l.style.opacity = ''; l.style.transform = ''; l.style.clipPath = ''; l.style.zIndex = '';
+    });
+  }
+
+  function effect(kind) {
+    if (kind === 'fade' || kind === 'dissolve' || kind === 'crossfade') return { t: 'fade' };
+    var fams = ['wipe', 'slide', 'cover', 'reveal'];
+    for (var i = 0; i < fams.length; i++) {
+      if (kind.indexOf(fams[i]) === 0) return { t: fams[i], d: kind.slice(fams[i].length) };
+    }
+    if (kind === 'circleopen') return { t: 'circle', d: 'open' };
+    if (kind === 'circleclose') return { t: 'circle', d: 'close' };
+    return { t: 'fade' };
+  }
+
+  // incoming layer revealed from an edge via shrinking inset (top right bottom left)
+  function wipeClip(dir, p) {
+    var off = (1 - p) * 100;
+    if (dir === 'left') return 'inset(0 0 0 ' + off + '%)';   // grows right -> left
+    if (dir === 'right') return 'inset(0 ' + off + '% 0 0)';  // grows left -> right
+    if (dir === 'up') return 'inset(' + off + '% 0 0 0)';     // grows bottom -> up
+    return 'inset(0 0 ' + off + '% 0)';                       // down: top -> bottom
+  }
+
+  // incoming slides in from an edge; sign flips give the four directions
+  function enterT(dir, p) {
+    var off = (1 - p) * 100;
+    if (dir === 'left') return 'translateX(' + off + '%)';
+    if (dir === 'right') return 'translateX(' + (-off) + '%)';
+    if (dir === 'up') return 'translateY(' + off + '%)';
+    return 'translateY(' + (-off) + '%)';
+  }
+
+  // outgoing pushed/pulled the same way the incoming travels (slide & reveal)
+  function exitT(dir, p) {
+    var off = p * 100;
+    if (dir === 'left') return 'translateX(' + (-off) + '%)';
+    if (dir === 'right') return 'translateX(' + off + '%)';
+    if (dir === 'up') return 'translateY(' + (-off) + '%)';
+    return 'translateY(' + off + '%)';
+  }
+
+  function apply(step, p) {
+    if (srcA !== step.from) { layerA.src = step.from; srcA = step.from; }
+    if (srcB !== step.to) { layerB.src = step.to; srcB = step.to; }
+    layerA.style.opacity = '1'; layerB.style.opacity = '1';
+    layerA.style.transform = ''; layerB.style.transform = '';
+    layerA.style.clipPath = ''; layerB.style.clipPath = '';
+    layerA.style.zIndex = '1'; layerB.style.zIndex = '2';
+    var e = effect(step.kind);
+    if (e.t === 'fade') {
+      layerB.style.opacity = String(p);
+    } else if (e.t === 'wipe') {
+      layerB.style.clipPath = wipeClip(e.d, p);
+    } else if (e.t === 'cover') {
+      layerB.style.transform = enterT(e.d, p);
+    } else if (e.t === 'slide') {
+      layerB.style.transform = enterT(e.d, p);
+      layerA.style.transform = exitT(e.d, p);
+    } else if (e.t === 'reveal') {
+      layerB.style.zIndex = '1'; layerA.style.zIndex = '2'; // incoming sits beneath
+      layerA.style.transform = exitT(e.d, p);
+    } else if (e.t === 'circle') {
+      if (e.d === 'open') {
+        layerB.style.clipPath = 'circle(' + (p * 75) + '% at 50% 50%)';
+      } else {
+        layerB.style.zIndex = '1'; layerA.style.zIndex = '2';
+        layerA.style.clipPath = 'circle(' + ((1 - p) * 75) + '% at 50% 50%)';
+      }
+    }
+  }
+
+  function tick() {
+    raf = requestAnimationFrame(tick);
+    if (!audio || !overlay || !steps.length) return;
+    var t = audio.currentTime;
+    for (var i = 0; i < steps.length; i++) {
+      var s = steps[i];
+      if (t >= s.at - s.dur && t <= s.at + GRACE) {
+        overlay.classList.add('ss-on');
+        var p = t <= s.at ? (t - (s.at - s.dur)) / s.dur : 1;
+        apply(s, p < 0 ? 0 : p > 1 ? 1 : p);
+        return;
+      }
+    }
+    hide();
+  }
+
+  function findAudio(el) {
+    if (!el) return null;
+    return el.tagName === 'AUDIO' ? el : el.querySelector('audio');
+  }
+
+  window.ssMorph = {
+    start: function (cfg) {
+      var stage = document.getElementById(cfg.stageId);
+      audio = findAudio(document.getElementById(cfg.audioId));
+      if (!stage || !audio) { steps = []; return; }
+      ensureOverlay(stage);
+      hide();
+      srcA = srcB = null;
+      steps = cfg.steps || [];
+      if (raf === null) raf = requestAnimationFrame(tick);
+    },
+    stop: function () {
+      steps = [];
+      hide();
+    },
+  };
+})();
+</script>

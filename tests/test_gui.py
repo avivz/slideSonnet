@@ -39,6 +39,54 @@ async def test_editor_loads(user: User, tmp_path: Path, monkeypatch: pytest.Monk
     await user.should_see("Slide 1 / 6")
 
 
+def test_morph_schedule_emits_only_animated_boundaries() -> None:
+    from slidesonnet.audio.track import Cue
+    from slidesonnet.gui.app import _morph_schedule
+    from slidesonnet.narration.model import Deck, PageNarration, Transition
+
+    deck = Deck(
+        pdf_path=Path("d.pdf"),
+        sidecar_path=Path("d.narration"),
+        pages=["a", "b", "c"],
+        narration={
+            "a": PageNarration(slide_id="a", transition_out=Transition("wipeleft", 0.5)),
+            "b": PageNarration(slide_id="b"),  # plain cut into c
+            "c": PageNarration(slide_id="c"),
+        },
+    )
+    cues = [Cue(0.0, "a"), Cue(4.0, "b"), Cue(7.0, "c")]
+    images = [Path("a.png"), Path("b.png"), Path("c.png")]
+
+    sched = _morph_schedule(cues, deck, images, lambda p: f"/u/{p.name}")
+
+    assert len(sched) == 1  # only the a→b wipe; b→c is a cut
+    (step,) = sched
+    assert step["kind"] == "wipeleft"
+    assert step["at"] == 4.0  # morph completes at the destination's cue start
+    assert step["dur"] == 0.5
+    assert step["from"] == "/u/a.png"
+    assert step["to"] == "/u/b.png"
+
+
+def test_morph_schedule_clamps_duration_to_slide_span() -> None:
+    from slidesonnet.audio.track import Cue
+    from slidesonnet.gui.app import _morph_schedule
+    from slidesonnet.narration.model import Deck, PageNarration, Transition
+
+    deck = Deck(
+        pdf_path=Path("d.pdf"),
+        sidecar_path=Path("d.narration"),
+        pages=["a", "b"],
+        narration={"a": PageNarration(slide_id="a", transition_out=Transition("fade", 3.0))},
+    )
+    cues = [Cue(0.0, "a"), Cue(1.0, "b")]  # outgoing slide only spans 1s
+    images = [Path("a.png"), Path("b.png")]
+
+    (step,) = _morph_schedule(cues, deck, images, lambda p: p.name)
+
+    assert step["dur"] == 1.0  # clamped to the span, never morphs over the boundary
+
+
 async def test_navigation(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pdf = _prep(tmp_path)
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))

@@ -242,6 +242,35 @@ def test_editing_during_deck_playback_defers_the_cue_flip(
     )
 
 
+@pytest.mark.timeout(120)
+def test_transition_morph_overlay_runs_during_deck_preview(
+    page: Page, editor_server: ServerFactory, tmp_path: Path
+) -> None:
+    """A wipe leaving slide 1 should animate in the preview, not hard-flip.
+
+    The preview overlay (window.ssMorph) plays a browser-side approximation of
+    the exported xfade against the audio clock, completing at the cue boundary.
+    We can't assert pixels, but we can catch the overlay toggling ``ss-on`` for
+    its morph window while the deck plays.
+    """
+    pdf = _prep(tmp_path, "@intro-title\nHello there friends.\n\n@euler-setup\nWorld.\n")
+    sidecar = tmp_path / "marked.narration"
+    text = sidecar.read_text(encoding="utf-8")
+    sidecar.write_text(text + "  transition-out: wipeleft 1.2\n", encoding="utf-8")
+    page.goto(editor_server(pdf, stub_seconds=2.0))
+    marked(page, "play-deck").click()
+    expect(page.get_by_text("Preview ready").first).to_be_visible(timeout=30_000)
+
+    def overlay_on() -> bool:
+        return bool(
+            page.evaluate(
+                "() => document.querySelector('.ss-morph')?.classList.contains('ss-on') ?? false"
+            )
+        )
+
+    assert _eventually(overlay_on, timeout=15.0), "morph overlay never activated during preview"
+
+
 # --------------------------------------------------------------------------
 # journey 4 (REAL KOKORO): generate → cache → re-generate → blur-edit
 # --------------------------------------------------------------------------
