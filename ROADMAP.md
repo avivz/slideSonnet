@@ -72,8 +72,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    parse; the greater-version upgrade-warning path already exists); (b) an
    utterance with `voice: guest` resolves to the active engine's `guest` voice,
    with no `voice:` it uses `default-voice`, with neither the engine default —
-   switching `[tts] backend` kokoro→qwen3 renarrates the same script with **zero**
-   sidecar edits; (c) the editor's voice picker shows internal names only (raw
+   switching the active engine (the GUI picker, Now #4) kokoro→qwen3 renarrates the
+   same script with **zero** sidecar edits; (c) the editor's voice picker shows internal names only (raw
    engine voices, if offered at all, drop to an advanced affordance), and the
    unset-voice placeholder shows the deck `default-voice`; (d) an internal name
    with no mapping for the active engine is a clean `check`/editor warning
@@ -100,7 +100,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    editor's first-load "Loading Qwen3 model…" status; the real-weights
    `@pytest.mark.integration` smoke test behind the extra (local-only); per-utterance
    multi-voice via the portable voice layer (Now #2); and the human records the
-   ~10 s reference + judges the cloned voice. *Story:* As a deck
+   ~10 s reference + judges the cloned voice. *Param split (decided 2026-06-17):*
+   the current `[tts.qwen3] voice_prompt` is **interim** — voice identity migrates
+   to the narration voice map (Now #2), while `device` stays in toml as a machine
+   setting; the engine is selected in the GUI (Now #4), not via `[tts] backend`. *Story:* As a deck
    author, I want a `--engine qwen3` local backend that narrates my deck in **my
    own voice** from a reusable voice-clone prompt, so I can ship a personal HQ
    render without paying a cloud TTS or sending my voice off the machine.
@@ -158,7 +161,31 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    carrying the auto-generate-safe flag), the `qwen3` arm of the `Backend` Literal
    in `models.py` (a test pins them in sync), and the `[tts.qwen3]` config fields.
    **[agent→human]**
-4. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
+4. [ ] **GUI generation-engine picker (session-only).** *Story:* As a deck
+   author, I want to choose the TTS engine from inside `slidesonnet edit` — not a
+   config file — so I can generate the same engine-agnostic deck with Kokoro,
+   Qwen3, or Inworld by flipping a dropdown, without editing `slidesonnet.toml` or
+   the sidecar. *Decisions (2026-06-17):* the choice is **session-only** (resets to
+   the default each launch; nothing persisted — no engine in the config or the
+   sidecar); `[tts] backend` is **removed as the selector** (the CLI keeps
+   `--engine`); engine *params* split — voice identity (the Qwen3 `.pt`, the
+   Inworld/Eleven voice id) lives in the narration voice map (Now #2), while
+   machine/account params (Qwen3 `device`, the API-key env-var name) stay in
+   `[tts.<engine>]` toml. *Acceptance examples:* (a) a generation-engine dropdown
+   in the editor lists the available backends — ideally only those installed —
+   defaulting to Kokoro on launch; (b) picking an engine routes per-utterance
+   generate, "Generate missing", preview, and export through it immediately,
+   re-reading that engine's params and re-resolving each utterance's voice via the
+   voice map (Now #2) — no restart, no file edit; (c) the paid-confirm gate and the
+   auto-generate realtime-gate follow the picked engine (switch to a paid engine →
+   auto-generate disables with the "would bill" reason; to Qwen3 → disables as
+   too-slow); (d) the voice picker's options and the default-voice placeholder
+   reflect the picked engine; (e) the choice is never written to disk — relaunching
+   returns to the default. *Appetite:* ~one day. *Design note:* today the editor
+   re-reads `config.tts.backend` at action time (`engine=None` → api re-reads the
+   on-disk config); this threads a session `selected_backend` override through
+   `EditorState` and the api actions instead. **[agent]**
+5. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
    deck author who wants studio-grade narration, I want a `--engine inworld`
    cloud backend that synthesizes one cached clip per utterance, so I can
    render an HQ demo without paying ElevenLabs' ~10× rate. Inworld beats
@@ -180,7 +207,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    supplies the key, runs a small paid smoke test, and judges voice quality.
    Decision point: keep ElevenLabs as a legacy optional backend or remove it
    outright (as was done with Piper). **[agent→human]**
-5. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
+6. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
    author proofing narration, I want to play the preview faster so I can review
    a long deck without sitting through every clip at 1×. *Acceptance examples:*
    (a) a speed control in the transport (e.g. 1× / 1.25× / 1.5× / 2×, or a
@@ -197,7 +224,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    TTS-level change — distinct from the per-utterance `pace:` directive, which
    re-synthesizes. Browser pitch-correction (`preservesPitch`) is on by default,
    so 2× stays natural, not chipmunked. **[agent]**
-6. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+7. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
    own little PR (the background job queue they build on shipped — see Done).
    *Appetite:* an afternoon each.
    - When narration text is edited, immediately (before blur) flip the box's
@@ -216,7 +243,17 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      queued sweep runs to completion; add a cancel/stop for the queue).
      *Acceptance:* a "Stop" on the sweep drains the queue and leaves already-made
      clips intact.
-7. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+   - Toggle transitions in single-slide preview. A single-slide play currently
+     *always* renders that slide's own in/out transitions (the preview morph,
+     against a black frame at the deck ends) — useful for proofing the
+     transition, but a needless flourish when you just want to hear one slide's
+     narration. Add an editor checkbox to opt into it. *Acceptance:* a checkbox
+     (e.g. "Play transitions in single-slide preview"), **off by default**, gates
+     the single-slide morph — unchecked, a single-slide play uses a plain cut (no
+     transition); checked, it plays the slide's in/out transitions as today. The
+     whole-deck preview is unaffected either way, and the setting is local/editor
+     state (not written to the deck).
+8. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -225,7 +262,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    disk while you have unsaved field text saves your text first (no silent loss),
    and never auto-saves on a sidecar-triggered reload. *Appetite:* half a day each.
    **[agent]**
-8. [ ] **Open / switch decks from within the editor.** *Story:* As a user with
+9. [ ] **Open / switch decks from within the editor.** *Story:* As a user with
    several decks, I want to open another deck from inside `slidesonnet edit`
    without quitting and relaunching on a new path, so I can move between projects
    in one session. *Acceptance examples:* (a) an "Open deck…" control accepts
