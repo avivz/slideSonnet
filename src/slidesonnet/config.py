@@ -85,6 +85,10 @@ def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
         voices=_parse_voices(raw.get("voices", {})),
         pronunciation_files=[cfg_dir / p for p in raw.get("pronunciation", [])],
     )
+    # The Qwen3 voice prompt is a file path; resolve it relative to the config
+    # so a deck stays portable (paths in the toml are relative to the toml).
+    if config.tts.qwen3_voice_prompt:
+        config.tts.qwen3_voice_prompt = str((cfg_dir / config.tts.qwen3_voice_prompt).resolve())
     config.pronunciation = load_pronunciation_files(config.pronunciation_files)
     return config
 
@@ -92,6 +96,7 @@ def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
 def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     kokoro = raw.get("kokoro", {})
     el = raw.get("elevenlabs", {})
+    qwen3 = raw.get("qwen3", {})
     kwargs: dict[str, Any] = {}
     if "backend" in raw:
         kwargs["backend"] = raw["backend"]
@@ -99,6 +104,14 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
         kwargs["kokoro_voice"] = str(kokoro["voice"])
     if "speed" in kokoro:
         kwargs["kokoro_speed"] = float(kokoro["speed"])
+    for key, target in (
+        ("model", "qwen3_model"),
+        ("device", "qwen3_device"),
+        ("voice_prompt", "qwen3_voice_prompt"),
+        ("language", "qwen3_language"),
+    ):
+        if key in qwen3:
+            kwargs[target] = str(qwen3[key])
     for key, target, cast in (
         ("api_key_env", "elevenlabs_api_key_env", str),
         ("voice_id", "elevenlabs_voice_id", str),

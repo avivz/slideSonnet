@@ -153,8 +153,11 @@ class TestBackendRegistry:
 
         kokoro = BACKENDS["kokoro"]
         eleven = BACKENDS["elevenlabs"]
-        assert (kokoro.extension, kokoro.paid) == (".wav", False)
-        assert (eleven.extension, eleven.paid) == (".mp3", True)
+        qwen3 = BACKENDS["qwen3"]
+        assert (kokoro.extension, kokoro.paid, kokoro.realtime) == (".wav", False, True)
+        assert (eleven.extension, eleven.paid, eleven.realtime) == (".mp3", True, True)
+        # Qwen3 is free local audio (.wav, not paid) but too slow to auto-generate.
+        assert (qwen3.extension, qwen3.paid, qwen3.realtime) == (".wav", False, False)
 
     def test_engine_voice_introspection(self) -> None:
         from slidesonnet.models import TTSConfig

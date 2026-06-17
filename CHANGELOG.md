@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Qwen3-TTS local engine (own-voice narration).** A new `--engine qwen3`
+  backend (the `[qwen3]` extra) narrates a deck in a cloned voice from a local
+  `.pt` voice-clone prompt — the expressive / own-voice path Kokoro can't do.
+  It's free local audio (`.wav`, content-addressed cache like Kokoro) that runs
+  on CPU/CUDA/Intel XPU; configure it under `[tts.qwen3]` (`model`, `device`,
+  `voice_prompt`, `language`). The model loads lazily and stays warm across
+  clips, writes are atomic, and a missing package / missing prompt / no-audio
+  result each surface a clean error. Because generation is well below real-time,
+  the engine is marked non-realtime: the editor's **"Auto-generate as I edit"**
+  is disabled for it (free, but too slow to fire on every edit — distinct from
+  the paid-engine "would bill" reason), and `slidesonnet doctor` now reports
+  Qwen3 alongside Kokoro and ElevenLabs. (The DashScope cloud mode and the
+  portable in-narration voice map are tracked separately on the roadmap.)
 - **Slide transition gallery.** `transition-out`/`transition-in` grew from
   `cut`/`crossfade` to FFmpeg's full `xfade` set, organized as a curated picker:
   pick a **Type** (Fade, Fade through black, Fade through white, Dissolve, Wipe,

@@ -154,6 +154,12 @@ def check_elevenlabs() -> CheckResult:
     )
 
 
+def check_qwen3() -> CheckResult:
+    return _check_python_package(
+        "qwen-tts", "qwen_tts", "pip install slidesonnet[qwen3]", "Local own-voice TTS (free)"
+    )
+
+
 def check_api_key() -> CheckResult:
     try:
         from dotenv import load_dotenv
@@ -183,7 +189,10 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
         ),
         ("Editor GUI", [check_nicegui()]),
         ("Beamer toolchain (for compiling your deck)", [check_latexmk(), check_pdflatex()]),
-        ("TTS backends (at least one required)", [check_kokoro(), check_elevenlabs()]),
+        (
+            "TTS backends (at least one required)",
+            [check_kokoro(), check_qwen3(), check_elevenlabs()],
+        ),
         ("API keys", [check_api_key()]),
     ]
 

@@ -1243,12 +1243,18 @@ class EditorView:
                 auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
                 auto_build.props("dense").mark("auto-build")
                 auto_build.bind_value(app.storage.general, "auto_build")
-                if state.tts_is_paid:
+                if state.tts_is_paid or not state.tts_is_realtime:
                     auto_build.set_value(False)
                     auto_build.disable()
-                    auto_build.tooltip(
-                        "Local (Kokoro) voices only — a paid engine would bill on every save"
-                    )
+                    if state.tts_is_paid:
+                        auto_build.tooltip(
+                            "Local, fast engines only — a paid engine would bill on every save"
+                        )
+                    else:
+                        auto_build.tooltip(
+                            "This engine is too slow to generate on every edit — "
+                            'use "Generate missing" instead'
+                        )
                 else:
                     auto_build.tooltip(
                         "Quietly generate each slide's audio in the background after you edit it"

@@ -132,6 +132,16 @@ def test_tts_is_paid_default_kokoro(tmp_path: Path) -> None:
     assert state.tts_is_paid is False
 
 
+def test_tts_is_realtime_gates_heavy_local_engine(tmp_path: Path) -> None:
+    """Kokoro is realtime (auto-build OK); Qwen3 is free but too slow (gated)."""
+    assert _state(tmp_path).tts_is_realtime is True  # kokoro default
+
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "qwen3"\n', encoding="utf-8")
+    qwen3 = EditorState(prep_marked_deck(tmp_path))
+    assert qwen3.tts_is_paid is False  # free
+    assert qwen3.tts_is_realtime is False  # but not fast enough to auto-generate
+
+
 def _bump_mtime(path: Path) -> None:
     """Force a visibly newer mtime regardless of filesystem timestamp granularity."""
     later = time.time() + 5
