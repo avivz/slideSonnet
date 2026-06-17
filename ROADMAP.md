@@ -54,7 +54,111 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    continuous (no acrossfade), which is correct for sub-slide builds. Gallery
    reference: <https://trac.ffmpeg.org/wiki/Xfade>. **[agent]**
 
-2. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
+2. [ ] **Portable voice layer — internal voice names + cross-engine map in the
+   narration file.** *Story:* As a deck author, I want to name voices by an
+   internal name (e.g. `lecturer`, `guest`) defined *in the narration file*, where
+   each name maps to a concrete per-engine voice, plus a deck-level
+   `default-voice`, so the same self-contained deck narrates under any engine
+   without touching the script and the editor only ever shows my own names. This
+   makes the `.narration` portable (the voice definitions travel with it) and is
+   the foundation Qwen3 (Now #3) reaches its `.pt` prompts through. *Decision
+   (2026-06-16): the map lives in the narration file* (portability over a terser
+   script); toml `[voices.NAME]` stays as an optional shared fallback. *Acceptance
+   examples:* (a) the sidecar gains an optional `voices:` block mapping internal
+   names → per-engine voices (`lecturer: {kokoro: am_michael, qwen3:
+   ./voice/lecturer.pt, elevenlabs: <id>}`, file-based voices stored relative to
+   the deck dir) and a top-level `default-voice: lecturer`; it round-trips
+   byte-stable and bumps the `# slidesonnet-format:` header to 2 (v1 files still
+   parse; the greater-version upgrade-warning path already exists); (b) an
+   utterance with `voice: guest` resolves to the active engine's `guest` voice,
+   with no `voice:` it uses `default-voice`, with neither the engine default —
+   switching `[tts] backend` kokoro→qwen3 renarrates the same script with **zero**
+   sidecar edits; (c) the editor's voice picker shows internal names only (raw
+   engine voices, if offered at all, drop to an advanced affordance), and the
+   unset-voice placeholder shows the deck `default-voice`; (d) an internal name
+   with no mapping for the active engine is a clean `check`/editor warning
+   ("voice 'guest' has no qwen3 voice"), not a silent fallback or a crash; (e)
+   backward-compat — a deck whose voices live in toml `[voices.NAME]` still works,
+   and a narration `voices:` entry wins over a toml entry of the same name (shared
+   library + per-deck override both work). *Appetite:* ~two days (grammar +
+   parse/serialize + resolver + editor picker + tests). *Design notes:* the
+   resolution is already built — `VoiceConfig.backend_voices` + `resolve_voice`
+   (`models.py:25`) map a name → backend voice; extend the parser to read a sidecar
+   `voices:` block and merge it over the toml map (sidecar wins), and teach
+   `voice_options()`/`default_voice()` (`state.py:340`) to source from the deck map.
+   **[agent]**
+3. [~] **Qwen3-TTS own-voice engine (local XPU/GPU first).**
+   *Progress (branch `feat/qwen3-tts`):* ✅ the engine + wiring landed — `qwen3`
+   `BackendSpec` (free `.wav`, `realtime=False`), the `Backend` literal + sync
+   test, `[tts.qwen3]` config (model/device/voice_prompt/language, prompt path
+   resolved relative to the toml), lazy-and-warm model load, atomic WAV writes,
+   content-hash cache key, clean `TTSError` on missing package/prompt/no-audio,
+   `doctor` check, the `[qwen3]` extra + mypy overrides, and the editor
+   auto-generate gate now keys on `paid OR not realtime` (disabled for Qwen3 with
+   a "too slow" tooltip). All mocked-unit-tested (`tests/test_qwen3.py` + config/
+   doctor/gui/registry tests); `mypy --strict` + ruff green. *Remaining:* the
+   editor's first-load "Loading Qwen3 model…" status; the real-weights
+   `@pytest.mark.integration` smoke test behind the extra (local-only); per-utterance
+   multi-voice via the portable voice layer (Now #2); and the human records the
+   ~10 s reference + judges the cloned voice. *Story:* As a deck
+   author, I want a `--engine qwen3` local backend that narrates my deck in **my
+   own voice** from a reusable voice-clone prompt, so I can ship a personal HQ
+   render without paying a cloud TTS or sending my voice off the machine.
+   Qwen3-TTS (Apache 2.0) clones from a tiny precomputed prompt artifact (a
+   ~100 KB `.pt`: codec `ref_code` + speaker x-vector) and runs locally — on the
+   laptop's Intel iGPU via the XPU path (~4× slower than real-time, fine for a
+   cached offline render). The reference recordings and three ready `.pt`
+   artifacts already exist in `dev/voice-profile/` (git-excluded — it's the
+   user's voice identity). This is the *expressive / own-voice* path Kokoro can't
+   do. *Decision (2026-06-16): local XPU/GPU only for the first cut* — `paid=False`,
+   optional `[qwen3]` extra; the DashScope cloud mode is a deferred follow-up
+   (Later) behind the same engine interface. *Acceptance examples:* (a) given
+   `[tts.qwen3]` with `model`, `device`, and a `voice_prompt` path to a `.pt`
+   artifact, `slidesonnet tts deck.pdf --engine qwen3` synthesizes one cached WAV
+   per utterance in the cloned voice, and a re-run makes **zero** model calls
+   (content-addressed; the cache key folds in the model id, device, and the
+   prompt artifact's hash, so swapping the voice prompt invalidates the cache);
+   (b) the engine is `paid=False` — the editor generates and auto-generates
+   without the paid-confirm gate; (c) a missing `qwen_tts` package, a missing or
+   unreadable `voice_prompt` file, or a model that produces no audio each surface
+   as a clean `TTSError` with an install/config hint — never a traceback — and an
+   atomic temp+rename write leaves no half-WAV on failure (like Kokoro); (d)
+   `slidesonnet doctor` reports qwen3 configured/unconfigured from the package
+   being importable **and** the prompt file existing; (e) every unit test mocks
+   the Qwen3 model (no ~11 GB HF download, no XPU in CI); the real-weights path is
+   a single `@pytest.mark.integration` test behind the `[qwen3]` extra, local-only.
+   *Appetite:* ~two to three days for the agent's engine + mocked tests; human
+   records/refreshes the ~10 s reference clip (the speed sweet spot) and judges the
+   cloned voice. *Design notes:* device handling must avoid `device_map` on the
+   Intel iGPU and use bf16 on XPU (see the [[intel-xpu-wsl-pytorch]] recipe and the
+   `dev/voice-profile/README.md` usage block); `create_voice_clone_prompt` is the
+   one-time step — the engine loads the existing `.pt` and reuses it so cloning
+   costs the same as plain generation. *UI integration (decided 2026-06-16):* (1) **Qwen3 voices are reached through the
+   portable voice layer (Now #2), never raw paths** — a Qwen3 voice is an internal
+   name in the narration `voices:` block that maps to a `.pt` artifact path
+   (relative to the deck dir); no path ever sits in a per-utterance `voice:` field,
+   and the editor shows only the internal name (so the same script renarrates under
+   Kokoro/Inworld unchanged). The artifact's **content hash** (not the path string)
+   folds into the cache key, so editing the prompt invalidates while moving it
+   doesn't churn. `list_voices()` returns `()` (names come from the deck's map);
+   `default_voice()` defers to the deck `default-voice`. (2) **Auto-generate gate keys on a
+   new engine-level "auto-generate safe" signal, not `paid`** — add the flag
+   (Kokoro safe; Qwen3 *and* every paid engine not-safe), so the "Auto-generate as
+   I edit" checkbox disables for Qwen3 with a *too-slow-to-fire-on-every-edit*
+   tooltip (distinct from the paid "would bill" message); gate = `paid OR
+   not-realtime`. *Hard implementation constraints (from the editor's call
+   pattern):* `voice_options()`/`default_voice()` run `create_tts(...)` **every
+   render tick** (`state.py:349,354`), so the Qwen3 constructor and those two
+   methods must **not** touch the model — load it lazily and keep it **warm**
+   across clips (cache the model + the loaded `.pt`, like Kokoro's `_pipeline_for`);
+   give the first model load its own "Loading Qwen3 model…" status distinct from
+   per-clip generation; a missing `qwen_tts`, a missing/unreadable prompt, or no
+   XPU/CUDA each surface a clean `TTSError`, never a traceback or a silent CPU
+   grind. Adding the backend is one `BackendSpec` in `tts/__init__.py` (now also
+   carrying the auto-generate-safe flag), the `qwen3` arm of the `Backend` Literal
+   in `models.py` (a test pins them in sync), and the `[tts.qwen3]` config fields.
+   **[agent→human]**
+4. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
    deck author who wants studio-grade narration, I want a `--engine inworld`
    cloud backend that synthesizes one cached clip per utterance, so I can
    render an HQ demo without paying ElevenLabs' ~10× rate. Inworld beats
@@ -76,7 +180,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    supplies the key, runs a small paid smoke test, and judges voice quality.
    Decision point: keep ElevenLabs as a legacy optional backend or remove it
    outright (as was done with Piper). **[agent→human]**
-3. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
+5. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
    author proofing narration, I want to play the preview faster so I can review
    a long deck without sitting through every clip at 1×. *Acceptance examples:*
    (a) a speed control in the transport (e.g. 1× / 1.25× / 1.5× / 2×, or a
@@ -93,7 +197,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    TTS-level change — distinct from the per-utterance `pace:` directive, which
    re-synthesizes. Browser pitch-correction (`preservesPitch`) is on by default,
    so 2× stays natural, not chipmunked. **[agent]**
-4. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+6. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
    own little PR (the background job queue they build on shipped — see Done).
    *Appetite:* an afternoon each.
    - When narration text is edited, immediately (before blur) flip the box's
@@ -112,7 +216,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      queued sweep runs to completion; add a cancel/stop for the queue).
      *Acceptance:* a "Stop" on the sweep drains the queue and leaves already-made
      clips intact.
-5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+7. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -121,7 +225,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    disk while you have unsaved field text saves your text first (no silent loss),
    and never auto-saves on a sidecar-triggered reload. *Appetite:* half a day each.
    **[agent]**
-6. [ ] **Open / switch decks from within the editor.** *Story:* As a user with
+8. [ ] **Open / switch decks from within the editor.** *Story:* As a user with
    several decks, I want to open another deck from inside `slidesonnet edit`
    without quitting and relaunching on a new path, so I can move between projects
    in one session. *Acceptance examples:* (a) an "Open deck…" control accepts
@@ -150,17 +254,13 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    Blocked on Now #2 (the Inworld engine). Human triggers the paid render;
    agent uploads to the `v0.0.0` GitHub Release (`gh release upload --clobber`)
    and refreshes README links. **[human→agent]**
-3. [ ] **Qwen3-TTS own-voice engine (third optional backend)** — narrate
-   decks in the user's own voice from a ~10 s reference clip. Qwen3-TTS
-   (Apache 2.0) clones via a tiny reusable prompt artifact (~100 KB `.pt`:
-   codec tokens + speaker embedding); quality clearly above Piper. Runs
-   three ways: local GPU (works on Intel iGPU via XPU, ~4× slower than
-   real-time — fine for cached re-renders), serverless GPU (Modal/RunPod,
-   ~$0.01/10 min), or the official DashScope API (~$0.13/10 min, no infra,
-   but voice leaves the machine). Evaluated 2026-06-10; assets + lessons in
-   `dev/voice-profile/`. Agent implements behind the engine interface as an
-   optional extra; human records the reference clip and judges the cloned
-   voice. **[agent→human]**
+3. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
+   Qwen3 engine (Now #2) for users without a local GPU: ~$0.13/10 min, no infra,
+   but the voice leaves the machine (and needs one-time voice enrollment). Same
+   `BackendSpec`/engine interface, `paid=True`, the same mocked-client test guard
+   as ElevenLabs/Inworld (never a real paid call in CI). Serverless GPU
+   (Modal/RunPod, ~$0.01/10 min) is a further variant. Blocked on Now #2 landing
+   the local engine first. **[agent→human]**
 4. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
    an unlisted-vs-public decision; agent preps titles, descriptions, and
    chapter markers from the narration sidecars. **[human]**
@@ -205,7 +305,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 3. **Layered reconciliation** — optional text-fingerprint fallback when ids are
    missing, for non-Beamer sources.
 4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
-   interface). (Qwen3-TTS and Inworld promoted to Next on 2026-06-11.)
+   interface). (Qwen3-TTS local promoted to Now #2 on 2026-06-16; Inworld is
+   Now #3; the Qwen3 DashScope cloud mode is Next #3.)
 5. **Multi-deck playlists** — concatenate several PDFs into one video.
 6. **`--json` output** for CI/automation.
 7. *(Promoted & merged into Now #3 "Transition gallery" on 2026-06-15 — the
