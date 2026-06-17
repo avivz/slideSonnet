@@ -8,6 +8,7 @@ without a browser, and stays under ``mypy --strict``.
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
@@ -15,7 +16,7 @@ from slidesonnet import api
 from slidesonnet.audio.synth import SpeechRef, ref_cache_status
 from slidesonnet.audio.track import Cue
 from slidesonnet.cache import audio_dir, render_dir
-from slidesonnet.config import default_config_path, load_config
+from slidesonnet.config import Config, default_config_path, load_config
 from slidesonnet.deck import (
     default_sidecar_path,
     dedupe_page_ids,
@@ -27,8 +28,9 @@ from slidesonnet.diagnostics import Diagnostic, boundary_transition
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import PageNarration, Segment, Transition
+from slidesonnet.models import Backend
 from slidesonnet.pdf.reader import rasterize, read_page_ids
-from slidesonnet.tts import BACKENDS, create_tts
+from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
 # Audio cache-status scans stat() every speech segment; renders ask several
 # questions per repaint. One scan is shared for this long before re-checking.
@@ -53,6 +55,9 @@ class EditorState:
         self.pdf_path = pdf_path.resolve()
         self.sidecar_path = sidecar_path or default_sidecar_path(self.pdf_path)
         self.config = load_config(self.pdf_path)
+        # The generation engine is chosen in the GUI (session-only, never written
+        # to disk). None = fall back to the config default. See active_backend.
+        self.selected_backend: Backend | None = None
         self.index = 0
         self._images: list[Path] | None = None
         # (pdf (mtime, size) stamp, deduped page ids, dedupe diagnostics)
@@ -336,6 +341,31 @@ class EditorState:
         self.deck.narration.pop(orphan_id, None)
         self._write_and_reload()
 
+    # ---- engine selection (GUI, session-only) -----------------------------
+    @property
+    def active_backend(self) -> Backend:
+        """The engine generation actually uses now: the GUI pick, else the config."""
+        return self.selected_backend or self.config.tts.backend
+
+    def set_backend(self, backend: Backend) -> None:
+        """Pick the generation engine for this session (never written to disk).
+
+        Cache status is per-engine (the audio filename folds in the backend), so
+        the badge/uncached scan is invalidated to re-evaluate against the pick.
+        """
+        self.selected_backend = backend
+        self._audio_scan = None
+
+    def backend_options(self) -> list[str]:
+        """Engine names for the GUI picker: the installed ones plus the active one."""
+        return sorted(set(available_backends()) | {self.active_backend})
+
+    def _active_config(self) -> Config:
+        """The config with its backend swapped to the session pick (else as loaded)."""
+        if self.selected_backend is None:
+            return self.config
+        return replace(self.config, tts=replace(self.config.tts, backend=self.selected_backend))
+
     # ---- voices -----------------------------------------------------------
     def voice_options(self) -> list[str]:
         """Voice choices for the editor: named presets first, then engine voices.
@@ -343,21 +373,22 @@ class EditorState:
         The engine reports its own pickable voice set (Kokoro's fixed English
         voices; cloud engines with account-specific ids report none), plus the
         deck's named presets from ``slidesonnet.toml``. The per-utterance voice
-        is otherwise None (the deck default).
+        is otherwise None (the deck default). Follows the active engine pick.
         """
-        opts: list[str] = sorted(self.config.voices)  # named presets
-        opts += [v for v in create_tts(self.config.tts).list_voices() if v not in opts]
+        cfg = self._active_config()
+        opts: list[str] = sorted(cfg.voices)  # named presets
+        opts += [v for v in create_tts(cfg.tts).list_voices() if v not in opts]
         return opts
 
     def default_voice(self) -> str | None:
         """The deck-wide voice an utterance with no explicit voice falls back to."""
-        return create_tts(self.config.tts).default_voice()
+        return create_tts(self._active_config().tts).default_voice()
 
     # ---- synthesis cost ---------------------------------------------------
     @property
     def tts_is_paid(self) -> bool:
-        """True when the configured TTS backend spends API credits."""
-        return BACKENDS[self.config.tts.backend].paid
+        """True when the active TTS backend spends API credits."""
+        return BACKENDS[self.active_backend].paid
 
     @property
     def tts_is_realtime(self) -> bool:
@@ -366,7 +397,7 @@ class EditorState:
         False for a heavy local model (Qwen3): free, but too slow to
         auto-generate. The auto-build gate is ``paid OR not realtime``.
         """
-        return BACKENDS[self.config.tts.backend].realtime
+        return BACKENDS[self.active_backend].realtime
 
     def _audio_status(self) -> list[tuple[SpeechRef, bool]]:
         """Deck-wide (segment, is_cached) scan, shared across a render tick.
@@ -377,7 +408,7 @@ class EditorState:
         """
         now = time.monotonic()
         if self._audio_scan is None or now - self._audio_scan[0] > _AUDIO_SCAN_TTL:
-            scan = ref_cache_status(self.deck, self.config, audio_dir(self.pdf_path))
+            scan = ref_cache_status(self.deck, self._active_config(), audio_dir(self.pdf_path))
             self._audio_scan = (now, scan)
         return self._audio_scan[1]
 
@@ -403,9 +434,10 @@ class EditorState:
         return {ref.slide_id for ref, cached in self._audio_status() if not cached}
 
     # ---- actions -------------------------------------------------------
-    # Actions pass engine=None so api re-reads the on-disk config at action
-    # time — the editor's cached config can be up to one poll interval stale,
-    # and running a stale (possibly paid) backend is a money-relevant surprise.
+    # Actions pass engine=selected_backend: the GUI's session pick wins, and
+    # api re-reads the on-disk config for the rest (voices, engine params). When
+    # nothing is picked (None) api falls back to the config's backend — re-read
+    # fresh at action time, so a stale (possibly paid) cached backend is never run.
     def synth_current(self, *, force: bool = False) -> int:
         self._audio_scan = None
         return api.synthesize_deck(
@@ -413,6 +445,7 @@ class EditorState:
             sidecar_path=self.sidecar_path,
             only_ids={self.current_id},
             force=force,
+            engine=self.selected_backend,
         )
 
     def synth_segment(self, speech_index: int, *, force: bool = False) -> int:
@@ -423,6 +456,7 @@ class EditorState:
             sidecar_path=self.sidecar_path,
             only_segments={(self.current_id, speech_index)},
             force=force,
+            engine=self.selected_backend,
         )
 
     def synth_targets(self, targets: set[tuple[str, int]], *, force: bool = False) -> int:
@@ -437,6 +471,7 @@ class EditorState:
             sidecar_path=self.sidecar_path,
             only_segments=set(targets),
             force=force,
+            engine=self.selected_backend,
         )
 
     def targets_for_slide(
@@ -482,17 +517,24 @@ class EditorState:
 
     def synth_all(self) -> int:
         self._audio_scan = None
-        return api.synthesize_deck(self.pdf_path, sidecar_path=self.sidecar_path)
+        return api.synthesize_deck(
+            self.pdf_path, sidecar_path=self.sidecar_path, engine=self.selected_backend
+        )
 
     def preview_current(self) -> api.Preview:
         self._audio_scan = None  # building a preview synthesizes missing clips
         return api.build_preview(
-            self.pdf_path, sidecar_path=self.sidecar_path, only_id=self.current_id
+            self.pdf_path,
+            sidecar_path=self.sidecar_path,
+            only_id=self.current_id,
+            engine=self.selected_backend,
         )
 
     def preview_deck(self) -> api.Preview:
         self._audio_scan = None
-        return api.build_preview(self.pdf_path, sidecar_path=self.sidecar_path)
+        return api.build_preview(
+            self.pdf_path, sidecar_path=self.sidecar_path, engine=self.selected_backend
+        )
 
     def export(self, output: Path, *, silent: bool = False) -> api.ExportResult:
         return api.export(
@@ -500,6 +542,7 @@ class EditorState:
             output,
             sidecar_path=self.sidecar_path,
             silent=silent,
+            engine=self.selected_backend,
         )
 
     # ---- per-slide status (filmstrip) -----------------------------------

@@ -159,6 +159,15 @@ class TestBackendRegistry:
         # Qwen3 is free local audio (.wav, not paid) but too slow to auto-generate.
         assert (qwen3.extension, qwen3.paid, qwen3.realtime) == (".wav", False, False)
 
+    def test_available_backends_filters_to_installed(self) -> None:
+        from slidesonnet.tts import BACKENDS, available_backends
+
+        # Every spec names the import that gates its availability.
+        assert all(spec.import_name for spec in BACKENDS.values())
+        avail = available_backends()
+        assert set(avail) <= set(BACKENDS)
+        assert "kokoro" in avail  # the dev env installs the kokoro extra
+
     def test_engine_voice_introspection(self) -> None:
         from slidesonnet.models import TTSConfig
         from slidesonnet.tts import create_tts

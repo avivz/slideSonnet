@@ -13,7 +13,7 @@ import shutil
 import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from nicegui import app, background_tasks, run, ui
 from nicegui.events import KeyEventArguments
@@ -30,6 +30,7 @@ from slidesonnet.gui.launch import (
 )
 from slidesonnet.gui.state import EditorState, cue_start
 from slidesonnet.narration import transitions as trans
+from slidesonnet.models import Backend
 from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
 
@@ -1240,25 +1241,23 @@ class EditorView:
                 tray_box.mark("orphan-tray")
                 tray_box.visible = False
                 ui.space()
+                ui.label("Engine").classes("ss-section")
+                self.engine_select = (
+                    ui.select(state.backend_options(), value=state.active_backend)
+                    .props("dense outlined")
+                    .classes("w-full ss-mono")
+                )
+                self.engine_select.mark("engine-select")
+                self.engine_select.tooltip(
+                    "Generate / preview / export with this engine — for this session only "
+                    "(not saved to the deck)"
+                )
+                self.engine_select.on_value_change(lambda e: self._on_engine_change(str(e.value)))
                 auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
                 auto_build.props("dense").mark("auto-build")
                 auto_build.bind_value(app.storage.general, "auto_build")
-                if state.tts_is_paid or not state.tts_is_realtime:
-                    auto_build.set_value(False)
-                    auto_build.disable()
-                    if state.tts_is_paid:
-                        auto_build.tooltip(
-                            "Local, fast engines only — a paid engine would bill on every save"
-                        )
-                    else:
-                        auto_build.tooltip(
-                            "This engine is too slow to generate on every edit — "
-                            'use "Generate missing" instead'
-                        )
-                else:
-                    auto_build.tooltip(
-                        "Quietly generate each slide's audio in the background after you edit it"
-                    )
+                self.auto_build = auto_build
+                self._sync_auto_build_gate()
                 auto_build.on_value_change(lambda e: self._on_auto_build_toggle(bool(e.value)))
                 self.gen_all_btn = ui.button("Generate missing", icon="library_music").classes(
                     "w-full"
@@ -1272,7 +1271,9 @@ class EditorView:
 
         # --- footer: engine · sidecar · status flash · hints ---
         with ui.footer().classes("ss-footer no-wrap"):
-            ui.label(f"engine {state.config.tts.backend}").classes("ss-mono ss-foot")
+            self.engine_label = ui.label(f"engine {state.active_backend}").classes(
+                "ss-mono ss-foot"
+            )
             ui.element("div").classes("ss-vsep")
             ui.label(state.sidecar_path.name).classes("ss-mono ss-foot")
             ui.space()
@@ -1584,7 +1585,7 @@ class EditorView:
         on every save, so the checkbox is disabled and this stays False there.
         """
         enabled = bool(app.storage.general.get("auto_build", False))
-        return enabled and not self.state.tts_is_paid
+        return enabled and not self.state.tts_is_paid and self.state.tts_is_realtime
 
     def _sweep_auto_build(self) -> None:
         """One-time fill: queue every uncached clip except the focused slide's."""
@@ -1593,9 +1594,42 @@ class EditorView:
             self.jobs.enqueue(targets)  # allow_paid stays False — never bills
             self.render_side()
 
+    def _sync_auto_build_gate(self) -> None:
+        """Enable/disable "Auto-generate as I edit" for the active engine.
+
+        Gate = paid OR not realtime: a paid engine would bill on every save, and a
+        heavy local engine (Qwen3) is too slow to fire unattended. Re-run whenever
+        the engine changes so the checkbox tracks the picked backend.
+        """
+        cb = self.auto_build
+        state = self.state
+        if state.tts_is_paid or not state.tts_is_realtime:
+            cb.set_value(False)
+            cb.disable()
+            cb.tooltip(
+                "Local, fast engines only — a paid engine would bill on every save"
+                if state.tts_is_paid
+                else "This engine is too slow to generate on every edit — "
+                'use "Generate missing" instead'
+            )
+        else:
+            cb.enable()
+            cb.tooltip("Quietly generate each slide's audio in the background after you edit it")
+
+    def _on_engine_change(self, backend: str) -> None:
+        """Switch the generation engine for this session (never written to disk)."""
+        if backend not in self.state.backend_options():
+            return
+        self.state.set_backend(cast(Backend, backend))
+        self._sync_auto_build_gate()
+        self.engine_label.set_text(f"engine {self.state.active_backend}")
+        self.player.stop_playback()  # the loaded preview track was the old engine's
+        self.render()  # per-engine cache badges, voice pickers, gen-missing count
+        self.flash(f"Generating with {backend}")
+
     def _on_auto_build_toggle(self, enabled: bool) -> None:
         # read the toggle's new value directly (storage may not have synced yet)
-        if enabled and not self.state.tts_is_paid:
+        if enabled and not self.state.tts_is_paid and self.state.tts_is_realtime:
             self._sweep_auto_build()
 
     def schedule_auto_build(self, slide_id: str) -> None:

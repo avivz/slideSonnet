@@ -53,13 +53,36 @@ class BackendSpec:
     #: is too slow to auto-generate; the editor gates "Auto-generate as I edit"
     #: on ``paid OR not realtime``.
     realtime: bool = True
+    #: Python module that must be importable for this backend to run (its extra).
+    #: Used to offer only installed engines in the editor's engine picker.
+    import_name: str = ""
 
 
 BACKENDS: dict[str, BackendSpec] = {
-    "kokoro": BackendSpec("kokoro", ".wav", paid=False, factory=_make_kokoro),
-    "elevenlabs": BackendSpec("elevenlabs", ".mp3", paid=True, factory=_make_elevenlabs),
-    "qwen3": BackendSpec("qwen3", ".wav", paid=False, factory=_make_qwen3, realtime=False),
+    "kokoro": BackendSpec("kokoro", ".wav", paid=False, factory=_make_kokoro, import_name="kokoro"),
+    "elevenlabs": BackendSpec(
+        "elevenlabs", ".mp3", paid=True, factory=_make_elevenlabs, import_name="elevenlabs"
+    ),
+    "qwen3": BackendSpec(
+        "qwen3", ".wav", paid=False, factory=_make_qwen3, realtime=False, import_name="qwen_tts"
+    ),
 }
+
+
+def available_backends() -> list[str]:
+    """Backend names whose Python package is importable (the editor picker's set).
+
+    A backend the user hasn't installed the extra for can't generate, so the
+    editor offers only the installed ones (plus whatever's currently active).
+    """
+    import importlib.util
+
+    return [
+        name
+        for name, spec in BACKENDS.items()
+        if spec.import_name and importlib.util.find_spec(spec.import_name) is not None
+    ]
+
 
 #: Backends whose cached audio cost money to produce (clean keeps these).
 API_BACKENDS: frozenset[str] = frozenset(n for n, spec in BACKENDS.items() if spec.paid)

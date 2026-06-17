@@ -1153,6 +1153,26 @@ async def test_auto_build_disabled_for_slow_local_engine(
     assert calls == []  # no background sweep on a slow engine
 
 
+async def test_engine_picker_switches_engine_and_regates_autobuild(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story: the editor's engine dropdown switches generation for the session —
+    picking the heavy local engine disables auto-build (free, but too slow)."""
+    # Offer qwen3 in the picker even though its package isn't installed in CI.
+    monkeypatch.setattr("slidesonnet.gui.state.available_backends", lambda: ["kokoro", "qwen3"])
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+
+    sel = next(iter(user.find(marker="engine-select").elements))
+    cb = next(iter(user.find(marker="auto-build").elements))
+    assert sel.value == "kokoro"  # default on launch
+    assert cb.enabled  # kokoro is fast + free
+
+    sel.set_value("qwen3")  # pick the heavy local engine
+    assert not cb.enabled  # auto-build disabled for the slow engine
+
+
 async def test_enabling_auto_build_sweeps_uncached_clips_except_current(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
