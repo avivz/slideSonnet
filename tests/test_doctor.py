@@ -40,6 +40,9 @@ def test_run_all_checks_groups() -> None:
     # marp must be gone from the new toolchain
     all_names = {c.name for _, checks in run_all_checks() for c in checks}
     assert "marp-cli" not in all_names
+    # all three TTS backends are reported (kokoro/qwen3 free, elevenlabs paid)
+    tts_names = {c.name for c in groups["TTS backends (at least one required)"]}
+    assert {"kokoro", "qwen-tts", "elevenlabs"} <= tts_names
 
 
 def test_get_cli_version_missing_command_returns_none() -> None:

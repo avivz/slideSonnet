@@ -359,6 +359,15 @@ class EditorState:
         """True when the configured TTS backend spends API credits."""
         return BACKENDS[self.config.tts.backend].paid
 
+    @property
+    def tts_is_realtime(self) -> bool:
+        """True when synthesis is fast enough to fire unattended on every edit.
+
+        False for a heavy local model (Qwen3): free, but too slow to
+        auto-generate. The auto-build gate is ``paid OR not realtime``.
+        """
+        return BACKENDS[self.config.tts.backend].realtime
+
     def _audio_status(self) -> list[tuple[SpeechRef, bool]]:
         """Deck-wide (segment, is_cached) scan, shared across a render tick.
 

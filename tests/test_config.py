@@ -97,6 +97,34 @@ speed = 1.1
     assert cfg.tts.elevenlabs_speed == 1.1
 
 
+def test_qwen3_settings_parsed_and_prompt_resolved(tmp_path: Path) -> None:
+    (tmp_path / "slidesonnet.toml").write_text(
+        """
+[tts]
+backend = "qwen3"
+
+[tts.qwen3]
+model = "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+device = "cuda"
+language = "English"
+voice_prompt = "voices/me.pt"
+""",
+        encoding="utf-8",
+    )
+    cfg = load_config(tmp_path / "deck.pdf")
+    assert cfg.tts.backend == "qwen3"
+    assert cfg.tts.qwen3_model == "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
+    assert cfg.tts.qwen3_device == "cuda"
+    # The voice-prompt path is resolved relative to the config dir (portable deck).
+    assert cfg.tts.qwen3_voice_prompt == str((tmp_path / "voices" / "me.pt").resolve())
+
+
+def test_qwen3_invalid_device_raises(tmp_path: Path) -> None:
+    (tmp_path / "slidesonnet.toml").write_text('[tts.qwen3]\ndevice = "tpu"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="qwen3_device must be one of"):
+        load_config(tmp_path / "deck.pdf")
+
+
 def test_invalid_voice_value_raises(tmp_path: Path) -> None:
     (tmp_path / "slidesonnet.toml").write_text("[voices]\nalice = 3\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="must be a string or table"):

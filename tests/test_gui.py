@@ -1125,6 +1125,34 @@ async def test_auto_build_disabled_for_paid_engine(
     assert calls == []  # …no background billing happens
 
 
+async def test_auto_build_disabled_for_slow_local_engine(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story: a heavy local engine (Qwen3) is free but too slow to fire on every
+    edit, so auto-build is disabled even though it wouldn't bill."""
+    import asyncio
+
+    from nicegui import app
+
+    from slidesonnet.gui.state import EditorState
+
+    # Free (not paid) but not realtime — the Qwen3 case.
+    monkeypatch.setattr(EditorState, "tts_is_realtime", property(lambda self: False))
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    app.storage.general["auto_build"] = True
+    calls: list[set[tuple[str, int]]] = []
+    monkeypatch.setattr(
+        EditorState, "synth_targets", lambda self, t, *, force=False: (calls.append(set(t)), 1)[1]
+    )
+    await user.open("/")
+    cb = next(iter(user.find(marker="auto-build").elements))
+    assert isinstance(cb, ui.checkbox)
+    assert not cb.enabled  # disabled: too slow to auto-generate
+    await asyncio.sleep(0.1)
+    assert calls == []  # no background sweep on a slow engine
+
+
 async def test_enabling_auto_build_sweeps_uncached_clips_except_current(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

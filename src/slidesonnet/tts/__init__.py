@@ -29,6 +29,17 @@ def _make_elevenlabs(tts: TTSConfig) -> TTSEngine:
     return ElevenLabsTTS(tts)
 
 
+def _make_qwen3(tts: TTSConfig) -> TTSEngine:
+    from slidesonnet.tts.qwen3 import Qwen3TTS
+
+    return Qwen3TTS(
+        model=tts.qwen3_model,
+        device=tts.qwen3_device,
+        voice_prompt=tts.qwen3_voice_prompt,
+        language=tts.qwen3_language,
+    )
+
+
 @dataclass(frozen=True)
 class BackendSpec:
     """Everything the rest of the tool needs to know about a TTS backend."""
@@ -37,11 +48,17 @@ class BackendSpec:
     extension: str  # cached-audio file extension (".wav", ".mp3")
     paid: bool  # synthesis spends metered API credits
     factory: Callable[[TTSConfig], TTSEngine]
+    #: Synthesis runs at ~real-time or faster — cheap enough to fire unattended
+    #: on every edit. False for a heavy local model (Qwen3) that, while free,
+    #: is too slow to auto-generate; the editor gates "Auto-generate as I edit"
+    #: on ``paid OR not realtime``.
+    realtime: bool = True
 
 
 BACKENDS: dict[str, BackendSpec] = {
     "kokoro": BackendSpec("kokoro", ".wav", paid=False, factory=_make_kokoro),
     "elevenlabs": BackendSpec("elevenlabs", ".mp3", paid=True, factory=_make_elevenlabs),
+    "qwen3": BackendSpec("qwen3", ".wav", paid=False, factory=_make_qwen3, realtime=False),
 }
 
 #: Backends whose cached audio cost money to produce (clean keeps these).
