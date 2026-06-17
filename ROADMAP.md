@@ -161,7 +161,20 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    carrying the auto-generate-safe flag), the `qwen3` arm of the `Backend` Literal
    in `models.py` (a test pins them in sync), and the `[tts.qwen3]` config fields.
    **[agent→human]**
-4. [ ] **GUI generation-engine picker (session-only).** *Story:* As a deck
+4. [~] **GUI generation-engine picker (session-only).**
+   *Progress (branch `feat/qwen3-tts`):* ✅ MVP landed — an **Engine** dropdown in
+   the editor console (`backend_options()` = installed engines + the active one)
+   sets a session `selected_backend` on `EditorState`; generate / "Generate
+   missing" / preview / export thread `engine=` through the api (the pick wins;
+   `None` still defers to config), and the paid + realtime auto-build gate, the
+   voice picker, the per-engine audio badges, and the footer all follow it. The
+   pick is never written to disk. `available_backends()` + a `BackendSpec.import_name`
+   gate the options; fixed a latent bug where `auto_build_active()` ignored the
+   realtime gate. State + GUI tests; `mypy --strict` + ruff green. *Remaining:*
+   `[tts] backend` still works as the *initial* default (full removal as a config
+   key is deferred); per-utterance multi-voice across engines waits on the voice
+   map (Now #2); filtering/labels polish (e.g. show "(installed)"/paid hints).
+   *Story:* As a deck
    author, I want to choose the TTS engine from inside `slidesonnet edit` — not a
    config file — so I can generate the same engine-agnostic deck with Kokoro,
    Qwen3, or Inworld by flipping a dropdown, without editing `slidesonnet.toml` or

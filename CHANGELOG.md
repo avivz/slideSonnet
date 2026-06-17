@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Pick the generation engine in the editor.** A new **Engine** dropdown in the
+  editor console switches which TTS backend generates audio — Kokoro, Qwen3, or a
+  cloud engine — for the current session, without touching `slidesonnet.toml` or
+  the (engine-agnostic) `.narration` sidecar. The choice routes per-utterance
+  generate, "Generate missing", preview, and export; the paid-confirm and
+  auto-generate gates, the voice picker, and the per-slide audio badges all follow
+  the picked engine. The dropdown offers only the engines whose package is
+  installed (plus whatever's active). The pick is **session-only** — it's never
+  written to disk, so the deck stays portable and relaunching returns to the
+  default (Kokoro).
 - **Qwen3-TTS local engine (own-voice narration).** A new `--engine qwen3`
   backend (the `[qwen3]` extra) narrates a deck in a cloned voice from a local
   `.pt` voice-clone prompt — the expressive / own-voice path Kokoro can't do.

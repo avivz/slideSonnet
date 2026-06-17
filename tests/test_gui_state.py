@@ -142,6 +142,59 @@ def test_tts_is_realtime_gates_heavy_local_engine(tmp_path: Path) -> None:
     assert qwen3.tts_is_realtime is False  # but not fast enough to auto-generate
 
 
+def test_gui_engine_pick_overrides_gates_and_voices(tmp_path: Path) -> None:
+    """A session engine pick re-points the cost gates and the voice list, with no
+    config or sidecar edit."""
+    from slidesonnet.tts.kokoro import KOKORO_VOICES
+
+    state = _state(tmp_path)
+    assert state.active_backend == "kokoro"
+    assert state.tts_is_paid is False
+    assert state.voice_options() == list(KOKORO_VOICES)  # kokoro's own voice set
+
+    state.set_backend("elevenlabs")
+    assert state.active_backend == "elevenlabs"
+    assert state.tts_is_paid is True  # paid gate follows the pick
+    assert state.voice_options() == []  # cloud engine: account-specific ids, no list
+
+    state.set_backend("qwen3")
+    assert state.tts_is_paid is False
+    assert state.tts_is_realtime is False  # free but auto-build-gated
+
+    # The pick is session-only — nothing written to disk.
+    assert not (tmp_path / "slidesonnet.toml").exists()
+
+
+def test_gui_engine_pick_overrides_action_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With an engine picked, actions pass that engine (the GUI choice wins);
+    with nothing picked they pass None (defer to on-disk config)."""
+    from slidesonnet.gui import state as state_mod
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        state_mod.api, "synthesize_deck", lambda pdf, **kw: (captured.update(kw), 0)[1]
+    )
+
+    state.synth_current()
+    assert captured.get("engine") is None  # no pick → defer to config
+
+    state.set_backend("qwen3")
+    captured.clear()
+    state.synth_current()
+    assert captured.get("engine") == "qwen3"  # pick wins
+
+
+def test_backend_options_lists_installed_plus_active(tmp_path: Path) -> None:
+    state = _state(tmp_path)
+    assert "kokoro" in state.backend_options()  # installed in the dev env
+    # An engine whose package may not be installed is still offered once it's active.
+    state.set_backend("qwen3")
+    assert "qwen3" in state.backend_options()
+
+
 def _bump_mtime(path: Path) -> None:
     """Force a visibly newer mtime regardless of filesystem timestamp granularity."""
     later = time.time() + 5
