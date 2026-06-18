@@ -1732,15 +1732,19 @@ class EditorView:
         since switched away — the (cached) load still benefits a later switch back.
         """
         backend = self.state.active_backend
-        self._flag_model_warmup()  # "Loading the qwen3 voice model…" notice
+        # This runs as a detached background task, so any UI touch must re-enter
+        # the page's slot stack explicitly (NiceGUI can't infer it here).
+        with self.client:
+            self._flag_model_warmup()  # "Loading the qwen3 voice model…" notice
         try:
             await run.io_bound(self.state.warm_active_engine)
         except Exception:
             logger.exception("model warmup failed")
             return
         if self.state.active_backend == backend:
-            self.render()  # warmup banner clears now that is_warm() is True
-            ui.notify(f"{backend} voice model ready", type="positive", timeout=2000)
+            with self.client:
+                self.render()  # warmup banner clears now that is_warm() is True
+                ui.notify(f"{backend} voice model ready", type="positive", timeout=2000)
 
     def open_voices_dialog(self) -> None:
         """Edit the deck's portable voice map: name voices + map each per engine.
