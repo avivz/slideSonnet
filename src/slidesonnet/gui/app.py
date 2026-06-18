@@ -20,7 +20,7 @@ from nicegui import app, background_tasks, run, ui
 from nicegui.events import KeyEventArguments
 
 from slidesonnet.audio.track import Cue
-from slidesonnet.cache import audio_dir, render_dir
+from slidesonnet.cache import render_dir
 from slidesonnet.diagnostics import boundary_transition
 from slidesonnet.gui.jobs import JobQueue
 from slidesonnet.gui.launch import (
@@ -1344,7 +1344,7 @@ class EditorView:
 
         # background generation: keep the editor live while clips render
         self.jobs = JobQueue(
-            deck_provider=lambda: (state.deck, state.config, audio_dir(state.pdf_path)),
+            deck_provider=state.jobs_context,
             synth=lambda targets, force: state.synth_targets(targets, force=force),
             is_paid=lambda: state.tts_is_paid,
             current_index=lambda: state.index,  # generate nearest-to-current first
@@ -1591,11 +1591,10 @@ class EditorView:
         the long first pause while the multi-GB model loads.
         """
         if self.state.model_warmup_pending():
-            ui.notify(
-                f"Loading the {self.state.active_backend} voice model — the first "
+            print(
+                f"[gen] loading the {self.state.active_backend} voice model — the first "
                 "clip may take a while; the rest are quick.",
-                type="ongoing",
-                timeout=4000,
+                flush=True,
             )
 
     def enqueue_segment(self, speech_index: int) -> None:
@@ -1624,12 +1623,15 @@ class EditorView:
         """Queue every uncached clip across the deck — non-blocking background fill."""
         self.blocks.save_current()  # flush any open edit before the worker reads disk
         targets = self.state.targets_for_sweep()
+        backend = self.state.active_backend
         if not targets:
-            self.flash(f"Nothing to generate — all audio for {self.state.active_backend} exists")
+            print(f"[gen] nothing to generate — all audio for {backend} exists", flush=True)
+            self.flash(f"Nothing to generate — all audio for {backend} exists")
             return
         self._flag_model_warmup()
         handles = self.jobs.enqueue(targets, allow_paid=True)
-        self.flash(f"Generating {len(handles)} clip(s) with {self.state.active_backend}…")
+        print(f"[gen] queued {len(handles)} clip(s) for {backend}", flush=True)
+        self.flash(f"Generating {len(handles)} clip(s) with {backend}…")
         self.render_side()
         self._render_gen_progress()
 
@@ -1748,19 +1750,16 @@ class EditorView:
         since switched away — the (cached) load still benefits a later switch back.
         """
         backend = self.state.active_backend
-        # This runs as a detached background task, so any UI touch must re-enter
-        # the page's slot stack explicitly (NiceGUI can't infer it here).
-        with self.client:
-            self._flag_model_warmup()  # "Loading the qwen3 voice model…" notice
+        self._flag_model_warmup()  # prints "loading the qwen3 voice model…" to the terminal
         try:
             await run.io_bound(self.state.warm_active_engine)
         except Exception:
             logger.exception("model warmup failed")
             return
+        print(f"[gen] {backend} voice model ready", flush=True)
         if self.state.active_backend == backend:
             with self.client:
                 self.render()  # warmup banner clears now that is_warm() is True
-                ui.notify(f"{backend} voice model ready", type="positive", timeout=2000)
 
     def open_voices_dialog(self) -> None:
         """Edit the deck's portable voice map: name voices + map each per engine.

@@ -223,6 +223,8 @@ class JobQueue:
             self._running = handle
             handle.status = "running"
             handle.started_at = time.monotonic()
+            done, total = self.progress()
+            print(f"[gen] {done + 1}/{total}  {self._describe(handle)} — synthesizing…", flush=True)
             self._emit()
             try:
                 with cancel_scope(handle.cancel):
@@ -236,15 +238,19 @@ class JobQueue:
                 handle.status = "queued"
                 self._pending[handle.key] = handle
                 self._wake.set()
+                print(f"[gen] {self._describe(handle)} — preempted, re-queued", flush=True)
                 self._emit()
                 continue
             except Exception as exc:  # keep the worker alive; surface on the handle
                 handle.status = "error"
                 handle.error = exc
                 logger.exception("background generation failed for %s", handle.key)
+                print(f"[gen] {self._describe(handle)} — FAILED: {exc}", flush=True)
                 self._safe_on_error(handle)
             else:
                 handle.status = "done"
+                elapsed = time.monotonic() - (handle.started_at or time.monotonic())
+                print(f"[gen] {self._describe(handle)} — done in {elapsed:.1f}s", flush=True)
             self._running = None
             self._inflight.pop(handle.key, None)
             handle.done.set()
@@ -288,6 +294,11 @@ class JobQueue:
         else:
             distance = n + (current - slide_idx)  # behind: always after every ahead slide
         return (distance, speech_idx)
+
+    @staticmethod
+    def _describe(handle: JobHandle) -> str:
+        """A short ``slide-id #idx`` label for terminal lines (refs is a set)."""
+        return ", ".join(sorted(f"{sid} #{sp}" for sid, sp in handle.refs))
 
     def _finish_one(self) -> None:
         self._unfinished -= 1

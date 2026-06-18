@@ -32,7 +32,7 @@ from slidesonnet.deck import (
 from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
-from slidesonnet.narration.model import PageNarration, Segment, Transition
+from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
@@ -491,6 +491,17 @@ class EditorState:
             scan = ref_cache_status(self.deck, self._active_config(), audio_dir(self.pdf_path))
             self._audio_scan = (now, scan)
         return self._audio_scan[1]
+
+    def jobs_context(self) -> tuple[Deck, Config, Path]:
+        """``(deck, config, audio_dir)`` for the background JobQueue.
+
+        Uses :meth:`_active_config` — the on-disk config with the *session-selected*
+        backend applied — so the queue's cache lookups match the filmstrip sweep and
+        the actual synthesis. Passing the raw on-disk config instead lets clips cached
+        under one engine mask the picked engine's missing audio, so ``enqueue`` skips
+        every clip ("queued 0" despite N missing in the filmstrip).
+        """
+        return (self.deck, self._active_config(), audio_dir(self.pdf_path))
 
     def uncached_count(self, slide_id: str) -> int:
         """How many of *slide_id*'s speech segments a synthesis run would generate."""

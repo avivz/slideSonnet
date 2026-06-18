@@ -166,6 +166,24 @@ def test_gui_engine_pick_overrides_gates_and_voices(tmp_path: Path) -> None:
     assert not (tmp_path / "slidesonnet.toml").exists()
 
 
+def test_jobs_context_uses_the_session_selected_backend(tmp_path: Path) -> None:
+    """The background queue must look up the cache under the *picked* engine, not the
+    on-disk default.
+
+    Otherwise clips cached under one engine (e.g. Kokoro .wavs) make the picked
+    engine's audio look already-present, so ``enqueue`` skips every clip — the
+    filmstrip shows N missing while the queue reports "queued 0".
+    """
+    state = _state(tmp_path)
+    assert state.active_backend == "kokoro"
+    _deck, cfg, _audio = state.jobs_context()
+    assert cfg.tts.backend == "kokoro"
+
+    state.set_backend("qwen3")
+    _deck, cfg, _audio = state.jobs_context()
+    assert cfg.tts.backend == "qwen3"  # follows the session pick, like the sweep does
+
+
 def _voice_map_sidecar() -> str:
     return (
         "# slidesonnet-format: 2\n"

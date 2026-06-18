@@ -758,6 +758,9 @@ async def test_text_edit_revokes_loaded_track(
     monkeypatch.setattr(
         EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
     )
+    # Play awaits the queue's synth of any uncached clip; stub it so the unit tier
+    # never runs real (slow) Kokoro — we're exercising playback, not synthesis.
+    monkeypatch.setattr(EditorState, "synth_targets", lambda self, t, *, force=False: 1)
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
     seek = next(iter(user.find(marker="seek").elements))
@@ -836,6 +839,9 @@ async def test_play_all_starts_at_current_slide(
         return _fake_preview(self.pdf_path, [(0.0, "intro-title"), (2.0, "euler-setup")])
 
     monkeypatch.setattr(EditorState, "preview_deck", instant_build)
+    # Play awaits the queue's synth of any uncached clip; stub it so the unit tier
+    # never runs real (slow) Kokoro — we're exercising the start-at-current seek.
+    monkeypatch.setattr(EditorState, "synth_targets", lambda self, t, *, force=False: 1)
     await user.open("/")
     user.find("Next").click()  # move to slide 2 (euler-setup)
     await user.should_see("Slide 2 / 6")
