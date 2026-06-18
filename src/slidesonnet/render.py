@@ -83,13 +83,18 @@ def build_timeline(
         if not block.segments:
             block = PageNarration(slide_id=slide_id, segments=[Segment.pause(default_hold)])
         sd = speech_durations_by_page[i] if speech_durations_by_page is not None else None
+        # An explicit edge pause *is* the slide's start/end silence, so the
+        # default lead/tail filler applies only when there's no such pause
+        # (explicit replaces default). The pause itself is counted in the body.
+        lead = 0.0 if block.segments[0].is_pause else video.pre_silence
+        tail = 0.0 if block.segments[-1].is_pause else video.tail_seconds
         pages.append(
             compute_page_timing(
                 block,
                 mode,
                 speech_durations=sd,
-                lead=video.pre_silence,
-                tail=video.tail_seconds,
+                lead=lead,
+                tail=tail,
             )
         )
     return DeckTimeline(pages=pages)

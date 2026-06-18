@@ -33,21 +33,59 @@ _MODE = TimingMode("estimate", wpm=60)  # 1 word/sec
 
 def test_page_durations() -> None:
     tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
-    # a: 0.3 + 3 + 0.5; b: 0.3 + 2 + 0.5; c: 0.3 + (1+1) + 0.5; d: 0.3 + 2.5 + 0.5
-    assert tl.page_durations == pytest.approx([3.8, 2.8, 2.8, 3.3])
+    # An explicit edge pause IS the slide's silence (replaces the default lead/tail):
+    # a (speech only): 0.3 + 3 + 0.5; b (lone pause): 2.0 (no default lead/tail);
+    # c (speech + trailing pause): 0.3 + 1 + 1 (pause is the end hold, no extra tail);
+    # d (un-narrated -> lone default-hold pause): 2.5.
+    assert tl.page_durations == pytest.approx([3.8, 2.0, 2.3, 2.5])
 
 
 def test_page_starts_and_total() -> None:
     tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
-    assert tl.page_starts == pytest.approx([0.0, 3.8, 6.6, 9.4])
-    assert tl.total_duration == pytest.approx(12.7)
+    assert tl.page_starts == pytest.approx([0.0, 3.8, 5.8, 8.1])
+    assert tl.total_duration == pytest.approx(10.6)
 
 
 def test_cue_sheet() -> None:
     tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
     cues = tl.cue_sheet()
     assert [c[1] for c in cues] == ["a", "b", "c", "d"]
-    assert cues[2][0] == pytest.approx(6.6)
+    assert cues[2][0] == pytest.approx(5.8)
+
+
+def test_edge_pause_replaces_default_lead_and_tail() -> None:
+    # A leading pause sets the start hold (no extra pre_silence); a trailing pause
+    # sets the end hold (no extra tail_seconds). pause:0 means no hold at all.
+    deck = Deck(
+        pdf_path=Path("x.pdf"),
+        sidecar_path=Path("x.narration"),
+        pages=["lead", "trail", "zero", "both"],
+        narration={
+            "lead": PageNarration("lead", [Segment.pause(1.0), Segment.speech("hi")]),
+            "trail": PageNarration("trail", [Segment.speech("hi"), Segment.pause(1.0)]),
+            "zero": PageNarration(
+                "zero", [Segment.pause(0.0), Segment.speech("hi"), Segment.pause(0.0)]
+            ),
+            "both": PageNarration(
+                "both", [Segment.pause(2.0), Segment.speech("hi"), Segment.pause(3.0)]
+            ),
+        },
+    )
+    tl = build_timeline(deck, _MODE, video=_VIDEO)  # 1 word = 1s
+    durs = dict(zip(tl.slide_ids, tl.page_durations, strict=True))
+    assert durs["lead"] == pytest.approx(1.0 + 1.0 + 0.5)  # explicit lead, default tail
+    assert durs["trail"] == pytest.approx(0.3 + 1.0 + 1.0)  # default lead, explicit tail
+    assert durs["zero"] == pytest.approx(1.0)  # both holds zeroed
+    assert durs["both"] == pytest.approx(2.0 + 1.0 + 3.0)  # both explicit
+
+
+def test_leading_and_trailing_silence_helpers() -> None:
+    speech_only = PageNarration("a", [Segment.speech("hi")])
+    assert speech_only.leading_silence(0.3) == pytest.approx(0.3)
+    assert speech_only.trailing_silence(0.5) == pytest.approx(0.5)
+    bracketed = PageNarration("b", [Segment.pause(1.0), Segment.speech("hi"), Segment.pause(2.0)])
+    assert bracketed.leading_silence(0.3) == pytest.approx(1.0)
+    assert bracketed.trailing_silence(0.5) == pytest.approx(2.0)
 
 
 def test_subtitles_segment_granularity() -> None:
@@ -56,7 +94,7 @@ def test_subtitles_segment_granularity() -> None:
     texts = [e.text for e in entries]
     assert texts == ["one two three", "four"]
     assert entries[0].start == pytest.approx(0.3)
-    assert entries[1].start == pytest.approx(6.9)  # 6.6 + lead 0.3
+    assert entries[1].start == pytest.approx(6.1)  # page c starts 5.8 + lead 0.3
 
 
 def test_subtitles_slide_granularity() -> None:
@@ -285,7 +323,8 @@ def test_tts_timeline_uses_supplied_durations() -> None:
         deck, TimingMode("tts"), video=_VIDEO, speech_durations_by_page=durations, default_hold=2.5
     )
     assert tl.page_durations[0] == pytest.approx(0.3 + 1.5 + 0.5)
-    assert tl.page_durations[2] == pytest.approx(0.3 + 2.0 + 1.0 + 0.5)
+    # page c ends with a pause -> that pause is the end hold, no extra tail.
+    assert tl.page_durations[2] == pytest.approx(0.3 + 2.0 + 1.0)
 
 
 def test_page_pieces_clear_error_when_speech_clip_missing() -> None:
