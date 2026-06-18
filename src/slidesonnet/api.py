@@ -238,6 +238,7 @@ def export(
 
     rdir = render_dir(pdf_path)
     page_audios: list[Path] | None = None
+    audio_track: Path | None = None
     if audible:
         results = _synth(deck, config, audio_dir=audio_dir(pdf_path), progress=progress)
         timeline = build_timeline(
@@ -246,7 +247,7 @@ def export(
             video=config.video,
             speech_durations_by_page=page_speech_durations(deck, results),
         )
-        _, page_audios = render_audio_track(
+        audio_track, page_audios = render_audio_track(
             timeline, page_speech_clips(deck, results), render_dir=rdir
         )
     else:
@@ -264,6 +265,7 @@ def export(
         page_audios=page_audios,
         render_dir=rdir,
         transitions=boundaries,
+        audio_track=audio_track,
     )
 
     subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)

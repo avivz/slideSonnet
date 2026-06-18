@@ -275,16 +275,11 @@ def test_compose_video_silent_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert concat_calls == [(expected_segs, output)]
 
 
-def test_compose_video_with_audio_uses_real_durations(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
-    audio_durations = {f"page-{i:04d}.wav": float(i) for i in range(1, 5)}
-    seg_calls: list[tuple[Path, Path, Path, float]] = []
-
-    def fake_segment(
+def _fake_silent_recorder(
+    sink: list[tuple[Path, Path, float]],
+) -> object:
+    def fake_silent(
         image: Path,
-        audio: Path,
         output: Path,
         *,
         duration: float,
@@ -293,11 +288,31 @@ def test_compose_video_with_audio_uses_real_durations(
         crf: int,
         preset: str,
     ) -> None:
-        seg_calls.append((image, audio, output, duration))
+        sink.append((image, output, duration))
 
-    monkeypatch.setattr("slidesonnet.render.compose_segment", fake_segment)
-    monkeypatch.setattr("slidesonnet.render.concatenate_segments", lambda segments, output: None)
-    # get_duration is imported lazily inside compose_video, so patch it at source.
+    return fake_silent
+
+
+def test_compose_video_with_audio_sizes_silent_segments_and_muxes_track(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
+    audio_durations = {f"page-{i:04d}.wav": float(i) for i in range(1, 5)}
+    silent_calls: list[tuple[Path, Path, float]] = []
+    concat_calls: list[tuple[list[Path], Path]] = []
+    mux_calls: list[tuple[Path, Path, Path]] = []
+
+    monkeypatch.setattr(
+        "slidesonnet.render.compose_silent_segment", _fake_silent_recorder(silent_calls)
+    )
+    monkeypatch.setattr(
+        "slidesonnet.render.concatenate_segments",
+        lambda segments, output: concat_calls.append((segments, output)),
+    )
+    monkeypatch.setattr(
+        "slidesonnet.video.composer.mux_audio",
+        lambda video, audio, output: mux_calls.append((video, audio, output)),
+    )
     monkeypatch.setattr(
         "slidesonnet.video.composer.get_duration",
         lambda path: audio_durations[path.name],
@@ -305,14 +320,101 @@ def test_compose_video_with_audio_uses_real_durations(
 
     images = [tmp_path / f"p{i}.png" for i in range(1, 5)]
     audios = [tmp_path / f"page-{i:04d}.wav" for i in range(1, 5)]
+    track = tmp_path / "track.wav"
     output = tmp_path / "deck.mp4"
+    rdir = tmp_path / "r"
     compose_video(
-        tl, images, output, config=Config(), page_audios=audios, render_dir=tmp_path / "r"
+        tl,
+        images,
+        output,
+        config=Config(),
+        page_audios=audios,
+        render_dir=rdir,
+        audio_track=track,
     )
 
-    assert [(c[0], c[1]) for c in seg_calls] == list(zip(images, audios, strict=True))
-    # Segment length comes from the audio file, with no extra padding or lead.
-    assert [c[3] for c in seg_calls] == [1.0, 2.0, 3.0, 4.0]
+    # Every page is a silent segment sized from the real audio length (no cuts).
+    assert [c[0] for c in silent_calls] == images
+    assert [c[2] for c in silent_calls] == pytest.approx([1.0, 2.0, 3.0, 4.0])
+    # The silent video is assembled to an intermediate, then the continuous deck
+    # track is muxed over it into the final output.
+    silent_video = rdir / "silent.mp4"
+    assert concat_calls == [
+        ([rdir / "segments" / f"seg-{i:04d}.mp4" for i in range(1, 5)], silent_video)
+    ]
+    assert mux_calls == [(silent_video, track, output)]
+
+
+def test_compose_video_centers_transition_and_preserves_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two slides, 4s each, with a 1s wipe between them.
+    deck = Deck(
+        pdf_path=Path("x.pdf"),
+        sidecar_path=Path("x.narration"),
+        pages=["a", "b"],
+        narration={
+            "a": PageNarration("a", [Segment.speech("x")]),
+            "b": PageNarration("b", [Segment.speech("y")]),
+        },
+    )
+    tl = build_timeline(
+        deck, TimingMode("fixed", fixed_seconds=4), video=VideoConfig(pre_silence=0, tail_seconds=0)
+    )
+    silent_calls: list[tuple[Path, Path, float]] = []
+    trans_calls: list[tuple[Path, Path, float, str]] = []
+    concat_calls: list[tuple[list[Path], Path]] = []
+
+    monkeypatch.setattr(
+        "slidesonnet.render.compose_silent_segment", _fake_silent_recorder(silent_calls)
+    )
+    monkeypatch.setattr(
+        "slidesonnet.render.concatenate_segments",
+        lambda segments, output: concat_calls.append((segments, output)),
+    )
+
+    def fake_trans(
+        a: Path, b: Path, out: Path, *, duration: float, transition: str, **kw: object
+    ) -> None:
+        trans_calls.append((a, b, duration, transition))
+
+    monkeypatch.setattr("slidesonnet.video.composer.compose_transition_clip", fake_trans)
+
+    from slidesonnet.narration.model import Transition
+
+    images = [tmp_path / "a.png", tmp_path / "b.png"]
+    output = tmp_path / "deck.mp4"
+    compose_video(
+        tl,
+        images,
+        output,
+        config=Config(),
+        page_audios=None,
+        render_dir=tmp_path / "r",
+        transitions=[Transition("wipeleft", 1.0)],
+    )
+
+    # 1s wipe centered on the boundary: 0.5s trimmed off each slide's facing edge.
+    assert [c[2] for c in silent_calls] == pytest.approx([3.5, 3.5])
+    assert trans_calls and trans_calls[0][2] == pytest.approx(1.0)
+    assert trans_calls[0][3] == "wipeleft"
+    # Pieces interleave seg/morph/seg; total = 3.5 + 1.0 + 3.5 = 8.0 = sum of slides.
+    pieces = concat_calls[0][0]
+    assert len(pieces) == 3
+    assert sum(c[2] for c in silent_calls) + 1.0 == pytest.approx(8.0)
+
+
+def test_transition_morph_seconds_clamps_to_shorter_slide() -> None:
+    from slidesonnet.narration.model import Transition
+    from slidesonnet.render import transition_morph_seconds
+
+    # boundary 0: 2s wipe but slide b is only 0.3s -> clamped to 0.3.
+    # boundary 1: a cut contributes nothing.
+    morph = transition_morph_seconds(
+        [Transition("wipeleft", 2.0), Transition("cut", 0.0)],
+        [5.0, 0.3, 5.0],
+    )
+    assert morph == pytest.approx([0.3, 0.0])
 
 
 def test_tts_timeline_uses_supplied_durations() -> None:
