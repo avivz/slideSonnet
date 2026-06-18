@@ -265,7 +265,13 @@ def _cancellable(model: Any) -> Any:
     import torch
     from transformers import StoppingCriteria, StoppingCriteriaList
 
-    class _EventStop(StoppingCriteria):
+    # transformers is an optional ([qwen3]-extra) dep, so CI typechecks without it
+    # installed — there StoppingCriteria is Any and strict mypy rejects subclassing
+    # it. Pin the base to Any so the type-checked shape is identical with or without
+    # the package, keeping the one ignore below "used" in both environments.
+    _StoppingCriteria: Any = StoppingCriteria
+
+    class _EventStop(_StoppingCriteria):  # type: ignore[misc]  # base is Any (see above)
         def __call__(self, input_ids: Any, scores: Any = None, **kwargs: Any) -> Any:
             return torch.full(
                 (input_ids.shape[0],), evt.is_set(), dtype=torch.bool, device=input_ids.device
