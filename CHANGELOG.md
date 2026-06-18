@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Play is cancellable while it waits on generation.** Pressing play on a slide
+  whose audio isn't ready shows a spinner while the clips render; that wait is now
+  cancellable — **Stop** aborts it immediately (instead of only taking effect once
+  synthesis finished), pressing a different play button supersedes it, and
+  navigating off a single-slide build cancels the wait. In every case the queued
+  audio keeps generating in the background, so you can move to an already-generated
+  slide and play it right away.
+- **Cancel all generation from the progress bar.** A small ✕ beside the
+  generation progress bar drops every queued clip and stops the running one at
+  once (the running clip on an engine that can't abort mid-clip finishes its
+  current file into the cache — harmless).
 - **Generation progress is now visible.** While clips render in the background the
   editor shows a deck-wide count bar (e.g. "Generating 4/12"), a live elapsed/estimate
   line for the clip in flight ("intro · 12s of ~18s"), and a thin estimated
@@ -121,6 +132,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   repo (and keep its `.pt` `voice_prompt`).
 
 ### Fixed
+- **The editor's background queue looks up the cache under the *picked* engine.**
+  It was keyed to the on-disk config's engine, so after switching the session
+  engine (e.g. to Qwen3) "Generate missing" could report "queued 0" while the
+  filmstrip showed clips missing — it was finding another engine's cached audio.
+  Queue, filmstrip, and synthesis now agree on the active engine.
+- **Qwen3 CustomVoice no longer crashes on a foreign voice id.** A deck whose
+  `default-voice` resolved to another engine's voice (e.g. Kokoro `af_heart`) made
+  Qwen3 fail with "Unsupported speakers". Unknown speakers now fall back to the
+  default (Vivian) with a warning, and known speakers match case-insensitively.
+- **Background generation now reports its outcome.** "Generate missing" and per-clip
+  generation print `[gen]` progress to the terminal (queued count, per-clip start /
+  done-with-timing, failures, cancellations) instead of failing silently.
 - **A slide's "Transition in" now matches the previous slide's "Transition out".**
   The two are the same boundary, but the editor stored and showed them as
   independent fields, so they could disagree (set an outgoing wipe on one slide

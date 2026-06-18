@@ -7,6 +7,7 @@ sample-accurate to the exported video.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -427,6 +428,11 @@ class PreviewPlayer:
         self.cues: list[Cue] = []
         self.track_duration = 0.0
         self.scrubbing = False  # user is dragging the seek handle; don't fight them
+        # An in-flight preview build (it may be waiting on the generation queue).
+        # Tracked so Stop, navigation, or a second play-press can cancel the wait.
+        self._build_task: asyncio.Task[None] | None = None
+        self._build_key: str | None = None  # "deck" or the slide id being built
+        self._build_btn: Any = None  # the play button wearing the build spinner
 
     @staticmethod
     def _fmt_clock(t: float) -> str:
@@ -474,7 +480,24 @@ class PreviewPlayer:
         }
         self._run_js(f"window.ssMorph && window.ssMorph.start({json.dumps(cfg)})")
 
+    def cancel_build(self) -> None:
+        """Abort an in-flight preview build — the wait on the generation queue.
+
+        Only the *waiting* stops: clips already queued keep generating in the
+        background, so hitting Stop or navigating away never throws away audio.
+        The build task's own ``finally`` does the final cleanup (and no-ops on a
+        superseded build via its current-task guard), so the task handle is left
+        in place here; we just drop the spinner right away for responsiveness.
+        """
+        task = self._build_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        if self._build_btn is not None:
+            self._build_btn.props(remove="loading")
+
     def stop_playback(self) -> None:
+        self.cancel_build()  # abort a build still waiting on generation — Stop wins now
         self.playback.stop()  # cancels a pending play too — Stop always wins
         self.audio.pause()
         self._run_js("window.ssMorph && window.ssMorph.stop()")
@@ -489,7 +512,10 @@ class PreviewPlayer:
         """Claim the player synchronously at click time, then build off the loop.
 
         Claiming the token here (not inside the task) means a Stop click that
-        lands before the build even starts still cancels it.
+        lands before the build even starts still cancels it. A build may then sit
+        waiting on the generation queue; that wait is cancellable — pressing the
+        same play button again cancels it, pressing a *different* one supersedes
+        it, and the queued audio keeps generating in the background either way.
         """
         view = self.view
         state = view.state
@@ -508,14 +534,23 @@ class PreviewPlayer:
             self.playback.set_playing(True)
             self.sync_transport()
             return
-        if view.busy:
-            return
-        view.busy = True
+        # action == "build". While a build is in flight, a repeat press on the
+        # *same* track is ignored (so a double-click doesn't cancel itself —
+        # Stop and navigation are how you cancel); a press on a *different* track
+        # supersedes it. The queued audio keeps generating either way.
+        if self._build_task is not None and not self._build_task.done():
+            if self._build_key == key:
+                return
+            self.cancel_build()  # different track: supersede the in-flight build
+        elif view.busy:
+            return  # a blocking action (export) holds the editor
         token = self.playback.begin(deck=whole_deck)
+        self._build_key = key
+        self._build_btn = btn
         self.audio.pause()  # a rolling preview yields to the new request right away
         self.playback.set_playing(False)
         self.sync_transport()
-        background_tasks.create(self._preview(btn, whole_deck, token))
+        self._build_task = background_tasks.create(self._preview(btn, whole_deck, token))
 
     async def _preview(self, btn: Any, whole_deck: bool, token: int) -> None:
         view = self.view
@@ -575,15 +610,26 @@ class PreviewPlayer:
                 self.playback.set_playing(True)  # optimistic; the browser event confirms
                 self.sync_transport()
                 view.flash(f"Preview ready ({preview.total_duration:.1f}s)", "positive")
+        except asyncio.CancelledError:
+            # Stop / navigation / a new play press aborted the wait. The queued
+            # generation keeps running — we only stopped waiting on it.
+            with client:
+                view.flash("Playback canceled — still generating in the background", "info")
+            raise
         except Exception as exc:
             logger.exception("preview failed")
             with client:
                 view.flash(f"Error: {exc}", "negative")
         finally:
-            view.busy = False
-            with client:
-                btn.props(remove="loading")
-                view.render()
+            # Only the *current* build owns the spinner and player state; a
+            # superseded one (a newer build already took over) cleans up nothing.
+            if self._build_task is asyncio.current_task():
+                self._build_task = None
+                self._build_key = None
+                self._build_btn = None
+                with client:
+                    btn.props(remove="loading")
+                    view.render()
 
     # clock/scrubber sync + cue-driven image flip during deck preview
     def on_timeupdate(self, e: Any) -> None:
@@ -1234,7 +1280,7 @@ class EditorView:
                         play_all = ui.button(icon="playlist_play").props("flat round dense")
                         play_all.mark("play-deck").tooltip("Preview whole deck")
                         stop_btn = ui.button(icon="stop").props("flat round dense")
-                        stop_btn.mark("stop").tooltip("Stop preview")
+                        stop_btn.mark("stop").tooltip("Stop / cancel building")
                         ui.element("div").classes("ss-vsep")
                         audio = ui.audio("").classes("ss-audio")
                         audio.mark("preview-audio")
@@ -1258,12 +1304,19 @@ class EditorView:
                 self.audio_status = ui.label().classes("ss-diag ss-diag-info")
                 # Background-generation progress: a deck-wide count bar (A), an
                 # estimated within-clip bar (C), and an elapsed/estimate line (B).
-                self.gen_bar = (
-                    ui.linear_progress(value=0.0, show_value=False)
-                    .props("rounded size=8px")
-                    .classes("w-full")
-                )
-                self.gen_bar.mark("gen-progress")
+                # The ✕ beside the bar cancels every queued/running clip at once.
+                with ui.row().classes("w-full items-center no-wrap gap-1"):
+                    self.gen_bar = (
+                        ui.linear_progress(value=0.0, show_value=False)
+                        .props("rounded size=8px")
+                        .classes("grow")
+                    )
+                    self.gen_bar.mark("gen-progress")
+                    self.gen_cancel_btn = ui.button(
+                        icon="close", on_click=self.cancel_all_generation
+                    )
+                    self.gen_cancel_btn.props("flat round dense size=xs color=grey-6")
+                    self.gen_cancel_btn.mark("gen-cancel").tooltip("Cancel all generation")
                 self.gen_clip_bar = (
                     ui.linear_progress(value=0.0, show_value=False)
                     .props("rounded size=4px instant-feedback")
@@ -1272,6 +1325,7 @@ class EditorView:
                 self.gen_status = ui.label().classes("ss-diag ss-diag-info ss-mono")
                 self.gen_status.mark("gen-progress-status")
                 self.gen_bar.visible = False
+                self.gen_cancel_btn.visible = False
                 self.gen_clip_bar.visible = False
                 self.gen_status.visible = False
                 tray_box = ui.column().classes("w-full gap-1")
@@ -1665,10 +1719,11 @@ class EditorView:
         done, total = self.jobs.progress()
         running = self.jobs.running_handle()
         if total == 0 or (done >= total and running is None):
-            for w in (self.gen_bar, self.gen_clip_bar, self.gen_status):
+            for w in (self.gen_bar, self.gen_cancel_btn, self.gen_clip_bar, self.gen_status):
                 w.visible = False
             return
         self.gen_bar.visible = True
+        self.gen_cancel_btn.visible = True
         self.gen_status.visible = True
         self.gen_bar.set_value(done / total if total else 0.0)
         parts = [f"Generating {min(done + 1, total)}/{total}"]
@@ -1689,6 +1744,18 @@ class EditorView:
         self.gen_clip_bar.visible = clip_fraction is not None
         if clip_fraction is not None:
             self.gen_clip_bar.set_value(clip_fraction)
+
+    def cancel_all_generation(self) -> None:
+        """Drop every queued clip and stop the running one (the progress-bar ✕)."""
+        cleared = self.jobs.cancel_all()
+        print(f"[gen] canceled {cleared} queued/running clip(s)", flush=True)
+        self.flash(
+            f"Canceled generation ({cleared} clip{'s' if cleared != 1 else ''})"
+            if cleared
+            else "Nothing was generating"
+        )
+        self._render_gen_progress()
+        self.render_side()
 
     # ---- auto-build (opt-in background generation as you edit) ------------
     def auto_build_active(self) -> bool:
@@ -1924,8 +1991,8 @@ class EditorView:
 
     # ---- live reload of deck sources (PDF recompile, sidecar/config edits) ----
     async def _poll_sources(self) -> None:
-        if self.busy:  # don't yank the deck out from under a synth/export
-            return
+        if self.busy or self.player._build_task is not None:
+            return  # don't yank the deck out from under a synth/export/preview build
         state = self.state
         changes = await run.io_bound(state.external_changes)
         if not changes:

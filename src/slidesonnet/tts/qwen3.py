@@ -184,8 +184,26 @@ class Qwen3TTS(TTSEngine):
         return len(samples) / sr
 
     def _synthesize_custom_voice(self, text: str, voice: str | None) -> tuple[Any, Any]:
-        """Built-in-speaker path: narrate as a named shipped speaker (no prompt)."""
-        speaker = voice or DEFAULT_CUSTOM_VOICE_SPEAKER
+        """Built-in-speaker path: narrate as a named shipped speaker (no prompt).
+
+        The requested voice may be a foreign engine's id (e.g. a Kokoro ``af_heart``
+        that rode in via the deck's ``default-voice``) or just wrong case. Match it
+        case-insensitively against the shipped speakers and fall back to the default
+        rather than letting the model reject it with "Unsupported speakers". The
+        editor's ``voice-unmapped`` warnings nudge the user to map it properly.
+        """
+        known = {s.lower(): s for s in CUSTOM_VOICE_SPEAKERS}
+        requested = voice or DEFAULT_CUSTOM_VOICE_SPEAKER
+        speaker = known.get(requested.lower())
+        if speaker is None:
+            logger.warning(
+                "Qwen3 CustomVoice has no speaker %r — using %s. Map this voice to a "
+                "Qwen3 speaker (%s) in the Voices dialog.",
+                requested,
+                DEFAULT_CUSTOM_VOICE_SPEAKER,
+                ", ".join(CUSTOM_VOICE_SPEAKERS),
+            )
+            speaker = DEFAULT_CUSTOM_VOICE_SPEAKER
         model = self._ensure_model()
         with _cancellable(model):
             return model.generate_custom_voice(  # type: ignore[no-any-return]

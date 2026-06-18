@@ -385,21 +385,110 @@ def _fake_preview(pdf: Path, cues: list[tuple[float, str]]) -> "api.Preview":
 async def test_stop_during_preview_build_cancels_playback(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Stop pressed while the track is still building must win over the play."""
+    """Stop pressed while the build waits on generation cancels it immediately —
+    no blocking on synthesis — and the flash says generation keeps running."""
+    import asyncio
+    import threading
+
     from slidesonnet.gui.state import EditorState
 
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    release = threading.Event()  # stands in for slow generation; freed at teardown
 
-    def slow_build(self: EditorState) -> api.Preview:
-        time.sleep(1.0)  # the synthesis window the user interrupts
-        return _fake_preview(self.pdf_path, [])
+    def blocking_synth(self: EditorState, targets: object, *, force: bool = False) -> int:
+        release.wait(5)
+        return 1
 
-    monkeypatch.setattr(EditorState, "preview_current", slow_build)
-    await user.open("/")
-    user.find(marker="play-slide").click()
-    user.find(marker="stop").click()
-    await user.should_see("Preview stopped", retries=300)
+    monkeypatch.setattr(EditorState, "synth_targets", blocking_synth)
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    try:
+        await user.open("/")
+        play_btn = next(iter(user.find(marker="play-slide").elements))
+        user.find(marker="play-slide").click()
+        for _ in range(200):  # let the build task start and park on the blocked synth
+            if play_btn.props.get("loading"):
+                break
+            await asyncio.sleep(0.02)
+        assert play_btn.props.get("loading")  # building, waiting on generation
+        user.find(marker="stop").click()
+        await user.should_see("Playback canceled", retries=300)
+        assert not play_btn.props.get("loading")  # spinner cleared, didn't wait on synth
+    finally:
+        release.set()
+
+
+async def test_navigating_cancels_a_pending_single_slide_build(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Moving off a slide whose build is still waiting cancels the wait (the
+    single-slide track belongs to its slide) — without blocking — so a new slide
+    is immediately playable. The queued generation keeps running in the
+    background (cancelling the wait never touches the queue)."""
+    import asyncio
+    import threading
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    release = threading.Event()
+
+    def blocking_synth(self: EditorState, targets: object, *, force: bool = False) -> int:
+        release.wait(5)
+        return 1
+
+    monkeypatch.setattr(EditorState, "synth_targets", blocking_synth)
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+    )
+    try:
+        await user.open("/")
+        play_btn = next(iter(user.find(marker="play-slide").elements))
+        user.find(marker="play-slide").click()
+        for _ in range(200):  # let the build task park on the blocked synth
+            if play_btn.props.get("loading"):
+                break
+            await asyncio.sleep(0.02)
+        assert play_btn.props.get("loading")
+        user.find("Next").click()  # leave the slide: its pending build is canceled
+        await user.should_see("Playback canceled", retries=300)
+        await user.should_see("Slide 2 / 6")
+        assert not play_btn.props.get("loading")  # play is free for the new slide
+    finally:
+        release.set()
+
+
+async def test_cancel_all_button_clears_the_generation_queue(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ✕ beside the progress bar appears while generating and drops the queue."""
+    import threading
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    release = threading.Event()
+
+    def blocking_synth(self: EditorState, targets: object, *, force: bool = False) -> int:
+        release.wait(5)  # keep the queue busy so the ✕ stays up
+        return 1
+
+    monkeypatch.setattr(EditorState, "synth_targets", blocking_synth)
+    try:
+        await user.open("/")
+        await user.should_not_see(marker="gen-cancel")  # hidden while idle
+        user.find(marker="gen-missing").click()  # queue both slides' clips
+        await user.should_see("Generating", retries=300)
+        # find() only matches visible elements, so this click also proves the ✕ is up
+        user.find(marker="gen-cancel").click()
+        await user.should_see("Canceled generation", retries=300)
+        await user.should_not_see(marker="gen-cancel")  # queue drained, ✕ gone
+    finally:
+        release.set()
 
 
 async def test_deck_playback_cue_flip_saves_pending_edits(
@@ -467,6 +556,9 @@ async def test_replaying_preview_reloads_the_new_track(
     monkeypatch.setattr(
         EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
     )
+    # Play awaits the queue's synth of any uncached clip; stub it so the unit tier
+    # never runs real (slow) Kokoro — we're exercising the audio-URL refetch.
+    monkeypatch.setattr(EditorState, "synth_targets", lambda self, t, *, force=False: 1)
     await user.open("/")
     user.find(marker="play-slide").click()
     await user.should_see("Preview ready", retries=300)
@@ -546,26 +638,6 @@ async def test_play_button_toggles_pause_and_resume(
     user.find(marker="play-slide").click()  # resume
     assert play_btn.props.get("icon") == "pause"
     assert str(audio.props.get("src")) == loaded
-
-
-async def test_nav_during_single_slide_build_cancels_it(
-    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """play → immediately arrow on: slide 1's audio must not start over slide 2."""
-    from slidesonnet.gui.state import EditorState
-
-    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
-    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
-
-    def slow_build(self: EditorState) -> api.Preview:
-        time.sleep(1.0)
-        return _fake_preview(self.pdf_path, [])
-
-    monkeypatch.setattr(EditorState, "preview_current", slow_build)
-    await user.open("/")
-    user.find(marker="play-slide").click()
-    user.find("Next").click()
-    await user.should_see("Preview stopped", retries=300)
 
 
 async def test_seek_bar_tracks_position_and_resets_on_stop(

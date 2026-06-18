@@ -184,6 +184,28 @@ def test_custom_voice_uses_the_picked_speaker(fake_qwen3: SimpleNamespace, tmp_p
     assert kwargs["speaker"] == "Ryan"
 
 
+def test_custom_voice_falls_back_for_an_unknown_speaker(
+    fake_qwen3: SimpleNamespace, tmp_path: Path
+) -> None:
+    """A foreign voice id (e.g. a Kokoro voice that leaked through the deck's
+    default-voice) falls back to the default speaker instead of crashing the real
+    model with 'Unsupported speakers'."""
+    engine = Qwen3TTS(model=_CUSTOM_MODEL, device="cpu")
+    engine.synthesize("Hi.", tmp_path / "c.wav", voice="af_heart")
+    _, kwargs = fake_qwen3.model.generate_custom_voice.call_args
+    assert kwargs["speaker"] == "Vivian"  # unknown speaker → default, not "af_heart"
+
+
+def test_custom_voice_speaker_match_is_case_insensitive(
+    fake_qwen3: SimpleNamespace, tmp_path: Path
+) -> None:
+    """A known speaker in any case resolves to its canonical form the model wants."""
+    engine = Qwen3TTS(model=_CUSTOM_MODEL, device="cpu")
+    engine.synthesize("Hi.", tmp_path / "c.wav", voice="ryan")
+    _, kwargs = fake_qwen3.model.generate_custom_voice.call_args
+    assert kwargs["speaker"] == "Ryan"
+
+
 def test_warm_loads_the_model_without_synthesizing(
     fake_qwen3: SimpleNamespace, tmp_path: Path
 ) -> None:

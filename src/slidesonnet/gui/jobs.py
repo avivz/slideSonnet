@@ -60,6 +60,9 @@ class JobHandle:
     #: Set to ask a heavy engine to abort this clip mid-generation (play preempt).
     #: A cancelled job is re-queued (not failed) and the flag cleared for the retry.
     cancel: threading.Event = field(default_factory=threading.Event)
+    #: With ``cancel``, asks the worker to *drop* an aborted clip instead of
+    #: re-queuing it — set by :meth:`JobQueue.cancel_all` (the progress-bar ✕).
+    discarded: bool = False
     #: ``time.monotonic()`` when this clip started running (drives the elapsed timer).
     started_at: float | None = None
 
@@ -203,6 +206,32 @@ class JobQueue:
         running.cancel.set()
         return True
 
+    def cancel_all(self) -> int:
+        """Drop every queued clip and abort the running one; return how many cleared.
+
+        Backs the progress-bar ✕: pending clips are removed (their awaiters
+        released without synthesis) and the running clip is signalled to stop and
+        *not* re-queue. The burst tally resets so the progress UI clears. A clip
+        already mid-synthesis on an engine that can't abort cooperatively (Kokoro)
+        finishes its current file — which is harmless, it just lands in the cache.
+        """
+        cleared = len(self._pending)
+        for handle in list(self._pending.values()):
+            self._pending.pop(handle.key, None)
+            self._inflight.pop(handle.key, None)
+            handle.status = "error"
+            handle.done.set()
+            self._finish_one()
+        running = self._running
+        if running is not None:
+            running.discarded = True
+            running.cancel.set()
+            cleared += 1
+        self._burst_total = 0
+        self._burst_done = 0
+        self._emit()
+        return cleared
+
     def running_handle(self) -> JobHandle | None:
         """The clip currently generating, if any (drives the live elapsed timer)."""
         return self._running
@@ -230,17 +259,22 @@ class JobQueue:
                 with cancel_scope(handle.cancel):
                     await asyncio.to_thread(self._synth, set(handle.refs), handle.force)
             except GenerationCancelled:
-                # Preempted (e.g. by play): re-queue this clip and free the worker
-                # for the higher-priority one. Keep the handle in _inflight and
-                # leave it unfinished so its awaiters still resolve on the retry.
-                self._running = None
-                handle.cancel.clear()
-                handle.status = "queued"
-                self._pending[handle.key] = handle
-                self._wake.set()
-                print(f"[gen] {self._describe(handle)} — preempted, re-queued", flush=True)
-                self._emit()
-                continue
+                if not handle.discarded:
+                    # Preempted (e.g. by play): re-queue this clip and free the
+                    # worker for the higher-priority one. Keep the handle in
+                    # _inflight and leave it unfinished so awaiters resolve on retry.
+                    self._running = None
+                    handle.cancel.clear()
+                    handle.status = "queued"
+                    self._pending[handle.key] = handle
+                    self._wake.set()
+                    print(f"[gen] {self._describe(handle)} — preempted, re-queued", flush=True)
+                    self._emit()
+                    continue
+                # Aborted by cancel-all: drop it (fall through to the done bookkeeping
+                # below) so it isn't re-queued and its awaiters are released.
+                handle.status = "error"
+                print(f"[gen] {self._describe(handle)} — canceled", flush=True)
             except Exception as exc:  # keep the worker alive; surface on the handle
                 handle.status = "error"
                 handle.error = exc

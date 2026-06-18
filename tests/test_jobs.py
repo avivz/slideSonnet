@@ -381,3 +381,67 @@ def test_progress_counts_the_burst_and_resets_on_the_next(
         queue.stop()
 
     asyncio.run(body())
+
+
+def test_cancel_all_drops_queued_clips_and_releases_awaiters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The progress-bar ✕: every queued clip is dropped, awaiters freed, no synth."""
+
+    async def body() -> None:
+        queue, engine, _ = _make_queue(tmp_path, monkeypatch)
+        handles = queue.enqueue({("a", 0), ("b", 0)})  # queued; worker not started
+        assert queue.progress() == (0, 2)
+
+        cleared = queue.cancel_all()
+        assert cleared == 2
+        assert queue.progress() == (0, 0)  # the bar clears
+        for h in handles:
+            assert h.done.is_set()  # anyone awaiting these is released
+        await queue.drain()  # nothing pending or running
+        assert engine.calls == 0  # dropped before any synthesis
+
+    asyncio.run(body())
+
+
+def test_cancel_all_aborts_the_running_clip_without_requeue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clip aborted by cancel-all is dropped, not re-queued like a play-preempt."""
+
+    async def body() -> None:
+        from slidesonnet.cancellation import current_cancel
+
+        engine = FakeEngine()
+        monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: engine)
+        deck = _deck()
+        config = Config()
+        calls = {"n": 0}
+
+        def synth(targets: set[tuple[str, int]], force: bool) -> None:
+            calls["n"] += 1
+            evt = current_cancel()  # cooperative cancel, like the qwen3 engine
+            if evt is not None:
+                evt.wait(2)  # block until cancel-all fires
+                if evt.is_set():
+                    raise GenerationCancelled("aborted by cancel-all")
+            synth_mod.synthesize(
+                deck, config, audio_dir=tmp_path, only_segments=set(targets), force=force
+            )
+
+        queue = JobQueue(
+            deck_provider=lambda: (deck, config, tmp_path), synth=synth, is_paid=lambda: False
+        )
+        queue.start()
+        handle = queue.enqueue({("a", 0)})[0]
+        for _ in range(300):  # wait until the worker is running this clip
+            if queue.running_handle() is not None:
+                break
+            await asyncio.sleep(0.01)
+        assert queue.cancel_all() >= 1
+        await queue.drain()
+        queue.stop()
+        assert calls["n"] == 1  # aborted once, NOT retried/re-queued
+        assert handle.done.is_set()
+
+    asyncio.run(body())
