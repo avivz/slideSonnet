@@ -66,16 +66,15 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    over the toml library (deck wins) and applies `default-voice`, so a
    kokoro→elevenlabs switch renarrates with zero sidecar edits. The editor's
    `voice_options()` lists internal names first and `default_voice()` shows the
-   deck default; `slidesonnet check` warns on a named voice with no mapping for
-   the configured engine (`voice-unmapped`). New `tests/test_voices.py` + grammar/
-   state/diagnostic tests; `mypy --strict` + ruff green. *Remaining:* surface the
-   `voice-unmapped` warning in the *editor* too (today it's `check`-only — the
-   editor shows `load_deck` diagnostics, which don't include it); resolve a
-   file-based voice (the Qwen3 `.pt`) relative to the deck dir when the engine
-   consumes it (the map stores it relative and round-trips, but per-utterance
-   `.pt` consumption is Now #3's wiring); and an editor affordance to *edit* the
-   voice map (today it's read + hand-edit only, which is why the save path keeps
-   the preamble verbatim rather than regenerating it). *Story:* As a deck author, I want to name voices by an
+   deck default; both `slidesonnet check` *and the editor* warn on a named voice
+   with no mapping for the active engine (`voice-unmapped`) — in the editor the
+   warning attaches to the slide that uses the voice and tracks the session
+   engine pick, so a Kokoro→Qwen3 switch relights the affected slides live. The
+   file-based Qwen3 `.pt` reached through the map resolves relative to the deck
+   dir (done with Now #3). New `tests/test_voices.py` + grammar/state/diagnostic
+   tests; `mypy --strict` + ruff green. *Remaining:* an editor affordance to
+   *edit* the voice map (today it's read + hand-edit only, which is why the save
+   path keeps the preamble verbatim rather than regenerating it). *Story:* As a deck author, I want to name voices by an
    internal name (e.g. `lecturer`, `guest`) defined *in the narration file*, where
    each name maps to a concrete per-engine voice, plus a deck-level
    `default-voice`, so the same self-contained deck narrates under any engine

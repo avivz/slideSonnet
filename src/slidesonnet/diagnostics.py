@@ -150,30 +150,34 @@ def voice_diagnostics(
 ) -> list[Diagnostic]:
     """Warn when a *named* internal voice has no mapping for the active *backend*.
 
-    A per-utterance ``voice:`` (or the deck ``default-voice``) that is a key in
-    *voices* but lacks an entry for *backend* would silently fall back to the
-    engine default — surface it instead. A voice that isn't a known internal
-    name is a raw engine voice id (passed through), so it is not flagged here.
+    A per-utterance ``voice:`` (or the deck ``default-voice`` for an utterance
+    with none) that is a key in *voices* but lacks an entry for *backend* would
+    silently fall back to the engine default — surface it instead. A voice that
+    isn't a known internal name is a raw engine voice id (passed through), so it
+    is not flagged. Each warning is attached to the slide that uses the voice, so
+    the editor lights up exactly those slides; the same slide+voice is reported
+    once.
     """
-    referenced: dict[str, None] = {}  # ordered set of names actually used
-    if default_voice:
-        referenced[default_voice] = None
-    for block in blocks:
-        for seg in block.speech_segments:
-            if seg.voice:
-                referenced[seg.voice] = None
+
+    def unmapped(name: str | None) -> bool:
+        vc = voices.get(name) if name else None
+        return vc is not None and vc.resolve(backend) is None
 
     diags: list[Diagnostic] = []
-    for name in referenced:
-        vc = voices.get(name)
-        if vc is not None and vc.resolve(backend) is None:
-            diags.append(
-                Diagnostic(
-                    "warning",
-                    "voice-unmapped",
-                    f"voice '{name}' has no {backend} voice — it will use the engine default",
+    for block in blocks:
+        flagged: set[str] = set()
+        for seg in block.speech_segments:
+            name = seg.voice or default_voice
+            if name and name not in flagged and unmapped(name):
+                flagged.add(name)
+                diags.append(
+                    Diagnostic(
+                        "warning",
+                        "voice-unmapped",
+                        f"voice '{name}' has no {backend} voice — it will use the engine default",
+                        block.slide_id,
+                    )
                 )
-            )
     return diags
 
 

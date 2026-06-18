@@ -114,9 +114,10 @@ def test_voice_diagnostics_flag_unmapped_engine() -> None:
     # kokoro maps everything -> no warnings
     assert voice_diagnostics(blocks, voices, "lecturer", "kokoro") == []
 
-    # elevenlabs: 'guest' is unmapped -> exactly one warning, naming guest
+    # elevenlabs: 'guest' is unmapped -> one warning, attached to its slide
     diags = voice_diagnostics(blocks, voices, "lecturer", "elevenlabs")
     assert [d.code for d in diags] == ["voice-unmapped"]
+    assert diags[0].slide_id == "a"
     assert "guest" in diags[0].message and "elevenlabs" in diags[0].message
 
 
