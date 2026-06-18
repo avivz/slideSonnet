@@ -194,15 +194,19 @@ async def test_per_utterance_voice_and_pace_persist(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    # a named voice the picker can offer (utterances reference names, not raw ids)
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[voices.guest]\nkokoro = "af_bella"\n', encoding="utf-8"
+    )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
-    # the utterance's options carry voice (chosen from the engine's set), pace, note
-    next(iter(user.find(marker="uvoice-0").elements)).set_value("af_bella")
+    # the utterance's options carry voice (a named voice), pace, note
+    next(iter(user.find(marker="uvoice-0").elements)).set_value("guest")
     next(iter(user.find(marker="upace-0").elements)).set_value("slow")
     user.find(marker="udirect-0").type("warmly")
     user.find("Next").click()
     sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
-    assert "voice: af_bella" in sidecar
+    assert "voice: guest" in sidecar
     assert "pace: slow" in sidecar
     assert "direct: warmly" in sidecar
 
@@ -231,19 +235,39 @@ async def test_voices_dialog_adds_named_voice_and_persists(
     assert "kokoro: am_michael" in text
 
 
-async def test_voice_box_shows_deck_default_when_unset(
+async def test_voice_box_shows_named_default_when_unset(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An utterance with no explicit voice shows the deck default, not an empty box."""
+    """An utterance with no explicit voice shows the *named* deck default."""
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
-    (tmp_path / "slidesonnet.toml").write_text(
-        '[tts.kokoro]\nvoice = "bm_george"\n', encoding="utf-8"
+    (tmp_path / "marked.narration").write_text(
+        "# slidesonnet-format: 2\n"
+        "default-voice: lecturer\n"
+        "voices:\n"
+        "  lecturer:\n"
+        "    kokoro: am_michael\n"
+        "\n"
+        "@intro-title\n"
+        "  utterance:\n"
+        "    text: Hello.\n",
+        encoding="utf-8",
     )
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     voice = next(iter(user.find(marker="uvoice-0").elements))
     assert voice.value is None  # unset stays unset — the sidecar isn't touched
-    assert voice.props.get("placeholder") == "bm_george (default)"
+    assert voice.props.get("placeholder") == "lecturer (default)"
+
+
+async def test_voice_box_says_deck_default_without_a_named_default(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no named default-voice, the box says 'deck default' — never a raw engine id."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    voice = next(iter(user.find(marker="uvoice-0").elements))
+    assert voice.props.get("placeholder") == "deck default"
 
 
 async def test_action_messages_flash_on_the_bottom_bar(

@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Editing an utterance reclaims its old local audio automatically.** When you
+  change a slide's text or pinned voice, the now-orphaned local clip (Kokoro —
+  cheap to regenerate) is pruned the moment the edit saves, so the cache stays in
+  step with the deck. Paid audio (ElevenLabs) is never auto-pruned, and renders are
+  untouched.
 - **The Voices dialog picks each engine's voice from a list.** Mapping a named
   voice per engine is now a pick-or-type combobox for engines with a fixed voice
   set (Kokoro's voices, Qwen3's CustomVoice speakers) instead of free text, and a
@@ -131,6 +136,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   unattended trigger must never bill per save.
 
 ### Changed
+- **The per-utterance voice picker offers named voices only.** A slide's Voice
+  dropdown now lists the deck's *named* voices (defined in the Voices dialog) and
+  nothing else — raw engine ids (`am_echo`, `af_heart`, …) no longer appear there,
+  so an utterance references a portable name and the engine voice is resolved
+  through the map. An unset voice shows the named `default-voice` (or "deck
+  default" when none is declared) instead of leaking the engine's own voice id, and
+  a small voice-over button beside the picker opens the Voices dialog to define
+  names. An explicitly-pinned id already in a sidecar still shows so it isn't lost.
 - **Kokoro's default voice is now `am_echo`** (was `af_heart`). A deck that relied
   on the old default and wants to keep it can pin `[tts.kokoro] voice = "af_heart"`;
   otherwise unvoiced utterances regenerate under the new default.

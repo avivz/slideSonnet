@@ -803,27 +803,40 @@ class BlockEditor:
                         gen.disable()
                     gen.on_click(lambda: view.enqueue_segment(speech_index))
                     self.seg_gen_controls.append((gen, gen_tip, speech_index))
-            voice_choices = state.voice_options()
+            voice_choices = state.voice_options()  # named voices only — no raw engine ids
             if seg.voice and seg.voice not in voice_choices:
-                voice_choices = [seg.voice, *voice_choices]  # keep an off-list value visible
+                voice_choices = [seg.voice, *voice_choices]  # keep an explicit/legacy value visible
             with ui.row().classes("ss-utt-opts w-full items-end gap-2 no-wrap"):
                 voice = (
                     ui.select(
                         voice_choices,
                         value=seg.voice or None,
                         label="Voice",
-                        with_input=True,  # type to filter the voice list
+                        with_input=True,  # type to filter the named-voice list
                     )
                     .props(
                         "filled dense options-dense clearable hide-bottom-space stack-label "
-                        'title="Voice (type to filter; clear for the deck default)"'
+                        'title="Named voice (type to filter; clear for the deck default)"'
                     )
                     .classes("ss-mono ss-uvoice")
                     .mark(f"uvoice-{index}")
                 )
-                fallback = state.default_voice()
-                if fallback:  # an unset voice isn't "no voice" — show what will speak
-                    voice.props(f'placeholder="{fallback} (default)"')
+                named_default = state.default_voice_label()
+                # an unset voice isn't "no voice" — name the deck default, but never
+                # leak the engine's own voice id into this named picker.
+                voice.props(
+                    f'placeholder="{named_default} (default)"'
+                    if named_default
+                    else 'placeholder="deck default"'
+                )
+                manage = (
+                    ui.button(icon="record_voice_over", on_click=self.view.open_voices_dialog)
+                    .props("flat round dense size=sm color=grey-6")
+                    .classes("self-center")
+                    .mark(f"uvoice-manage-{index}")
+                )
+                with manage:
+                    ui.tooltip("Manage named voices")
                 pace = (
                     ui.select(["slow", "normal", "fast"], value=seg.pace or "normal", label="Pace")
                     .props("filled dense options-dense hide-bottom-space")

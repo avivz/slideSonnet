@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from slidesonnet.cache import audio_dir, cache_root, render_dir
-from slidesonnet.clean import CleanResult, clean
+from slidesonnet.clean import CleanResult, clean, prune_local_orphans
 from slidesonnet.hashing import audio_filename, text_hash
 from slidesonnet.narration.format import serialize_sidecar
 from slidesonnet.narration.model import PageNarration, Segment
@@ -231,6 +231,49 @@ def test_keep_exact_keeps_paced_utterance_cache(tmp_path: Path) -> None:
     assert (ad / paced).exists()  # the clip synthesis actually uses
     assert (ad / unpaced).exists()
     assert not (ad / stale).exists()
+
+
+# --- prune_local_orphans: silent on-edit cleanup of cheap local audio ---
+
+
+def test_prune_local_orphans_drops_edited_away_local_clips(tmp_path: Path) -> None:
+    pdf = _seed_deck(tmp_path)
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True)
+    current = audio_filename(HELLO, "kokoro", "kokoro:am_echo")
+    stale = audio_filename("Old deleted text.", "kokoro", "kokoro:af_bella")
+    paid_orphan = audio_filename("Old deleted text.", "elevenlabs", "elevenlabs:v")
+    for name in (current, stale, paid_orphan):
+        (ad / name).write_bytes(b"a")
+
+    result = prune_local_orphans(pdf)
+    assert (ad / current).exists()  # current text — kept
+    assert not (ad / stale).exists()  # orphaned local clip — dropped
+    assert (ad / paid_orphan).exists()  # paid audio is never auto-pruned
+    assert result.removed_files == 1
+
+
+def test_prune_local_orphans_keeps_renders_and_unknown_names(tmp_path: Path) -> None:
+    pdf = _seed_deck(tmp_path)
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True)
+    stale = audio_filename("Gone.", "kokoro", "kokoro:am_echo")
+    (ad / stale).write_bytes(b"a")
+    (ad / "legacy.wav").write_bytes(b"old")  # unparseable: left alone, not our call
+    rd = render_dir(pdf)
+    rd.mkdir(parents=True)
+    (rd / "page-0001.png").write_bytes(b"img")
+
+    prune_local_orphans(pdf)
+    assert not (ad / stale).exists()
+    assert (ad / "legacy.wav").exists()  # auto-prune never deletes unrecognized files
+    assert (rd / "page-0001.png").exists()  # renders untouched
+
+
+def test_prune_local_orphans_no_audio_dir(tmp_path: Path) -> None:
+    pdf = _seed_deck(tmp_path)
+    result = prune_local_orphans(pdf)  # never synthesized: nothing to do, no crash
+    assert result.removed_files == 0
 
 
 def test_keep_exact_missing_audio_dir_and_subdirs(tmp_path: Path) -> None:

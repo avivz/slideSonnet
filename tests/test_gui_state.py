@@ -143,20 +143,22 @@ def test_tts_is_realtime_flags_heavy_local_engine(tmp_path: Path) -> None:
     assert qwen3.tts_is_realtime is False  # but slow → nearby slides generated first
 
 
-def test_gui_engine_pick_overrides_gates_and_voices(tmp_path: Path) -> None:
-    """A session engine pick re-points the cost gates and the voice list, with no
-    config or sidecar edit."""
-    from slidesonnet.tts.kokoro import KOKORO_VOICES
+def test_gui_engine_pick_repoints_cost_gates(tmp_path: Path) -> None:
+    """A session engine pick re-points the cost/realtime gates, with no config or
+    sidecar edit.
 
+    The per-utterance picker is engine-independent (named voices only), so it stays
+    empty for a deck with no names regardless of the pick — engine voice lists live
+    in the Voices dialog (see ``engine_voice_choices``)."""
     state = _state(tmp_path)
     assert state.active_backend == "kokoro"
     assert state.tts_is_paid is False
-    assert state.voice_options() == list(KOKORO_VOICES)  # kokoro's own voice set
+    assert state.voice_options() == []  # named-only, engine-independent
 
     state.set_backend("elevenlabs")
     assert state.active_backend == "elevenlabs"
     assert state.tts_is_paid is True  # paid gate follows the pick
-    assert state.voice_options() == []  # cloud engine: account-specific ids, no list
+    assert state.voice_options() == []  # still engine-independent
 
     state.set_backend("qwen3")
     assert state.tts_is_paid is False
@@ -184,6 +186,30 @@ def test_jobs_context_uses_the_session_selected_backend(tmp_path: Path) -> None:
     assert cfg.tts.backend == "qwen3"  # follows the session pick, like the sweep does
 
 
+def test_editing_an_utterance_prunes_stale_local_audio(tmp_path: Path) -> None:
+    """An edit drops the just-orphaned local clip but keeps paid audio.
+
+    Local engines are cheap to regenerate, so the editor reclaims a clip the
+    moment its utterance text changes; ElevenLabs audio (paid) is never swept.
+    """
+    from slidesonnet.cache import audio_dir
+    from slidesonnet.hashing import audio_filename
+    from slidesonnet.narration.model import Segment
+
+    state = _state(tmp_path, "@intro-title\nOriginal narration line.")
+    ad = audio_dir(state.pdf_path)
+    ad.mkdir(parents=True, exist_ok=True)
+    stale = audio_filename("Original narration line.", "kokoro", "kokoro:am_echo")
+    paid = audio_filename("Original narration line.", "elevenlabs", "elevenlabs:v")
+    (ad / stale).write_bytes(b"a")
+    (ad / paid).write_bytes(b"b")
+
+    assert state.replace_block([Segment.speech("Rewritten line entirely.")])
+
+    assert not (ad / stale).exists()  # old local clip auto-pruned on save
+    assert (ad / paid).exists()  # paid audio retained
+
+
 def _voice_map_sidecar() -> str:
     return (
         "# slidesonnet-format: 2\n"
@@ -201,8 +227,13 @@ def _voice_map_sidecar() -> str:
     )
 
 
-def test_editor_voice_options_show_deck_internal_names(tmp_path: Path) -> None:
-    """The picker lists the deck's internal voice names ahead of engine voices."""
+def test_editor_voice_options_list_only_named_voices(tmp_path: Path) -> None:
+    """The per-utterance picker offers the deck's named voices only — no raw engine ids.
+
+    An utterance references a portable name; the engine voice is resolved through
+    the map. Raw ids (am_echo, af_heart, ...) would re-pin engine-specific voices
+    onto utterances, which is exactly what the named layer exists to avoid.
+    """
     from slidesonnet.tts.kokoro import KOKORO_VOICES
 
     pdf = prep_marked_deck(tmp_path)
@@ -210,8 +241,16 @@ def test_editor_voice_options_show_deck_internal_names(tmp_path: Path) -> None:
     state = EditorState(pdf)
 
     opts = state.voice_options()
-    assert opts[:2] == ["guest", "lecturer"]  # internal names, sorted, first
-    assert all(v in opts for v in KOKORO_VOICES)  # engine voices still offered
+    assert opts == ["guest", "lecturer"]  # named voices only, sorted
+    assert not any(v in opts for v in KOKORO_VOICES)  # engine ids never offered here
+
+
+def test_editor_voice_options_empty_without_named_voices(tmp_path: Path) -> None:
+    """A deck with no named voices (e.g. a plain lecture deck) offers an empty list.
+
+    The picker then has only 'default'; the user defines names in the Voices dialog.
+    """
+    assert _state(tmp_path, "@intro-title\nHello.").voice_options() == []
 
 
 def test_editor_surfaces_voice_unmapped_for_active_engine(tmp_path: Path) -> None:
@@ -239,17 +278,17 @@ def test_editor_surfaces_voice_unmapped_for_active_engine(tmp_path: Path) -> Non
     assert voice_warnings() == []
 
 
-def test_editor_default_voice_prefers_deck_default(tmp_path: Path) -> None:
-    """The unset-voice placeholder shows the deck's default-voice name."""
+def test_editor_default_voice_label_is_the_named_default_only(tmp_path: Path) -> None:
+    """The unset-voice label shows the deck's *named* default; never a raw engine id.
+
+    With a named ``default-voice`` it returns that name; with none, it returns None
+    (the picker then says "deck default" instead of leaking the engine's voice id).
+    """
     pdf = prep_marked_deck(tmp_path)
     (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
-    assert EditorState(pdf).default_voice() == "lecturer"
+    assert EditorState(pdf).default_voice_label() == "lecturer"
 
-    # with no deck default declared, fall back to the engine's own default
-    other = tmp_path / "plain"
-    other.mkdir()
-    plain = _state(other)
-    assert plain.default_voice() == "am_echo"  # kokoro's configured default
+    assert _state(tmp_path, "@intro-title\nHello.").default_voice_label() is None
 
 
 # ---- editing the voice map in the editor (Now #2) ----------------------------
@@ -296,7 +335,7 @@ def test_edit_voices_adds_named_voice_and_persists(tmp_path: Path) -> None:
     assert "kokoro: am_michael" in text
     # ...and the editor offers it as a name + as the unset-voice placeholder
     assert "lecturer" in state.voice_options()
-    assert state.default_voice() == "lecturer"
+    assert state.default_voice_label() == "lecturer"
 
 
 def test_edit_voices_unchanged_map_is_a_byte_stable_noop(tmp_path: Path) -> None:

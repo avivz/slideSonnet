@@ -79,6 +79,35 @@ def clean(pdf_path: Path, keep: KeepLevel = "api") -> CleanResult:
     )
 
 
+def prune_local_orphans(pdf_path: Path) -> CleanResult:
+    """Drop local (non-paid) audio whose utterance is no longer in the sidecar.
+
+    Called automatically after a sidecar edit: when text or a pinned voice
+    changes, its old clip's ``text_hash`` falls out of the current set and the
+    file becomes dead weight. Local engines (Kokoro) are cheap to regenerate, so
+    we reclaim it eagerly. Paid audio (ElevenLabs) is never auto-pruned, renders
+    are left alone, and unrecognized filenames are kept — an automatic, silent
+    sweep should only delete clips it is certain it produced.
+    """
+    ad = audio_dir(pdf_path)
+    if not ad.exists():
+        return CleanResult()
+
+    current = _current_text_hashes(pdf_path)
+    result = CleanResult()
+    for f in ad.iterdir():
+        if not f.is_file():
+            continue
+        parsed = parse_audio_filename(f.name)
+        if parsed is None or parsed[1] in API_BACKENDS or parsed[0] in current:
+            result.kept_files += 1
+            continue
+        result.removed_bytes += f.stat().st_size
+        f.unlink()
+        result.removed_files += 1
+    return result
+
+
 def _remove_renders(pdf_path: Path) -> None:
     rd = render_dir(pdf_path)
     if rd.exists():

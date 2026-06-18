@@ -7,6 +7,7 @@ without a browser, and stays under ``mypy --strict``.
 
 from __future__ import annotations
 
+import logging
 import time
 import wave
 from dataclasses import replace
@@ -36,6 +37,8 @@ from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
+
+logger = logging.getLogger(__name__)
 
 # Audio cache-status scans stat() every speech segment; renders ask several
 # questions per repaint. One scan is shared for this long before re-checking.
@@ -317,6 +320,20 @@ class EditorState:
         save_deck(self.deck)
         self.reload()
         self._stamps[str(self.sidecar_path)] = _stat_stamp(self.sidecar_path)
+        self._prune_stale_audio()
+
+    def _prune_stale_audio(self) -> None:
+        """Reclaim local clips orphaned by this edit (cheap to regenerate).
+
+        Best-effort: a sweep failure must never cost the user their saved edit,
+        so any error is logged and swallowed. Paid audio is left untouched.
+        """
+        try:
+            from slidesonnet.clean import prune_local_orphans
+
+            prune_local_orphans(self.pdf_path)
+        except Exception:  # pragma: no cover - defensive: never break a save
+            logger.warning("Could not prune stale audio for %s", self.pdf_path, exc_info=True)
 
     # ---- unattached narration (slide dropped/renamed by a recompile) -------
     def orphan_blocks(self) -> list[PageNarration]:
@@ -388,31 +405,27 @@ class EditorState:
 
     # ---- voices -----------------------------------------------------------
     def voice_options(self) -> list[str]:
-        """Voice choices for the editor: internal names first, then engine voices.
+        """The deck's *named* voices for the per-utterance picker — engine ids excluded.
 
-        Internal voice names come from the deck's portable voice layer (the
-        sidecar ``voices:`` block) merged with the shared ``slidesonnet.toml``
-        library, so the same names show under any engine. The active engine's
-        own pickable voices (Kokoro's fixed English set; cloud engines with
-        account-specific ids report none) follow as an advanced affordance. The
-        per-utterance voice is otherwise None (the deck default).
+        Names come from the deck's portable voice layer (the sidecar ``voices:``
+        block) merged with the shared ``slidesonnet.toml`` library, so the same
+        names show under any engine. An utterance references a name and the engine
+        voice is resolved through the map; raw engine ids are deliberately *not*
+        offered here (define names in the Voices dialog). Empty when the deck has
+        no named voices — the picker then offers only the deck default.
         """
         cfg = self._active_config()
         names = set(cfg.voices) | set(self.deck.voices)  # deck wins, but only names matter here
-        opts: list[str] = sorted(names)
-        opts += [v for v in create_tts(cfg.tts).list_voices() if v not in opts]
-        return opts
+        return sorted(names)
 
-    def default_voice(self) -> str | None:
-        """The voice an utterance with no explicit voice falls back to.
+    def default_voice_label(self) -> str | None:
+        """The deck's *named* default-voice, for the picker's unset placeholder.
 
-        Prefers the deck's ``default-voice`` (an internal name shown in the
-        editor's unset-voice placeholder); with none declared, the active
-        engine's own default voice.
+        Returns the ``default-voice`` name when one is declared, else None — the
+        picker says "deck default" rather than surfacing the engine's own voice id
+        (an engine-specific id has no place in the named per-utterance picker).
         """
-        if self.deck.default_voice:
-            return self.deck.default_voice
-        return create_tts(self._active_config().tts).default_voice()
+        return self.deck.default_voice or None
 
     def engine_voice_choices(self, backend: str) -> tuple[list[str], str | None]:
         """``(pickable voices, default voice)`` for *backend* — drives the Voices dialog.
