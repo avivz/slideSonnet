@@ -808,7 +808,9 @@ class BlockEditor:
                         gen.disable()
                     gen.on_click(lambda: view.enqueue_segment(speech_index))
                     self.seg_gen_controls.append((gen, gen_tip, speech_index))
-            named_choices = state.voice_options()  # named voices only — no raw engine ids
+            named = state.voice_options()  # the deck's named voices — no raw engine ids
+            named_set = set(named)
+            named_choices = list(named)
             if seg.voice and seg.voice not in named_choices:
                 named_choices = [seg.voice, *named_choices]  # keep an explicit/legacy value visible
             # "default" is always offered (and selected when the utterance has no
@@ -816,7 +818,19 @@ class BlockEditor:
             # leaking the engine's own voice id into this named picker.
             named_default = state.default_voice_label()
             default_label = f"default ({named_default})" if named_default else "default"
-            voice_options = {DEFAULT_VOICE_OPTION: default_label, **{v: v for v in named_choices}}
+
+            def voice_label(v: str) -> str:
+                # a named voice shows its underlying engine voice: "lecturer (am_michael)";
+                # a raw/off-list id (legacy pin) shows bare. The " (...)" is greyed by the slot.
+                if v not in named_set:
+                    return v
+                engine_voice = state.resolved_engine_voice(v)
+                return f"{v} ({engine_voice})" if engine_voice else f"{v} (unmapped)"
+
+            voice_options = {
+                DEFAULT_VOICE_OPTION: default_label,
+                **{v: voice_label(v) for v in named_choices},
+            }
             with ui.row().classes("ss-utt-opts w-full items-end gap-2 no-wrap"):
                 voice = (
                     ui.select(
@@ -831,6 +845,22 @@ class BlockEditor:
                     )
                     .classes("ss-mono ss-uvoice")
                     .mark(f"uvoice-{index}")
+                )
+                # grey the " (engine voice)" tail in the dropdown list; the selected
+                # box keeps the plain label (so it never shows raw markup).
+                voice.add_slot(
+                    "option",
+                    r"""
+                    <q-item v-bind="props.itemProps">
+                      <q-item-section>
+                        <q-item-label>{{ props.opt.label.indexOf(' (') < 0
+                          ? props.opt.label
+                          : props.opt.label.slice(0, props.opt.label.indexOf(' (')) }}<span
+                          v-if="props.opt.label.indexOf(' (') >= 0" class="text-grey-6"
+                          >{{ props.opt.label.slice(props.opt.label.indexOf(' (')) }}</span></q-item-label>
+                      </q-item-section>
+                    </q-item>
+                    """,
                 )
                 manage = (
                     ui.button(icon="record_voice_over", on_click=self.view.open_voices_dialog)

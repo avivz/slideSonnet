@@ -61,6 +61,7 @@ def _quiet_torch_load_warnings() -> Iterator[None]:
         )
         yield
 
+
 # The Kokoro-82M v1.0 English voices (``<lang><gender>_<name>``; lang a=American,
 # b=British). Offered as the voice choices in the editor — these need no extra
 # language packs, unlike the es/fr/hi/it/ja/pt/zh voices the model also ships.

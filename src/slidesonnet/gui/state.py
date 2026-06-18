@@ -34,7 +34,7 @@ from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagn
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
-from slidesonnet.models import Backend, VoiceConfig
+from slidesonnet.models import Backend, VoiceConfig, resolve_voice
 from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
@@ -417,6 +417,17 @@ class EditorState:
         cfg = self._active_config()
         names = set(cfg.voices) | set(self.deck.voices)  # deck wins, but only names matter here
         return sorted(names)
+
+    def resolved_engine_voice(self, name: str) -> str | None:
+        """The active engine's voice id a named voice resolves to (None if unmapped).
+
+        Drives the picker label ``name (engine voice)``. Uses the same merged voice
+        map and active backend as synthesis, so the label shows the voice that will
+        actually speak. A name with no mapping for the active engine returns None.
+        """
+        cfg = self._active_config()
+        voices = {**cfg.voices, **self.deck.voices}  # deck wins, mirroring synthesis
+        return resolve_voice(name, voices, cfg.tts.backend)
 
     def default_voice_label(self) -> str | None:
         """The deck's *named* default-voice, for the picker's unset placeholder.

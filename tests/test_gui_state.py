@@ -278,6 +278,18 @@ def test_editor_surfaces_voice_unmapped_for_active_engine(tmp_path: Path) -> Non
     assert voice_warnings() == []
 
 
+def test_resolved_engine_voice_follows_the_active_engine(tmp_path: Path) -> None:
+    """A named voice resolves to the active engine's voice id (None when unmapped)."""
+    pdf = prep_marked_deck(tmp_path)
+    (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
+    state = EditorState(pdf)
+    assert state.resolved_engine_voice("lecturer") == "am_michael"  # kokoro mapping
+    assert state.resolved_engine_voice("guest") == "af_bella"
+
+    state.set_backend("elevenlabs")
+    assert state.resolved_engine_voice("lecturer") is None  # no elevenlabs mapping
+
+
 def test_editor_default_voice_label_is_the_named_default_only(tmp_path: Path) -> None:
     """The unset-voice label shows the deck's *named* default; never a raw engine id.
 

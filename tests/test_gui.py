@@ -277,6 +277,25 @@ async def test_changing_a_named_voice_uncaches_its_slides(
     assert gen.props.get("color") == "warning"  # remapped → not generated
 
 
+async def test_picker_labels_a_named_voice_with_its_engine_voice(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A named voice in the picker shows its underlying engine voice, e.g.
+    'lecturer (am_michael)' (the parenthetical is greyed in the dropdown)."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    (tmp_path / "marked.narration").write_text(
+        "# slidesonnet-format: 2\n"
+        "default-voice: lecturer\n"
+        "voices:\n  lecturer:\n    kokoro: am_michael\n\n"
+        "@intro-title\n  utterance:\n    text: Hello.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    voice = next(iter(user.find(marker="uvoice-0").elements))
+    assert voice.options["lecturer"] == "lecturer (am_michael)"
+
+
 async def test_voice_box_offers_default_and_names_the_resolved_default(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

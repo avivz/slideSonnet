@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **The utterance voice picker shows each named voice's engine voice.** A named
+  voice now reads as `lecturer (am_michael)` — the parenthetical is the voice it
+  resolves to on the active engine, greyed in the dropdown — and updates when you
+  switch engines. The picker also always offers an explicit **default** option
+  (labelled with the deck default, e.g. `default (lecturer)`), selected when an
+  utterance has no voice of its own.
 - **Editing an utterance reclaims its old local audio automatically.** When you
   change a slide's text or pinned voice, the now-orphaned local clip (Kokoro —
   cheap to regenerate) is pruned the moment the edit saves, so the cache stays in
@@ -140,10 +146,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   dropdown now lists the deck's *named* voices (defined in the Voices dialog) and
   nothing else — raw engine ids (`am_echo`, `af_heart`, …) no longer appear there,
   so an utterance references a portable name and the engine voice is resolved
-  through the map. An unset voice shows the named `default-voice` (or "deck
-  default" when none is declared) instead of leaking the engine's own voice id, and
-  a small voice-over button beside the picker opens the Voices dialog to define
-  names. An explicitly-pinned id already in a sidecar still shows so it isn't lost.
+  through the map (an unset voice selects the explicit **default** option). A small
+  voice-over button beside the picker opens the Voices dialog to define names, and
+  an explicitly-pinned id already in a sidecar still shows so it isn't lost.
+- **Auto-generate starts off each session.** Opening a deck no longer restores a
+  previously-persisted "Auto-generate as I edit" — it always starts off, so
+  background generation is opt-in each time. Switching the generation engine also
+  resets it off (the new engine's audio is all uncached). This removes a surprise
+  where changing a voice with auto-generate on quietly re-cached the slides.
 - **Kokoro's default voice is now `am_echo`** (was `af_heart`). A deck that relied
   on the old default and wants to keep it can pin `[tts.kokoro] voice = "af_heart"`;
   otherwise unvoiced utterances regenerate under the new default.
@@ -153,6 +163,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   repo (and keep its `.pt` `voice_prompt`).
 
 ### Fixed
+- **Kokoro no longer floods the terminal on load.** The two torch warnings its
+  model construction always emits (an LSTM `dropout` UserWarning and a `weight_norm`
+  deprecation FutureWarning) are suppressed around the pipeline build, so the
+  editor's own output isn't buried. Other warnings still surface.
 - **The editor's background queue looks up the cache under the *picked* engine.**
   It was keyed to the on-disk config's engine, so after switching the session
   engine (e.g. to Qwen3) "Generate missing" could report "queued 0" while the
