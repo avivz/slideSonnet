@@ -1,7 +1,7 @@
 VENV := .venv/bin
 SLIDESONNET := $(VENV)/slidesonnet
 
-.PHONY: install test test-unit test-browser lint fmt typecheck clean \
+.PHONY: install test test-unit test-fast test-browser lint fmt typecheck clean \
 	demos basel showcase \
 	check-basel check-showcase \
 	clean-basel clean-showcase clean-examples \
@@ -13,8 +13,14 @@ install:
 test:
 	$(VENV)/pytest tests/
 
+# Full unit tier (CI's tier). The in-process GUI tests dominate (~90 s); they
+# don't parallelize (xdist gives no speedup — see CLAUDE.md), so this is serial.
 test-unit:
 	$(VENV)/pytest tests/ -m "not integration and not browser"
+
+# Fast inner loop (~16 s): skip the slow in-process GUI tests. Run test-unit before pushing.
+test-fast:
+	$(VENV)/pytest tests/ -m "not integration and not browser and not gui"
 
 test-browser:
 	$(VENV)/pytest tests/ -m browser

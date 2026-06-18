@@ -29,16 +29,6 @@ from slidesonnet.exceptions import TTSError  # noqa: E402
 from slidesonnet.tts.qwen3 import Qwen3TTS  # noqa: E402
 
 
-@pytest.fixture(autouse=True)
-def _clear_model_cache() -> Any:
-    """Isolate the process-wide model cache between tests."""
-    from slidesonnet.tts import qwen3 as qwen3_mod
-
-    qwen3_mod._MODEL_CACHE.clear()
-    yield
-    qwen3_mod._MODEL_CACHE.clear()
-
-
 @pytest.fixture
 def fake_qwen3(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """Patch the qwen_tts model, prompt item, and torch.load with fakes."""

@@ -1,6 +1,7 @@
 """Shared test fixtures."""
 
 import base64
+import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -15,15 +16,45 @@ pytest_plugins = ["nicegui.testing.user_plugin"]
 _SENTINEL_KEY = "unit-test-no-real-calls"
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Run the browser tier last (the sort is stable: order within tiers keeps).
+    """Auto-mark slow GUI tests, then sort the browser tier last.
 
-    Playwright's sync API parks a running asyncio loop in the main thread for
-    the life of its session-scoped fixtures, so once one browser test has run,
-    any later pytest-asyncio setup — every nicegui ``user`` test — dies with
-    "Runner.run() cannot be called from a running event loop".
+    Any test using NiceGUI's in-process ``user`` fixture spins up (and tears
+    down) a server per test — ~0.8 s of pure lifecycle overhead and ~95 % of the
+    unit tier's wall time. Tag those ``gui`` so a fast inner loop can skip them
+    with ``-m "not gui"`` (see CLAUDE.md). ``tryfirst`` guarantees the marks land
+    before pytest's own ``-m`` deselection reads them.
+
+    Browser tests then sort last (stable): Playwright's sync API parks a running
+    asyncio loop in the main thread for the life of its session-scoped fixtures,
+    so once one browser test has run, any later pytest-asyncio setup — every
+    nicegui ``user`` test — dies with "Runner.run() cannot be called from a
+    running event loop".
     """
+    for item in items:
+        if "user" in getattr(item, "fixturenames", ()):
+            item.add_marker("gui")
     items.sort(key=lambda item: item.get_closest_marker("browser") is not None)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_model_cache() -> Iterator[None]:
+    """Reset the process-wide TTS model cache between tests for order-independence.
+
+    ``slidesonnet.tts.qwen3`` caches warmed models in a module-global dict; a test
+    that warms a heavy engine would otherwise leave it warm for later tests (e.g.
+    a warmup-pending assertion would flake depending on collection order). We clear
+    it only when the module is already imported — importing it pulls torch, and the
+    bulk of the suite never touches qwen3, so this stays zero-cost for them.
+    """
+    mod = sys.modules.get("slidesonnet.tts.qwen3")
+    if mod is not None:
+        mod._MODEL_CACHE.clear()
+    yield
+    mod = sys.modules.get("slidesonnet.tts.qwen3")
+    if mod is not None:
+        mod._MODEL_CACHE.clear()
 
 
 class _GuardedElevenLabs:

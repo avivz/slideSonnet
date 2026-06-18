@@ -84,5 +84,6 @@ addopts = "--strict-markers"
 markers = [
     "integration: requires external tools (ffmpeg, pdftoppm, latexmk, kokoro)",
     "browser: heavy real-browser (Playwright) GUI journey tests; local-only, never in CI",
+    "gui: in-process NiceGUI server tests (the slow tier, auto-applied to any test using the `user` fixture); skip with -m 'not gui' for a fast inner loop",
     "nicegui_main_file: NiceGUI user-plugin entry module for in-process GUI tests",
 ]
