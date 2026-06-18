@@ -31,7 +31,7 @@ def resolve_voice_files(voices: dict[str, VoiceConfig], base_dir: Path) -> dict[
     for name, vc in voices.items():
         backend_voices = dict(vc.backend_voices)
         for backend, value in backend_voices.items():
-            if value and backend in FILE_VOICE_BACKENDS:
+            if value and _is_file_voice(backend, value):
                 backend_voices[backend] = str((base_dir / value).resolve())
         out[name] = VoiceConfig(name=name, backend_voices=backend_voices)
     return out
@@ -53,10 +53,20 @@ def relativize_voice_files(
     for name, vc in voices.items():
         backend_voices = dict(vc.backend_voices)
         for backend, value in backend_voices.items():
-            if value and backend in FILE_VOICE_BACKENDS and Path(value).is_absolute():
+            if value and _is_file_voice(backend, value) and Path(value).is_absolute():
                 backend_voices[backend] = str(Path(value).resolve().relative_to(base, walk_up=True))
         out[name] = VoiceConfig(name=name, backend_voices=backend_voices)
     return out
+
+
+def _is_file_voice(backend: str, value: str) -> bool:
+    """True when a voice-map value is a file artifact, not an opaque voice id.
+
+    A file-voice backend (Qwen3) may carry *either* a ``.pt`` clone prompt (a
+    path, made portable relative to the deck) *or* a built-in speaker name (an
+    opaque id, left verbatim). Only the ``.pt`` artifact is path-resolved.
+    """
+    return backend in FILE_VOICE_BACKENDS and value.endswith(".pt")
 
 
 def dedupe_page_ids(pages: list[str]) -> tuple[list[str], list[Diagnostic]]:

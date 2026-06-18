@@ -132,14 +132,15 @@ def test_tts_is_paid_default_kokoro(tmp_path: Path) -> None:
     assert state.tts_is_paid is False
 
 
-def test_tts_is_realtime_gates_heavy_local_engine(tmp_path: Path) -> None:
-    """Kokoro is realtime (auto-build OK); Qwen3 is free but too slow (gated)."""
+def test_tts_is_realtime_flags_heavy_local_engine(tmp_path: Path) -> None:
+    """Kokoro is realtime; Qwen3 is free but slow — the flag drives prioritization
+    and the tooltip hint, not the auto-build gate (which is paid-only)."""
     assert _state(tmp_path).tts_is_realtime is True  # kokoro default
 
     (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "qwen3"\n', encoding="utf-8")
     qwen3 = EditorState(prep_marked_deck(tmp_path))
-    assert qwen3.tts_is_paid is False  # free
-    assert qwen3.tts_is_realtime is False  # but not fast enough to auto-generate
+    assert qwen3.tts_is_paid is False  # free → auto-build allowed
+    assert qwen3.tts_is_realtime is False  # but slow → nearby slides generated first
 
 
 def test_gui_engine_pick_overrides_gates_and_voices(tmp_path: Path) -> None:
@@ -338,6 +339,47 @@ def test_model_warmup_pending_only_for_cold_heavy_engine(tmp_path: Path) -> None
 
     state.set_backend("qwen3")
     assert state.model_warmup_pending() is True  # model not yet in the process
+
+
+def test_est_gen_seconds_scales_with_engine_rtf(tmp_path: Path) -> None:
+    """The clip-time estimate grows with text length and the engine's real-time factor."""
+    sidecar = "@intro-title\nThis is a fairly long sentence with quite a few words in it.\n"
+    state = _state(tmp_path, sidecar=sidecar)
+    fast = state.est_gen_seconds("intro-title", 0)
+    state.set_backend("qwen3")
+    slow = state.est_gen_seconds("intro-title", 0)
+    assert fast is not None and slow is not None
+    assert slow > fast  # qwen3 (~3.3x) is far slower per audio second than kokoro (~0.3x)
+    assert state.est_gen_seconds("intro-title", 9) is None  # no such segment
+
+
+def test_current_clip_meta_empty_until_generated(tmp_path: Path) -> None:
+    """No cached audio yet → no per-clip duration/size to show."""
+    state = _state(tmp_path, sidecar="@intro-title\nHello there.\n")
+    assert state.current_clip_meta() == {}
+
+
+def test_warm_active_engine_loads_the_active_backends_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Warming on engine switch delegates to the active engine's warm() (no real load)."""
+    from slidesonnet.gui import state as state_mod
+
+    warmed: list[str] = []
+
+    class FakeEngine:
+        def __init__(self, name: str) -> None:
+            self._name = name
+
+        def warm(self) -> None:
+            warmed.append(self._name)
+
+    monkeypatch.setattr(state_mod, "create_tts", lambda cfg: FakeEngine(cfg.backend))
+
+    state = _state(tmp_path)
+    state.set_backend("qwen3")
+    state.warm_active_engine()
+    assert warmed == ["qwen3"]  # warmed the picked engine, not the on-disk default
 
 
 def test_gui_engine_pick_overrides_action_engine(

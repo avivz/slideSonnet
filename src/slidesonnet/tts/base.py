@@ -61,3 +61,12 @@ class TTSEngine(ABC):
         before the first generation rather than a silent long pause.
         """
         return True
+
+    def warm(self) -> None:
+        """Pay the heavy one-time model load now, so the first synth is quick.
+
+        Blocking and safe to call off the event loop (the editor warms a heavy
+        engine in the background when you pick it). A no-op for light engines,
+        which have nothing to load; idempotent once warm.
+        """
+        return None

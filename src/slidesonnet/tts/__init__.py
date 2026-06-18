@@ -60,6 +60,10 @@ class BackendSpec:
     #: not opaque ids — so a voice-map value is resolved relative to the deck dir
     #: when the deck loads, keeping the sidecar portable.
     file_voices: bool = False
+    #: Rough generation time ÷ audio seconds (real-time factor) — only used to
+    #: *estimate* a clip's progress in the editor (elapsed vs ~expected). Fast
+    #: engines are well under 1×; Qwen3 on the laptop iGPU is ~3.3×.
+    rtf: float = 0.3
 
 
 BACKENDS: dict[str, BackendSpec] = {
@@ -75,6 +79,7 @@ BACKENDS: dict[str, BackendSpec] = {
         realtime=False,
         import_name="qwen_tts",
         file_voices=True,
+        rtf=3.3,
     ),
 }
 
