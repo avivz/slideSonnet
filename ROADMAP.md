@@ -54,8 +54,28 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    continuous (no acrossfade), which is correct for sub-slide builds. Gallery
    reference: <https://trac.ffmpeg.org/wiki/Xfade>. **[agent]**
 
-2. [ ] **Portable voice layer — internal voice names + cross-engine map in the
-   narration file.** *Story:* As a deck author, I want to name voices by an
+2. [~] **Portable voice layer — internal voice names + cross-engine map in the
+   narration file.**
+   *Progress (branch `feat/qwen3-tts`, 2026-06-17):* ✅ the core landed — the
+   sidecar grammar grew a deck-level preamble (`default-voice:` + a `voices:`
+   block of internal-name → per-engine voice), parsed via a new
+   `parse_document`/`NarrationDoc` (the list-only `parse_sidecar` still works);
+   `FORMAT_VERSION` bumped to 2 with a byte-stable round-trip (v1 files unchanged,
+   no header added). `Deck` carries `voices`/`default_voice`; `load_deck`/
+   `save_deck` populate and re-emit them; `synth.speech_refs` merges the deck map
+   over the toml library (deck wins) and applies `default-voice`, so a
+   kokoro→elevenlabs switch renarrates with zero sidecar edits. The editor's
+   `voice_options()` lists internal names first and `default_voice()` shows the
+   deck default; `slidesonnet check` warns on a named voice with no mapping for
+   the configured engine (`voice-unmapped`). New `tests/test_voices.py` + grammar/
+   state/diagnostic tests; `mypy --strict` + ruff green. *Remaining:* surface the
+   `voice-unmapped` warning in the *editor* too (today it's `check`-only — the
+   editor shows `load_deck` diagnostics, which don't include it); resolve a
+   file-based voice (the Qwen3 `.pt`) relative to the deck dir when the engine
+   consumes it (the map stores it relative and round-trips, but per-utterance
+   `.pt` consumption is Now #3's wiring); and an editor affordance to *edit* the
+   voice map (today it's read + hand-edit only, which is why the save path keeps
+   the preamble verbatim rather than regenerating it). *Story:* As a deck author, I want to name voices by an
    internal name (e.g. `lecturer`, `guest`) defined *in the narration file*, where
    each name maps to a concrete per-engine voice, plus a deck-level
    `default-voice`, so the same self-contained deck narrates under any engine

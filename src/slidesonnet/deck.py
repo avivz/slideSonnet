@@ -6,7 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from slidesonnet.diagnostics import Diagnostic, diagnose, sort_diagnostics
-from slidesonnet.narration.format import parse_sidecar, serialize_sidecar
+from slidesonnet.models import VoiceConfig
+from slidesonnet.narration.format import parse_document, serialize_sidecar
 from slidesonnet.narration.model import Deck, PageNarration
 from slidesonnet.pdf.reader import read_page_ids
 
@@ -141,8 +142,17 @@ def load_deck(
 
     blocks: list[PageNarration] = []
     block_diags: list[Diagnostic] = []
+    voices: dict[str, VoiceConfig] = {}
+    default_voice: str | None = None
+    preamble_source: str | None = None
     if sidecar.exists():
-        blocks, block_diags = dedupe_block_ids(parse_sidecar(sidecar.read_text(encoding="utf-8")))
+        doc = parse_document(sidecar.read_text(encoding="utf-8"))
+        blocks, block_diags = dedupe_block_ids(doc.blocks)
+        voices, default_voice, preamble_source = (
+            doc.voices,
+            doc.default_voice,
+            doc.preamble_source,
+        )
 
     diags = sort_diagnostics(dedupe_diags + block_diags + diagnose(page_ids, blocks))
     deck = Deck(
@@ -150,6 +160,9 @@ def load_deck(
         sidecar_path=sidecar,
         pages=page_ids,
         narration={b.slide_id: b for b in blocks},
+        voices=voices,
+        default_voice=default_voice,
+        preamble_source=preamble_source,
     )
     return deck, diags
 
@@ -168,7 +181,16 @@ def save_deck(deck: Deck, *, header: str | None = None) -> None:
         if sid not in on_page:
             blocks.append(block)
     blocks = [b for b in blocks if not b.is_empty]
-    deck.sidecar_path.write_text(serialize_sidecar(blocks, header=header), encoding="utf-8")
+    deck.sidecar_path.write_text(
+        serialize_sidecar(
+            blocks,
+            header=header,
+            voices=deck.voices,
+            default_voice=deck.default_voice,
+            preamble_source=deck.preamble_source,
+        ),
+        encoding="utf-8",
+    )
 
 
 def unique_real_ids(pages: list[str]) -> list[str]:

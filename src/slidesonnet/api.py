@@ -127,11 +127,22 @@ def init_sidecar(
 
 
 def check_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> list[Diagnostic]:
-    """Run id-only reconciliation diagnostics for *pdf_path* + its sidecar."""
-    from slidesonnet.deck import load_deck
+    """Run reconciliation diagnostics for *pdf_path* + its sidecar.
 
-    _, diags = load_deck(pdf_path, sidecar_path=sidecar_path)
-    return diags
+    Combines id reconciliation with the portable-voice-layer check: a named
+    voice (or the deck default) that has no mapping for the configured engine.
+    """
+    from slidesonnet.config import load_config
+    from slidesonnet.deck import load_deck
+    from slidesonnet.diagnostics import sort_diagnostics, voice_diagnostics
+
+    deck, diags = load_deck(pdf_path, sidecar_path=sidecar_path)
+    config = load_config(pdf_path)
+    voices = {**config.voices, **deck.voices}  # deck wins over the shared library
+    voice_diags = voice_diagnostics(
+        list(deck.narration.values()), voices, deck.default_voice, config.tts.backend
+    )
+    return sort_diagnostics(diags + voice_diags)
 
 
 def _load(

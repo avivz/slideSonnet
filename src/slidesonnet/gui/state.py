@@ -368,20 +368,30 @@ class EditorState:
 
     # ---- voices -----------------------------------------------------------
     def voice_options(self) -> list[str]:
-        """Voice choices for the editor: named presets first, then engine voices.
+        """Voice choices for the editor: internal names first, then engine voices.
 
-        The engine reports its own pickable voice set (Kokoro's fixed English
-        voices; cloud engines with account-specific ids report none), plus the
-        deck's named presets from ``slidesonnet.toml``. The per-utterance voice
-        is otherwise None (the deck default). Follows the active engine pick.
+        Internal voice names come from the deck's portable voice layer (the
+        sidecar ``voices:`` block) merged with the shared ``slidesonnet.toml``
+        library, so the same names show under any engine. The active engine's
+        own pickable voices (Kokoro's fixed English set; cloud engines with
+        account-specific ids report none) follow as an advanced affordance. The
+        per-utterance voice is otherwise None (the deck default).
         """
         cfg = self._active_config()
-        opts: list[str] = sorted(cfg.voices)  # named presets
+        names = set(cfg.voices) | set(self.deck.voices)  # deck wins, but only names matter here
+        opts: list[str] = sorted(names)
         opts += [v for v in create_tts(cfg.tts).list_voices() if v not in opts]
         return opts
 
     def default_voice(self) -> str | None:
-        """The deck-wide voice an utterance with no explicit voice falls back to."""
+        """The voice an utterance with no explicit voice falls back to.
+
+        Prefers the deck's ``default-voice`` (an internal name shown in the
+        editor's unset-voice placeholder); with none declared, the active
+        engine's own default voice.
+        """
+        if self.deck.default_voice:
+            return self.deck.default_voice
         return create_tts(self._active_config().tts).default_voice()
 
     # ---- synthesis cost ---------------------------------------------------

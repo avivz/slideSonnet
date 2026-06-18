@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.transitions import TRANSITION_NAMES
 
 SegmentKind = Literal["speech", "pause"]
@@ -199,12 +200,22 @@ class PageNarration:
 
 @dataclass
 class Deck:
-    """A PDF deck joined to its narration sidecar."""
+    """A PDF deck joined to its narration sidecar.
+
+    ``voices`` and ``default_voice`` are the deck-level *portable voice layer*
+    read from the sidecar preamble: internal voice names mapped to per-engine
+    voices, and the name an utterance with no explicit ``voice:`` falls back to.
+    They travel with the deck so the same script narrates under any engine.
+    ``preamble_source`` is the raw preamble text kept for a byte-stable save.
+    """
 
     pdf_path: Path
     sidecar_path: Path
     pages: list[str] = field(default_factory=list)  # slide-ids in PDF page order
     narration: dict[str, PageNarration] = field(default_factory=dict)
+    voices: dict[str, VoiceConfig] = field(default_factory=dict)
+    default_voice: str | None = None
+    preamble_source: str | None = field(default=None, compare=False, repr=False)
 
     def page_narration(self, slide_id: str) -> PageNarration:
         """Return the narration for *slide_id*, or an empty silent block if none."""
@@ -217,6 +228,9 @@ class Deck:
             sidecar_path=self.sidecar_path,
             pages=[slide_id],
             narration=self.narration,
+            voices=self.voices,
+            default_voice=self.default_voice,
+            preamble_source=self.preamble_source,
         )
 
     @property
