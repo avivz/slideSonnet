@@ -1373,6 +1373,9 @@ class EditorView:
                 self.voices_btn.on_click(self.open_voices_dialog)
                 auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
                 auto_build.props("dense").mark("auto-build")
+                # Always start a session with auto-generate off, even if a previous
+                # session left it on — generation is opt-in each time you open the deck.
+                app.storage.general["auto_build"] = False
                 auto_build.bind_value(app.storage.general, "auto_build")
                 self.auto_build = auto_build
                 self._sync_auto_build_gate()
@@ -1820,6 +1823,9 @@ class EditorView:
         if backend not in self.state.backend_options():
             return
         self.state.set_backend(cast(Backend, backend))
+        # Switching engines turns auto-generate off: the new engine's audio is all
+        # uncached, and silently regenerating the whole deck on switch is rarely wanted.
+        self.auto_build.set_value(False)
         self._sync_auto_build_gate()
         self.engine_label.set_text(f"engine {self.state.active_backend}")
         self.player.stop_playback()  # the loaded preview track was the old engine's

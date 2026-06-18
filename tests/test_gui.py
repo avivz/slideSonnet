@@ -1361,6 +1361,43 @@ async def test_engine_picker_switches_engine_and_regates_autobuild(
     assert cb.enabled  # still allowed — free engine, just prioritized
 
 
+async def test_auto_build_starts_off_regardless_of_persisted_flag(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opening a deck always starts with auto-generate off, even if a previous
+    session left the persisted flag on — generation is opt-in each load."""
+    from nicegui import app
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    app.storage.general["auto_build"] = True  # left on by a previous session
+    await user.open("/")
+    cb = next(iter(user.find(marker="auto-build").elements))
+    assert cb.value is False
+
+
+async def test_switching_engine_turns_auto_build_off(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Switching the generation engine resets auto-generate to off — the new
+    engine's audio is all uncached and shouldn't silently regenerate the deck."""
+    from slidesonnet.gui.state import EditorState
+
+    monkeypatch.setattr("slidesonnet.gui.state.available_backends", lambda: ["kokoro", "qwen3"])
+    monkeypatch.setattr(
+        EditorState, "synth_targets", lambda self, t, *, force=False: 1
+    )  # swallow the sweep
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    cb = next(iter(user.find(marker="auto-build").elements))
+    cb.set_value(True)  # user turns it on for this engine
+    assert cb.value is True
+
+    next(iter(user.find(marker="engine-select").elements)).set_value("qwen3")
+    assert cb.value is False  # the switch turned it back off
+
+
 async def test_enabling_auto_build_sweeps_uncached_clips_except_current(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
