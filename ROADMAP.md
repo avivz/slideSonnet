@@ -196,6 +196,50 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    means tearing down that poller and re-initializing state in place (or routing
    to a fresh page) rather than assuming one deck per process. **[agent]**
 
+9. [ ] **Wire the director's note to supporting models.** *Story:* As a deck
+   author, I write a per-utterance *direction* — "cheerfully", "slow and somber",
+   "as an aside" — and the engines that can act on a natural-language style cue
+   actually do, so the same script can be delivered with intent rather than flat.
+   The `direction` field already exists end-to-end (sidecar grammar `direct:`,
+   the editor's per-utterance input, round-trip-stable) but **no engine consumes
+   it today** — it's collected and ignored. The natural target is Qwen3, whose
+   CustomVoice and VoiceDesign models take an `instruct=` style prompt
+   (`generate_custom_voice(..., instruct=...)`); cloud engines map it to whatever
+   style controls they expose (or ignore it). *Acceptance examples:* (a) an
+   utterance with `direct: cheerfully` on Qwen3 CustomVoice passes that string as
+   `instruct` and the clip is audibly more upbeat than the same text without it;
+   (b) the direction joins the audio cache key (see the standing note in
+   `hashing.py`) so editing the note regenerates exactly the affected clips and
+   nothing else; (c) an engine that has no style input ignores the direction with
+   no error, and the editor signals which engines honor it (mirroring how the
+   voice picker marks per-engine support); (d) an empty/whitespace direction is
+   indistinguishable from none (no spurious cache churn, no empty `instruct`).
+   *Appetite:* ~one day. *Design note:* the per-segment `direction` already flows
+   to `SpeechRef`; the work is threading it through `synth` → `TTSEngine.synthesize`
+   (a new optional `direction` arg, default None, ignored by Kokoro) → Qwen3's
+   `generate_custom_voice/voice_design`, plus folding it into the hash. **[agent]**
+
+10. [ ] **Batched synthesis for heavy engines (use the spare iGPU).** *Story:* As
+    a deck author on a local GPU, my Qwen3 generation pins the iGPU at only ~50%
+    because autoregressive decoding is latency-bound, not compute-bound — so the
+    queue should synthesize a small *batch* of nearby clips in one `generate`
+    call (qwen_tts's `generate_custom_voice`/`generate_voice_clone` already accept
+    list inputs and run the sequences together), filling the idle gaps without the
+    thread-safety hazard of two `generate()`s on one cached model or the ~2×
+    memory of a second model instance. *Acceptance examples:* (a) with auto-build
+    on and several uncached clips near the cursor, the worker pops up to N (e.g.
+    2–4) and synthesizes them in a single batched call, measurably raising iGPU
+    utilization and clips/min over the one-at-a-time loop; (b) batching respects
+    the distance priority (the batch is the N best-next clips) and the play
+    preempt still aborts the whole in-flight batch promptly; (c) light/realtime
+    engines (Kokoro) and the CLI path are unaffected — batching is opt-in per
+    engine via a `batch_size`/capability, default 1; (d) a batched clip's cache
+    file, duration, and hash are identical to generating it alone (batching is a
+    throughput optimization, not a content change). *Appetite:* ~two days.
+    *Design note:* the worker currently pops one `JobHandle`; batching means
+    popping the top-N pending by priority into one synth call and a `synthesize_batch`
+    on the engine (default = loop), with the heavy path overriding it. **[agent]**
+
 ## Next — toward 1.0 final
 
 1. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining

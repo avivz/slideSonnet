@@ -13,7 +13,12 @@ import pytest
 from nicegui.events import KeyboardKey
 
 from slidesonnet.exceptions import ParserError
-from slidesonnet.gui.app import PlaybackController, nav_direction, toggled_width
+from slidesonnet.gui.app import (
+    PlaybackController,
+    _clip_meta_suffix,
+    nav_direction,
+    toggled_width,
+)
 from slidesonnet.pdf.reader import page_aspect
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -37,6 +42,13 @@ def test_nav_direction_next(name: str) -> None:
 def test_nav_direction_ignores_other_keys() -> None:
     assert nav_direction(_key("Enter")) == 0
     assert nav_direction(_key("a")) == 0
+
+
+def test_clip_meta_suffix_formats_duration_and_size() -> None:
+    assert _clip_meta_suffix(None) == ""  # uncached / unknown
+    assert _clip_meta_suffix((1.23, 34_000)) == " · 1.2s · 33 KB"  # wav: duration + size
+    assert _clip_meta_suffix((None, 2_500_000)) == " · 2.4 MB"  # mp3: size only
+    assert _clip_meta_suffix((0.0, 3072)) == " · 0.0s · 3 KB"  # silent clip, tiny file
 
 
 # ---- preview playback behaviors --------------------------------------------

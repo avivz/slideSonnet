@@ -8,12 +8,15 @@ without a browser, and stays under ``mypy --strict``.
 from __future__ import annotations
 
 import time
+import wave
 from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
 from slidesonnet import api
-from slidesonnet.audio.synth import SpeechRef, ref_cache_status
+from slidesonnet.audio.synth import SpeechRef, _ref_targets, ref_cache_status
+from slidesonnet.hashing import audio_cache_path_or_alt
+from slidesonnet.timing import word_count
 from slidesonnet.audio.track import Cue
 from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import Config, default_config_path, load_config
@@ -29,7 +32,7 @@ from slidesonnet.deck import (
 from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
-from slidesonnet.narration.model import PageNarration, Segment, Transition
+from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
@@ -48,6 +51,18 @@ def _stat_stamp(path: Path) -> tuple[float, int]:
     except OSError:
         return (0.0, 0)
     return (st.st_mtime, st.st_size)
+
+
+def _wav_seconds(path: Path) -> float | None:
+    """Audio length from a WAV header (cheap); None for non-WAV or unreadable."""
+    if path.suffix.lower() != ".wav":
+        return None
+    try:
+        with wave.open(str(path), "rb") as wf:
+            rate = wf.getframerate()
+            return wf.getnframes() / rate if rate else None
+    except (wave.Error, OSError):
+        return None
 
 
 class EditorState:
@@ -454,6 +469,16 @@ class EditorState:
         """
         return not create_tts(self._active_config().tts).is_warm()
 
+    def warm_active_engine(self) -> None:
+        """Load the active engine's model into the process (blocking).
+
+        Meant to run off the event loop (``run.io_bound``) so the editor can warm
+        a heavy engine the moment it's picked, instead of stalling on first play.
+        A no-op for light engines; the warm cache is process-wide, so a later
+        synth (or a fresh engine instance) reuses the loaded model.
+        """
+        create_tts(self._active_config().tts).warm()
+
     def _audio_status(self) -> list[tuple[SpeechRef, bool]]:
         """Deck-wide (segment, is_cached) scan, shared across a render tick.
 
@@ -466,6 +491,17 @@ class EditorState:
             scan = ref_cache_status(self.deck, self._active_config(), audio_dir(self.pdf_path))
             self._audio_scan = (now, scan)
         return self._audio_scan[1]
+
+    def jobs_context(self) -> tuple[Deck, Config, Path]:
+        """``(deck, config, audio_dir)`` for the background JobQueue.
+
+        Uses :meth:`_active_config` — the on-disk config with the *session-selected*
+        backend applied — so the queue's cache lookups match the filmstrip sweep and
+        the actual synthesis. Passing the raw on-disk config instead lets clips cached
+        under one engine mask the picked engine's missing audio, so ``enqueue`` skips
+        every clip ("queued 0" despite N missing in the filmstrip).
+        """
+        return (self.deck, self._active_config(), audio_dir(self.pdf_path))
 
     def uncached_count(self, slide_id: str) -> int:
         """How many of *slide_id*'s speech segments a synthesis run would generate."""
@@ -483,6 +519,37 @@ class EditorState:
             return []
         current = self.current_id
         return [cached for ref, cached in self._audio_status() if ref.slide_id == current]
+
+    def est_gen_seconds(self, slide_id: str, speech_index: int) -> float | None:
+        """Rough seconds to generate a clip: word-count → audio secs × engine RTF.
+
+        Used only to show an *estimated* progress while a clip generates (elapsed
+        vs this). None if the segment can't be found.
+        """
+        speeches = self.deck.page_narration(slide_id).speech_segments
+        if speech_index >= len(speeches):
+            return None
+        audio_secs = word_count(speeches[speech_index].text) / 150.0 * 60.0
+        return max(0.5, audio_secs * BACKENDS[self.active_backend].rtf)
+
+    def current_clip_meta(self) -> dict[int, tuple[float | None, int]]:
+        """Per cached segment of the current slide: ``(audio seconds, file bytes)``.
+
+        Duration is read cheaply from the WAV header (Kokoro/Qwen3 write WAV);
+        other formats report size only (no ffprobe per render). One cache scan.
+        """
+        out: dict[int, tuple[float | None, int]] = {}
+        current = self.current_id
+        if not current:
+            return out
+        cfg = self._active_config()
+        for ref, target in _ref_targets(self.deck, cfg, audio_dir(self.pdf_path)):
+            if ref.slide_id != current:
+                continue
+            path = audio_cache_path_or_alt(target)
+            if path is not None:
+                out[ref.speech_index] = (_wav_seconds(path), path.stat().st_size)
+        return out
 
     def ungenerated_ids(self) -> set[str]:
         """Slide-ids with at least one speech segment that has no cached audio."""

@@ -6,6 +6,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Generation progress is now visible.** While clips render in the background the
+  editor shows a deck-wide count bar (e.g. "Generating 4/12"), a live elapsed/estimate
+  line for the clip in flight ("intro · 12s of ~18s"), and a thin estimated
+  within-clip bar; finished clips show their audio length and file size in the
+  per-utterance tooltip. All driven by the generation queue, so it reflects the
+  prioritized order.
+- **Auto-generate while editing now works for Qwen3, with a smart queue.** The
+  background generation queue picks the *best-next* clip — the slide you're on,
+  then ahead by nearness, then behind — and re-prioritizes for free as you
+  navigate (the pick is made when the worker frees up, against where you are
+  then). Free-but-slow engines (Qwen3) are no longer locked out of
+  "Auto-generate as I edit"; only *paid* engines stay gated (they'd bill on every
+  save). Pressing **play** on a slide whose audio isn't ready preempts a heavy
+  clip generating for another slide — it aborts mid-generation (cooperative
+  cancel) and re-queues, so the worker makes what you need now; the engine warms
+  on switch so the first clip doesn't stall.
+- **Qwen3 ships with ready-to-use voices.** The Qwen3 engine now defaults to the
+  **CustomVoice** model, which carries nine built-in speakers (Vivian, Serena,
+  Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee) — so Qwen3 narrates out of
+  the box with no voice-clone prompt to prepare. The speakers appear in the
+  editor's voice picker, and **Vivian** is the default. The own-voice clone path
+  is still there: point `[tts.qwen3] model` at a `…-Base` repo and set a `.pt`
+  `voice_prompt` (or map a `.pt` per voice) to clone instead.
+
 - **Edit the voice map in the editor.** A new **Voices…** dialog in the editor
   console lets you create and edit the deck's named voices without hand-editing
   the narration file: each row is an internal name mapped to a concrete voice per
@@ -89,6 +113,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   seconds (the utterance you're actively typing in is skipped until you move on).
   Local-only — with a paid cloud engine the checkbox is disabled, since an
   unattended trigger must never bill per save.
+
+### Changed
+- **`[tts.qwen3] model` now defaults to `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`**
+  (was the `-Base` clone model), so Qwen3 works without a voice-clone prompt. A
+  deck that relied on the Base own-voice path must set `model` back to a `…-Base`
+  repo (and keep its `.pt` `voice_prompt`).
 
 ### Fixed
 - **A slide's "Transition in" now matches the previous slide's "Transition out".**

@@ -74,9 +74,11 @@ class TTSConfig:
     elevenlabs_stability: float = 0.5
     elevenlabs_similarity_boost: float = 0.75
     elevenlabs_speed: float = 1.0
-    qwen3_model: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+    # CustomVoice ships ready-to-use named speakers (works out of the box); a
+    # ``...-Base`` repo instead clones an own voice from ``qwen3_voice_prompt``.
+    qwen3_model: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
     qwen3_device: str = "xpu"
-    qwen3_voice_prompt: str = ""  # path to a .pt voice-clone prompt (own voice)
+    qwen3_voice_prompt: str = ""  # path to a .pt voice-clone prompt (Base own-voice only)
     qwen3_language: str = "English"
 
     def __post_init__(self) -> None:

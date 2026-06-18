@@ -71,6 +71,7 @@ module = [
     "kokoro.*",
     "qwen_tts.*",
     "torch.*",
+    "transformers.*",
     "numpy.*",
     "fitz.*",
     "nicegui.*",

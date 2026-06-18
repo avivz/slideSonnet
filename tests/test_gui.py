@@ -758,6 +758,9 @@ async def test_text_edit_revokes_loaded_track(
     monkeypatch.setattr(
         EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
     )
+    # Play awaits the queue's synth of any uncached clip; stub it so the unit tier
+    # never runs real (slow) Kokoro — we're exercising playback, not synthesis.
+    monkeypatch.setattr(EditorState, "synth_targets", lambda self, t, *, force=False: 1)
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
     seek = next(iter(user.find(marker="seek").elements))
@@ -836,6 +839,9 @@ async def test_play_all_starts_at_current_slide(
         return _fake_preview(self.pdf_path, [(0.0, "intro-title"), (2.0, "euler-setup")])
 
     monkeypatch.setattr(EditorState, "preview_deck", instant_build)
+    # Play awaits the queue's synth of any uncached clip; stub it so the unit tier
+    # never runs real (slow) Kokoro — we're exercising the start-at-current seek.
+    monkeypatch.setattr(EditorState, "synth_targets", lambda self, t, *, force=False: 1)
     await user.open("/")
     user.find("Next").click()  # move to slide 2 (euler-setup)
     await user.should_see("Slide 2 / 6")
@@ -1149,13 +1155,11 @@ async def test_auto_build_disabled_for_paid_engine(
     assert calls == []  # …no background billing happens
 
 
-async def test_auto_build_disabled_for_slow_local_engine(
+async def test_auto_build_enabled_for_slow_local_engine(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Story: a heavy local engine (Qwen3) is free but too slow to fire on every
-    edit, so auto-build is disabled even though it wouldn't bill."""
-    import asyncio
-
+    """Story: a heavy local engine (Qwen3) is free, so auto-build is allowed even
+    though it's slow — the queue prioritizes nearby slides to stay responsive."""
     from nicegui import app
 
     from slidesonnet.gui.state import EditorState
@@ -1165,23 +1169,17 @@ async def test_auto_build_disabled_for_slow_local_engine(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     app.storage.general["auto_build"] = True
-    calls: list[set[tuple[str, int]]] = []
-    monkeypatch.setattr(
-        EditorState, "synth_targets", lambda self, t, *, force=False: (calls.append(set(t)), 1)[1]
-    )
     await user.open("/")
     cb = next(iter(user.find(marker="auto-build").elements))
     assert isinstance(cb, ui.checkbox)
-    assert not cb.enabled  # disabled: too slow to auto-generate
-    await asyncio.sleep(0.1)
-    assert calls == []  # no background sweep on a slow engine
+    assert cb.enabled  # free engine → auto-build allowed (gate is paid-only now)
 
 
 async def test_engine_picker_switches_engine_and_regates_autobuild(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Story: the editor's engine dropdown switches generation for the session —
-    picking the heavy local engine disables auto-build (free, but too slow)."""
+    a free local engine keeps auto-build available (only paid engines disable it)."""
     # Offer qwen3 in the picker even though its package isn't installed in CI.
     monkeypatch.setattr("slidesonnet.gui.state.available_backends", lambda: ["kokoro", "qwen3"])
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
@@ -1193,8 +1191,8 @@ async def test_engine_picker_switches_engine_and_regates_autobuild(
     assert sel.value == "kokoro"  # default on launch
     assert cb.enabled  # kokoro is fast + free
 
-    sel.set_value("qwen3")  # pick the heavy local engine
-    assert not cb.enabled  # auto-build disabled for the slow engine
+    sel.set_value("qwen3")  # pick the heavy local engine (free)
+    assert cb.enabled  # still allowed — free engine, just prioritized
 
 
 async def test_enabling_auto_build_sweeps_uncached_clips_except_current(

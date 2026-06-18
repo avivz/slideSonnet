@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import time
 import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -19,7 +20,7 @@ from nicegui import app, background_tasks, run, ui
 from nicegui.events import KeyEventArguments
 
 from slidesonnet.audio.track import Cue
-from slidesonnet.cache import audio_dir, render_dir
+from slidesonnet.cache import render_dir
 from slidesonnet.diagnostics import boundary_transition
 from slidesonnet.gui.jobs import JobQueue
 from slidesonnet.gui.launch import (
@@ -143,6 +144,16 @@ class PlaybackController:
         if self.loaded_key is not None or self._pending_deck is False:
             return "clear"  # a single-slide track (even mid-build) belongs to its slide
         return "none"
+
+
+def _clip_meta_suffix(meta: tuple[float | None, int] | None) -> str:
+    """Tooltip tail for a generated clip: ``" · 1.2s · 34 KB"`` (size always, dur if known)."""
+    if meta is None:
+        return ""
+    duration, size = meta
+    kb = size / 1024
+    size_str = f"{kb / 1024:.1f} MB" if kb >= 1024 else f"{kb:.0f} KB"
+    return f" · {duration:.1f}s · {size_str}" if duration is not None else f" · {size_str}"
 
 
 def nav_direction(key: Any) -> int:
@@ -514,17 +525,24 @@ class PreviewPlayer:
             view.blocks.save_current()
             btn.props("loading")
         try:
-            if state.tts_is_paid:
-                count = (
-                    state.uncached_total() if whole_deck else state.uncached_count(state.current_id)
-                )
-                with client:
-                    if count and not await view.confirm_paid_synth(count):
-                        return
-            # If the clips we need are already generating in the background, wait
-            # for those jobs instead of racing or launching a duplicate synth.
             scope = None if whole_deck else state.current_id
-            await view.jobs.await_targets(state.all_targets(only_id=scope))
+            uncached = (
+                state.uncached_total() if whole_deck else state.uncached_count(state.current_id)
+            )
+            if state.tts_is_paid and uncached:
+                with client:
+                    if not await view.confirm_paid_synth(uncached):
+                        return
+            needed = state.all_targets(only_id=scope)
+            if uncached:
+                # Play needs clips that aren't generated yet. Preempt a heavy clip
+                # generating for some *other* slide (it re-queues) so the worker is
+                # free to make what we need now, and run the needed clips through the
+                # prioritized queue. The build below then reads them from cache — no
+                # second synth racing the model. (Fully-cached slides skip all this.)
+                view.jobs.cancel_running_unless(needed)
+                view.jobs.enqueue(needed, allow_paid=True)
+            await view.jobs.await_targets(needed)
             preview = await run.io_bound(
                 state.preview_deck if whole_deck else state.preview_current
             )
@@ -926,6 +944,7 @@ class BlockEditor:
         view = self.view
         state = view.state
         flags = state.speech_cached_flags()
+        meta = state.current_clip_meta()  # si -> (audio seconds, file bytes)
         speeches = state.current_block.speech_segments
         for btn, tip, si in self.seg_gen_controls:
             handle = view.jobs.handle_for(state.current_id, si)
@@ -940,11 +959,10 @@ class BlockEditor:
                 f"icon={'autorenew' if cached else 'graphic_eq'} "
                 f"color={'positive' if cached else 'warning'}"
             )
-            tip.set_text(
-                "Generated · click for a fresh take"
-                if cached
-                else "No audio yet · click to generate"
-            )
+            if cached:
+                tip.set_text(f"Generated{_clip_meta_suffix(meta.get(si))} · click for a fresh take")
+            else:
+                tip.set_text("No audio yet · click to generate")
             btn.set_enabled(si < len(speeches) and bool(speeches[si].text.strip()))
 
 
@@ -1238,6 +1256,24 @@ class EditorView:
                 self.diag_box = ui.column().classes("w-full gap-1")
                 ui.label("Audio · this slide").classes("ss-section")
                 self.audio_status = ui.label().classes("ss-diag ss-diag-info")
+                # Background-generation progress: a deck-wide count bar (A), an
+                # estimated within-clip bar (C), and an elapsed/estimate line (B).
+                self.gen_bar = (
+                    ui.linear_progress(value=0.0, show_value=False)
+                    .props("rounded size=8px")
+                    .classes("w-full")
+                )
+                self.gen_bar.mark("gen-progress")
+                self.gen_clip_bar = (
+                    ui.linear_progress(value=0.0, show_value=False)
+                    .props("rounded size=4px instant-feedback")
+                    .classes("w-full")
+                )
+                self.gen_status = ui.label().classes("ss-diag ss-diag-info ss-mono")
+                self.gen_status.mark("gen-progress-status")
+                self.gen_bar.visible = False
+                self.gen_clip_bar.visible = False
+                self.gen_status.visible = False
                 tray_box = ui.column().classes("w-full gap-1")
                 tray_box.mark("orphan-tray")
                 tray_box.visible = False
@@ -1308,10 +1344,12 @@ class EditorView:
 
         # background generation: keep the editor live while clips render
         self.jobs = JobQueue(
-            deck_provider=lambda: (state.deck, state.config, audio_dir(state.pdf_path)),
+            deck_provider=state.jobs_context,
             synth=lambda targets, force: state.synth_targets(targets, force=force),
             is_paid=lambda: state.tts_is_paid,
+            current_index=lambda: state.index,  # generate nearest-to-current first
             on_change=self._on_jobs_changed,
+            on_error=self._on_job_error,
         )
         self.jobs.start()
         self.client.on_disconnect(self.jobs.stop)
@@ -1338,6 +1376,7 @@ class EditorView:
         export_btn.on_click(lambda: self.run_action(export_btn, self._export_work))
 
         ui.timer(SOURCE_POLL_INTERVAL_S, self._poll_sources)
+        ui.timer(0.5, self._render_gen_progress)  # live elapsed/estimate while generating
 
         strip_toggle.on_click(lambda: self.layout.toggle("strip"))
         console_toggle.on_click(lambda: self.layout.toggle("console"))
@@ -1552,11 +1591,10 @@ class EditorView:
         the long first pause while the multi-GB model loads.
         """
         if self.state.model_warmup_pending():
-            ui.notify(
-                f"Loading the {self.state.active_backend} voice model — the first "
+            print(
+                f"[gen] loading the {self.state.active_backend} voice model — the first "
                 "clip may take a while; the rest are quick.",
-                type="ongoing",
-                timeout=4000,
+                flush=True,
             )
 
     def enqueue_segment(self, speech_index: int) -> None:
@@ -1585,11 +1623,29 @@ class EditorView:
         """Queue every uncached clip across the deck — non-blocking background fill."""
         self.blocks.save_current()  # flush any open edit before the worker reads disk
         targets = self.state.targets_for_sweep()
+        backend = self.state.active_backend
         if not targets:
+            print(f"[gen] nothing to generate — all audio for {backend} exists", flush=True)
+            self.flash(f"Nothing to generate — all audio for {backend} exists")
             return
         self._flag_model_warmup()
-        self.jobs.enqueue(targets, allow_paid=True)
+        handles = self.jobs.enqueue(targets, allow_paid=True)
+        print(f"[gen] queued {len(handles)} clip(s) for {backend}", flush=True)
+        self.flash(f"Generating {len(handles)} clip(s) with {backend}…")
         self.render_side()
+        self._render_gen_progress()
+
+    def _on_job_error(self, handle: Any) -> None:
+        """Surface a background generation failure — they used to vanish silently.
+
+        Runs from the worker task, so re-enter the page client before flashing.
+        """
+        try:
+            with self.client:
+                self.flash(f"Generation failed: {handle.error}", "negative")
+                self.render_side()
+        except Exception:
+            logger.debug("job error flash failed (client gone?)", exc_info=True)
 
     def _on_jobs_changed(self) -> None:
         """A background job changed state — repaint clip indicators and audio status.
@@ -1599,8 +1655,40 @@ class EditorView:
         try:
             with self.client:
                 self.render_side()
+                self._render_gen_progress()
         except Exception:  # the client may have disconnected mid-job
             logger.debug("jobs UI refresh failed (client gone?)", exc_info=True)
+
+    def _render_gen_progress(self) -> None:
+        """Deck-wide generation progress: a count bar, an estimated within-clip bar,
+        and a live elapsed/estimate line. Hidden whenever nothing is generating."""
+        done, total = self.jobs.progress()
+        running = self.jobs.running_handle()
+        if total == 0 or (done >= total and running is None):
+            for w in (self.gen_bar, self.gen_clip_bar, self.gen_status):
+                w.visible = False
+            return
+        self.gen_bar.visible = True
+        self.gen_status.visible = True
+        self.gen_bar.set_value(done / total if total else 0.0)
+        parts = [f"Generating {min(done + 1, total)}/{total}"]
+        clip_fraction: float | None = None
+        if running is not None and running.refs:
+            sid, si = sorted(running.refs)[0]
+            detail = sid
+            if running.started_at is not None:
+                elapsed = max(0.0, time.monotonic() - running.started_at)
+                est = self.state.est_gen_seconds(sid, si)
+                detail += f" · {elapsed:.0f}s"
+                if est:
+                    detail += f" of ~{est:.0f}s"
+                    clip_fraction = min(0.97, elapsed / est) if est > 0 else None
+            parts.append(detail)
+        self.gen_status.set_text("  ·  ".join(parts))
+        # The thin second bar estimates progress *within* the running clip.
+        self.gen_clip_bar.visible = clip_fraction is not None
+        if clip_fraction is not None:
+            self.gen_clip_bar.set_value(clip_fraction)
 
     # ---- auto-build (opt-in background generation as you edit) ------------
     def auto_build_active(self) -> bool:
@@ -1610,7 +1698,7 @@ class EditorView:
         on every save, so the checkbox is disabled and this stays False there.
         """
         enabled = bool(app.storage.general.get("auto_build", False))
-        return enabled and not self.state.tts_is_paid and self.state.tts_is_realtime
+        return enabled and not self.state.tts_is_paid
 
     def _sweep_auto_build(self) -> None:
         """One-time fill: queue every uncached clip except the focused slide's."""
@@ -1622,24 +1710,23 @@ class EditorView:
     def _sync_auto_build_gate(self) -> None:
         """Enable/disable "Auto-generate as I edit" for the active engine.
 
-        Gate = paid OR not realtime: a paid engine would bill on every save, and a
-        heavy local engine (Qwen3) is too slow to fire unattended. Re-run whenever
-        the engine changes so the checkbox tracks the picked backend.
+        Gate = paid only: a paid engine would bill on every save, so it stays off
+        there. A free-but-slow engine (Qwen3) is allowed — the queue prioritizes
+        the slides nearest where you're working, so editing stays responsive even
+        though each clip is slow. Re-run whenever the engine changes.
         """
         cb = self.auto_build
         state = self.state
-        if state.tts_is_paid or not state.tts_is_realtime:
+        if state.tts_is_paid:
             cb.set_value(False)
             cb.disable()
-            cb.tooltip(
-                "Local, fast engines only — a paid engine would bill on every save"
-                if state.tts_is_paid
-                else "This engine is too slow to generate on every edit — "
-                'use "Generate missing" instead'
-            )
+            cb.tooltip("Local engines only — a paid engine would bill on every save")
         else:
             cb.enable()
-            cb.tooltip("Quietly generate each slide's audio in the background after you edit it")
+            tip = "Quietly generate each slide's audio in the background after you edit it"
+            if not state.tts_is_realtime:
+                tip += " — slow engine, so nearby slides are generated first"
+            cb.tooltip(tip)
 
     def _on_engine_change(self, backend: str) -> None:
         """Switch the generation engine for this session (never written to disk)."""
@@ -1651,6 +1738,28 @@ class EditorView:
         self.player.stop_playback()  # the loaded preview track was the old engine's
         self.render()  # per-engine cache badges, voice pickers, gen-missing count
         self.flash(f"Generating with {backend}")
+        # Pre-load a heavy model now (Qwen3) so the first play doesn't stall on it.
+        if self.state.model_warmup_pending():
+            background_tasks.create(self._warm_engine())
+
+    async def _warm_engine(self) -> None:
+        """Background-load the picked engine's heavy model, off the event loop.
+
+        Light engines are warm already, so this only does work for Qwen3. We pin
+        the engine we started warming and bail on the UI update if the user has
+        since switched away — the (cached) load still benefits a later switch back.
+        """
+        backend = self.state.active_backend
+        self._flag_model_warmup()  # prints "loading the qwen3 voice model…" to the terminal
+        try:
+            await run.io_bound(self.state.warm_active_engine)
+        except Exception:
+            logger.exception("model warmup failed")
+            return
+        print(f"[gen] {backend} voice model ready", flush=True)
+        if self.state.active_backend == backend:
+            with self.client:
+                self.render()  # warmup banner clears now that is_warm() is True
 
     def open_voices_dialog(self) -> None:
         """Edit the deck's portable voice map: name voices + map each per engine.
@@ -1770,7 +1879,7 @@ class EditorView:
 
     def _on_auto_build_toggle(self, enabled: bool) -> None:
         # read the toggle's new value directly (storage may not have synced yet)
-        if enabled and not self.state.tts_is_paid and self.state.tts_is_realtime:
+        if enabled and not self.state.tts_is_paid:
             self._sweep_auto_build()
 
     def schedule_auto_build(self, slide_id: str) -> None:

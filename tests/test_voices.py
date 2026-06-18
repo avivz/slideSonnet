@@ -164,6 +164,30 @@ def test_qwen3_voice_path_resolves_relative_to_deck(tmp_path: Path) -> None:
     assert refs[0].voice == str(pt.resolve())
 
 
+def test_qwen3_speaker_id_is_left_verbatim(tmp_path: Path) -> None:
+    """A built-in CustomVoice speaker name is an opaque id, not a path to resolve."""
+    from slidesonnet.deck import load_deck
+
+    pdf = tmp_path / "deck.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    sidecar = tmp_path / "deck.narration"
+    sidecar.write_text(
+        "# slidesonnet-format: 2\n"
+        "default-voice: host\n"
+        "voices:\n"
+        "  host:\n"
+        "    qwen3: Vivian\n\n"
+        "@a\n  utterance:\n    text: Hi.\n",
+        encoding="utf-8",
+    )
+
+    deck, _ = load_deck(pdf, pages=(["a"], []))
+    # Not turned into "<deck>/Vivian" — the speaker name passes through untouched.
+    assert deck.voices["host"].backend_voices["qwen3"] == "Vivian"
+    refs = synth_mod.speech_refs(deck, Config(tts=TTSConfig(backend="qwen3")))
+    assert refs[0].voice == "Vivian"
+
+
 def test_qwen3_voice_path_save_keeps_relative(tmp_path: Path) -> None:
     from slidesonnet.deck import load_deck, save_deck
 
