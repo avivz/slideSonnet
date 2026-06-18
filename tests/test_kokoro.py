@@ -9,8 +9,38 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import warnings
+
 from slidesonnet.exceptions import TTSError
-from slidesonnet.tts.kokoro import KokoroTTS
+from slidesonnet.tts.kokoro import KokoroTTS, _quiet_torch_load_warnings
+
+
+def test_quiet_torch_load_warnings_silences_the_two_known_warnings() -> None:
+    """The LSTM-dropout UserWarning and weight_norm FutureWarning torch emits on
+    model construction are swallowed (they're third-party noise, not ours)."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with _quiet_torch_load_warnings():
+            warnings.warn(
+                "dropout option adds dropout after all but last recurrent layer, "
+                "so non-zero dropout expects num_layers greater than 1",
+                UserWarning,
+            )
+            warnings.warn(
+                "`torch.nn.utils.weight_norm` is deprecated in favor of "
+                "`torch.nn.utils.parametrizations.weight_norm`.",
+                FutureWarning,
+            )
+    assert caught == []
+
+
+def test_quiet_torch_load_warnings_leaves_unrelated_warnings() -> None:
+    """Only the two known torch messages are filtered — anything else passes."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with _quiet_torch_load_warnings():
+            warnings.warn("a genuinely different warning", UserWarning)
+    assert len(caught) == 1
 
 
 def _fake_audio(samples: int) -> MagicMock:

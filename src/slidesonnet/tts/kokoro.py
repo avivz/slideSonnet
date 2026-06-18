@@ -12,7 +12,9 @@ import contextlib
 import logging
 import os
 import tempfile
+import warnings
 import wave
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -37,6 +39,27 @@ KPipeline: type[_KPipelineType] | None = _KPipeline
 
 _REPO_ID = "hexgrad/Kokoro-82M"
 _SAMPLE_RATE = 24_000
+
+
+@contextlib.contextmanager
+def _quiet_torch_load_warnings() -> Iterator[None]:
+    """Silence the two torch warnings Kokoro's model construction always emits.
+
+    Building the model trips an LSTM ``dropout`` UserWarning and a ``weight_norm``
+    deprecation FutureWarning on every load. Both come from torch internals we
+    can't change, and they bury the editor's own terminal output — so suppress
+    just those two messages (anything else still surfaces).
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="dropout option adds dropout", category=UserWarning
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"`torch\.nn\.utils\.weight_norm` is deprecated",
+            category=FutureWarning,
+        )
+        yield
 
 # The Kokoro-82M v1.0 English voices (``<lang><gender>_<name>``; lang a=American,
 # b=British). Offered as the voice choices in the editor — these need no extra
@@ -92,7 +115,8 @@ class KokoroTTS(TTSEngine):
                     "kokoro package not installed. Install with: pip install slidesonnet[kokoro]"
                 )
             logger.info("Loading Kokoro pipeline (lang '%s')...", lang_code)
-            self._pipelines[lang_code] = KPipeline(lang_code=lang_code, repo_id=_REPO_ID)
+            with _quiet_torch_load_warnings():
+                self._pipelines[lang_code] = KPipeline(lang_code=lang_code, repo_id=_REPO_ID)
         return self._pipelines[lang_code]
 
     def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
