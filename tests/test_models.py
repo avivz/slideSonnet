@@ -160,13 +160,19 @@ class TestBackendRegistry:
         assert (qwen3.extension, qwen3.paid, qwen3.realtime) == (".wav", False, False)
 
     def test_available_backends_filters_to_installed(self) -> None:
+        import importlib.util
+
         from slidesonnet.tts import BACKENDS, available_backends
 
         # Every spec names the import that gates its availability.
         assert all(spec.import_name for spec in BACKENDS.values())
         avail = available_backends()
         assert set(avail) <= set(BACKENDS)
-        assert "kokoro" in avail  # the dev env installs the kokoro extra
+        # A backend is offered iff its import is present — env-independent (CI
+        # installs neither the kokoro nor the qwen3 extra; local dev has kokoro).
+        for name, spec in BACKENDS.items():
+            present = importlib.util.find_spec(spec.import_name) is not None
+            assert (name in avail) == present
 
     def test_engine_voice_introspection(self) -> None:
         from slidesonnet.models import TTSConfig

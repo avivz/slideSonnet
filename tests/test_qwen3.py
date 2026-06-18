@@ -17,8 +17,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from slidesonnet.exceptions import TTSError
-from slidesonnet.tts.qwen3 import Qwen3TTS
+# These mocked tests still need real numpy/torch (the engine flattens waveforms
+# with numpy and the fixture patches torch.load). Both ship with the heavy
+# [qwen3]/[kokoro] extras, not [dev], so CI (which installs [dev] only) skips the
+# whole module — it runs wherever those deps are present (local dev).
+pytest.importorskip("numpy")
+pytest.importorskip("torch")
+
+from slidesonnet.exceptions import TTSError  # noqa: E402
+from slidesonnet.tts.qwen3 import Qwen3TTS  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
