@@ -28,10 +28,13 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    incrementals of one logical Beamer/Typst slide) a wipe/slide reads as a
    *build animation*, recovering the motion a flat PDF throws away. Today only
    `cut`/`crossfade` exist in the model and even `crossfade` renders as a hard
-   cut. **Render model (decided 2026-06-16): absorb-into-hold** — a `D`-second
-   transition plays *during the outgoing slide's trailing hold*, so the deck's
-   total duration and audio are unchanged and preview stays aligned (no timeline
-   surgery). *Acceptance examples:* (a) `transition-out: wipeleft 0.5` → exported
+   cut. **Render model (decided 2026-06-16, revised 2026-06-18): centered overlay**
+   — a `D`-second transition is a *visual overlay centered on the A→B boundary*
+   (D/2 over the tail of A, D/2 over the head of B), playing over whatever audio is
+   already there (silence or speech); it never changes the audio or the deck's total
+   duration, so preview stays aligned with no timeline surgery. (Supersedes the
+   earlier "absorb into the outgoing tail only, clamp if too long" plan — see the
+   reshaped follow-ups below.) *Acceptance examples:* (a) `transition-out: wipeleft 0.5` → exported
    video wipes left over 0.5 s during slide A's tail hold; total duration equals
    the all-`cut` render (transition absorbed, not added/subtracted); (b)
    `crossfade N` still works (now one entry in the gallery, mapped to xfade
@@ -50,16 +53,46 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    own in/out transitions against a black frame at the deck ends;
    `test_morph_schedule_*`/`_single_slide_morph` + browser journeys); ✅
    `fadeblack`/`fadewhite` families ("Fade through black/white"); ✅ the
-   preview audio track is fingerprint-cached so a repeat play does no ffmpeg. *Remaining follow-ups:*
-   the transition is currently absorbed into the slide's `tail_seconds` hold only
-   and **clamped** to it (a longer request is shortened + logged) — extend to
-   also draw from the next slide's `pre_silence` lead and from trailing `pause:`
-   segments, and add the "small added gap" fallback when a boundary has no hold;
-   surface an over-long-transition warning in `slidesonnet check`; and the
-   preview morph approximates a few families (e.g. `pixelize`/`dissolve` fall
-   back to a fade) — fine for proofing, only the export is pixel-exact. Audio is left
-   continuous (no acrossfade), which is correct for sub-slide builds. Gallery
-   reference: <https://trac.ffmpeg.org/wiki/Xfade>. **[agent]**
+   preview audio track is fingerprint-cached so a repeat play does no ffmpeg.
+
+   *Reshaped follow-ups — explicit per-slide silences + centered-overlay
+   transitions (design locked 2026-06-18):* the invisible global hold/lead
+   (`[video] tail_seconds`/`pre_silence`) becomes a **per-slide, editable
+   silence** the author controls, and the transition becomes a centered visual
+   overlay (above). Rules: (1) **every slide has a leading and a trailing
+   silence** — not pinned blocks but *positional*: the last block, if a pause, *is*
+   the trailing silence, otherwise an implicit default silence follows it (the
+   front mirrors it). Adding an utterance inserts it *before* the trailing silence;
+   moving an utterance after a pause demotes that pause to mid-slide and a fresh
+   implicit silence reappears at the end. (2) **Absent = default; explicit
+   replaces** — a slide with no authored silence renders with the deck default;
+   authoring `pause: 2` as the trailing block makes the hold *exactly* 2s (not 2 +
+   default), and `pause: 0` means no hold (the "really quick change" case). (3)
+   **The GUI materializes implicit→explicit on save** — opening a deck and saving
+   writes the start/end `pause:` lines for every slide (a one-time large diff, by
+   design); the **CLI/API path leaves them implicit** and honors the defaults when
+   absent. (4) **Centered-overlay render** — `transition-out: wipeleft 0.8` between
+   A and B draws an 0.8s wipe centered on the boundary (0.4s over A's tail, 0.4s
+   over B's head) as a pure visual overlay: the assembled audio track and the
+   deck's total duration are byte-identical to the same deck rendered all-`cut`.
+   Where the centered window overlaps speech (silence pool smaller than `D`), the
+   morph simply plays over the narration — no clamp, no pad (can feel rushed on a
+   real slide change; accepted). The one surviving clamp+warn case: a transition
+   longer than twice the shorter adjacent slide can't be centered, so it's clamped
+   and `slidesonnet check` warns. *Acceptance examples:* (a) the editor shows an
+   editable **start silence** and **end silence** per slide, defaulting to the deck
+   value; setting end silence to 0 flips with no hold; (b) `transition-out:
+   wipeleft 0.8` renders centered on the boundary with the audio track + total
+   duration byte-identical to the all-`cut` render; (c) a deck never opened in the
+   GUI round-trips byte-stable and renders identically to today (defaults honored);
+   (d) opening that deck in the GUI and saving materializes every slide's start/end
+   `pause:` lines once, after which the render is still identical; (e) a 2s
+   transition on a 0.3s slide is clamped with a `check` warning. *Appetite:* ~three
+   days (model/grammar default-silence semantics + per-slide editor fields +
+   centered-overlay render & preview-morph re-center + tests). The preview morph
+   still approximates a few families (`pixelize`/`dissolve` → fade) — fine for
+   proofing, only the export is pixel-exact. Gallery reference:
+   <https://trac.ffmpeg.org/wiki/Xfade>. **[agent]**
 
 2. [ ] **Per-engine cache prune policy — stop auto-prune from throwing away
    Qwen3 audio.** *(Risk surfaced by the just-shipped auto-prune of local
