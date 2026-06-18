@@ -3,8 +3,12 @@
 Current version: 1.0.0a1 (alpha, published to PyPI 2026-06-16) — the PDF +
 narration-sidecar editor rewrite. Repo is public.
 
-See `CHANGELOG.md` for shipped changes. Post-a1 work (background generation
-queue + auto-build) sits in CHANGELOG `[Unreleased]`, on `main`, untagged.
+See `CHANGELOG.md` for shipped changes. A large post-a1 batch sits in CHANGELOG
+`[Unreleased]`, on `main`, untagged: the background generation queue + auto-build,
+the portable voice layer, the Qwen3 local engine (built-in CustomVoice speakers,
+prioritized auto-gen, progress UI, cancellable play / cancel-all), the in-editor
+Voices dialog + named-only utterance picker, auto-prune of local orphans, and the
+transition-gallery core. None of it is tagged yet — 1.0.0a2 is the next release.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -57,35 +61,27 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    continuous (no acrossfade), which is correct for sub-slide builds. Gallery
    reference: <https://trac.ffmpeg.org/wiki/Xfade>. **[agent]**
 
-2. [x] **Edit the voice map *in the editor*.** *Shipped 2026-06-18 (CHANGELOG
-   `[Unreleased]`):* a **Voices…** console dialog edits the deck's named voices
-   (a name → per-engine voice, plus a Default-voice picker); Save regenerates the
-   `voices:`/`default-voice:` preamble (a Qwen3 `.pt` re-relativized to the deck
-   dir), and the voice pickers, the unset placeholder, and the `voice-unmapped`
-   warnings relight against the new map. An untouched map round-trips byte-stable.
-   State layer is `EditorState.voice_map_for_display()` / `edit_voices()` +
-   `deck.relativize_voice_files`; covered by `test_gui_state.py` (edit/no-op/
-   delete/qwen3-roundtrip), `test_voices.py` (relativize-on-save), and a
-   `test_gui.py` dialog sim. *Possible follow-up:* a browser-tier journey for the
-   default-select-updates-as-you-type focus/timing path (skipped to stay in
-   appetite). *(Extracted from the now-shipped
-   portable voice layer — see Done.)* *Story:* As a deck author, I
-   want to add and edit named voices (and the deck default) from inside
-   `slidesonnet edit`, so I can map an internal name to each engine's voice without
-   hand-editing the sidecar preamble. *Acceptance examples:* (a) a "Voices" panel
-   lists the deck's internal names with their per-engine values; adding a name and
-   setting its kokoro/qwen3/elevenlabs voice writes a well-formed `voices:` block
-   on save (file-based qwen3 values stored relative to the deck dir, as on load);
-   (b) setting the deck `default-voice` from a dropdown of internal names round-
-   trips and drives the unset-voice placeholder; (c) a name with no value for the
-   active engine still surfaces the existing `voice-unmapped` warning, now
-   editable-to-green in place; (d) a deck with a hand-written preamble that the
-   user *doesn't* touch still round-trips byte-stable (only an actual edit
-   regenerates the block). *Appetite:* ~one day (editor panel + serialize-from-
-   edited-map + tests). *Design note:* `serialize_preamble(voices, default_voice)`
-   already emits the block; this wires an editor surface to mutate `deck.voices`/
-   `deck.default_voice` and drop the verbatim-preamble shortcut when the map was
-   edited. **[agent]**
+2. [ ] **Per-engine cache prune policy — stop auto-prune from throwing away
+   Qwen3 audio.** *(Risk surfaced by the just-shipped auto-prune of local
+   orphans.)* `EditorState._write_and_reload` → `prune_local_orphans` sweeps any
+   orphaned clip whose engine is **not paid** (`clean.py:102`, gated on
+   `API_BACKENDS`). Qwen3 is `paid=False` but slow/expensive on the iGPU (seconds
+   per clip), so an edit can silently discard minutes of just-generated own-voice
+   audio. *Story:* As a deck author rendering with a heavy local engine, I want my
+   freshly-generated Qwen3 clips to survive an edit, so I don't pay the
+   regeneration cost for a one-word fix elsewhere in the deck. *Acceptance
+   examples:* (a) editing utterance A's text does **not** delete a now-orphaned
+   Qwen3 clip for the *old* text of A (or for an unrelated slide) — Qwen3 orphans
+   are kept by default; (b) Kokoro orphans are still pruned eagerly (unchanged);
+   (c) ElevenLabs (paid) is still never auto-swept (unchanged); (d) the keep/drop
+   decision reads from a single per-engine policy on `BackendSpec` (e.g.
+   `prune_policy: eager | keep-paid | keep-expensive-local | never`), not a
+   hardcoded `paid` check, so a new engine declares its policy in one place;
+   (e) `slidesonnet clean --keep nothing` still removes everything on explicit
+   request. *Appetite:* half a day. *Design note:* add the policy field to the
+   registry in `tts/__init__.py`, replace the `parsed[1] in API_BACKENDS` test in
+   `prune_local_orphans` with a policy lookup; repro test in `test_clean.py`
+   (Qwen3 orphan survives, Kokoro orphan removed). **[agent]**
 3. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
    shipped and mocked-tested — see Done. This is the one human step gating a real
    own-voice render: nothing about Qwen3 has run on real weights + a real voice
@@ -155,10 +151,20 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      *Acceptance:* pressing play-all on a half-generated deck starts immediately
      and pauses (not errors) when it reaches the first ungenerated clip, resuming
      once the queue catches up.
-   - Make "generate all" / a queued background generation interruptible (today a
-     queued sweep runs to completion; add a cancel/stop for the queue).
-     *Acceptance:* a "Stop" on the sweep drains the queue and leaves already-made
-     clips intact.
+   - A newly-added utterance inherits the deck's default voice. Today
+     `BlockEditor.add_segment` creates `Segment.speech("")` with **no** voice, so
+     a new line shows the explicit "default" option and resolves through the
+     fallback chain. Make that default explicit and visible, with a strict
+     precedence: **deck default first** (sidecar `default-voice:`, or a config
+     key); **if that doesn't exist, the engine default**. *Acceptance:* (a) with
+     `default-voice: lecturer` set, adding a line starts on `lecturer` (shown
+     selected in the picker); (b) with **no** deck default set, adding a line
+     falls through to the active engine's own default (Kokoro `am_echo`, Qwen3
+     Vivian) — **not an error**, the line is created unset and the "default" option
+     stays valid with nothing pinned; (c) the new line round-trips: an unset line
+     writes no `voice:` (stays portable), and a line is only written with an
+     explicit `voice:` once the author changes it off the default. *Appetite:* an
+     hour.
    - Toggle transitions in single-slide preview. A single-slide play currently
      *always* renders that slide's own in/out transitions (the preview morph,
      against a black frame at the deck ends) — useful for proofing the
@@ -242,33 +248,49 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Next — toward 1.0 final
 
-1. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
+1. [ ] **Unify logging across the project** (from inbox). Generation feedback is
+   ad-hoc: the job worker and editor `print("[gen] …")` straight to stdout, while
+   the rest of the code uses module `logger`s whose output never appears because
+   logging is never configured (no handler/level at CLI/editor startup) — so
+   `logger.info`/`logger.exception` calls are invisible, which is why a swallowed
+   background-job failure had to be band-aided with a `print`. *Story:* As someone
+   running slideSonnet, I want consistent, level-controlled output so I can see
+   progress and diagnose failures without reading the source. *Acceptance
+   examples:* (a) logging is configured once at CLI/editor startup (handler +
+   level), so a `logger.info` from any module reaches the terminal; (b) a
+   `--verbose`/`--quiet` flag or `SLIDESONNET_LOG` env var sets the level;
+   (c) the `print("[gen] …")` progress lines become structured `logger` calls (or
+   are deliberately kept as the few user-facing progress lines, with everything
+   else routed through logging); (d) a background-job failure is logged with a
+   traceback at the configured level, no longer silently swallowed. *Appetite:*
+   half a day. **[agent]**
+2. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
    gaps to fill deliberately: export timing modes end-to-end, `check`
    diagnostics on real overlay decks, editor save/reload paths. Finish with
    a joint human+AI review of coverage and quality. **[agent→human]**
-2. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
+3. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
    ElevenLabs render (don't pay ElevenLabs for renders we're about to drop).
    Blocked on Now #4 (the Inworld engine). Human triggers the paid render;
    agent uploads to the `v0.0.0` GitHub Release (`gh release upload --clobber`)
    and refreshes README links. **[human→agent]**
-3. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
+4. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
    now-shipped Qwen3 engine (see Done) for users without a local GPU: ~$0.13/10 min,
    no infra, but the voice leaves the machine (and needs one-time voice enrollment).
    Same `BackendSpec`/engine interface, `paid=True`, the same mocked-client test
    guard as ElevenLabs/Inworld (never a real paid call in CI). Serverless GPU
    (Modal/RunPod, ~$0.01/10 min) is a further variant. The local engine has landed,
    so this is now unblocked. **[agent→human]**
-4. [ ] **Qwen3 per-utterance `.pt` content-hash in the cache key** (debt from the
+5. [ ] **Qwen3 per-utterance `.pt` content-hash in the cache key** (debt from the
    shipped engine). A per-utterance voice-map `.pt` folds its *path*, not its
    *content hash*, into the clip cache key, so editing a clone artifact in place
    needs a manual regenerate (the config-default prompt already content-hashes).
    *Acceptance:* editing a `.pt` referenced by a `voices:` entry invalidates that
    voice's cached clips on the next generate; moving/renaming the file does not
    churn the cache. *Appetite:* an hour. **[agent]**
-5. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
+6. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
    an unlisted-vs-public decision; agent preps titles, descriptions, and
    chapter markers from the narration sidecars. **[human]**
-6. [ ] **README refresh** — new video links, Kokoro install instructions,
+7. [ ] **README refresh** — new video links, Kokoro install instructions,
    editor screenshots of the new dark studio theme. **[agent]**
 
 ## Later — before 1.0 final
@@ -319,6 +341,22 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Editor voice/generation polish batch** (2026-06-18, CHANGELOG
+  `[Unreleased]`): a run of editor work on `main` after the portable-voice/Qwen3
+  merge — the **Voices…** dialog to create/edit the deck's named voices
+  (pick-or-type per engine, Default-voice picker, byte-stable round-trip; was the
+  former Now #2); a **named-only** per-utterance voice picker (raw engine ids no
+  longer listed) with an explicit **default** option that shows the resolved
+  engine voice (e.g. `lecturer (am_michael)`); **auto-prune of local orphans** on
+  save (`prune_local_orphans` — see the per-engine-policy follow-up now in Now #2);
+  Qwen3 **built-in CustomVoice speakers** (Vivian default) so it narrates out of
+  the box, **prioritized auto-gen** (best-next clip, re-prioritized on nav, Qwen3
+  no longer locked out), a **generation progress UI** (deck count bar + per-clip
+  elapsed/estimate), **cancellable play** and a **✕ cancel-all**, auto-generate
+  now **starts off each session** and resets on engine switch, Kokoro's default
+  voice is now `am_echo`, and fixes (queue reads cache under the picked engine,
+  Qwen3 foreign-voice fallback, visible background-job outcomes, silenced torch
+  load warnings). State/GUI/jobs tests throughout.
 - [x] **Portable voice layer — internal names + cross-engine map in the sidecar**
   (2026-06-17, merged to `main` in PR #1; CHANGELOG `[Unreleased]`): the `.narration`
   grammar grew a deck-level preamble (`default-voice:` + a `voices:` block mapping
