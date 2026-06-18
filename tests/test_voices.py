@@ -126,3 +126,54 @@ def test_voice_diagnostics_ignore_raw_ids() -> None:
     # a voice that isn't a named preset is a raw engine id -> never flagged
     blocks = [PageNarration("a", [Segment.speech("Hi.", voice="af_heart")])]
     assert voice_diagnostics(blocks, {}, None, "kokoro") == []
+
+
+# ---- file-based voices (Qwen3 .pt) resolve relative to the deck dir ----------
+
+QWEN3_SIDECAR = """\
+# slidesonnet-format: 2
+default-voice: lecturer
+voices:
+  lecturer:
+    qwen3: prompts/lecturer.pt
+
+@a
+  utterance:
+    text: Hi.
+"""
+
+
+def test_qwen3_voice_path_resolves_relative_to_deck(tmp_path: Path) -> None:
+    from slidesonnet.deck import load_deck
+
+    pdf = tmp_path / "deck.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    (tmp_path / "prompts").mkdir()
+    pt = tmp_path / "prompts" / "lecturer.pt"
+    pt.write_bytes(b"fake-clone-artifact")
+    (tmp_path / "deck.narration").write_text(QWEN3_SIDECAR, encoding="utf-8")
+
+    deck, _ = load_deck(pdf, pages=(["a"], []))
+    resolved = deck.voices["lecturer"].backend_voices["qwen3"]
+    assert Path(resolved).is_absolute()
+    assert Path(resolved) == pt.resolve()
+
+    # ...and synthesis sees that absolute path as the utterance's prompt
+    refs = synth_mod.speech_refs(deck, Config(tts=TTSConfig(backend="qwen3")))
+    assert refs[0].voice == str(pt.resolve())
+
+
+def test_qwen3_voice_path_save_keeps_relative(tmp_path: Path) -> None:
+    from slidesonnet.deck import load_deck, save_deck
+
+    pdf = tmp_path / "deck.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "lecturer.pt").write_bytes(b"fake")
+    sidecar = tmp_path / "deck.narration"
+    sidecar.write_text(QWEN3_SIDECAR, encoding="utf-8")
+
+    deck, _ = load_deck(pdf, pages=(["a"], []))
+    save_deck(deck)
+    # the on-disk sidecar keeps the portable relative path, not the absolute one
+    assert "qwen3: prompts/lecturer.pt" in sidecar.read_text(encoding="utf-8")

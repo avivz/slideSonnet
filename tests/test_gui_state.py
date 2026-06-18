@@ -208,6 +208,16 @@ def test_editor_default_voice_prefers_deck_default(tmp_path: Path) -> None:
     assert plain.default_voice() == "af_heart"  # kokoro's configured default
 
 
+def test_model_warmup_pending_only_for_cold_heavy_engine(tmp_path: Path) -> None:
+    """Light engines are always warm; a cold Qwen3 owes a heavy one-time load."""
+    state = _state(tmp_path)
+    assert state.active_backend == "kokoro"
+    assert state.model_warmup_pending() is False  # nothing to load
+
+    state.set_backend("qwen3")
+    assert state.model_warmup_pending() is True  # model not yet in the process
+
+
 def test_gui_engine_pick_overrides_action_engine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

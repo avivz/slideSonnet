@@ -48,6 +48,12 @@ except ImportError:
 Qwen3TTSModel: Any = _Qwen3TTSModel
 VoiceClonePromptItem: Any = _VoiceClonePromptItem
 
+# Process-wide model cache, keyed by (model_repo, device). The editor creates a
+# fresh engine per synthesis call (and per background job), so without a cache
+# the multi-GB model would reload every clip; this keeps it warm for the life of
+# the process — the single most important perf property for the editor.
+_MODEL_CACHE: dict[tuple[str, str], Any] = {}
+
 
 class Qwen3TTS(TTSEngine):
     paid = False
@@ -66,10 +72,19 @@ class Qwen3TTS(TTSEngine):
         self._model: Any = None
         self._prompts: dict[str, Any] = {}  # prompt path -> [VoiceClonePromptItem]
 
+    def is_warm(self) -> bool:
+        """True once this (model, device) is loaded in the process — see base."""
+        return (self.model_repo, self.device) in _MODEL_CACHE
+
     def _ensure_model(self) -> Any:
-        """Load the model once, on first synthesis, and keep it warm."""
+        """Load the model once per process, on first synthesis, and keep it warm."""
         if self._model is not None:
             return self._model
+        cache_key = (self.model_repo, self.device)
+        cached = _MODEL_CACHE.get(cache_key)
+        if cached is not None:
+            self._model = cached
+            return cached
         if Qwen3TTSModel is None:
             raise TTSError(
                 "qwen-tts package not installed. Install with: pip install slidesonnet[qwen3]"
@@ -83,6 +98,7 @@ class Qwen3TTS(TTSEngine):
         if self.device != "cpu":
             model.model.to(f"{self.device}:0")
             model.device = next(model.model.parameters()).device
+        _MODEL_CACHE[cache_key] = model
         self._model = model
         return model
 
