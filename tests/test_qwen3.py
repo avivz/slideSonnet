@@ -7,6 +7,8 @@ only by a local-only integration test behind the ``[qwen3]`` extra.
 
 from __future__ import annotations
 
+import importlib.util
+import os
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +19,16 @@ import pytest
 
 from slidesonnet.exceptions import TTSError
 from slidesonnet.tts.qwen3 import Qwen3TTS
+
+
+@pytest.fixture(autouse=True)
+def _clear_model_cache() -> Any:
+    """Isolate the process-wide model cache between tests."""
+    from slidesonnet.tts import qwen3 as qwen3_mod
+
+    qwen3_mod._MODEL_CACHE.clear()
+    yield
+    qwen3_mod._MODEL_CACHE.clear()
 
 
 @pytest.fixture
@@ -73,6 +85,25 @@ def test_model_loaded_once_and_kept_warm(fake_qwen3: SimpleNamespace, tmp_path: 
     # from_pretrained is the expensive load — it must happen exactly once.
     assert fake_qwen3.model_cls.from_pretrained.call_count == 1
     assert fake_qwen3.model.generate_voice_clone.call_count == 2
+
+
+def test_model_cache_shared_across_engine_instances(
+    fake_qwen3: SimpleNamespace, tmp_path: Path
+) -> None:
+    # The editor recreates the engine per background job; the heavy model must
+    # load once per process, not once per job.
+    _engine(tmp_path).synthesize("one", tmp_path / "a.wav")
+    _engine(tmp_path).synthesize("two", tmp_path / "b.wav")
+    assert fake_qwen3.model_cls.from_pretrained.call_count == 1
+
+
+def test_is_warm_flips_after_first_load(fake_qwen3: SimpleNamespace, tmp_path: Path) -> None:
+    engine = _engine(tmp_path)
+    assert engine.is_warm() is False  # cold: a heavy load is still owed
+    engine.synthesize("hello", tmp_path / "a.wav")
+    assert engine.is_warm() is True
+    # a fresh instance for the same (model, device) is already warm
+    assert _engine(tmp_path).is_warm() is True
 
 
 def test_missing_package_raises_clean_error(
@@ -162,3 +193,29 @@ def test_create_tts_is_cheap_and_does_not_load_model(
     )
     assert engine.name() == "qwen3"
     fake_qwen3.model_cls.from_pretrained.assert_not_called()
+
+
+# --- real weights (local-only; never in CI) ----------------------------------
+
+_REAL_PROMPT = os.environ.get("SLIDESONNET_QWEN3_PROMPT", "")
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(
+    importlib.util.find_spec("qwen_tts") is None or not _REAL_PROMPT,
+    reason="needs the [qwen3] extra and SLIDESONNET_QWEN3_PROMPT set to a real .pt prompt",
+)
+def test_real_weights_smoke(tmp_path: Path) -> None:
+    """Downloads the real model and clones a real voice — heavy, opt-in, local-only.
+
+    Run with the package installed and a prompt artifact, e.g.:
+        SLIDESONNET_QWEN3_PROMPT=dev/voice-profile/aviv_calm.pt \
+            pytest -m integration tests/test_qwen3.py -k real_weights
+    """
+    device = os.environ.get("SLIDESONNET_QWEN3_DEVICE", "cpu")
+    engine = Qwen3TTS(device=device, voice_prompt=_REAL_PROMPT)
+    out = tmp_path / "real.wav"
+    duration = engine.synthesize("This is a real own-voice smoke test.", out)
+    assert out.is_file() and duration > 0
+    with wave.open(str(out), "rb") as wf:
+        assert wf.getnframes() > 0

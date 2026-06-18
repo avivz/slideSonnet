@@ -56,6 +56,10 @@ class BackendSpec:
     #: Python module that must be importable for this backend to run (its extra).
     #: Used to offer only installed engines in the editor's engine picker.
     import_name: str = ""
+    #: This backend's voices are *file paths* (e.g. a Qwen3 ``.pt`` clone prompt),
+    #: not opaque ids — so a voice-map value is resolved relative to the deck dir
+    #: when the deck loads, keeping the sidecar portable.
+    file_voices: bool = False
 
 
 BACKENDS: dict[str, BackendSpec] = {
@@ -64,9 +68,18 @@ BACKENDS: dict[str, BackendSpec] = {
         "elevenlabs", ".mp3", paid=True, factory=_make_elevenlabs, import_name="elevenlabs"
     ),
     "qwen3": BackendSpec(
-        "qwen3", ".wav", paid=False, factory=_make_qwen3, realtime=False, import_name="qwen_tts"
+        "qwen3",
+        ".wav",
+        paid=False,
+        factory=_make_qwen3,
+        realtime=False,
+        import_name="qwen_tts",
+        file_voices=True,
     ),
 }
+
+#: Backend names whose voice-map values are file paths (resolved per-deck).
+FILE_VOICE_BACKENDS: frozenset[str] = frozenset(n for n, s in BACKENDS.items() if s.file_voices)
 
 
 def available_backends() -> list[str]:

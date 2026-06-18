@@ -10,11 +10,28 @@ from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.format import parse_document, serialize_sidecar
 from slidesonnet.narration.model import Deck, PageNarration
 from slidesonnet.pdf.reader import read_page_ids
+from slidesonnet.tts import FILE_VOICE_BACKENDS
 
 
 def default_sidecar_path(pdf_path: Path) -> Path:
     """The sidecar path for *pdf_path*: ``<deck-stem>.narration`` beside it."""
     return pdf_path.with_suffix(".narration")
+
+
+def _resolve_voice_files(voices: dict[str, VoiceConfig], base_dir: Path) -> dict[str, VoiceConfig]:
+    """Resolve file-based voice values (e.g. a Qwen3 ``.pt``) against *base_dir*.
+
+    A voice-map value for a file-voiced backend is a path stored relative to the
+    deck, so the sidecar stays portable; in memory it becomes absolute so the
+    engine can load it regardless of the process's working directory (an already
+    absolute path is left unchanged). Only the in-memory deck is rewritten — a
+    save re-emits the original relative preamble verbatim.
+    """
+    for vc in voices.values():
+        for backend, value in vc.backend_voices.items():
+            if value and backend in FILE_VOICE_BACKENDS:
+                vc.backend_voices[backend] = str((base_dir / value).resolve())
+    return voices
 
 
 def dedupe_page_ids(pages: list[str]) -> tuple[list[str], list[Diagnostic]]:
@@ -148,11 +165,8 @@ def load_deck(
     if sidecar.exists():
         doc = parse_document(sidecar.read_text(encoding="utf-8"))
         blocks, block_diags = dedupe_block_ids(doc.blocks)
-        voices, default_voice, preamble_source = (
-            doc.voices,
-            doc.default_voice,
-            doc.preamble_source,
-        )
+        voices = _resolve_voice_files(doc.voices, sidecar.resolve().parent)
+        default_voice, preamble_source = doc.default_voice, doc.preamble_source
 
     diags = sort_diagnostics(dedupe_diags + block_diags + diagnose(page_ids, blocks))
     deck = Deck(

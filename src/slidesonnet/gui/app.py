@@ -1536,6 +1536,21 @@ class EditorView:
             btn.props(remove="loading")
             self.render()
 
+    def _flag_model_warmup(self) -> None:
+        """Warn once before a generation that must first load a heavy voice model.
+
+        Only fires for a cold heavy engine (Qwen3); light engines report warm, so
+        this is a no-op for them. Distinct from per-clip progress — it explains
+        the long first pause while the multi-GB model loads.
+        """
+        if self.state.model_warmup_pending():
+            ui.notify(
+                f"Loading the {self.state.active_backend} voice model — the first "
+                "clip may take a while; the rest are quick.",
+                type="ongoing",
+                timeout=4000,
+            )
+
     def enqueue_segment(self, speech_index: int) -> None:
         """Queue (re)generation of one utterance — non-blocking; the editor stays live.
 
@@ -1550,6 +1565,7 @@ class EditorView:
         state = self.state
         flags = state.speech_cached_flags()
         force = speech_index < len(flags) and flags[speech_index]
+        self._flag_model_warmup()
         handles = self.jobs.enqueue(
             {(state.current_id, speech_index)}, force=force, allow_paid=True
         )
@@ -1563,6 +1579,7 @@ class EditorView:
         targets = self.state.targets_for_sweep()
         if not targets:
             return
+        self._flag_model_warmup()
         self.jobs.enqueue(targets, allow_paid=True)
         self.render_side()
 

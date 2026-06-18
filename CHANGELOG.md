@@ -44,8 +44,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   the engine is marked non-realtime: the editor's **"Auto-generate as I edit"**
   is disabled for it (free, but too slow to fire on every edit — distinct from
   the paid-engine "would bill" reason), and `slidesonnet doctor` now reports
-  Qwen3 alongside Kokoro and ElevenLabs. (The DashScope cloud mode and the
-  portable in-narration voice map are tracked separately on the roadmap.)
+  Qwen3 alongside Kokoro and ElevenLabs. Qwen3 reaches its `.pt` voice through
+  the portable voice map — a `qwen3:` voice resolves to a clone-prompt path
+  (relative to the deck dir), so the same script narrates under Kokoro or Qwen3
+  by name alone — and the multi-GB model is cached process-wide so it loads once
+  rather than per clip; the editor shows a distinct "Loading the voice model…"
+  status before that first generation. (The DashScope cloud mode is tracked
+  separately on the roadmap.)
 - **Slide transition gallery.** `transition-out`/`transition-in` grew from
   `cut`/`crossfade` to FFmpeg's full `xfade` set, organized as a curated picker:
   pick a **Type** (Fade, Fade through black, Fade through white, Dissolve, Wipe,

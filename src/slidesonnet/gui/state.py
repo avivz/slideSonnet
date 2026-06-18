@@ -409,6 +409,16 @@ class EditorState:
         """
         return BACKENDS[self.active_backend].realtime
 
+    def model_warmup_pending(self) -> bool:
+        """True when the active engine still owes a heavy one-time model load.
+
+        Lets the editor show a distinct "Loading model…" status before the first
+        Qwen3 generation, instead of a silent multi-second pause. Cheap to call —
+        the engine constructor never loads the model; this only checks the
+        process-wide warm cache.
+        """
+        return not create_tts(self._active_config().tts).is_warm()
+
     def _audio_status(self) -> list[tuple[SpeechRef, bool]]:
         """Deck-wide (segment, is_cached) scan, shared across a render tick.
 

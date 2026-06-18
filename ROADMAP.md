@@ -116,11 +116,21 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `doctor` check, the `[qwen3]` extra + mypy overrides, and the editor
    auto-generate gate now keys on `paid OR not realtime` (disabled for Qwen3 with
    a "too slow" tooltip). All mocked-unit-tested (`tests/test_qwen3.py` + config/
-   doctor/gui/registry tests); `mypy --strict` + ruff green. *Remaining:* the
-   editor's first-load "Loading Qwen3 model…" status; the real-weights
-   `@pytest.mark.integration` smoke test behind the extra (local-only); per-utterance
-   multi-voice via the portable voice layer (Now #2); and the human records the
-   ~10 s reference + judges the cloned voice. *Param split (decided 2026-06-17):*
+   doctor/gui/registry tests); `mypy --strict` + ruff green.
+   *Follow-up landed (2026-06-17):* ✅ per-utterance voices reach the `.pt`
+   through the portable voice map (Now #2) — a `qwen3:` voice-map value is a path
+   resolved relative to the deck dir on load (`BackendSpec.file_voices`), and the
+   resolved voice flows into the engine as the per-clip prompt; ✅ a process-wide
+   model cache (`_MODEL_CACHE`, keyed by model+device) keeps the multi-GB model
+   warm across the editor's per-job engine recreation — without it the model
+   reloaded every clip; ✅ the editor flags the heavy first load with a distinct
+   "Loading the qwen3 voice model…" status (`is_warm()` / `model_warmup_pending()`)
+   instead of a silent pause; ✅ a real-weights `@pytest.mark.integration` smoke
+   test behind the extra (gated on `SLIDESONNET_QWEN3_PROMPT`, local-only).
+   *Remaining:* the human records the ~10 s reference + judges the cloned voice;
+   and a minor cache nicety — a per-utterance `.pt` folds its *path* (not yet its
+   *content hash*) into the clip key, so editing a clone artifact in place needs a
+   manual regenerate (the config-default prompt already content-hashes). *Param split (decided 2026-06-17):*
    the current `[tts.qwen3] voice_prompt` is **interim** — voice identity migrates
    to the narration voice map (Now #2), while `device` stays in toml as a machine
    setting; the engine is selected in the GUI (Now #4), not via `[tts] backend`. *Story:* As a deck
