@@ -46,9 +46,15 @@ def pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         page_audios: Any,
         render_dir: Path,
         transitions: Any = None,
+        audio_track: Any = None,
     ) -> Path:
         calls["compose"].append(
-            {"output": output, "page_audios": page_audios, "transitions": transitions}
+            {
+                "output": output,
+                "page_audios": page_audios,
+                "transitions": transitions,
+                "audio_track": audio_track,
+            }
         )
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"mp4")
@@ -68,6 +74,8 @@ def test_export_audible_synthesizes_and_passes_page_audio(
     result = api.export(pdf, tmp_path / "out.mp4")
     assert len(pipeline["synth"]) == 1
     assert pipeline["compose"][0]["page_audios"] is not None
+    # The continuous deck track is handed to compose so the morph can play over it.
+    assert pipeline["compose"][0]["audio_track"] is not None
     assert result.silent is False
     assert result.duration > 0  # real timeline math ran
     assert result.video.exists()
