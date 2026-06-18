@@ -108,10 +108,10 @@ class TestKokoroSynthesize:
 class TestCacheKey:
     def test_default(self) -> None:
         key = KokoroTTS().cache_key()
-        assert key == "kokoro:af_heart"
+        assert key == "kokoro:am_echo"
 
     def test_with_speed(self) -> None:
-        assert KokoroTTS(speed=1.5).cache_key() == "kokoro:af_heart:1.5"
+        assert KokoroTTS(speed=1.5).cache_key() == "kokoro:am_echo:1.5"
 
     def test_name(self) -> None:
         assert KokoroTTS().name() == "kokoro"

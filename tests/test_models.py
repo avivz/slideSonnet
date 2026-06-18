@@ -66,7 +66,7 @@ class TestTTSConfigValidation:
     def test_defaults_are_valid(self) -> None:
         cfg = TTSConfig()
         assert cfg.backend == "kokoro"
-        assert cfg.kokoro_voice == "af_heart"
+        assert cfg.kokoro_voice == "am_echo"
 
     @pytest.mark.parametrize("stability", [-0.1, 1.1])
     def test_stability_out_of_range(self, stability: float) -> None:

@@ -1838,6 +1838,9 @@ class EditorView:
         """
         state = self.state
         engines = sorted(BACKENDS)
+        # (pickable voices, engine default) per engine — a new row's fields start at
+        # the default, and engines with a list become a pick-or-type combobox.
+        engine_choices = {eng: state.engine_voice_choices(eng) for eng in engines}
         rows: list[dict[str, Any]] = []
         seq = [0]  # monotonic row id for stable test markers (survives deletes)
         no_default = "(engine default)"
@@ -1882,7 +1885,9 @@ class EditorView:
             rows_col.remove(entry["row"])
             refresh_defaults()
 
-        def add_row(name: str = "", voices: dict[str, str] | None = None) -> None:
+        def add_row(
+            name: str = "", voices: dict[str, str] | None = None, *, prefill: bool = False
+        ) -> None:
             voices = voices or {}
             rid = seq[0]
             seq[0] += 1
@@ -1895,12 +1900,29 @@ class EditorView:
                 )
                 engine_ins: dict[str, Any] = {}
                 for eng in engines:
-                    engine_ins[eng] = (
-                        ui.input(placeholder=eng, value=voices.get(eng, ""))
-                        .props("dense outlined")
-                        .classes("ss-mono ss-voice-eng")
-                        .mark(f"voice-{eng}-{rid}")
-                    )
+                    options, default = engine_choices[eng]
+                    # New rows start at the engine default; existing rows keep what
+                    # they stored (blank = inherit the engine default at synth time).
+                    cur = voices.get(eng) or (default if prefill else "") or ""
+                    mark = f"voice-{eng}-{rid}"
+                    if options:  # a fixed voice list → pick-or-type combobox
+                        opts = [cur, *options] if cur and cur not in options else list(options)
+                        engine_ins[eng] = (
+                            ui.select(opts, value=cur or None)
+                            .props(
+                                "dense outlined use-input clearable hide-bottom-space "
+                                "new-value-mode=add-unique"
+                            )
+                            .classes("ss-mono ss-voice-eng")
+                            .mark(mark)
+                        )
+                    else:  # account-specific ids / .pt paths → free text
+                        engine_ins[eng] = (
+                            ui.input(placeholder=eng, value=cur)
+                            .props("dense outlined")
+                            .classes("ss-mono ss-voice-eng")
+                            .mark(mark)
+                        )
                 trash = ui.button(icon="delete").props("flat round dense size=sm")
             entry = {"name": name_in, "voices": engine_ins, "row": row}
             rows.append(entry)
@@ -1914,7 +1936,9 @@ class EditorView:
                 if not nm:
                     continue
                 backend_voices = {
-                    eng: v for eng, w in r["voices"].items() if (v := str(w.value).strip())
+                    eng: v
+                    for eng, w in r["voices"].items()
+                    if (v := str(w.value or "").strip())  # a cleared combobox reads None
                 }
                 new_map[nm] = VoiceConfig(name=nm, backend_voices=backend_voices)
             default = default_select.value
@@ -1928,7 +1952,7 @@ class EditorView:
                 self.flash("No voice changes")
 
         def add_blank_row() -> None:
-            add_row()
+            add_row(prefill=True)  # a fresh voice starts at each engine's default
             refresh_defaults()
 
         add_btn.on_click(add_blank_row)
@@ -1937,7 +1961,7 @@ class EditorView:
         for nm, vc in state.voice_map_for_display().items():
             add_row(nm, vc.backend_voices)
         if not rows:
-            add_row()
+            add_row(prefill=True)  # starter row: each engine pre-set to its default
         refresh_defaults()
         default_select.set_options(
             [no_default, *names()], value=state.deck.default_voice or no_default

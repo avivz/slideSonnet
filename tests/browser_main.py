@@ -68,7 +68,7 @@ class StubEngine(TTSEngine):
         return KOKORO_VOICES
 
     def default_voice(self) -> str | None:
-        return "af_heart"
+        return "am_echo"
 
 
 def _patch_tts(seconds: float) -> None:

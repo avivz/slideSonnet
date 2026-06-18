@@ -219,9 +219,9 @@ async def test_voices_dialog_adds_named_voice_and_persists(
     await user.should_see("Default voice")
     await user.should_see("kokoro")  # an engine column per backend
 
-    # fill the empty starter row: name + a Kokoro voice, then save
+    # fill the empty starter row: name + a Kokoro voice (a combobox), then save
     user.find(marker="voice-name-0").type("lecturer")
-    user.find(marker="voice-kokoro-0").type("am_michael")
+    next(iter(user.find(marker="voice-kokoro-0").elements)).set_value("am_michael")
     user.find(marker="voice-save").click()
     await user.should_see("Voices saved")
 

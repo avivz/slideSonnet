@@ -66,7 +66,7 @@ class TTSConfig:
     """TTS backend configuration."""
 
     backend: Backend = "kokoro"
-    kokoro_voice: str = "af_heart"
+    kokoro_voice: str = "am_echo"
     kokoro_speed: float = 1.0
     elevenlabs_api_key_env: str = "ELEVENLABS_API_KEY"
     elevenlabs_voice_id: str = ""

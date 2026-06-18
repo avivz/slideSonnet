@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **The Voices dialog picks each engine's voice from a list.** Mapping a named
+  voice per engine is now a pick-or-type combobox for engines with a fixed voice
+  set (Kokoro's voices, Qwen3's CustomVoice speakers) instead of free text, and a
+  new voice's fields start at each engine's default. ElevenLabs (account-specific
+  ids) stays free text. Pick a voice from the list or type a custom one.
 - **Play is cancellable while it waits on generation.** Pressing play on a slide
   whose audio isn't ready shows a spinner while the clips render; that wait is now
   cancellable — **Stop** aborts it immediately (instead of only taking effect once
@@ -126,6 +131,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   unattended trigger must never bill per save.
 
 ### Changed
+- **Kokoro's default voice is now `am_echo`** (was `af_heart`). A deck that relied
+  on the old default and wants to keep it can pin `[tts.kokoro] voice = "af_heart"`;
+  otherwise unvoiced utterances regenerate under the new default.
 - **`[tts.qwen3] model` now defaults to `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice`**
   (was the `-Base` clone model), so Qwen3 works without a voice-clone prompt. A
   deck that relied on the Base own-voice path must set `model` back to a `…-Base`

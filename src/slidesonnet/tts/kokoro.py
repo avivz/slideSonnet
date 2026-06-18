@@ -78,7 +78,7 @@ KOKORO_VOICES: tuple[str, ...] = (
 
 
 class KokoroTTS(TTSEngine):
-    def __init__(self, voice: str = "af_heart", speed: float = 1.0) -> None:
+    def __init__(self, voice: str = "am_echo", speed: float = 1.0) -> None:
         self.voice = voice
         self.speed = speed
         self._pipelines: dict[str, Any] = {}  # lang code -> KPipeline

@@ -11,7 +11,7 @@ import time
 import wave
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from slidesonnet import api
 from slidesonnet.audio.synth import SpeechRef, _ref_targets, ref_cache_status
@@ -413,6 +413,19 @@ class EditorState:
         if self.deck.default_voice:
             return self.deck.default_voice
         return create_tts(self._active_config().tts).default_voice()
+
+    def engine_voice_choices(self, backend: str) -> tuple[list[str], str | None]:
+        """``(pickable voices, default voice)`` for *backend* — drives the Voices dialog.
+
+        Kokoro and Qwen3 (CustomVoice) expose a fixed voice list, so the dialog
+        offers a combobox started at the engine default; ElevenLabs ids are
+        account-specific (no list) so that field stays free text. ElevenLabs is not
+        instantiated here — its client needs an API key, and it has no list anyway.
+        """
+        if backend == "elevenlabs":
+            return [], (self.config.tts.elevenlabs_voice_id or None)
+        engine = create_tts(replace(self.config.tts, backend=cast(Backend, backend)))
+        return list(engine.list_voices()), engine.default_voice()
 
     def voice_map_for_display(self) -> dict[str, VoiceConfig]:
         """The deck's portable voice map, with file voices shown relative to the deck.

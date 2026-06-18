@@ -249,10 +249,27 @@ def test_editor_default_voice_prefers_deck_default(tmp_path: Path) -> None:
     other = tmp_path / "plain"
     other.mkdir()
     plain = _state(other)
-    assert plain.default_voice() == "af_heart"  # kokoro's configured default
+    assert plain.default_voice() == "am_echo"  # kokoro's configured default
 
 
 # ---- editing the voice map in the editor (Now #2) ----------------------------
+
+
+def test_engine_voice_choices_lists_voices_and_default(tmp_path: Path) -> None:
+    """The Voices dialog gets a per-engine (voices, default): a list for Kokoro/Qwen3,
+    free text for ElevenLabs. ElevenLabs must not be instantiated (it needs a key)."""
+    from slidesonnet.tts.kokoro import KOKORO_VOICES
+
+    state = _state(tmp_path)
+    kokoro_opts, kokoro_default = state.engine_voice_choices("kokoro")
+    assert kokoro_opts == list(KOKORO_VOICES)
+    assert kokoro_default == "am_echo"  # the configured Kokoro default
+
+    qwen_opts, qwen_default = state.engine_voice_choices("qwen3")
+    assert "Vivian" in qwen_opts and qwen_default == "Vivian"  # CustomVoice speakers
+
+    eleven_opts, _ = state.engine_voice_choices("elevenlabs")
+    assert eleven_opts == []  # account-specific ids, no fixed list → free text
 
 
 def test_edit_voices_adds_named_voice_and_persists(tmp_path: Path) -> None:

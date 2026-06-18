@@ -127,9 +127,9 @@ def test_keep_current_keeps_text_matches_any_engine(tmp_path: Path) -> None:
     pdf = _seed_deck(tmp_path)
     ad = audio_dir(pdf)
     ad.mkdir(parents=True)
-    current_kokoro = audio_filename(HELLO, "kokoro", "kokoro:af_heart")
+    current_kokoro = audio_filename(HELLO, "kokoro", "kokoro:am_echo")
     current_eleven = audio_filename(HELLO, "elevenlabs", "elevenlabs:v:m:0.5:0.75")
-    stale = audio_filename("Old deleted text.", "kokoro", "kokoro:af_heart")
+    stale = audio_filename("Old deleted text.", "kokoro", "kokoro:am_echo")
     for name in (current_kokoro, current_eleven, stale):
         (ad / name).write_bytes(b"a")
     (ad / "oldformat.wav").write_bytes(b"old")
@@ -180,8 +180,8 @@ def test_keep_exact_keeps_only_active_engine_config(tmp_path: Path) -> None:
     pdf = _seed_deck(tmp_path)
     ad = audio_dir(pdf)
     ad.mkdir(parents=True)
-    # Active engine with defaults: kokoro, voice af_heart -> cache_key "kokoro:af_heart"
-    exact = audio_filename(HELLO, "kokoro", "kokoro:af_heart")
+    # Active engine with defaults: kokoro, voice am_echo -> cache_key "kokoro:am_echo"
+    exact = audio_filename(HELLO, "kokoro", "kokoro:am_echo")
     other_config = audio_filename(HELLO, "kokoro", "kokoro:af_bella")
     other_engine = audio_filename(HELLO, "elevenlabs", "elevenlabs:v:m:0.5:0.75")
     for name in (exact, other_config, other_engine):
@@ -198,8 +198,8 @@ def test_keep_exact_resolves_block_voice_preset(tmp_path: Path) -> None:
     pdf = _seed_deck(tmp_path, with_voices=True)
     ad = audio_dir(pdf)
     ad.mkdir(parents=True)
-    voiced = audio_filename(SECOND, "kokoro", "kokoro:af_heart", voice="af_bella")
-    unvoiced = audio_filename(SECOND, "kokoro", "kokoro:af_heart")
+    voiced = audio_filename(SECOND, "kokoro", "kokoro:am_echo", voice="af_bella")
+    unvoiced = audio_filename(SECOND, "kokoro", "kokoro:am_echo")
     (ad / voiced).write_bytes(b"a")
     (ad / unvoiced).write_bytes(b"a")
 
@@ -221,9 +221,9 @@ def test_keep_exact_keeps_paced_utterance_cache(tmp_path: Path) -> None:
     ad = audio_dir(pdf)
     ad.mkdir(parents=True)
     # fast pace -> kokoro_speed 1.0 * 1.15, which lands in the cache key
-    paced = audio_filename(HELLO, "kokoro", "kokoro:af_heart:1.15")
-    unpaced = audio_filename(SECOND, "kokoro", "kokoro:af_heart")
-    stale = audio_filename(HELLO, "kokoro", "kokoro:af_heart")  # pace-less variant is stale
+    paced = audio_filename(HELLO, "kokoro", "kokoro:am_echo:1.15")
+    unpaced = audio_filename(SECOND, "kokoro", "kokoro:am_echo")
+    stale = audio_filename(HELLO, "kokoro", "kokoro:am_echo")  # pace-less variant is stale
     for name in (paced, unpaced, stale):
         (ad / name).write_bytes(b"a")
 
