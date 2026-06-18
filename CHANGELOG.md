@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Portable voice layer — internal voice names, cross-engine map in the
+  narration file.** The sidecar gained an optional deck-level preamble: a
+  `voices:` block mapping an internal name (`lecturer`, `guest`) to a concrete
+  per-engine voice (`lecturer: {kokoro: am_michael, elevenlabs: <id>, qwen3:
+  voice/lecturer.pt}`), plus a top-level `default-voice:`. An utterance's
+  `voice:` now names one of *your* internal names; with none it uses
+  `default-voice`, with neither the engine default — so switching the active
+  engine renarrates the same script with **zero** sidecar edits, and the
+  `.narration` is self-contained (the voice definitions travel with it). The
+  editor's voice picker shows internal names first (engine voices follow as an
+  advanced affordance) and the unset-voice placeholder shows the deck default.
+  A `slidesonnet.toml` `[voices.NAME]` library still works as a shared fallback,
+  and a sidecar entry wins over a toml entry of the same name. `slidesonnet
+  check` warns when a named voice has no mapping for the configured engine
+  (rather than silently using the engine default). Files declaring the new
+  preamble bump the `# slidesonnet-format:` header to 2; v1 files (no preamble)
+  parse and round-trip byte-identically.
 - **Pick the generation engine in the editor.** A new **Engine** dropdown in the
   editor console switches which TTS backend generates audio — Kokoro, Qwen3, or a
   cloud engine — for the current session, without touching `slidesonnet.toml` or

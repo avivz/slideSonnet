@@ -10,6 +10,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
+from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.model import PageNarration, Transition
 
 Severity = Literal["error", "warning", "info"]
@@ -139,6 +140,41 @@ def boundary_transition(
     if next_block is not None and next_block.transition_in.kind != "cut":
         return next_block.transition_in
     return Transition()
+
+
+def voice_diagnostics(
+    blocks: list[PageNarration],
+    voices: dict[str, VoiceConfig],
+    default_voice: str | None,
+    backend: str,
+) -> list[Diagnostic]:
+    """Warn when a *named* internal voice has no mapping for the active *backend*.
+
+    A per-utterance ``voice:`` (or the deck ``default-voice``) that is a key in
+    *voices* but lacks an entry for *backend* would silently fall back to the
+    engine default — surface it instead. A voice that isn't a known internal
+    name is a raw engine voice id (passed through), so it is not flagged here.
+    """
+    referenced: dict[str, None] = {}  # ordered set of names actually used
+    if default_voice:
+        referenced[default_voice] = None
+    for block in blocks:
+        for seg in block.speech_segments:
+            if seg.voice:
+                referenced[seg.voice] = None
+
+    diags: list[Diagnostic] = []
+    for name in referenced:
+        vc = voices.get(name)
+        if vc is not None and vc.resolve(backend) is None:
+            diags.append(
+                Diagnostic(
+                    "warning",
+                    "voice-unmapped",
+                    f"voice '{name}' has no {backend} voice — it will use the engine default",
+                )
+            )
+    return diags
 
 
 def sort_diagnostics(diags: list[Diagnostic]) -> list[Diagnostic]:

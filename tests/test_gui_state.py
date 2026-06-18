@@ -165,6 +165,49 @@ def test_gui_engine_pick_overrides_gates_and_voices(tmp_path: Path) -> None:
     assert not (tmp_path / "slidesonnet.toml").exists()
 
 
+def _voice_map_sidecar() -> str:
+    return (
+        "# slidesonnet-format: 2\n"
+        "default-voice: lecturer\n"
+        "voices:\n"
+        "  lecturer:\n"
+        "    kokoro: am_michael\n"
+        "  guest:\n"
+        "    kokoro: af_bella\n"
+        "\n"
+        "@intro-title\n"
+        "  utterance:\n"
+        "    voice: guest\n"
+        "    text: Hello.\n"
+    )
+
+
+def test_editor_voice_options_show_deck_internal_names(tmp_path: Path) -> None:
+    """The picker lists the deck's internal voice names ahead of engine voices."""
+    from slidesonnet.tts.kokoro import KOKORO_VOICES
+
+    pdf = prep_marked_deck(tmp_path)
+    (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
+    state = EditorState(pdf)
+
+    opts = state.voice_options()
+    assert opts[:2] == ["guest", "lecturer"]  # internal names, sorted, first
+    assert all(v in opts for v in KOKORO_VOICES)  # engine voices still offered
+
+
+def test_editor_default_voice_prefers_deck_default(tmp_path: Path) -> None:
+    """The unset-voice placeholder shows the deck's default-voice name."""
+    pdf = prep_marked_deck(tmp_path)
+    (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
+    assert EditorState(pdf).default_voice() == "lecturer"
+
+    # with no deck default declared, fall back to the engine's own default
+    other = tmp_path / "plain"
+    other.mkdir()
+    plain = _state(other)
+    assert plain.default_voice() == "af_heart"  # kokoro's configured default
+
+
 def test_gui_engine_pick_overrides_action_engine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -36,7 +36,9 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 
+from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.model import (
     Pace,
     PageNarration,
@@ -53,11 +55,20 @@ logger = logging.getLogger(__name__)
 # it harmlessly; a parser seeing a greater N warns that directives introduced
 # later may be misread (a future directive after `text:` would otherwise be
 # swallowed as a text continuation — and spoken aloud).
-FORMAT_VERSION = 1
+#
+# v2 (2026-06): the optional deck-level *preamble* — a ``voices:`` block mapping
+# internal voice names to per-engine voices, plus a ``default-voice:`` — so the
+# same self-contained sidecar narrates under any engine. v1 files have no
+# preamble and round-trip byte-identically (the format header is only emitted
+# when a preamble is present).
+FORMAT_VERSION = 2
 _FORMAT_RE = re.compile(r"^#\s*slidesonnet-format:\s*(?P<version>\d+)\s*$")
 
 _HEADER_RE = re.compile(r"^@(?P<id>\S+)\s*$")
 _KV_RE = re.compile(r"^(?P<key>[a-z][a-z-]*)\s*:\s*(?P<value>.*?)\s*$")
+# Preamble keys (voice + engine names) may carry digits/underscores — e.g.
+# ``qwen3`` — so the deck-level voice block uses a more permissive key charset.
+_PREAMBLE_KV_RE = re.compile(r"^(?P<key>[A-Za-z][\w-]*)\s*:\s*(?P<value>.*?)\s*$")
 _PAUSE_RE = re.compile(r"\[pause\s+(?P<sec>[0-9]*\.?[0-9]+)\]")
 _WS_RE = re.compile(r"\s+")
 _VALID_PACES: frozenset[str] = frozenset({"slow", "normal", "fast"})
@@ -71,6 +82,24 @@ _KNOWN_KEYS: frozenset[str] = (
 
 class SidecarError(ValueError):
     """The sidecar text is malformed."""
+
+
+@dataclass
+class NarrationDoc:
+    """A parsed sidecar: the per-slide blocks plus the deck-level preamble.
+
+    ``voices`` maps internal voice names to per-engine voices (the portable
+    voice layer); ``default_voice`` is the internal name an utterance with no
+    explicit ``voice:`` falls back to. ``preamble_source`` is the raw preamble
+    text (format header + ``default-voice:`` + ``voices:`` block), kept so a
+    save re-emits it verbatim when the voice map is unchanged; ``None`` marks a
+    document with no preamble (a v1 file or a programmatic deck).
+    """
+
+    blocks: list[PageNarration] = field(default_factory=list)
+    voices: dict[str, VoiceConfig] = field(default_factory=dict)
+    default_voice: str | None = None
+    preamble_source: str | None = None
 
 
 def _strip_comment(line: str) -> str:
@@ -157,17 +186,34 @@ def parse_segments(body: str) -> list[Segment]:
     return segments
 
 
-def parse_sidecar(text: str) -> list[PageNarration]:  # noqa: C901
+def parse_sidecar(text: str) -> list[PageNarration]:
     """Parse sidecar *text* into a list of blocks in file order.
 
+    A thin wrapper over :func:`parse_document` for callers that only need the
+    per-slide blocks (the deck-level voice preamble is discarded).
+    """
+    return parse_document(text).blocks
+
+
+def parse_document(text: str) -> NarrationDoc:  # noqa: C901
+    """Parse sidecar *text* into blocks plus the deck-level voice preamble.
+
     Raises :class:`SidecarError` on content appearing before the first ``@``
-    header, or on a malformed directive.
+    header that isn't a recognised preamble directive (``default-voice:`` or a
+    ``voices:`` block), or on a malformed directive.
     """
     blocks: list[PageNarration] = []
     current: PageNarration | None = None
     draft: _UtteranceDraft | None = None
     raw_lines: list[str] = []  # the current block's raw text, header included
     pending: list[str] = []  # comment/blank lines not yet owned by a block
+
+    # Deck-level preamble (before the first @ header).
+    voices: dict[str, VoiceConfig] = {}
+    default_voice: str | None = None
+    preamble_raw: list[str] = []  # verbatim preamble lines, for byte-stable saves
+    in_voices = False  # inside the `voices:` block
+    current_voice: str | None = None  # the voice whose engine lines we're reading
 
     def _flush_utterance() -> None:
         nonlocal draft
@@ -209,6 +255,40 @@ def parse_sidecar(text: str) -> list[PageNarration]:  # noqa: C901
             blocks.append(current)
             pending.clear()
             raw_lines = [raw]
+            continue
+
+        # Preamble directives live before the first @ header: `default-voice:`
+        # and a `voices:` block of `name:` → `engine: voice` entries. Interior
+        # comments/blanks (in `pending`) flush into the verbatim preamble; the
+        # trailing run before the first @ stays as that block's lead.
+        if current is None:
+            pre = _PREAMBLE_KV_RE.match(line)
+            if pre is None:
+                raise SidecarError(
+                    f"line {lineno}: cannot parse '{line}' before any @slide-id header"
+                )
+            key, value = pre.group("key"), pre.group("value")
+            if key == "default-voice":
+                default_voice = value or None
+                in_voices = False
+            elif key == "voices":
+                if value:
+                    raise SidecarError(f"line {lineno}: 'voices:' takes no value")
+                in_voices = True
+                current_voice = None
+            elif in_voices and not value:
+                current_voice = key
+                voices[key] = VoiceConfig(name=key)
+            elif in_voices and current_voice is not None:
+                voices[current_voice].backend_voices[key] = value
+            else:
+                raise SidecarError(
+                    f"line {lineno}: '{key}:' before any @slide-id header "
+                    "(only 'default-voice:' and a 'voices:' block may precede the first slide)"
+                )
+            preamble_raw.extend(pending)
+            pending.clear()
+            preamble_raw.append(raw)
             continue
 
         kv = _KV_RE.match(line)
@@ -272,7 +352,12 @@ def parse_sidecar(text: str) -> list[PageNarration]:  # noqa: C901
     _finish_source()
     for block in blocks:
         block.canon = serialize_block(block)
-    return blocks
+    return NarrationDoc(
+        blocks=blocks,
+        voices=voices,
+        default_voice=default_voice,
+        preamble_source="\n".join(preamble_raw) if preamble_raw else None,
+    )
 
 
 def _serialize_transition(label: str, transition: Transition) -> list[str]:
@@ -323,10 +408,35 @@ def serialize_body(block: PageNarration) -> str:
     return " ".join(parts)
 
 
+def serialize_preamble(voices: dict[str, VoiceConfig], default_voice: str | None) -> str:
+    """Canonical deck-level preamble text (no trailing newline).
+
+    Emits the ``# slidesonnet-format: N`` header, an optional ``default-voice:``,
+    and a ``voices:`` block of ``name:`` → ``engine: voice`` entries. Returns the
+    empty string when there is nothing to declare (so a v1 file gets no header
+    and round-trips byte-identically).
+    """
+    if not voices and not default_voice:
+        return ""
+    lines = [f"# slidesonnet-format: {FORMAT_VERSION}"]
+    if default_voice:
+        lines.append(f"default-voice: {default_voice}")
+    if voices:
+        lines.append("voices:")
+        for name, vc in voices.items():
+            lines.append(f"  {name}:")
+            for engine, voice_id in vc.backend_voices.items():
+                lines.append(f"    {engine}: {voice_id}")
+    return "\n".join(lines)
+
+
 def serialize_sidecar(
     blocks: Iterable[PageNarration],
     *,
     header: str | None = None,
+    voices: dict[str, VoiceConfig] | None = None,
+    default_voice: str | None = None,
+    preamble_source: str | None = None,
 ) -> str:
     """Serialize blocks to a sidecar document (trailing newline included).
 
@@ -335,10 +445,21 @@ def serialize_sidecar(
     comments, blank lines, and hand wrapping intact. Changed and fresh blocks
     are written canonically; a parsed block's ``lead``/``tail`` comments are
     kept either way.
+
+    The deck-level voice preamble (``voices`` / ``default_voice``) is emitted
+    first. ``preamble_source`` — the raw preamble captured at parse time — is
+    re-emitted verbatim for a byte-stable round-trip; pass it as ``None`` (the
+    default) to regenerate the preamble canonically.
     """
     out: list[str] = []
     if header:
         out.append("\n".join(f"# {ln}" if ln else "#" for ln in header.splitlines()) + "\n")
+    preamble = preamble_source
+    if preamble is None:
+        canonical = serialize_preamble(voices or {}, default_voice)
+        preamble = canonical or None
+    if preamble:
+        out.append(preamble + "\n")
     for block in blocks:
         canonical = serialize_block(block)
         if block.lead is not None:

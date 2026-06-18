@@ -6,11 +6,14 @@ from pathlib import Path
 
 import pytest
 
+from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.format import (
     SidecarError,
+    parse_document,
     parse_segments,
     parse_sidecar,
     serialize_block,
+    serialize_preamble,
     serialize_sidecar,
 )
 from slidesonnet.narration.model import PageNarration, Segment, Transition
@@ -306,3 +309,106 @@ class TestFormatVersionHeader:
         text = scaffold_text(tmp_path / "deck.pdf", ["a", "b"])
         assert f"# slidesonnet-format: {FORMAT_VERSION}" in text
         parse_sidecar(text)  # and it round-trips through the parser
+
+
+# ---- the deck-level voice preamble (portable voice layer, v2) ---------------
+
+V2_SAMPLE = """\
+# slidesonnet-format: 2
+default-voice: lecturer
+voices:
+  lecturer:
+    kokoro: am_michael
+    qwen3: voice/lecturer.pt
+    elevenlabs: abc123
+  guest:
+    kokoro: af_bella
+
+@intro
+  utterance:
+    voice: guest
+    text: Hello from the guest.
+  utterance:
+    text: And back to the default voice.
+"""
+
+
+def test_parse_document_reads_voice_preamble() -> None:
+    doc = parse_document(V2_SAMPLE)
+    assert doc.default_voice == "lecturer"
+    assert set(doc.voices) == {"lecturer", "guest"}
+    assert doc.voices["lecturer"].backend_voices == {
+        "kokoro": "am_michael",
+        "qwen3": "voice/lecturer.pt",
+        "elevenlabs": "abc123",
+    }
+    assert doc.voices["guest"].backend_voices == {"kokoro": "af_bella"}
+    # the blocks still parse, and an utterance names an internal voice
+    assert [b.slide_id for b in doc.blocks] == ["intro"]
+    assert doc.blocks[0].speech_segments[0].voice == "guest"
+
+
+def test_parse_sidecar_ignores_preamble() -> None:
+    # back-compat: the list-only entry point still returns just the blocks
+    blocks = parse_sidecar(V2_SAMPLE)
+    assert [b.slide_id for b in blocks] == ["intro"]
+
+
+def test_v2_document_round_trips_byte_stable() -> None:
+    doc = parse_document(V2_SAMPLE)
+    out = serialize_sidecar(
+        doc.blocks,
+        voices=doc.voices,
+        default_voice=doc.default_voice,
+        preamble_source=doc.preamble_source,
+    )
+    assert out == V2_SAMPLE
+
+
+def test_v1_file_has_no_preamble_and_is_unchanged() -> None:
+    doc = parse_document(SAMPLE)
+    assert doc.voices == {}
+    assert doc.default_voice is None
+    assert doc.preamble_source is None
+    # serializing a v1 deck adds no format header / preamble
+    assert serialize_sidecar(doc.blocks) == serialize_sidecar(doc.blocks, voices={})
+
+
+def test_serialize_preamble_canonical_form() -> None:
+    voices = {"narrator": VoiceConfig(name="narrator", backend_voices={"kokoro": "af_heart"})}
+    text = serialize_preamble(voices, "narrator")
+    assert text == (
+        "# slidesonnet-format: 2\n"
+        "default-voice: narrator\n"
+        "voices:\n"
+        "  narrator:\n"
+        "    kokoro: af_heart"
+    )
+    assert serialize_preamble({}, None) == ""
+
+
+def test_serialize_sidecar_regenerates_canonical_preamble() -> None:
+    # no preamble_source => the preamble is regenerated canonically
+    voices = {"narrator": VoiceConfig(name="narrator", backend_voices={"kokoro": "af_heart"})}
+    blocks = [PageNarration(slide_id="a", segments=[Segment.speech("Hi.")])]
+    out = serialize_sidecar(blocks, voices=voices, default_voice="narrator")
+    assert out == (
+        "# slidesonnet-format: 2\n"
+        "default-voice: narrator\n"
+        "voices:\n"
+        "  narrator:\n"
+        "    kokoro: af_heart\n"
+        "\n"
+        "@a\n  utterance:\n    text: Hi.\n"
+    )
+
+
+def test_default_voice_without_voices_block() -> None:
+    doc = parse_document("default-voice: lecturer\n\n@a\n  utterance:\n    text: Hi.\n")
+    assert doc.default_voice == "lecturer"
+    assert doc.voices == {}
+
+
+def test_voices_with_value_errors() -> None:
+    with pytest.raises(SidecarError, match="takes no value"):
+        parse_document("voices: oops\n@a\n  utterance:\n    text: Hi.\n")

@@ -50,6 +50,10 @@ def speech_refs(deck: Deck, config: Config) -> list[SpeechRef]:
     """
     refs: list[SpeechRef] = []
     backend = config.tts.backend
+    # The deck's portable voice layer (sidecar preamble) wins over the shared
+    # toml library, and supplies the deck-wide default for an unset voice.
+    voices = {**config.voices, **deck.voices}
+    default_voice = deck.default_voice
     for page_index, slide_id in enumerate(deck.pages):
         block = deck.page_narration(slide_id)
         for speech_index, seg in enumerate(block.speech_segments):
@@ -59,7 +63,7 @@ def speech_refs(deck: Deck, config: Config) -> list[SpeechRef]:
                     slide_id=slide_id,
                     speech_index=speech_index,
                     text=config.apply_pronunciation(seg.text),
-                    voice=resolve_voice(seg.voice, config.voices, backend),
+                    voice=resolve_voice(seg.voice or default_voice, voices, backend),
                     pace=seg.pace,
                 )
             )
