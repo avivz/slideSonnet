@@ -43,6 +43,57 @@ def test_export_silent(tmp_path: Path) -> None:
     assert {p.suffix for p in result.subtitles} == {".srt", ".vtt"}
 
 
+# Block grammar (indented), with a centered wipe on the intro→setup boundary.
+_SIDECAR_WIPE = """\
+@intro-title
+  utterance:
+    text: Welcome to the demo.
+  transition-out: wipeleft 0.6
+
+@euler-setup
+  utterance:
+    text: Here is the setup.
+"""
+
+
+def _prep_pair(tmp_path: Path) -> tuple[Path, Path]:
+    """A cut deck and a wipe deck in sibling dirs, sharing the marked PDF."""
+    cut_dir, wipe_dir = tmp_path / "cut", tmp_path / "wipe"
+    cut_dir.mkdir()
+    wipe_dir.mkdir()
+    cut = prep_marked_deck(cut_dir, _SIDECAR)
+    wipe = prep_marked_deck(wipe_dir)
+    (wipe.parent / "marked.narration").write_text(_SIDECAR_WIPE, encoding="utf-8")
+    return cut, wipe
+
+
+def test_centered_transition_preserves_total_duration(tmp_path: Path) -> None:
+    # A centered overlay transition is absorbed (D/2 from each side), so the
+    # exported deck is the same length as the all-cut render — not longer.
+    cut, wipe = _prep_pair(tmp_path)
+    out_cut = tmp_path / "cut.mp4"
+    out_wipe = tmp_path / "wipe.mp4"
+    api.export(cut, out_cut, silent=True)
+    api.export(wipe, out_wipe, silent=True)
+    assert get_duration(out_wipe) == pytest.approx(get_duration(out_cut), abs=0.15)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("kokoro") is None,
+    reason="kokoro not installed",
+)
+def test_centered_transition_with_audio_muxes_track(tmp_path: Path) -> None:
+    # The audible path assembles a silent video and muxes the continuous track;
+    # the result must carry an audio stream and stay ~as long as the all-cut deck.
+    cut, wipe = _prep_pair(tmp_path)
+    out_cut = tmp_path / "cut.mp4"
+    out_wipe = tmp_path / "wipe.mp4"
+    api.export(cut, out_cut, engine="kokoro")
+    api.export(wipe, out_wipe, engine="kokoro")
+    assert get_duration(out_wipe, stream="audio") > 0
+    assert get_duration(out_wipe) == pytest.approx(get_duration(out_cut), abs=0.2)
+
+
 def test_subs_estimate_no_render(tmp_path: Path) -> None:
     pdf = _prep(tmp_path)
     out = tmp_path / "out.srt"

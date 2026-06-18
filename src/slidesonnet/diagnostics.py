@@ -142,6 +142,37 @@ def boundary_transition(
     return Transition()
 
 
+def transition_length_diagnostics(
+    pages: list[str],
+    blocks_by_id: dict[str, PageNarration],
+    durations: list[float],
+) -> list[Diagnostic]:
+    """Warn where a boundary transition is longer than the shorter adjacent slide.
+
+    A centered-overlay transition takes ``D/2`` from each side, so the renderer
+    clamps it to the shorter neighbour (``render.transition_morph_seconds``).
+    *durations* (aligned to *pages*, typically from the estimate timeline so
+    ``check`` needn't synthesize) lets the author see the clamp before export.
+    """
+    diags: list[Diagnostic] = []
+    for i in range(len(pages) - 1):
+        tr = boundary_transition(blocks_by_id.get(pages[i]), blocks_by_id.get(pages[i + 1]))
+        if not tr.is_animated:
+            continue
+        avail = min(durations[i], durations[i + 1])
+        if tr.seconds > avail + 1e-6:
+            diags.append(
+                Diagnostic(
+                    "warning",
+                    "transition-too-long",
+                    f"transition '{tr.kind}' ({tr.seconds:g}s) out of '{pages[i]}' is longer "
+                    f"than the shorter adjacent slide ({avail:.1f}s) — it will be clamped",
+                    pages[i],
+                )
+            )
+    return diags
+
+
 def voice_diagnostics(
     blocks: list[PageNarration],
     voices: dict[str, VoiceConfig],

@@ -21,7 +21,6 @@ from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 from slidesonnet.subtitles import SubtitleEntry, split_text
 from slidesonnet.timing import PageTiming, TimingMode, compute_page_timing
 from slidesonnet.video.composer import (
-    compose_segment,
     compose_silent_segment,
     concatenate_segments,
 )
@@ -83,13 +82,18 @@ def build_timeline(
         if not block.segments:
             block = PageNarration(slide_id=slide_id, segments=[Segment.pause(default_hold)])
         sd = speech_durations_by_page[i] if speech_durations_by_page is not None else None
+        # An explicit edge pause *is* the slide's start/end silence, so the
+        # default lead/tail filler applies only when there's no such pause
+        # (explicit replaces default). The pause itself is counted in the body.
+        lead = 0.0 if block.segments[0].is_pause else video.pre_silence
+        tail = 0.0 if block.segments[-1].is_pause else video.tail_seconds
         pages.append(
             compute_page_timing(
                 block,
                 mode,
                 speech_durations=sd,
-                lead=video.pre_silence,
-                tail=video.tail_seconds,
+                lead=lead,
+                tail=tail,
             )
         )
     return DeckTimeline(pages=pages)
@@ -215,6 +219,37 @@ def render_audio_track(
     return track, page_audios
 
 
+def transition_morph_seconds(transitions: list[Transition], page_fulls: list[float]) -> list[float]:
+    """Per-boundary morph durations, centered on the boundary and clamped to fit.
+
+    ``transitions[i]`` is the boundary between page ``i`` and ``i+1``. A
+    ``D``-second animated transition is centered on that boundary — ``D/2`` over
+    the tail of page ``i`` and ``D/2`` over the head of page ``i+1`` — so it is
+    clamped to ``min(full_i, full_{i+1})``. That bound also guarantees a page
+    flanked by two transitions never gives up more than its whole duration
+    (each adjacent ``D ≤ full`` ⇒ the two halves sum to ``≤ full``). A cut, or a
+    page with no successor, contributes ``0``.
+    """
+    out: list[float] = []
+    for i, tr in enumerate(transitions):
+        if not tr.is_animated or i + 1 >= len(page_fulls):
+            out.append(0.0)
+            continue
+        avail = min(page_fulls[i], page_fulls[i + 1])
+        d = min(tr.seconds, avail)
+        if d < tr.seconds:
+            logger.warning(
+                "transition '%s' (%.2fs) is longer than the shorter adjacent slide "
+                "(%.2fs); clamped to %.2fs — shorten it or lengthen a slide",
+                tr.kind,
+                tr.seconds,
+                avail,
+                d,
+            )
+        out.append(d)
+    return out
+
+
 def compose_video(
     timeline: DeckTimeline,
     page_images: list[Path],
@@ -224,16 +259,22 @@ def compose_video(
     page_audios: list[Path] | None,
     render_dir: Path,
     transitions: list[Transition] | None = None,
+    audio_track: Path | None = None,
 ) -> Path:
-    """Compose page images + per-page audio (or silence) into the final MP4.
+    """Compose page images into the final MP4, with centered-overlay transitions.
 
     *transitions* (when given) holds the boundary transition between page ``i``
     and ``i+1`` at index ``i`` (length ``len(pages) - 1``). An animated
-    transition of ``D`` seconds is *absorbed into the outgoing slide's trailing
-    hold*: that slide's segment is shortened by ``D`` (dropping only tail
-    silence) and a ``D``-second morph clip is spliced in, so the deck's total
-    duration and audio are unchanged. With no transitions (or all cuts) the
-    segments concatenate back-to-back exactly as before.
+    transition of ``D`` seconds is a *visual overlay centered on the boundary*:
+    page ``i``'s segment is trimmed by ``D/2`` at its end, page ``i+1``'s by
+    ``D/2`` at its start, and a ``D``-second morph clip is spliced between them.
+    The whole video is assembled silent and *audio_track* (the single continuous
+    deck track) is muxed over it at the end, so the morph plays over whatever
+    audio sits at the boundary — silence or speech — and the deck's total
+    duration is unchanged. With no transitions the segments concatenate
+    back-to-back exactly as before. *audio_track* is required to carry sound;
+    without it (or for a silent render where *page_audios* is None) the result is
+    a silent video.
     """
     # Lazy module-qualified import so tests can patch get_duration at source.
     from slidesonnet.video import composer
@@ -243,57 +284,48 @@ def compose_video(
     seg_dir.mkdir(parents=True, exist_ok=True)
     boundaries = transitions or []
     n = len(timeline.pages)
+
+    # Real on-screen length of each page: the synthesized audio when audible,
+    # else the timing model. The morph geometry and the muxed track both align
+    # to these, so the centered overlay never shifts the timeline.
+    fulls = [
+        page.duration if page_audios is None else composer.get_duration(page_audios[i])
+        for i, page in enumerate(timeline.pages)
+    ]
+    morph = transition_morph_seconds(
+        [*boundaries] + [Transition()] * (n - 1 - len(boundaries)), fulls
+    )
+    xnames = [
+        transitions_mod.xfade_name(boundaries[i].kind)
+        if i < len(boundaries) and boundaries[i].is_animated and morph[i] > 0
+        else None
+        for i in range(n - 1)
+    ]
+
     pieces: list[Path] = []
     for i, page in enumerate(timeline.pages):
-        out_tr = boundaries[i] if i < len(boundaries) else Transition()
-        xname = transitions_mod.xfade_name(out_tr.kind) if out_tr.is_animated else None
-        # Absorb the morph into this slide's trailing hold only (never over
-        # speech); clamp to the tail and note when a longer one was requested.
-        d_out = 0.0
-        if xname is not None and i + 1 < n:
-            d_out = min(out_tr.seconds, page.tail)
-            if d_out < out_tr.seconds:
-                logger.warning(
-                    "transition '%s' (%.2fs) exceeds slide %s's %.2fs tail hold; "
-                    "shortened to %.2fs — raise tail_seconds or add a trailing pause",
-                    out_tr.kind,
-                    out_tr.seconds,
-                    page.slide_id,
-                    page.tail,
-                    d_out,
-                )
-        full = page.duration if page_audios is None else composer.get_duration(page_audios[i])
-        seg_duration = max(0.1, full - d_out)
+        s_i = morph[i - 1] / 2 if i > 0 else 0.0  # trimmed at the start by the incoming morph
+        e_i = morph[i] / 2 if i < n - 1 else 0.0  # trimmed at the end by the outgoing morph
+        seg_duration = max(0.1, fulls[i] - s_i - e_i)
         seg = seg_dir / f"seg-{i + 1:04d}.mp4"
-        if page_audios is None:
-            compose_silent_segment(
-                page_images[i],
-                seg,
-                duration=seg_duration,
-                resolution=v.resolution,
-                fps=v.fps,
-                crf=v.crf,
-                preset=v.preset,
-            )
-        else:
-            compose_segment(
-                page_images[i],
-                page_audios[i],
-                seg,
-                duration=seg_duration,
-                resolution=v.resolution,
-                fps=v.fps,
-                crf=v.crf,
-                preset=v.preset,
-            )
+        compose_silent_segment(
+            page_images[i],
+            seg,
+            duration=seg_duration,
+            resolution=v.resolution,
+            fps=v.fps,
+            crf=v.crf,
+            preset=v.preset,
+        )
         pieces.append(seg)
-        if d_out > 0 and xname is not None:
+        xname = xnames[i] if i < n - 1 else None
+        if xname is not None:
             tclip = seg_dir / f"trans-{i + 1:04d}.mp4"
             composer.compose_transition_clip(
                 page_images[i],
                 page_images[i + 1],
                 tclip,
-                duration=d_out,
+                duration=morph[i],
                 transition=xname,
                 resolution=v.resolution,
                 fps=v.fps,
@@ -301,6 +333,12 @@ def compose_video(
                 preset=v.preset,
             )
             pieces.append(tclip)
+
     output.parent.mkdir(parents=True, exist_ok=True)
-    concatenate_segments(pieces, output)
+    if page_audios is None or audio_track is None:
+        concatenate_segments(pieces, output)
+    else:
+        silent_video = render_dir / "silent.mp4"
+        concatenate_segments(pieces, silent_video)
+        composer.mux_audio(silent_video, audio_track, output)
     return output

@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Per-slide start/end silence, editable in the editor.** The hold at a slide's
+  start and end (previously the invisible global `pre_silence`/`tail_seconds`) is
+  now a per-slide value you can see and set: a slide with narration shows **Start
+  silence** and **End silence** fields bracketing its lines, defaulting to the
+  deck values, and `0` means no hold (a quick, hard change). A leading/trailing
+  `pause:` in the `.narration` file *is* that silence — it replaces the default
+  rather than adding to it — so the file stays the source of truth. Saving in the
+  editor materializes the defaults into explicit `pause:` blocks.
+- **Transitions play over the narration, centered on the slide boundary.** A
+  transition is now a visual overlay centered on the cut between two slides — half
+  over the end of the outgoing slide, half over the start of the incoming one —
+  playing over whatever audio is there (silence *or* speech), so a wipe between
+  overlay steps reads as a build animation without inserting a gap. The deck's
+  total length and audio are unchanged (the morph never adds time). A transition
+  longer than the shorter adjacent slide is clamped, and `slidesonnet check` now
+  warns (`transition-too-long`) before you export.
 - **The utterance voice picker shows each named voice's engine voice.** A named
   voice now reads as `lecturer (am_michael)` — the parenthetical is the voice it
   resolves to on the active engine, greyed in the dropdown — and updates when you

@@ -387,6 +387,40 @@ def concatenate_segments_xfade(
     _run_ffmpeg(cmd)
 
 
+def mux_audio(video: Path, audio: Path, output: Path) -> None:
+    """Replace *video*'s audio with *audio*, copying the video stream (no re-encode).
+
+    Used by :func:`render.compose_video` for animated transitions: the video is
+    assembled silent (still segments + centered morph clips) and the single
+    continuous deck track is laid over it here, so a morph centered on a slide
+    boundary plays over whatever audio is there (silence *or* speech) without
+    changing the deck's total duration.
+    """
+    output.parent.mkdir(parents=True, exist_ok=True)
+    logger.debug("mux: %s + %s → %s", video.name, audio.name, output.name)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video),
+        "-i",
+        str(audio),
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-shortest",
+        str(output),
+    ]
+    _run_ffmpeg(cmd)
+
+
 def concatenate_audio(audio_paths: list[Path], output: Path) -> None:
     """Concatenate multiple audio files into one using ffmpeg concat filter.
 

@@ -134,7 +134,13 @@ def check_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> list[Diag
     """
     from slidesonnet.config import load_config
     from slidesonnet.deck import load_deck
-    from slidesonnet.diagnostics import sort_diagnostics, voice_diagnostics
+    from slidesonnet.diagnostics import (
+        sort_diagnostics,
+        transition_length_diagnostics,
+        voice_diagnostics,
+    )
+    from slidesonnet.render import build_timeline
+    from slidesonnet.timing import TimingMode
 
     deck, diags = load_deck(pdf_path, sidecar_path=sidecar_path)
     config = load_config(pdf_path)
@@ -142,7 +148,11 @@ def check_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> list[Diag
     voice_diags = voice_diagnostics(
         list(deck.narration.values()), voices, deck.default_voice, config.tts.backend
     )
-    return sort_diagnostics(diags + voice_diags)
+    # Flag boundary transitions that the centered-overlay renderer would clamp.
+    # Estimate timing keeps check audio-free; the clamp itself is duration-driven.
+    timeline = build_timeline(deck, TimingMode("estimate"), video=config.video)
+    trans_diags = transition_length_diagnostics(deck.pages, deck.narration, timeline.page_durations)
+    return sort_diagnostics(diags + voice_diags + trans_diags)
 
 
 def _load(
@@ -238,6 +248,7 @@ def export(
 
     rdir = render_dir(pdf_path)
     page_audios: list[Path] | None = None
+    audio_track: Path | None = None
     if audible:
         results = _synth(deck, config, audio_dir=audio_dir(pdf_path), progress=progress)
         timeline = build_timeline(
@@ -246,7 +257,7 @@ def export(
             video=config.video,
             speech_durations_by_page=page_speech_durations(deck, results),
         )
-        _, page_audios = render_audio_track(
+        audio_track, page_audios = render_audio_track(
             timeline, page_speech_clips(deck, results), render_dir=rdir
         )
     else:
@@ -264,6 +275,7 @@ def export(
         page_audios=page_audios,
         render_dir=rdir,
         transitions=boundaries,
+        audio_track=audio_track,
     )
 
     subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)

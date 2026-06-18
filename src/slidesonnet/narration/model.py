@@ -156,6 +156,28 @@ class PageNarration:
             tail=self.tail,
         )
 
+    def leading_silence(self, default: float) -> float:
+        """The slide's start hold: an explicit leading ``pause`` block, else *default*.
+
+        A pause as the *first* block is the slide's start silence; with no leading
+        pause the slide opens on *default* (the deck's ``pre_silence``). See
+        :func:`slidesonnet.render.build_timeline`.
+        """
+        if self.segments and self.segments[0].is_pause:
+            return self.segments[0].seconds
+        return default
+
+    def trailing_silence(self, default: float) -> float:
+        """The slide's end hold: an explicit trailing ``pause`` block, else *default*.
+
+        A pause as the *last* block is the slide's end silence (the hold the
+        boundary transition plays over); with no trailing pause the slide holds
+        for *default* (the deck's ``tail_seconds``).
+        """
+        if self.segments and self.segments[-1].is_pause:
+            return self.segments[-1].seconds
+        return default
+
     @property
     def speech_segments(self) -> list[Segment]:
         return [s for s in self.segments if s.is_speech]

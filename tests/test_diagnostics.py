@@ -2,8 +2,25 @@
 
 from __future__ import annotations
 
-from slidesonnet.diagnostics import count_by_severity, diagnose, has_errors
-from slidesonnet.narration.model import PageNarration, Segment
+from slidesonnet.diagnostics import (
+    count_by_severity,
+    diagnose,
+    has_errors,
+    transition_length_diagnostics,
+)
+from slidesonnet.narration.model import PageNarration, Segment, Transition
+
+
+def test_transition_too_long_is_warned() -> None:
+    a = PageNarration("a", [Segment.speech("hi")], transition_out=Transition("wipeleft", 2.0))
+    b = PageNarration("b", [Segment.speech("hi")])
+    blocks = {"a": a, "b": b}
+    # slide b is only 0.3s, so a 2s wipe out of 'a' will be clamped -> warn.
+    diags = transition_length_diagnostics(["a", "b"], blocks, [5.0, 0.3])
+    assert [d.code for d in diags] == ["transition-too-long"]
+    assert diags[0].slide_id == "a"
+    # roomy slides -> no warning
+    assert transition_length_diagnostics(["a", "b"], blocks, [5.0, 5.0]) == []
 
 
 def _blocks(*ids: str) -> list[PageNarration]:

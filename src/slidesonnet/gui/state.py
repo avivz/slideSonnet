@@ -47,6 +47,48 @@ _AUDIO_SCAN_TTL = 1.0
 SlideStatus = Literal["error", "warning", "ready", "empty"]
 
 
+def split_edge_silences(
+    segments: list[Segment],
+) -> tuple[float | None, list[Segment], float | None]:
+    """Split a block's leading/trailing silence pauses from its middle segments.
+
+    Returns ``(leading, middle, trailing)``: *leading*/*trailing* are the pause
+    seconds when the first/last block is a pause (else ``None`` — the slide opens
+    or closes on the deck default), and *middle* is everything between. A lone
+    pause counts only as *leading*. The editor shows *leading*/*trailing* as the
+    per-slide start/end silence fields and *middle* as the utterance/pause cards.
+    """
+    leading: float | None = None
+    trailing: float | None = None
+    mid = list(segments)
+    if mid and mid[0].is_pause:
+        leading = mid[0].seconds
+        mid = mid[1:]
+    if mid and mid[-1].is_pause:
+        trailing = mid[-1].seconds
+        mid = mid[:-1]
+    return leading, mid, trailing
+
+
+def bracket_silences(
+    middle: list[Segment], start: float | None, end: float | None
+) -> list[Segment]:
+    """Re-bracket *middle* with explicit start/end silence pauses.
+
+    The inverse of :func:`split_edge_silences` used to materialize the editor's
+    silence fields on save. A ``None`` edge is omitted; a value (including ``0``)
+    is written as a ``pause`` block. Only meaningful when *middle* carries speech
+    — a pause-only slide keeps its lone hold rather than gaining two pauses.
+    """
+    out: list[Segment] = []
+    if start is not None:
+        out.append(Segment.pause(max(0.0, start)))
+    out.extend(middle)
+    if end is not None:
+        out.append(Segment.pause(max(0.0, end)))
+    return out
+
+
 def _stat_stamp(path: Path) -> tuple[float, int]:
     """A (mtime, size) change-detection signature for *path*; (0, 0) if missing."""
     try:

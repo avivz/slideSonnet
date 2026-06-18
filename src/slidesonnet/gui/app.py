@@ -30,7 +30,12 @@ from slidesonnet.gui.launch import (
     is_wsl,
     launch_browser,
 )
-from slidesonnet.gui.state import EditorState, cue_start
+from slidesonnet.gui.state import (
+    EditorState,
+    bracket_silences,
+    cue_start,
+    split_edge_silences,
+)
 from slidesonnet.narration import transitions as trans
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
@@ -692,6 +697,9 @@ class BlockEditor:
         self.seg_collectors: list[Callable[[], Segment]] = []
         self.seg_gen_controls: list[tuple[Any, Any, int]] = []  # (button, tooltip, speech index)
         self.transition_getters: dict[str, Callable[[], Transition]] = {}
+        # Per-slide start/end silence fields (only present for slides with speech);
+        # "start"/"end" → a getter for that field's seconds. See render()/collect().
+        self.silence_getters: dict[str, Callable[[], float]] = {}
         # While a narration field holds keyboard focus, playback auto-advance must
         # not rebuild the block editor — that would destroy the field mid-typing
         # and lose everything typed after the rebuild. Tracked per focus/blur.
@@ -941,6 +949,35 @@ class BlockEditor:
 
         return collect
 
+    def _silence_row(self, which: str, value: float, disabled: bool) -> None:
+        """A per-slide start/end silence field (the hold the boundary plays over)."""
+        label = "Start silence" if which == "start" else "End silence"
+        with (
+            ui.row()
+            .classes("w-full items-center no-wrap gap-2 ss-silence-row")
+            .mark(f"silence-{which}")
+        ):
+            ui.icon("more_horiz").classes("ss-pause-icon")
+            secs = (
+                ui.number(value=value, min=0, step=0.1, format="%.1f", suffix="s")
+                .props("filled dense")
+                .classes("ss-pause-secs")
+                .mark(f"silence-secs-{which}")
+            )
+            ui.label(label).classes("ss-diag ss-diag-info")
+            secs.tooltip(
+                "Held silence at the slide's "
+                + ("start" if which == "start" else "end")
+                + " — a transition plays over it. 0 = no hold."
+            )
+            if disabled:
+                secs.disable()
+            secs.on("blur", lambda: self.commit_audible())
+            secs.on("keydown.ctrl.s.prevent", lambda: self.commit_audible())
+            self._track_editing(secs)
+
+        self.silence_getters[which] = lambda: max(0.0, float(secs.value or 0.0))
+
     def render(self) -> None:
         self.editing_active = False  # the rebuild destroys any focused field
         self.focused_speech_index = None
@@ -949,8 +986,21 @@ class BlockEditor:
         self.seg_collectors.clear()
         self.seg_gen_controls.clear()
         self.transition_getters.clear()
+        self.silence_getters.clear()
         block = state.current_block
         disabled = not state.current_id
+        # A slide with speech gets dedicated start/end silence fields bracketing
+        # its utterance/pause cards; the lone-pause case (a silent slide) keeps a
+        # single pause card (its one hold). The edge silences are split out of the
+        # card list and re-bracketed on save (materialize implicit→default).
+        video = state.config.video
+        has_speech = block.has_speech
+        if has_speech:
+            leading, middle, trailing = split_edge_silences(block.segments)
+            start_val = leading if leading is not None else video.pre_silence
+            end_val = trailing if trailing is not None else video.tail_seconds
+        else:
+            middle = list(block.segments)
         with self.blocks_col:
             if not state.current_id:
                 ui.label(
@@ -961,20 +1011,40 @@ class BlockEditor:
             # it mirrors that slide's "out" — show the effective value, not a stale
             # per-block field that could disagree with the previous slide
             self._transition_row("in", state.incoming_transition, disabled)
+            if has_speech:
+                self._silence_row("start", start_val, disabled)
             speech_i = 0
-            for i, seg in enumerate(block.segments):
+            for i, seg in enumerate(middle):
                 if seg.is_speech:
                     self.seg_collectors.append(self._utterance_card(i, seg, disabled, speech_i))
                     speech_i += 1
                 else:
                     self.seg_collectors.append(self._pause_card(i, seg, disabled))
-            if not block.segments:
+            if not middle and not has_speech:
                 ui.label("(empty — add a line or a pause above)").classes("ss-diag ss-diag-info")
+            if has_speech:
+                self._silence_row("end", end_val, disabled)
             self._transition_row("out", block.transition_out, disabled)
         self.sync_gen_buttons()
 
+    def _collect_middle(self) -> list[Segment]:
+        """The utterance/pause cards (no edge silence fields)."""
+        return [c() for c in self.seg_collectors]
+
+    def _materialize(self, middle: list[Segment]) -> list[Segment]:
+        """Bracket *middle* with the start/end silence fields when it has speech.
+
+        A speech slide materializes its edge silences (the implicit deck default
+        becomes an explicit ``pause``); a pause-only slide keeps its lone hold.
+        """
+        if self.silence_getters and any(s.is_speech for s in middle):
+            start = self.silence_getters["start"]() if "start" in self.silence_getters else None
+            end = self.silence_getters["end"]() if "end" in self.silence_getters else None
+            return bracket_silences(middle, start, end)
+        return middle
+
     def collect(self) -> tuple[list[Segment], Transition, Transition]:
-        segs = [c() for c in self.seg_collectors]
+        segs = self._materialize(self._collect_middle())
         getters = self.transition_getters
         tin = getters["in"]() if "in" in getters else Transition()
         tout = getters["out"]() if "out" in getters else Transition()
@@ -991,23 +1061,34 @@ class BlockEditor:
             self.view.schedule_auto_build(slide_id)
             self.view.render()
 
+    def _collect_edits(self) -> tuple[list[Segment], Transition, Transition]:
+        """The middle cards + transitions, for a structural edit (add/delete/move).
+
+        Edits act on the middle list — the edge silences are fixed fields, not
+        reorderable cards — and are re-bracketed by :meth:`_materialize` on apply.
+        """
+        getters = self.transition_getters
+        tin = getters["in"]() if "in" in getters else Transition()
+        tout = getters["out"]() if "out" in getters else Transition()
+        return self._collect_middle(), tin, tout
+
     def add_segment(self, kind: str) -> None:
-        segs, tin, tout = self.collect()
-        segs.append(Segment.speech("") if kind == "speech" else Segment.pause(1.0))
-        self._apply_structure(segs, tin, tout)
+        middle, tin, tout = self._collect_edits()
+        middle.append(Segment.speech("") if kind == "speech" else Segment.pause(1.0))
+        self._apply_structure(self._materialize(middle), tin, tout)
 
     def _delete_segment(self, index: int) -> None:
-        segs, tin, tout = self.collect()
-        if 0 <= index < len(segs):
-            del segs[index]
-        self._apply_structure(segs, tin, tout)
+        middle, tin, tout = self._collect_edits()
+        if 0 <= index < len(middle):
+            del middle[index]
+        self._apply_structure(self._materialize(middle), tin, tout)
 
     def _move_segment(self, index: int, delta: int) -> None:
-        segs, tin, tout = self.collect()
+        middle, tin, tout = self._collect_edits()
         j = index + delta
-        if 0 <= index < len(segs) and 0 <= j < len(segs):
-            segs[index], segs[j] = segs[j], segs[index]
-            self._apply_structure(segs, tin, tout)
+        if 0 <= index < len(middle) and 0 <= j < len(middle):
+            middle[index], middle[j] = middle[j], middle[index]
+            self._apply_structure(self._materialize(middle), tin, tout)
 
     def save_current(self) -> bool:
         """Flush the open editor widgets to disk without rebuilding the cards."""
