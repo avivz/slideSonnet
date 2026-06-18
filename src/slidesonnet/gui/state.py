@@ -24,7 +24,7 @@ from slidesonnet.deck import (
     save_deck,
     unique_real_ids,
 )
-from slidesonnet.diagnostics import Diagnostic, boundary_transition
+from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import PageNarration, Segment, Transition
@@ -63,6 +63,9 @@ class EditorState:
         # (pdf (mtime, size) stamp, deduped page ids, dedupe diagnostics)
         self._page_cache: tuple[tuple[float, int], list[str], list[Diagnostic]] | None = None
         self._audio_scan: tuple[float, list[tuple[SpeechRef, bool]]] | None = None
+        # voice-unmapped diagnostics, recomputed when the deck or active engine
+        # changes (keyed on (deck identity, backend) so it tracks the engine pick)
+        self._voice_diags: tuple[tuple[int, str], list[Diagnostic]] | None = None
         self.source_error: str | None = None
         self.reload()
         self._stamps = self._source_stamps()
@@ -570,11 +573,31 @@ class EditorState:
         block = self.deck.narration.get(slide_id)
         return block is not None and bool(block.segments)
 
+    def all_diagnostics(self) -> list[Diagnostic]:
+        """Load-time diagnostics plus voice-unmapped warnings for the active engine.
+
+        The voice warnings depend on the picked engine (a named voice may map for
+        Kokoro but not Qwen3), so they can't be baked in at load time — they're
+        recomputed when the deck or the active backend changes and merged in here,
+        so a mid-session engine switch relights the affected slides.
+        """
+        sig = (id(self.deck), self.active_backend)
+        if self._voice_diags is None or self._voice_diags[0] != sig:
+            voices = {**self.config.voices, **self.deck.voices}
+            diags = voice_diagnostics(
+                list(self.deck.narration.values()),
+                voices,
+                self.deck.default_voice,
+                self.active_backend,
+            )
+            self._voice_diags = (sig, diags)
+        return self.diagnostics + self._voice_diags[1]
+
     def status_for(self, slide_id: str) -> SlideStatus:
         """Worst finding for a slide; un-narrated alone reads as 'empty'."""
         severities = {
             d.severity
-            for d in self.diagnostics
+            for d in self.all_diagnostics()
             if d.slide_id == slide_id and d.code != "missing-narration"
         }
         if "error" in severities:
@@ -585,10 +608,10 @@ class EditorState:
 
     @property
     def error_count(self) -> int:
-        return sum(1 for d in self.diagnostics if d.severity == "error")
+        return sum(1 for d in self.all_diagnostics() if d.severity == "error")
 
     def diagnostics_for_current(self) -> list[Diagnostic]:
-        return [d for d in self.diagnostics if d.slide_id == self.current_id]
+        return [d for d in self.all_diagnostics() if d.slide_id == self.current_id]
 
 
 def cue_start(cues: list[Cue], slide_id: str) -> float | None:

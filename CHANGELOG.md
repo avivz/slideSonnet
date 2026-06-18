@@ -18,11 +18,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   editor's voice picker shows internal names first (engine voices follow as an
   advanced affordance) and the unset-voice placeholder shows the deck default.
   A `slidesonnet.toml` `[voices.NAME]` library still works as a shared fallback,
-  and a sidecar entry wins over a toml entry of the same name. `slidesonnet
-  check` warns when a named voice has no mapping for the configured engine
-  (rather than silently using the engine default). Files declaring the new
-  preamble bump the `# slidesonnet-format:` header to 2; v1 files (no preamble)
-  parse and round-trip byte-identically.
+  and a sidecar entry wins over a toml entry of the same name. Both `slidesonnet
+  check` and the editor warn when a named voice has no mapping for the active
+  engine (rather than silently using the engine default) — in the editor the
+  warning lights the slide that uses the voice and follows the engine picker, so
+  switching to an engine the voice doesn't cover flags it live. Files declaring
+  the new preamble bump the `# slidesonnet-format:` header to 2; v1 files (no
+  preamble) parse and round-trip byte-identically.
 - **Pick the generation engine in the editor.** A new **Engine** dropdown in the
   editor console switches which TTS backend generates audio — Kokoro, Qwen3, or a
   cloud engine — for the current session, without touching `slidesonnet.toml` or

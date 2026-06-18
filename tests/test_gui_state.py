@@ -195,6 +195,31 @@ def test_editor_voice_options_show_deck_internal_names(tmp_path: Path) -> None:
     assert all(v in opts for v in KOKORO_VOICES)  # engine voices still offered
 
 
+def test_editor_surfaces_voice_unmapped_for_active_engine(tmp_path: Path) -> None:
+    """A named voice with no mapping for the *picked* engine lights its slide."""
+    pdf = prep_marked_deck(tmp_path)
+    # 'guest' maps for kokoro only; the slide narrates with voice: guest
+    (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
+    state = EditorState(pdf)
+
+    def voice_warnings() -> list[str]:
+        return [d.slide_id or "" for d in state.all_diagnostics() if d.code == "voice-unmapped"]
+
+    # kokoro: guest is mapped -> no warning, the slide reads ready
+    assert voice_warnings() == []
+    assert state.status_for("intro-title") == "ready"
+
+    # pick an engine 'guest' has no voice for -> the warning lights that slide
+    state.set_backend("elevenlabs")
+    assert voice_warnings() == ["intro-title"]
+    assert state.status_for("intro-title") == "warning"
+    assert any("guest" in d.message for d in state.diagnostics_for_current())
+
+    # back to kokoro -> the warning clears (tracks the engine pick)
+    state.set_backend("kokoro")
+    assert voice_warnings() == []
+
+
 def test_editor_default_voice_prefers_deck_default(tmp_path: Path) -> None:
     """The unset-voice placeholder shows the deck's default-voice name."""
     pdf = prep_marked_deck(tmp_path)
