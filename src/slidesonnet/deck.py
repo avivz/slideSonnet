@@ -18,20 +18,45 @@ def default_sidecar_path(pdf_path: Path) -> Path:
     return pdf_path.with_suffix(".narration")
 
 
-def _resolve_voice_files(voices: dict[str, VoiceConfig], base_dir: Path) -> dict[str, VoiceConfig]:
+def resolve_voice_files(voices: dict[str, VoiceConfig], base_dir: Path) -> dict[str, VoiceConfig]:
     """Resolve file-based voice values (e.g. a Qwen3 ``.pt``) against *base_dir*.
 
     A voice-map value for a file-voiced backend is a path stored relative to the
     deck, so the sidecar stays portable; in memory it becomes absolute so the
     engine can load it regardless of the process's working directory (an already
-    absolute path is left unchanged). Only the in-memory deck is rewritten — a
-    save re-emits the original relative preamble verbatim.
+    absolute path is left unchanged). Returns a fresh map — the input is never
+    mutated — so the on-disk preamble keeps the portable relative form.
     """
-    for vc in voices.values():
-        for backend, value in vc.backend_voices.items():
+    out: dict[str, VoiceConfig] = {}
+    for name, vc in voices.items():
+        backend_voices = dict(vc.backend_voices)
+        for backend, value in backend_voices.items():
             if value and backend in FILE_VOICE_BACKENDS:
-                vc.backend_voices[backend] = str((base_dir / value).resolve())
-    return voices
+                backend_voices[backend] = str((base_dir / value).resolve())
+        out[name] = VoiceConfig(name=name, backend_voices=backend_voices)
+    return out
+
+
+def relativize_voice_files(
+    voices: dict[str, VoiceConfig], base_dir: Path
+) -> dict[str, VoiceConfig]:
+    """Inverse of :func:`resolve_voice_files`: store file voices relative to *base_dir*.
+
+    The in-memory deck holds absolute file-voice paths (so the engine can load
+    them), but the sidecar must stay portable — a save, and the editor's display,
+    re-relativize them against the deck dir. A path already relative, or one
+    outside the deck tree (kept absolute on load), passes through unchanged.
+    Returns a fresh map; the input is never mutated.
+    """
+    base = base_dir.resolve()
+    out: dict[str, VoiceConfig] = {}
+    for name, vc in voices.items():
+        backend_voices = dict(vc.backend_voices)
+        for backend, value in backend_voices.items():
+            if value and backend in FILE_VOICE_BACKENDS and Path(value).is_absolute():
+                backend_voices[backend] = str(Path(value).resolve().relative_to(base, walk_up=True))
+        out[name] = VoiceConfig(name=name, backend_voices=backend_voices)
+    return out
 
 
 def dedupe_page_ids(pages: list[str]) -> tuple[list[str], list[Diagnostic]]:
@@ -165,7 +190,7 @@ def load_deck(
     if sidecar.exists():
         doc = parse_document(sidecar.read_text(encoding="utf-8"))
         blocks, block_diags = dedupe_block_ids(doc.blocks)
-        voices = _resolve_voice_files(doc.voices, sidecar.resolve().parent)
+        voices = resolve_voice_files(doc.voices, sidecar.resolve().parent)
         default_voice, preamble_source = doc.default_voice, doc.preamble_source
 
     diags = sort_diagnostics(dedupe_diags + block_diags + diagnose(page_ids, blocks))
@@ -195,11 +220,16 @@ def save_deck(deck: Deck, *, header: str | None = None) -> None:
         if sid not in on_page:
             blocks.append(block)
     blocks = [b for b in blocks if not b.is_empty]
+    # The in-memory deck holds absolute file-voice paths; the sidecar must stay
+    # portable, so re-relativize them. Only used when the preamble is regenerated
+    # (``preamble_source`` is None, i.e. the voice map was edited) — otherwise the
+    # original relative preamble is re-emitted verbatim.
+    voices = relativize_voice_files(deck.voices, deck.sidecar_path.resolve().parent)
     deck.sidecar_path.write_text(
         serialize_sidecar(
             blocks,
             header=header,
-            voices=deck.voices,
+            voices=voices,
             default_voice=deck.default_voice,
             preamble_source=deck.preamble_source,
         ),

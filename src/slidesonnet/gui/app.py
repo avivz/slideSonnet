@@ -30,9 +30,10 @@ from slidesonnet.gui.launch import (
 )
 from slidesonnet.gui.state import EditorState, cue_start
 from slidesonnet.narration import transitions as trans
-from slidesonnet.models import Backend
+from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
+from slidesonnet.tts import BACKENDS
 
 logger = logging.getLogger(__name__)
 
@@ -1253,6 +1254,13 @@ class EditorView:
                     "(not saved to the deck)"
                 )
                 self.engine_select.on_value_change(lambda e: self._on_engine_change(str(e.value)))
+                self.voices_btn = ui.button("Voices…", icon="record_voice_over").classes("w-full")
+                self.voices_btn.props("flat no-caps dense").mark("edit-voices")
+                self.voices_btn.tooltip(
+                    "Name voices and map each to a per-engine voice — saved in the deck, "
+                    "so the same script narrates under any engine"
+                )
+                self.voices_btn.on_click(self.open_voices_dialog)
                 auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
                 auto_build.props("dense").mark("auto-build")
                 auto_build.bind_value(app.storage.general, "auto_build")
@@ -1643,6 +1651,122 @@ class EditorView:
         self.player.stop_playback()  # the loaded preview track was the old engine's
         self.render()  # per-engine cache badges, voice pickers, gen-missing count
         self.flash(f"Generating with {backend}")
+
+    def open_voices_dialog(self) -> None:
+        """Edit the deck's portable voice map: name voices + map each per engine.
+
+        The map and the deck ``default-voice`` are written into the narration
+        file's preamble on Save, so the same engine-agnostic script narrates under
+        any engine by name. A file voice (a Qwen3 ``.pt``) is shown — and stored —
+        relative to the deck. Closing without Save discards the edits.
+        """
+        state = self.state
+        engines = sorted(BACKENDS)
+        rows: list[dict[str, Any]] = []
+        seq = [0]  # monotonic row id for stable test markers (survives deletes)
+        no_default = "(engine default)"
+
+        with ui.dialog() as dialog, ui.card().classes("ss-voices-card"):
+            ui.label("Voices").classes("ss-section")
+            ui.label(
+                "Name a voice, then map it to a concrete voice per engine: a Kokoro "
+                "voice (e.g. am_michael), an ElevenLabs voice id, or a Qwen3 .pt path "
+                "relative to the deck. Leave an engine blank to use its own default. "
+                "Saved in the narration file, so the deck narrates under any engine."
+            ).classes("ss-hint")
+            with ui.row().classes("w-full items-center no-wrap gap-1 ss-voice-head"):
+                ui.label("name").classes("ss-mono ss-voice-name ss-foot")
+                for eng in engines:
+                    ui.label(eng).classes("ss-mono ss-voice-eng ss-foot")
+                ui.element("div").classes("ss-voice-trash")
+            rows_col = ui.column().classes("w-full gap-1")
+            add_btn = ui.button("Add voice", icon="add").props("flat no-caps dense")
+            add_btn.mark("voice-add")
+            default_select = (
+                ui.select([no_default], value=no_default, label="Default voice")
+                .props("dense outlined")
+                .classes("w-full ss-mono")
+            )
+            default_select.mark("voice-default")
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Cancel", on_click=dialog.close).props("flat no-caps")
+                save_btn = ui.button("Save").props("no-caps")
+                save_btn.mark("voice-save")
+
+        def names() -> list[str]:
+            return [n for r in rows if (n := str(r["name"].value).strip())]
+
+        def refresh_defaults() -> None:
+            opts = [no_default, *names()]
+            keep = default_select.value if default_select.value in opts else no_default
+            default_select.set_options(opts, value=keep)
+
+        def remove_row(entry: dict[str, Any]) -> None:
+            rows.remove(entry)
+            rows_col.remove(entry["row"])
+            refresh_defaults()
+
+        def add_row(name: str = "", voices: dict[str, str] | None = None) -> None:
+            voices = voices or {}
+            rid = seq[0]
+            seq[0] += 1
+            with rows_col, ui.row().classes("w-full items-center no-wrap gap-1") as row:
+                name_in = (
+                    ui.input(placeholder="name", value=name)
+                    .props("dense outlined")
+                    .classes("ss-mono ss-voice-name")
+                    .mark(f"voice-name-{rid}")
+                )
+                engine_ins: dict[str, Any] = {}
+                for eng in engines:
+                    engine_ins[eng] = (
+                        ui.input(placeholder=eng, value=voices.get(eng, ""))
+                        .props("dense outlined")
+                        .classes("ss-mono ss-voice-eng")
+                        .mark(f"voice-{eng}-{rid}")
+                    )
+                trash = ui.button(icon="delete").props("flat round dense size=sm")
+            entry = {"name": name_in, "voices": engine_ins, "row": row}
+            rows.append(entry)
+            trash.on_click(lambda: remove_row(entry))
+            name_in.on_value_change(lambda: refresh_defaults())
+
+        def save() -> None:
+            new_map: dict[str, VoiceConfig] = {}
+            for r in rows:
+                nm = str(r["name"].value).strip()
+                if not nm:
+                    continue
+                backend_voices = {
+                    eng: v for eng, w in r["voices"].items() if (v := str(w.value).strip())
+                }
+                new_map[nm] = VoiceConfig(name=nm, backend_voices=backend_voices)
+            default = default_select.value
+            default = None if default == no_default else default
+            changed = state.edit_voices(new_map, default)
+            dialog.close()
+            if changed:
+                self.render()  # voice pickers, placeholders, unmapped warnings relight
+                self.flash("Voices saved", "positive")
+            else:
+                self.flash("No voice changes")
+
+        def add_blank_row() -> None:
+            add_row()
+            refresh_defaults()
+
+        add_btn.on_click(add_blank_row)
+        save_btn.on_click(save)
+
+        for nm, vc in state.voice_map_for_display().items():
+            add_row(nm, vc.backend_voices)
+        if not rows:
+            add_row()
+        refresh_defaults()
+        default_select.set_options(
+            [no_default, *names()], value=state.deck.default_voice or no_default
+        )
+        dialog.open()
 
     def _on_auto_build_toggle(self, enabled: bool) -> None:
         # read the toggle's new value directly (storage may not have synced yet)

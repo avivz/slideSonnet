@@ -178,3 +178,27 @@ def test_qwen3_voice_path_save_keeps_relative(tmp_path: Path) -> None:
     save_deck(deck)
     # the on-disk sidecar keeps the portable relative path, not the absolute one
     assert "qwen3: prompts/lecturer.pt" in sidecar.read_text(encoding="utf-8")
+
+
+def test_edited_qwen3_map_regenerates_preamble_relative(tmp_path: Path) -> None:
+    """An edit (preamble_source dropped) re-emits the .pt path relative, not absolute."""
+    from slidesonnet.deck import load_deck, save_deck
+
+    pdf = tmp_path / "deck.pdf"
+    pdf.write_bytes(b"%PDF-1.4 fake")
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "lecturer.pt").write_bytes(b"fake")
+    sidecar = tmp_path / "deck.narration"
+    sidecar.write_text(QWEN3_SIDECAR, encoding="utf-8")
+
+    deck, _ = load_deck(pdf, pages=(["a"], []))
+    assert Path(deck.voices["lecturer"].backend_voices["qwen3"]).is_absolute()  # in memory
+    # simulate an edit: change the default and force a canonical preamble rewrite
+    deck.default_voice = None
+    deck.preamble_source = None
+    save_deck(deck)
+
+    text = sidecar.read_text(encoding="utf-8")
+    assert "qwen3: prompts/lecturer.pt" in text  # relativized again, not the abs path
+    assert str(tmp_path) not in text  # no absolute path leaked into the portable file
+    assert "default-voice" not in text

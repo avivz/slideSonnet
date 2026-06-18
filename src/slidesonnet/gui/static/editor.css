@@ -122,6 +122,13 @@ body{
   font-family:"IBM Plex Mono",monospace}
 .ss-orphan-text{font-size:12.5px;color:var(--ss-text);line-height:1.5;
   white-space:pre-wrap;word-break:break-word;user-select:text;cursor:text}
+/* voice-map editor dialog: a name column + one column per engine */
+.ss-voices-card{min-width:600px;max-width:90vw;gap:8px}
+.ss-hint{font-size:11.5px;color:var(--ss-dim);line-height:1.5}
+.ss-voice-head{padding:0 2px}
+.ss-voice-name{flex:0 0 132px}
+.ss-voice-eng{flex:1 1 0;min-width:96px}
+.ss-voice-trash{flex:0 0 32px}
 .ss-console{
   width:100%;height:100%;overflow-y:auto;padding:16px;
   background:var(--ss-surface)}

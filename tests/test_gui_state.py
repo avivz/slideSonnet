@@ -233,6 +233,103 @@ def test_editor_default_voice_prefers_deck_default(tmp_path: Path) -> None:
     assert plain.default_voice() == "af_heart"  # kokoro's configured default
 
 
+# ---- editing the voice map in the editor (Now #2) ----------------------------
+
+
+def test_edit_voices_adds_named_voice_and_persists(tmp_path: Path) -> None:
+    """Adding a voice + default writes a v2 preamble and offers the name live."""
+    from slidesonnet.models import VoiceConfig
+
+    pdf = prep_marked_deck(tmp_path)
+    state = EditorState(pdf)  # no voice map yet
+    assert state.deck.voices == {}
+
+    wrote = state.edit_voices(
+        {"lecturer": VoiceConfig("lecturer", {"kokoro": "am_michael"})},
+        default_voice="lecturer",
+    )
+    assert wrote is True
+
+    # the reloaded deck carries the new map + default
+    assert state.deck.voices["lecturer"].backend_voices == {"kokoro": "am_michael"}
+    assert state.deck.default_voice == "lecturer"
+    # ...serialized as a portable v2 preamble
+    text = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "# slidesonnet-format: 2" in text
+    assert "default-voice: lecturer" in text
+    assert "kokoro: am_michael" in text
+    # ...and the editor offers it as a name + as the unset-voice placeholder
+    assert "lecturer" in state.voice_options()
+    assert state.default_voice() == "lecturer"
+
+
+def test_edit_voices_unchanged_map_is_a_byte_stable_noop(tmp_path: Path) -> None:
+    """Re-applying the displayed map untouched neither writes nor churns the file."""
+    pdf = prep_marked_deck(tmp_path)
+    (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
+    state = EditorState(pdf)
+    before = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+
+    wrote = state.edit_voices(state.voice_map_for_display(), state.deck.default_voice)
+    assert wrote is False
+    assert (tmp_path / "marked.narration").read_text(encoding="utf-8") == before
+
+
+def test_edit_voices_clears_voice_unmapped_warning(tmp_path: Path) -> None:
+    """Mapping a name for the active engine relights its slide green."""
+    pdf = prep_marked_deck(tmp_path)
+    (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
+    state = EditorState(pdf)
+    state.set_backend("elevenlabs")  # 'guest' has no elevenlabs voice
+    assert any(d.code == "voice-unmapped" for d in state.all_diagnostics())
+
+    voices = state.voice_map_for_display()
+    voices["guest"].backend_voices["elevenlabs"] = "EL_guest"
+    state.edit_voices(voices, state.deck.default_voice)
+
+    # the warning clears, and the mapping is on disk
+    assert not any(d.code == "voice-unmapped" for d in state.all_diagnostics())
+    assert "elevenlabs: EL_guest" in (tmp_path / "marked.narration").read_text(encoding="utf-8")
+
+
+def test_edit_voices_deletes_a_voice(tmp_path: Path) -> None:
+    pdf = prep_marked_deck(tmp_path)
+    (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
+    state = EditorState(pdf)
+
+    voices = state.voice_map_for_display()
+    del voices["guest"]
+    assert state.edit_voices(voices, state.deck.default_voice) is True
+
+    assert "guest" not in state.deck.voices
+    assert "guest:" not in (tmp_path / "marked.narration").read_text(encoding="utf-8")
+
+
+def test_edit_voices_qwen3_path_roundtrips_relative(tmp_path: Path) -> None:
+    """A qwen3 .pt is stored relative on disk but absolute in memory for the engine."""
+    from slidesonnet.models import VoiceConfig
+
+    pdf = prep_marked_deck(tmp_path)
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts" / "lecturer.pt").write_bytes(b"fake-clone")
+    state = EditorState(pdf)
+
+    state.edit_voices(
+        {"lecturer": VoiceConfig("lecturer", {"qwen3": "prompts/lecturer.pt"})},
+        default_voice="lecturer",
+    )
+    # on disk: the portable relative path
+    assert "qwen3: prompts/lecturer.pt" in (tmp_path / "marked.narration").read_text(
+        encoding="utf-8"
+    )
+    # in memory after reload: absolute, so the engine loads it regardless of cwd
+    assert Path(state.deck.voices["lecturer"].backend_voices["qwen3"]).is_absolute()
+    # display relativizes again, and re-applying it is a byte-stable no-op
+    disp = state.voice_map_for_display()
+    assert disp["lecturer"].backend_voices["qwen3"] == "prompts/lecturer.pt"
+    assert state.edit_voices(disp, "lecturer") is False
+
+
 def test_model_warmup_pending_only_for_cold_heavy_engine(tmp_path: Path) -> None:
     """Light engines are always warm; a cold Qwen3 owes a heavy one-time load."""
     state = _state(tmp_path)

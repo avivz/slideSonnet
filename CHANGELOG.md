@@ -6,6 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Edit the voice map in the editor.** A new **Voices…** dialog in the editor
+  console lets you create and edit the deck's named voices without hand-editing
+  the narration file: each row is an internal name mapped to a concrete voice per
+  engine (a Kokoro voice, an ElevenLabs voice id, or a Qwen3 `.pt` path), with a
+  **Default voice** picker. Saving writes a well-formed `voices:`/`default-voice:`
+  preamble (a Qwen3 `.pt` is stored relative to the deck, as on load), and the
+  voice pickers, the unset-voice placeholder, and the `voice-unmapped` warnings
+  all relight against the new map — so mapping a name for the active engine clears
+  its warning in place. A deck whose map you don't touch still round-trips
+  byte-stable (only an actual edit regenerates the preamble).
 - **Portable voice layer — internal voice names, cross-engine map in the
   narration file.** The sidecar gained an optional deck-level preamble: a
   `voices:` block mapping an internal name (`lecturer`, `guest`) to a concrete

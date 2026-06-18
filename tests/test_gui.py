@@ -207,6 +207,30 @@ async def test_per_utterance_voice_and_pace_persist(
     assert "direct: warmly" in sidecar
 
 
+async def test_voices_dialog_adds_named_voice_and_persists(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Voices dialog maps an internal name per engine and writes the preamble."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+
+    user.find(marker="edit-voices").click()
+    await user.should_see("Default voice")
+    await user.should_see("kokoro")  # an engine column per backend
+
+    # fill the empty starter row: name + a Kokoro voice, then save
+    user.find(marker="voice-name-0").type("lecturer")
+    user.find(marker="voice-kokoro-0").type("am_michael")
+    user.find(marker="voice-save").click()
+    await user.should_see("Voices saved")
+
+    text = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "# slidesonnet-format: 2" in text
+    assert "lecturer:" in text
+    assert "kokoro: am_michael" in text
+
+
 async def test_voice_box_shows_deck_default_when_unset(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

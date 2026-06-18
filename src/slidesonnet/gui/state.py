@@ -21,6 +21,8 @@ from slidesonnet.deck import (
     default_sidecar_path,
     dedupe_page_ids,
     load_deck,
+    relativize_voice_files,
+    resolve_voice_files,
     save_deck,
     unique_real_ids,
 )
@@ -28,7 +30,7 @@ from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagn
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import PageNarration, Segment, Transition
-from slidesonnet.models import Backend
+from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
@@ -396,6 +398,36 @@ class EditorState:
         if self.deck.default_voice:
             return self.deck.default_voice
         return create_tts(self._active_config().tts).default_voice()
+
+    def voice_map_for_display(self) -> dict[str, VoiceConfig]:
+        """The deck's portable voice map, with file voices shown relative to the deck.
+
+        The in-memory deck holds absolute file-voice paths (so the engine can load
+        a ``.pt`` regardless of cwd); the editor shows — and round-trips — the
+        portable relative form. Returns a fresh copy safe for the GUI to mutate
+        before handing back to :meth:`edit_voices`.
+        """
+        return relativize_voice_files(self.deck.voices, self.sidecar_path.resolve().parent)
+
+    def edit_voices(self, voices: dict[str, VoiceConfig], default_voice: str | None) -> bool:
+        """Replace the deck's portable voice map + default-voice, then save; changed?
+
+        Dropping ``preamble_source`` makes the save regenerate the preamble
+        canonically from the edited map (a deck whose map is untouched never
+        reaches here, so its hand-written preamble round-trips byte-stable).
+        Incoming file-voice paths are resolved to absolute (mirroring load), so an
+        unchanged map compares equal and writes nothing. The reload relights the
+        voice-unmapped diagnostics against the new map and active engine.
+        """
+        resolved = resolve_voice_files(voices, self.sidecar_path.resolve().parent)
+        default_voice = default_voice or None
+        if resolved == self.deck.voices and default_voice == self.deck.default_voice:
+            return False
+        self.deck.voices = resolved
+        self.deck.default_voice = default_voice
+        self.deck.preamble_source = None  # regenerate the preamble from the edited map
+        self._write_and_reload()
+        return True
 
     # ---- synthesis cost ---------------------------------------------------
     @property
