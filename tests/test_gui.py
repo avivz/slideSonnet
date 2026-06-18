@@ -235,10 +235,55 @@ async def test_voices_dialog_adds_named_voice_and_persists(
     assert "kokoro: am_michael" in text
 
 
-async def test_voice_box_shows_named_default_when_unset(
+async def test_changing_a_named_voice_uncaches_its_slides(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An utterance with no explicit voice shows the *named* deck default."""
+    """Re-mapping a named voice flips its slides back to 'not generated'.
+
+    The old clips were keyed to the previous engine voice; after the change the
+    deck resolves to a different voice, so the cached audio no longer matches and
+    the generate indicators must go amber again."""
+    from slidesonnet.audio.synth import _ref_targets
+    from slidesonnet.cache import audio_dir
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello world.\n")
+    (tmp_path / "marked.narration").write_text(
+        "# slidesonnet-format: 2\n"
+        "default-voice: lecturer\n"
+        "voices:\n  lecturer:\n    kokoro: am_michael\n\n"
+        "@intro-title\n  utterance:\n    text: Hello world.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    # seed cached clips at the current (am_michael) paths
+    st = EditorState(pdf)
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True, exist_ok=True)
+    for _ref, target in _ref_targets(st.deck, st._active_config(), ad):
+        target.write_bytes(b"RIFFfake")
+
+    await user.open("/")
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
+    assert gen.props.get("color") == "positive"  # cached → green
+
+    user.find(marker="edit-voices").click()
+    await user.should_see("Default voice")
+    next(iter(user.find(marker="voice-kokoro-0").elements)).set_value("am_eric")
+    user.find(marker="voice-save").click()
+    await user.should_see("Voices saved")
+
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
+    assert gen.props.get("color") == "warning"  # remapped → not generated
+
+
+async def test_voice_box_offers_default_and_names_the_resolved_default(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unset utterance selects the explicit 'default' option, labelled with the
+    named deck default."""
+    from slidesonnet.gui.app import DEFAULT_VOICE_OPTION
+
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     (tmp_path / "marked.narration").write_text(
         "# slidesonnet-format: 2\n"
@@ -255,19 +300,44 @@ async def test_voice_box_shows_named_default_when_unset(
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     voice = next(iter(user.find(marker="uvoice-0").elements))
-    assert voice.value is None  # unset stays unset — the sidecar isn't touched
-    assert voice.props.get("placeholder") == "lecturer (default)"
+    assert voice.value == DEFAULT_VOICE_OPTION  # the explicit default choice is selected
+    assert voice.options[DEFAULT_VOICE_OPTION] == "default (lecturer)"
 
 
-async def test_voice_box_says_deck_default_without_a_named_default(
+async def test_voice_box_default_option_without_a_named_default(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With no named default-voice, the box says 'deck default' — never a raw engine id."""
+    """With no named default-voice, the option is just 'default' — never a raw engine id."""
+    from slidesonnet.gui.app import DEFAULT_VOICE_OPTION
+
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     voice = next(iter(user.find(marker="uvoice-0").elements))
-    assert voice.props.get("placeholder") == "deck default"
+    assert voice.value == DEFAULT_VOICE_OPTION
+    assert voice.options[DEFAULT_VOICE_OPTION] == "default"
+
+
+async def test_voice_box_default_option_clears_a_voice(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Picking 'default' on a voiced utterance drops the voice from the sidecar."""
+    from slidesonnet.gui.app import DEFAULT_VOICE_OPTION
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[voices.guest]\nkokoro = "af_bella"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    next(iter(user.find(marker="uvoice-0").elements)).set_value("guest")
+    user.find("Next").click()
+    assert "voice: guest" in (tmp_path / "marked.narration").read_text(encoding="utf-8")
+
+    user.find("Previous").click()
+    next(iter(user.find(marker="uvoice-0").elements)).set_value(DEFAULT_VOICE_OPTION)
+    user.find("Next").click()
+    assert "voice:" not in (tmp_path / "marked.narration").read_text(encoding="utf-8")
 
 
 async def test_action_messages_flash_on_the_bottom_bar(

@@ -42,6 +42,11 @@ logger = logging.getLogger(__name__)
 _MEDIA_URL = "/ssmedia"
 _served: set[str] = set()
 
+# Sentinel value for the per-utterance picker's explicit "default" choice — an
+# utterance set to it carries no voice and speaks with the deck default. Chosen so
+# it can't collide with a real (named or engine) voice id.
+DEFAULT_VOICE_OPTION = "__default__"
+
 
 _STAGE_RESERVE = 680.0  # stage minimum (620px content) + its padding + separators
 _STRIP_MAX = 400.0
@@ -803,31 +808,29 @@ class BlockEditor:
                         gen.disable()
                     gen.on_click(lambda: view.enqueue_segment(speech_index))
                     self.seg_gen_controls.append((gen, gen_tip, speech_index))
-            voice_choices = state.voice_options()  # named voices only — no raw engine ids
-            if seg.voice and seg.voice not in voice_choices:
-                voice_choices = [seg.voice, *voice_choices]  # keep an explicit/legacy value visible
+            named_choices = state.voice_options()  # named voices only — no raw engine ids
+            if seg.voice and seg.voice not in named_choices:
+                named_choices = [seg.voice, *named_choices]  # keep an explicit/legacy value visible
+            # "default" is always offered (and selected when the utterance has no
+            # voice); its label names what the deck default resolves to, without
+            # leaking the engine's own voice id into this named picker.
+            named_default = state.default_voice_label()
+            default_label = f"default ({named_default})" if named_default else "default"
+            voice_options = {DEFAULT_VOICE_OPTION: default_label, **{v: v for v in named_choices}}
             with ui.row().classes("ss-utt-opts w-full items-end gap-2 no-wrap"):
                 voice = (
                     ui.select(
-                        voice_choices,
-                        value=seg.voice or None,
+                        voice_options,
+                        value=seg.voice or DEFAULT_VOICE_OPTION,
                         label="Voice",
                         with_input=True,  # type to filter the named-voice list
                     )
                     .props(
-                        "filled dense options-dense clearable hide-bottom-space stack-label "
-                        'title="Named voice (type to filter; clear for the deck default)"'
+                        "filled dense options-dense hide-bottom-space stack-label "
+                        'title="Named voice (type to filter; pick default for the deck default)"'
                     )
                     .classes("ss-mono ss-uvoice")
                     .mark(f"uvoice-{index}")
-                )
-                named_default = state.default_voice_label()
-                # an unset voice isn't "no voice" — name the deck default, but never
-                # leak the engine's own voice id into this named picker.
-                voice.props(
-                    f'placeholder="{named_default} (default)"'
-                    if named_default
-                    else 'placeholder="deck default"'
                 )
                 manage = (
                     ui.button(icon="record_voice_over", on_click=self.view.open_voices_dialog)
@@ -869,9 +872,13 @@ class BlockEditor:
                 self._track_editing(w, speech_index)
 
         def collect() -> Segment:
+            picked = voice.value
+            chosen_voice = (
+                None if picked == DEFAULT_VOICE_OPTION else (picked or "").strip() or None
+            )
             return Segment.speech(
                 text.value or "",
-                voice=(voice.value or "").strip() or None,
+                voice=chosen_voice,
                 pace=_pace_value(pace.value),
                 direction=(direct.value or "").strip() or None,
             )
