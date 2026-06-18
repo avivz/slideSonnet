@@ -190,6 +190,25 @@ async def test_transition_picker_family_and_direction_persist(
     assert "transition-out: wipeup 0.5" in sidecar
 
 
+async def test_per_slide_silence_fields_materialize_on_save(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    # A speech slide shows start/end silence fields defaulting to the deck values.
+    start = next(iter(user.find(marker="silence-secs-start").elements))
+    end = next(iter(user.find(marker="silence-secs-end").elements))
+    assert start.value == pytest.approx(0.3)  # pre_silence default
+    assert end.value == pytest.approx(0.5)  # tail_seconds default
+    # Set a custom end hold; saving materializes both edge silences as pauses.
+    end.set_value(1.5)
+    user.find("Next").click()  # nav saves the current slide first
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "pause: 1.5" in sidecar  # the edited end hold
+    assert "pause: 0.3" in sidecar  # the (default) start hold, now explicit
+
+
 async def test_per_utterance_voice_and_pace_persist(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

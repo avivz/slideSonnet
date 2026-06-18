@@ -8,9 +8,36 @@ from pathlib import Path
 
 import pytest
 
-from slidesonnet.gui.state import EditorState, cue_start
+from slidesonnet.gui.state import (
+    EditorState,
+    bracket_silences,
+    cue_start,
+    split_edge_silences,
+)
 from slidesonnet.narration.format import parse_segments, serialize_body
+from slidesonnet.narration.model import Segment
 from tests.conftest import prep_marked_deck, simple_narration
+
+
+def test_split_edge_silences_separates_holds_from_middle() -> None:
+    s = Segment.speech("hi")
+    # leading + trailing pauses are split out; the middle is the speech.
+    lead, mid, trail = split_edge_silences([Segment.pause(1.0), s, Segment.pause(2.0)])
+    assert (lead, mid, trail) == (1.0, [s], 2.0)
+    # speech-only: no edge pauses -> both None.
+    assert split_edge_silences([s]) == (None, [s], None)
+    # a lone pause counts only as leading (a silent slide's single hold).
+    assert split_edge_silences([Segment.pause(3.0)]) == (3.0, [], None)
+
+
+def test_bracket_silences_round_trips_with_split() -> None:
+    s = Segment.speech("hi")
+    bracketed = bracket_silences([s], 0.3, 0.5)
+    assert bracketed == [Segment.pause(0.3), s, Segment.pause(0.5)]
+    assert split_edge_silences(bracketed) == (0.3, [s], 0.5)
+    # a None edge is omitted; negatives are clamped to 0.
+    assert bracket_silences([s], None, -1.0) == [s, Segment.pause(0.0)]
+
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
