@@ -329,6 +329,39 @@ def test_cancelled_job_is_requeued_and_retried(
     asyncio.run(body())
 
 
+def test_failed_job_invokes_the_error_callback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A synthesis failure is surfaced via on_error (no longer swallowed silently)."""
+
+    async def body() -> None:
+        engine = FailingEngine()
+        monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: engine)
+        deck = _deck()
+        config = Config()
+        errored: list[str] = []
+
+        def synth(targets: set[tuple[str, int]], force: bool) -> None:
+            synth_mod.synthesize(
+                deck, config, audio_dir=tmp_path, only_segments=set(targets), force=force
+            )
+
+        queue = JobQueue(
+            deck_provider=lambda: (deck, config, tmp_path),
+            synth=synth,
+            is_paid=lambda: False,
+            on_error=lambda h: errored.append(h.key),
+        )
+        queue.start()
+        handle = queue.enqueue({("a", 0)})[0]
+        await queue.drain()
+        queue.stop()
+        assert handle.status == "error"
+        assert errored == [handle.key]  # the failure was reported, not swallowed
+
+    asyncio.run(body())
+
+
 def test_progress_counts_the_burst_and_resets_on_the_next(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

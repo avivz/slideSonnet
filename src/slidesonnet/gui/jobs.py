@@ -82,12 +82,14 @@ class JobQueue:
         is_paid: IsPaid,
         current_index: CurrentIndex | None = None,
         on_change: Callable[[], None] | None = None,
+        on_error: Callable[[JobHandle], None] | None = None,
     ) -> None:
         self._deck_provider = deck_provider
         self._synth = synth
         self._is_paid = is_paid
         self._current_index = current_index or (lambda: None)
         self._on_change = on_change or (lambda: None)
+        self._on_error = on_error or (lambda _h: None)
         self._pending: dict[JobKey, JobHandle] = {}  # queued, not yet started
         self._running: JobHandle | None = None  # the clip the worker is on now
         self._inflight: dict[JobKey, JobHandle] = {}  # pending + running (dedup/lookup)
@@ -240,6 +242,7 @@ class JobQueue:
                 handle.status = "error"
                 handle.error = exc
                 logger.exception("background generation failed for %s", handle.key)
+                self._safe_on_error(handle)
             else:
                 handle.status = "done"
             self._running = None
@@ -297,3 +300,9 @@ class JobQueue:
             self._on_change()
         except Exception:  # the client may have disconnected mid-job
             logger.debug("job on_change failed (client gone?)", exc_info=True)
+
+    def _safe_on_error(self, handle: JobHandle) -> None:
+        try:
+            self._on_error(handle)
+        except Exception:  # the client may have disconnected mid-job
+            logger.debug("job on_error failed (client gone?)", exc_info=True)

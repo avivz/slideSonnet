@@ -1349,6 +1349,7 @@ class EditorView:
             is_paid=lambda: state.tts_is_paid,
             current_index=lambda: state.index,  # generate nearest-to-current first
             on_change=self._on_jobs_changed,
+            on_error=self._on_job_error,
         )
         self.jobs.start()
         self.client.on_disconnect(self.jobs.stop)
@@ -1624,10 +1625,25 @@ class EditorView:
         self.blocks.save_current()  # flush any open edit before the worker reads disk
         targets = self.state.targets_for_sweep()
         if not targets:
+            self.flash(f"Nothing to generate — all audio for {self.state.active_backend} exists")
             return
         self._flag_model_warmup()
-        self.jobs.enqueue(targets, allow_paid=True)
+        handles = self.jobs.enqueue(targets, allow_paid=True)
+        self.flash(f"Generating {len(handles)} clip(s) with {self.state.active_backend}…")
         self.render_side()
+        self._render_gen_progress()
+
+    def _on_job_error(self, handle: Any) -> None:
+        """Surface a background generation failure — they used to vanish silently.
+
+        Runs from the worker task, so re-enter the page client before flashing.
+        """
+        try:
+            with self.client:
+                self.flash(f"Generation failed: {handle.error}", "negative")
+                self.render_side()
+        except Exception:
+            logger.debug("job error flash failed (client gone?)", exc_info=True)
 
     def _on_jobs_changed(self) -> None:
         """A background job changed state — repaint clip indicators and audio status.
