@@ -263,6 +263,28 @@ def test_prune_local_orphans_drops_edited_away_local_clips(tmp_path: Path) -> No
     assert result.removed_files == 1
 
 
+def test_prune_local_orphans_keeps_expensive_local_qwen3(tmp_path: Path) -> None:
+    """Qwen3 is free but slow (seconds/clip on the iGPU), so its orphans are kept.
+
+    The eager auto-sweep must distinguish *cheap* local audio (Kokoro — regenerate
+    in <1s) from *expensive* local audio (Qwen3), not just paid-vs-free: discarding
+    a now-orphaned Qwen3 clip on an unrelated edit silently throws away minutes of
+    own-voice generation.
+    """
+    pdf = _seed_deck(tmp_path)
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True)
+    kokoro_orphan = audio_filename("Old deleted text.", "kokoro", "kokoro:am_echo")
+    qwen3_orphan = audio_filename("Old deleted text.", "qwen3", "qwen3:Dylan")
+    for name in (kokoro_orphan, qwen3_orphan):
+        (ad / name).write_bytes(b"a")
+
+    result = prune_local_orphans(pdf)
+    assert not (ad / kokoro_orphan).exists()  # cheap local — still swept eagerly
+    assert (ad / qwen3_orphan).exists()  # expensive local — kept, not auto-discarded
+    assert result.removed_files == 1
+
+
 def test_prune_local_orphans_keeps_renders_and_unknown_names(tmp_path: Path) -> None:
     pdf = _seed_deck(tmp_path)
     ad = audio_dir(pdf)

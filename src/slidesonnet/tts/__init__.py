@@ -65,12 +65,27 @@ class BackendSpec:
     #: *estimate* a clip's progress in the editor (elapsed vs ~expected). Fast
     #: engines are well under 1×; Qwen3 on the laptop iGPU is ~3.3×.
     rtf: float = 0.3
+    #: May the *silent on-edit* orphan sweep (``clean.prune_local_orphans``)
+    #: delete this backend's now-orphaned clips? True only for audio that is
+    #: cheap to regenerate (Kokoro, real-time local). False for *paid* audio
+    #: (would re-bill) **and** for *expensive* free-but-slow local audio (Qwen3,
+    #: seconds per clip) — discarding a Qwen3 orphan on an unrelated edit silently
+    #: throws away minutes of own-voice generation. This governs only the
+    #: automatic sweep; an explicit ``clean --keep nothing`` still removes
+    #: everything. A single per-engine knob so a new backend declares its policy
+    #: in one place rather than the prune path hardcoding a ``paid`` check.
+    auto_prune_orphans: bool = True
 
 
 BACKENDS: dict[str, BackendSpec] = {
     "kokoro": BackendSpec("kokoro", ".wav", paid=False, factory=_make_kokoro, import_name="kokoro"),
     "inworld": BackendSpec(
-        "inworld", ".mp3", paid=True, factory=_make_inworld, import_name="inworld_tts"
+        "inworld",
+        ".mp3",
+        paid=True,
+        factory=_make_inworld,
+        import_name="inworld_tts",
+        auto_prune_orphans=False,  # paid — never auto-discard (would re-bill to rebuild)
     ),
     "qwen3": BackendSpec(
         "qwen3",
@@ -81,6 +96,7 @@ BACKENDS: dict[str, BackendSpec] = {
         import_name="qwen_tts",
         file_voices=True,
         rtf=3.3,
+        auto_prune_orphans=False,  # free but slow — don't silently discard own-voice audio
     ),
 }
 
@@ -105,6 +121,13 @@ def available_backends() -> list[str]:
 
 #: Backends whose cached audio cost money to produce (clean keeps these).
 API_BACKENDS: frozenset[str] = frozenset(n for n, spec in BACKENDS.items() if spec.paid)
+
+#: Backends whose orphaned clips the silent on-edit sweep may delete — only audio
+#: cheap to regenerate (real-time local). Paid and expensive-local backends are
+#: excluded, so ``prune_local_orphans`` keeps their orphans without a ``paid`` check.
+AUTO_PRUNE_BACKENDS: frozenset[str] = frozenset(
+    n for n, spec in BACKENDS.items() if spec.auto_prune_orphans
+)
 
 
 def create_tts(tts: TTSConfig) -> TTSEngine:

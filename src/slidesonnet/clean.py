@@ -20,7 +20,7 @@ from slidesonnet.config import load_config
 from slidesonnet.deck import load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
 from slidesonnet.models import resolve_voice
-from slidesonnet.tts import API_BACKENDS
+from slidesonnet.tts import API_BACKENDS, AUTO_PRUNE_BACKENDS
 from slidesonnet.narration.model import Pace
 from slidesonnet.tts.base import TTSEngine
 
@@ -81,14 +81,17 @@ def clean(pdf_path: Path, keep: KeepLevel = "api") -> CleanResult:
 
 
 def prune_local_orphans(pdf_path: Path) -> CleanResult:
-    """Drop local (non-paid) audio whose utterance is no longer in the sidecar.
+    """Drop cheap-to-regenerate audio whose utterance is no longer in the sidecar.
 
     Called automatically after a sidecar edit: when text or a pinned voice
     changes, its old clip's ``text_hash`` falls out of the current set and the
-    file becomes dead weight. Local engines (Kokoro) are cheap to regenerate, so
-    we reclaim it eagerly. Paid audio (e.g. Inworld) is never auto-pruned, renders
-    are left alone, and unrecognized filenames are kept — an automatic, silent
-    sweep should only delete clips it is certain it produced.
+    file becomes dead weight. Only backends flagged ``auto_prune_orphans`` (real-
+    time local audio like Kokoro — cheap to regenerate) are reclaimed eagerly.
+    Paid audio (Inworld — would re-bill) **and** expensive free-but-slow local
+    audio (Qwen3 — seconds per clip) are kept, so an unrelated edit never silently
+    discards minutes of own-voice generation. Renders are left alone, and
+    unrecognized filenames are kept — an automatic, silent sweep should only
+    delete clips it is certain it produced and that are trivial to remake.
     """
     ad = audio_dir(pdf_path)
     if not ad.exists():
@@ -100,7 +103,7 @@ def prune_local_orphans(pdf_path: Path) -> CleanResult:
         if not f.is_file():
             continue
         parsed = parse_audio_filename(f.name)
-        if parsed is None or parsed[1] in API_BACKENDS or parsed[0] in current:
+        if parsed is None or parsed[1] not in AUTO_PRUNE_BACKENDS or parsed[0] in current:
             result.kept_files += 1
             continue
         result.removed_bytes += f.stat().st_size
