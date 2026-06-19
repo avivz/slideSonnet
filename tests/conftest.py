@@ -1,13 +1,17 @@
 """Shared test fixtures."""
 
 import base64
+import io
 import sys
+import wave
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
 import fitz  # type: ignore[import-untyped]
 import pytest
+
+from slidesonnet.tts.base import TTSEngine
 
 # NiceGUI's in-process `user` fixture (no selenium). The combined plugin pulls
 # in selenium for the `screen` fixture, so load only the user plugin.
@@ -152,6 +156,75 @@ def _stub_page_rasterize(
         return self._images
 
     monkeypatch.setattr(EditorState, "ensure_images", fake_ensure_images)
+    yield
+
+
+def _silent_wav_bytes() -> bytes:
+    """A tiny but valid mono WAV (10 ms of silence), enough for ffprobe."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(24_000)
+        w.writeframes(b"\x00\x00" * 240)
+    return buf.getvalue()
+
+
+_TINY_WAV = _silent_wav_bytes()
+
+
+class _StubTTS(TTSEngine):
+    """Writes a tiny WAV instead of synthesizing — lets unit-tier tests drive the
+    generation/preview path without a real engine. Reports the configured backend
+    as its ``name()`` so the content-addressed cache path matches what the status
+    scan computes (both go through ``synth.create_tts``)."""
+
+    def __init__(self, backend: str) -> None:
+        self._backend = backend
+
+    def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(_TINY_WAV)
+        return 1.0
+
+    def name(self) -> str:
+        return self._backend
+
+    def cache_key(self) -> str:
+        return "stub"
+
+
+@pytest.fixture(autouse=True)
+def _stub_tts_synthesis(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """Replace real TTS synthesis with a stub for GUI unit tests.
+
+    A GUI test that plays/generates would otherwise shell out to a real engine
+    (Kokoro) — slow locally, and broken in CI where ``kokoro``/``torch`` aren't
+    installed (the deck-synthesis path raises "kokoro package not installed",
+    erroring the test). This patches only ``synth.create_tts`` (the actual
+    synthesis chokepoint), so ``state.py``'s engine construction — voice lists,
+    model-warmup status — keeps its real behavior.
+
+    Scope is the ``gui`` marker (auto-applied to any ``user``-fixture test): the
+    tests that exercise synthesis *internals* — cache-key, pace→speed, clean's
+    keep-set — are non-GUI (``test_kokoro``/``test_clean``/``test_synth``) and
+    must keep the real engine, so they're left alone. Real GUI-with-Kokoro
+    coverage stays in the integration tier.
+    """
+    skip = (
+        request.node.get_closest_marker("gui") is None
+        or request.node.get_closest_marker("integration") is not None
+        or request.node.get_closest_marker("browser") is not None
+    )
+    if skip:
+        yield
+        return
+
+    from slidesonnet.audio import synth as synth_mod
+
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: _StubTTS(cfg.backend))
     yield
 
 

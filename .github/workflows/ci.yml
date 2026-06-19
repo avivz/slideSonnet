@@ -53,8 +53,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
       # CI runs the fast unit tier only — no heavy tests (integration or
-      # browser), to stay within the free-tier minute budget.
-      - run: pytest tests/ -m "not integration and not browser" -v
+      # browser), to stay within the free-tier minute budget. The per-test
+      # timeout is a safety net: a background-queue hang fails in ~2 min instead
+      # of running to GitHub's 6h ceiling (pytest-timeout ships in [dev]).
+      - run: pytest tests/ -m "not integration and not browser" -v --timeout=120 --timeout-method=thread
 
   build:
     runs-on: ubuntu-latest
