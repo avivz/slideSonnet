@@ -87,7 +87,7 @@ CUSTOM_VOICE_SPEAKERS: tuple[str, ...] = (
     "Ono_Anna",
     "Sohee",
 )
-DEFAULT_CUSTOM_VOICE_SPEAKER = "Vivian"
+DEFAULT_CUSTOM_VOICE_SPEAKER = "Dylan"
 
 
 def _is_custom_voice_model(model_repo: str) -> bool:

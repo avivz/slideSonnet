@@ -94,6 +94,35 @@ def test_voice_override(mock_client_cls, tmp_path):
     assert mock_client.generate.call_args.kwargs["voice"] == "override-voice"
 
 
+def test_default_voice_is_a_real_built_in():
+    """Inworld carries a built-in default voice (like Kokoro's am_echo / Qwen3's
+    Dylan), so an unvoiced utterance has something to fall back to instead of an
+    empty voice id the API would reject."""
+    from slidesonnet.tts.inworld import InworldTTS
+
+    tts = InworldTTS(TTSConfig(backend="inworld"))  # nothing configured
+    assert tts.default_voice() == "Simon"
+
+
+@patch.dict(os.environ, {"INWORLD_API_KEY": "test-key-123"})
+@patch("slidesonnet.tts.inworld.InworldClient")
+def test_unvoiced_synthesis_uses_built_in_default(mock_client_cls, tmp_path):
+    """With no voice configured and none passed, synthesis uses the built-in
+    default — not an empty voice id."""
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.generate.return_value = b"audio"
+
+    from slidesonnet.tts.inworld import InworldTTS
+
+    tts = InworldTTS(TTSConfig(backend="inworld"))  # default inworld_voice
+    output = tmp_path / "s.mp3"
+    with patch("slidesonnet.tts.inworld._get_audio_duration", return_value=1.0):
+        tts.synthesize("Hi", output)  # no voice override
+
+    assert mock_client.generate.call_args.kwargs["voice"] == "Simon"
+
+
 @patch.dict(os.environ, {"INWORLD_API_KEY": "test-key-123"})
 @patch("slidesonnet.tts.inworld.InworldClient")
 def test_api_failure_is_clean_tts_error(mock_client_cls, tmp_path):

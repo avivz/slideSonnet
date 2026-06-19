@@ -148,7 +148,7 @@ def test_custom_voice_lists_shipped_speakers_without_loading_model(
     engine = Qwen3TTS(model=_CUSTOM_MODEL, device="cpu")
     assert engine.list_voices() == CUSTOM_VOICE_SPEAKERS
     assert "Vivian" in engine.list_voices()
-    assert engine.default_voice() == "Vivian"
+    assert engine.default_voice() == "Dylan"
     fake_qwen3.model_cls.from_pretrained.assert_not_called()
 
 
@@ -164,7 +164,7 @@ def test_custom_voice_synthesizes_without_a_voice_prompt(
     assert out.is_file() and duration == pytest.approx(0.1, abs=1e-3)
     fake_qwen3.model.generate_voice_clone.assert_not_called()
     _, kwargs = fake_qwen3.model.generate_custom_voice.call_args
-    assert kwargs["speaker"] == "Vivian"  # the engine default
+    assert kwargs["speaker"] == "Dylan"  # the engine default
 
 
 def test_custom_voice_uses_the_picked_speaker(fake_qwen3: SimpleNamespace, tmp_path: Path) -> None:
@@ -183,7 +183,7 @@ def test_custom_voice_falls_back_for_an_unknown_speaker(
     engine = Qwen3TTS(model=_CUSTOM_MODEL, device="cpu")
     engine.synthesize("Hi.", tmp_path / "c.wav", voice="af_heart")
     _, kwargs = fake_qwen3.model.generate_custom_voice.call_args
-    assert kwargs["speaker"] == "Vivian"  # unknown speaker → default, not "af_heart"
+    assert kwargs["speaker"] == "Dylan"  # unknown speaker → default, not "af_heart"
 
 
 def test_custom_voice_speaker_match_is_case_insensitive(

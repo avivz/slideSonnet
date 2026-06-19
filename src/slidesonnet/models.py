@@ -76,7 +76,7 @@ class TTSConfig:
     qwen3_voice_prompt: str = ""  # path to a .pt voice-clone prompt (Base own-voice only)
     qwen3_language: str = "English"
     inworld_api_key_env: str = "INWORLD_API_KEY"
-    inworld_voice: str = ""  # an Inworld voice name (e.g. "Ashley"); see the voice library
+    inworld_voice: str = "Simon"  # built-in default voice; any Inworld voice name (see library)
     inworld_model: str = "inworld-tts-1.5-max"  # quality-optimized; -mini trades for latency
     inworld_speed: float = 1.0  # base speaking_rate; per-utterance :pace multiplies this
 

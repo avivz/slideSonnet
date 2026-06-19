@@ -344,7 +344,7 @@ def test_engine_voice_choices_lists_voices_and_default(tmp_path: Path) -> None:
     assert kokoro_default == "am_echo"  # the configured Kokoro default
 
     qwen_opts, qwen_default = state.engine_voice_choices("qwen3")
-    assert "Vivian" in qwen_opts and qwen_default == "Vivian"  # CustomVoice speakers
+    assert "Dylan" in qwen_opts and qwen_default == "Dylan"  # CustomVoice speakers
 
     inworld_opts, _ = state.engine_voice_choices("inworld")
     assert inworld_opts == []  # account-specific ids, no fixed list → free text

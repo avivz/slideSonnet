@@ -22,6 +22,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Inworld cloud TTS engine (`--engine inworld`).** A paid cloud backend that
   synthesizes one content-addressed clip per utterance (`[tts.inworld]` config +
   the `inworld` extra), with an `INWORLD_API_KEY` check in `slidesonnet doctor`.
+  Ships with a built-in default voice (**Simon**), so an unvoiced utterance
+  narrates out of the box (override per deck with `[tts.inworld] voice` or a
+  named voice).
 - **"Generate missing" asks before spending credits on a paid engine.** The
   whole-deck fill now shows the same confirmation popup the play path uses when
   the active engine is paid (Inworld), so a batch synthesis never
@@ -91,7 +94,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   **CustomVoice** model, which carries nine built-in speakers (Vivian, Serena,
   Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee) — so Qwen3 narrates out of
   the box with no voice-clone prompt to prepare. The speakers appear in the
-  editor's voice picker, and **Vivian** is the default. The own-voice clone path
+  editor's voice picker, and **Dylan** is the default. The own-voice clone path
   is still there: point `[tts.qwen3] model` at a `…-Base` repo and set a `.pt`
   `voice_prompt` (or map a `.pt` per voice) to clone instead.
 
