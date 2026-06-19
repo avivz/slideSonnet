@@ -588,9 +588,19 @@ class PreviewPlayer:
                 view.jobs.cancel_running_unless(needed)
                 view.jobs.enqueue(needed, allow_paid=True)
             await view.jobs.await_targets(needed)
-            preview = await run.io_bound(
-                state.preview_deck if whole_deck else state.preview_current
-            )
+
+            def _on_assemble(label: str, done: int, total: int) -> None:
+                # Runs in the io_bound worker thread; just record the counts. The
+                # 0.5s progress timer (on the event loop) reads and renders them.
+                if label == "assemble":
+                    view.assembling = (done, total)
+
+            build = state.preview_deck if whole_deck else state.preview_current
+            view.assembling = (0, 0)  # show "Assembling audio…" until the first tick
+            try:
+                preview = await run.io_bound(build, _on_assemble)
+            finally:
+                view.assembling = None
             with client:
                 if not self.playback.may_start(token):  # user pressed Stop while building
                     view.flash("Preview stopped", "info")
@@ -1289,6 +1299,10 @@ class EditorView:
         self._flash_token = 0  # keeps an old fade timer from wiping a newer message
         self.thumb_cards: list[tuple[Any, Any, Any]] = []  # (card, dot, audio-missing badge)
         self._auto_build_timers: dict[str, Any] = {}  # per-slide debounce timers
+        # (done, total) while the whole-deck preview track is being assembled, else
+        # None. Written from the io_bound worker thread, polled by the progress
+        # timer — a plain tuple write is atomic, so no lock is needed.
+        self.assembling: tuple[int, int] | None = None
 
     def build(self) -> None:
         """Build the widget tree, attach the components, and wire all events."""
@@ -1856,12 +1870,35 @@ class EditorView:
         except Exception:  # the client may have disconnected mid-job
             logger.debug("jobs UI refresh failed (client gone?)", exc_info=True)
 
+    def _render_assemble_progress(self) -> bool:
+        """Show the whole-deck assembly bar while the preview track is building.
+
+        Generation runs first (its own bar) and finishes before assembly starts,
+        so the two phases are mutually exclusive and share the same widgets.
+        Returns True when assembly is active (and the bar now reflects it)."""
+        asm = self.assembling
+        if asm is None:
+            return False
+        a_done, a_total = asm
+        self.gen_bar.visible = True
+        self.gen_status.visible = True
+        self.gen_cancel_btn.visible = False  # an in-flight ffmpeg concat isn't cancellable
+        self.gen_clip_bar.visible = False
+        self.gen_bar.set_value(a_done / a_total if a_total else 0.0)
+        self.gen_status.set_text(
+            f"Assembling audio  ·  {a_done}/{a_total}" if a_total else "Assembling audio…"
+        )
+        return True
+
     def _render_gen_progress(self) -> None:
         """Deck-wide generation progress: a count bar, an estimated within-clip bar,
         and a live elapsed/estimate line. Hidden whenever nothing is generating."""
         done, total = self.jobs.progress()
         running = self.jobs.running_handle()
         if total == 0 or (done >= total and running is None):
+            # generation idle — the same bar may be showing assembly instead
+            if self._render_assemble_progress():
+                return
             for w in (self.gen_bar, self.gen_cancel_btn, self.gen_clip_bar, self.gen_status):
                 w.visible = False
             return

@@ -35,7 +35,7 @@ from slidesonnet.env import load_env
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
-from slidesonnet.models import Backend, VoiceConfig, resolve_voice
+from slidesonnet.models import Backend, ProgressFn, VoiceConfig, resolve_voice
 from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
@@ -726,19 +726,23 @@ class EditorState:
             self.pdf_path, sidecar_path=self.sidecar_path, engine=self.selected_backend
         )
 
-    def preview_current(self) -> api.Preview:
+    def preview_current(self, progress: ProgressFn | None = None) -> api.Preview:
         self._audio_scan = None  # building a preview synthesizes missing clips
         return api.build_preview(
             self.pdf_path,
             sidecar_path=self.sidecar_path,
             only_id=self.current_id,
             engine=self.selected_backend,
+            progress=progress,
         )
 
-    def preview_deck(self) -> api.Preview:
+    def preview_deck(self, progress: ProgressFn | None = None) -> api.Preview:
         self._audio_scan = None
         return api.build_preview(
-            self.pdf_path, sidecar_path=self.sidecar_path, engine=self.selected_backend
+            self.pdf_path,
+            sidecar_path=self.sidecar_path,
+            engine=self.selected_backend,
+            progress=progress,
         )
 
     def export(self, output: Path, *, silent: bool = False) -> api.ExportResult:

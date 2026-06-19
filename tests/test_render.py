@@ -160,6 +160,41 @@ def test_render_audio_track_orchestration(tmp_path: Path, monkeypatch: pytest.Mo
     assert track_calls == [(page_audios, track)]
 
 
+def test_render_audio_track_reports_assembly_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The assembly emits ('assemble', done, total) per page plus the final concat,
+    so the editor can show a progress bar instead of a blind spinner."""
+    tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
+    monkeypatch.setattr(
+        "slidesonnet.render.build_page_audio",
+        lambda timing, clips, out, *, silence_dir: out.write_bytes(b"p") or timing.duration,
+    )
+    monkeypatch.setattr(
+        "slidesonnet.render.assemble_track",
+        lambda audios, out: out.write_bytes(b"t") or 0.0,
+    )
+
+    ticks: list[tuple[str, int, int]] = []
+    render_dir = tmp_path / "render"
+    clips = [[tmp_path / "a.wav"], [], [tmp_path / "c.wav"], []]
+    render_audio_track(
+        tl,
+        clips,
+        render_dir=render_dir,
+        progress=lambda label, done, total: ticks.append((label, done, total)),
+    )
+
+    total = len(tl.pages) + 1  # one tick per page, plus the final concat
+    assert ticks, "no progress reported"
+    assert all(label == "assemble" for label, _, _ in ticks)
+    assert all(t == total for _, _, t in ticks)
+    dones = [d for _, d, _ in ticks]
+    assert dones == sorted(dones)  # monotonic
+    assert dones[0] == 1 and dones[-1] == total  # starts at page 1, ends complete
+    assert len(ticks) == total  # 4 pages + concat
+
+
 def test_render_audio_track_caches_unchanged_pages_and_track(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

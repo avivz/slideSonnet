@@ -395,5 +395,7 @@ def build_preview(
         video=config.video,
         speech_durations_by_page=page_speech_durations(deck, results),
     )
-    track, _ = render_audio_track(timeline, page_speech_clips(deck, results), render_dir=rdir)
+    track, _ = render_audio_track(
+        timeline, page_speech_clips(deck, results), render_dir=rdir, progress=progress
+    )
     return Preview(track=track, cues=timeline.cue_sheet(), total_duration=timeline.total_duration)

@@ -19,6 +19,30 @@ from slidesonnet.narration.model import Segment
 from tests.conftest import prep_marked_deck, simple_narration
 
 
+def test_preview_forwards_progress_to_build_preview(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The editor's preview entry points hand their progress callback down to
+    api.build_preview, so the assembly bar can track the whole-deck track build."""
+    from slidesonnet.api import Preview
+
+    state = EditorState(prep_marked_deck(tmp_path, simple_narration("@intro-title\nHi.\n")))
+    captured: list[object] = []
+
+    def fake_build_preview(_pdf: Path, **kwargs: object) -> Preview:
+        captured.append(kwargs.get("progress"))
+        return Preview(track=tmp_path / "track.wav", cues=[], total_duration=0.0)
+
+    monkeypatch.setattr("slidesonnet.gui.state.api.build_preview", fake_build_preview)
+
+    def cb(label: str, done: int, total: int) -> None:
+        return None
+
+    state.preview_deck(cb)
+    state.preview_current(cb)
+    assert captured == [cb, cb]
+
+
 def test_split_edge_silences_separates_holds_from_middle() -> None:
     s = Segment.speech("hi")
     # leading + trailing pauses are split out; the middle is the speech.

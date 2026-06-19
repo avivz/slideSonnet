@@ -387,7 +387,7 @@ async def test_action_messages_flash_on_the_bottom_bar(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     await user.open("/")
     flash = next(iter(user.find(marker="flash").elements))
@@ -534,7 +534,7 @@ async def test_stop_during_preview_build_cancels_playback(
 
     monkeypatch.setattr(EditorState, "synth_targets", blocking_synth)
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     try:
         await user.open("/")
@@ -574,7 +574,7 @@ async def test_navigating_cancels_a_pending_single_slide_build(
 
     monkeypatch.setattr(EditorState, "synth_targets", blocking_synth)
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     try:
         await user.open("/")
@@ -632,7 +632,7 @@ async def test_deck_playback_cue_flip_saves_pending_edits(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
 
-    def instant_build(self: EditorState) -> api.Preview:
+    def instant_build(self: EditorState, progress: object = None) -> api.Preview:
         return _fake_preview(self.pdf_path, [(0.0, "intro-title"), (2.0, "euler-setup")])
 
     monkeypatch.setattr(EditorState, "preview_deck", instant_build)
@@ -656,7 +656,7 @@ async def test_cue_flip_is_deferred_while_a_field_is_focused(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
 
-    def instant_build(self: EditorState) -> api.Preview:
+    def instant_build(self: EditorState, progress: object = None) -> api.Preview:
         return _fake_preview(self.pdf_path, [(0.0, "intro-title"), (2.0, "euler-setup")])
 
     monkeypatch.setattr(EditorState, "preview_deck", instant_build)
@@ -686,7 +686,7 @@ async def test_replaying_preview_reloads_the_new_track(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     # Play awaits the queue's synth of any uncached clip; stub it so the unit tier
     # never runs real (slow) Kokoro — we're exercising the audio-URL refetch.
@@ -720,7 +720,7 @@ async def test_stop_then_switch_slides_resets_player(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
@@ -752,7 +752,7 @@ async def test_play_button_toggles_pause_and_resume(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
@@ -783,7 +783,7 @@ async def test_seek_bar_tracks_position_and_resets_on_stop(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     await user.open("/")
     seek = next(iter(user.find(marker="seek").elements))
@@ -814,7 +814,7 @@ async def test_generate_resets_rolling_player(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [True])
     # the queue drives synthesis off the worker — stub it so no real Kokoro runs
@@ -848,7 +848,7 @@ async def test_structural_edit_resets_player(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
@@ -894,7 +894,7 @@ async def test_pause_length_edit_resets_player_so_replay_rebuilds(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello. [pause 1] World.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
@@ -960,7 +960,7 @@ async def test_text_edit_revokes_loaded_track(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     # Play awaits the queue's synth of any uncached clip; stub it so the unit tier
     # never runs real (slow) Kokoro — we're exercising playback, not synthesis.
@@ -1001,7 +1001,7 @@ async def test_no_op_blur_keeps_playing(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     await user.open("/")
     play_btn = next(iter(user.find(marker="play-slide").elements))
@@ -1039,7 +1039,7 @@ async def test_play_all_starts_at_current_slide(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
 
-    def instant_build(self: EditorState) -> api.Preview:
+    def instant_build(self: EditorState, progress: object = None) -> api.Preview:
         return _fake_preview(self.pdf_path, [(0.0, "intro-title"), (2.0, "euler-setup")])
 
     monkeypatch.setattr(EditorState, "preview_deck", instant_build)
@@ -1072,7 +1072,7 @@ async def test_generate_missing_keeps_unaffected_playback(
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     # the playing slide is fully cached; only the *other* slide needs audio
     monkeypatch.setattr(
@@ -1259,7 +1259,7 @@ async def test_play_awaits_in_flight_generation_without_double_triggering(
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [False])
     monkeypatch.setattr(
-        EditorState, "preview_current", lambda self: _fake_preview(self.pdf_path, [])
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
     )
     gate = threading.Event()
     calls: list[set[tuple[str, int]]] = []

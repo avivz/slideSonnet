@@ -15,7 +15,7 @@ from pathlib import Path
 
 from slidesonnet.audio.track import Cue, assemble_track, build_page_audio, cue_sheet, page_pieces
 from slidesonnet.config import Config
-from slidesonnet.models import VideoConfig
+from slidesonnet.models import ProgressFn, VideoConfig
 from slidesonnet.narration import transitions as transitions_mod
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 from slidesonnet.subtitles import SubtitleEntry, split_text
@@ -170,6 +170,7 @@ def render_audio_track(
     page_clips: list[list[Path]],
     *,
     render_dir: Path,
+    progress: ProgressFn | None = None,
 ) -> tuple[Path, list[Path]]:
     """Build per-page audio (lead+segments+tail) and the assembled deck track.
 
@@ -178,7 +179,13 @@ def render_audio_track(
     is re-concatenated only when some page changed — so a repeat preview of an
     unchanged deck does no ffmpeg work at all. Returns ``(track_path,
     page_audio_paths)``.
+
+    *progress*, if given, is called ``("assemble", done, total)`` after each page
+    WAV is materialized and once more after the final concat (``total`` = page
+    count + 1) — the whole-deck preview is otherwise a blind wait while ffmpeg
+    builds a long track.
     """
+    total_steps = len(timeline.pages) + 1  # one per page, plus the final concat
     render_dir.mkdir(parents=True, exist_ok=True)
     silence_dir = render_dir / "silence"
     silence_dir.mkdir(parents=True, exist_ok=True)
@@ -202,6 +209,8 @@ def render_audio_track(
             build_page_audio(page, page_clips[i], out, silence_dir=silence_dir)
         new_pages[out.name] = fp
         page_audios.append(out)
+        if progress is not None:
+            progress("assemble", i + 1, total_steps)
 
     track = render_dir / "track.wav"
     track_fp = hashlib.sha256(
@@ -209,6 +218,8 @@ def render_audio_track(
     ).hexdigest()
     if not (track.exists() and old.get("track") == track_fp):
         assemble_track(page_audios, track)
+    if progress is not None:
+        progress("assemble", total_steps, total_steps)
 
     try:
         manifest_path.write_text(
