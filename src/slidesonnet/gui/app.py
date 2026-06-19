@@ -529,6 +529,14 @@ class PreviewPlayer:
         """
         view = self.view
         state = view.state
+        # A play press flushes any open editor field first. The pause/edge-silence
+        # number fields (and text/voice/etc.) commit on blur, and a play click can
+        # land before that blur — so a focused, uncommitted silence change would
+        # otherwise leave the loaded track stale and the press would *resume* it
+        # (KNOWN_ISSUES). commit_audible saves the open block and, when it changed,
+        # revokes the loaded track so press_action below returns "build", not
+        # "resume". A no-op (nothing changed) leaves playback untouched.
+        view.blocks.commit_audible()
         if not whole_deck and not state.current_block.has_speech:
             view.flash("This slide has no narration to play", "info")
             return
@@ -2058,9 +2066,22 @@ class EditorView:
         def names() -> list[str]:
             return [n for r in rows if (n := str(r["name"].value).strip())]
 
+        def pending_renames() -> dict[str, str]:
+            """Old -> new for every seeded row whose name was edited (live)."""
+            out: dict[str, str] = {}
+            for r in rows:
+                nm = str(r["name"].value).strip()
+                orig = r.get("original")
+                if orig and nm and orig != nm:
+                    out[orig] = nm
+            return out
+
         def refresh_defaults() -> None:
             opts = [no_default, *names()]
-            keep = default_select.value if default_select.value in opts else no_default
+            # If the selected default voice was just renamed, follow it rather than
+            # dropping the selection back to "(engine default)".
+            cur = pending_renames().get(default_select.value, default_select.value)
+            keep = cur if cur in opts else no_default
             default_select.set_options(opts, value=keep)
 
         def remove_row(entry: dict[str, Any]) -> None:
@@ -2069,7 +2090,11 @@ class EditorView:
             refresh_defaults()
 
         def add_row(
-            name: str = "", voices: dict[str, str] | None = None, *, prefill: bool = False
+            name: str = "",
+            voices: dict[str, str] | None = None,
+            *,
+            prefill: bool = False,
+            original: str | None = None,
         ) -> None:
             voices = voices or {}
             rid = seq[0]
@@ -2107,17 +2132,25 @@ class EditorView:
                             .mark(mark)
                         )
                 trash = ui.button(icon="delete").props("flat round dense size=sm")
-            entry = {"name": name_in, "voices": engine_ins, "row": row}
+            # *original* is the name this row was seeded with (None for a new row),
+            # so Save can tell a rename (same row, changed name) from add/delete.
+            entry = {"name": name_in, "voices": engine_ins, "row": row, "original": original}
             rows.append(entry)
             trash.on_click(lambda: remove_row(entry))
             name_in.on_value_change(lambda: refresh_defaults())
 
         def save() -> None:
             new_map: dict[str, VoiceConfig] = {}
+            renames: dict[str, str] = {}
             for r in rows:
                 nm = str(r["name"].value).strip()
                 if not nm:
                     continue
+                # A seeded row whose name changed is a rename — record old -> new so
+                # utterance voice: / default-voice references follow it.
+                orig = r["original"]
+                if orig and orig != nm:
+                    renames[orig] = nm
                 backend_voices = {
                     eng: v
                     for eng, w in r["voices"].items()
@@ -2126,7 +2159,15 @@ class EditorView:
                 new_map[nm] = VoiceConfig(name=nm, backend_voices=backend_voices)
             default = default_select.value
             default = None if default == no_default else default
-            changed = state.edit_voices(new_map, default)
+            # Make the default-voice follow a rename even if the select bounced to
+            # "(engine default)" mid-typing (per-keystroke in a real browser): if the
+            # picked old name was renamed, or the deck's prior default was renamed and
+            # nothing else was chosen, point at the new name.
+            if default in renames:
+                default = renames[default]
+            elif default is None and state.deck.default_voice in renames:
+                default = renames[state.deck.default_voice]
+            changed = state.edit_voices(new_map, default, renames=renames)
             dialog.close()
             if changed:
                 self.render()  # voice pickers, placeholders, unmapped warnings relight
@@ -2142,7 +2183,7 @@ class EditorView:
         save_btn.on_click(save)
 
         for nm, vc in state.voice_map_for_display().items():
-            add_row(nm, vc.backend_voices)
+            add_row(nm, vc.backend_voices, original=nm)
         if not rows:
             add_row(prefill=True)  # starter row: each engine pre-set to its default
         refresh_defaults()

@@ -507,7 +507,13 @@ class EditorState:
         """
         return relativize_voice_files(self.deck.voices, self.sidecar_path.resolve().parent)
 
-    def edit_voices(self, voices: dict[str, VoiceConfig], default_voice: str | None) -> bool:
+    def edit_voices(
+        self,
+        voices: dict[str, VoiceConfig],
+        default_voice: str | None,
+        *,
+        renames: dict[str, str] | None = None,
+    ) -> bool:
         """Replace the deck's portable voice map + default-voice, then save; changed?
 
         Dropping ``preamble_source`` makes the save regenerate the preamble
@@ -516,16 +522,47 @@ class EditorState:
         Incoming file-voice paths are resolved to absolute (mirroring load), so an
         unchanged map compares equal and writes nothing. The reload relights the
         voice-unmapped diagnostics against the new map and active engine.
+
+        *renames* maps an old voice name to its new name (per-row identity from the
+        Voices dialog). A rename is more than a map-key change: every utterance
+        ``voice:`` and the ``default-voice`` that named the old voice are rewritten
+        to the new name, so no reference is left dangling (resolving as unmapped)
+        and the picker stops offering the old name. A delete (old name with no new)
+        is *not* a rename — its references are left as-is, surfacing as unmapped.
         """
         resolved = resolve_voice_files(voices, self.sidecar_path.resolve().parent)
         default_voice = default_voice or None
-        if resolved == self.deck.voices and default_voice == self.deck.default_voice:
+        active_renames = {old: new for old, new in (renames or {}).items() if old != new}
+        if (
+            not active_renames
+            and resolved == self.deck.voices
+            and default_voice == self.deck.default_voice
+        ):
             return False
+        if active_renames:
+            self._apply_voice_renames(active_renames)
         self.deck.voices = resolved
         self.deck.default_voice = default_voice
         self.deck.preamble_source = None  # regenerate the preamble from the edited map
         self._write_and_reload()
         return True
+
+    def _apply_voice_renames(self, renames: dict[str, str]) -> None:
+        """Rewrite utterance ``voice:`` references for renamed voices, in place.
+
+        Each speech segment whose ``voice`` is a renamed old name is rebuilt with
+        the new name (``Segment`` is frozen). The block's segments are replaced so
+        the save re-serializes it canonically with the new reference. (``default-
+        voice`` is rewritten by the caller via the new ``default_voice`` argument.)
+        """
+        for block in self.deck.narration.values():
+            new_segments = [
+                replace(seg, voice=renames[seg.voice])
+                if seg.is_speech and seg.voice in renames
+                else seg
+                for seg in block.segments
+            ]
+            block.segments = new_segments
 
     # ---- synthesis cost ---------------------------------------------------
     @property

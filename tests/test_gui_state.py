@@ -443,6 +443,50 @@ def test_edit_voices_deletes_a_voice(tmp_path: Path) -> None:
     assert "guest:" not in (tmp_path / "marked.narration").read_text(encoding="utf-8")
 
 
+def test_edit_voices_rename_rewrites_references(tmp_path: Path) -> None:
+    """Renaming a voice follows through every utterance and the deck default.
+
+    A rename updates the map key; without rewriting references the old name lingers
+    on utterances (now resolving as unmapped) and in the per-utterance picker. The
+    dialog passes per-row old->new identity, so edit_voices rewrites each utterance
+    ``voice:`` and ``default-voice`` == old -> new before saving.
+    """
+    pdf = prep_marked_deck(tmp_path)
+    # 'guest' is the deck default and the only utterance's voice; rename it -> 'host'.
+    (tmp_path / "marked.narration").write_text(
+        "# slidesonnet-format: 2\n"
+        "default-voice: guest\n"
+        "voices:\n"
+        "  guest:\n"
+        "    kokoro: af_bella\n"
+        "\n"
+        "@intro-title\n"
+        "  utterance:\n"
+        "    voice: guest\n"
+        "    text: Hello.\n",
+        encoding="utf-8",
+    )
+    state = EditorState(pdf)
+
+    voices = state.voice_map_for_display()
+    voices["host"] = voices.pop("guest")  # the dialog renames the row's key
+    wrote = state.edit_voices(voices, "host", renames={"guest": "host"})
+    assert wrote is True
+
+    # the utterance and the deck default now follow the rename
+    seg = state.deck.narration["intro-title"].speech_segments[0]
+    assert seg.voice == "host"
+    assert state.deck.default_voice == "host"
+    # the old name is gone from the picker and the map
+    assert state.voice_options() == ["host"]
+    assert "guest" not in state.deck.voices
+    # ...and nothing references the dangling old name on disk
+    text = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "guest" not in text
+    assert "voice: host" in text
+    assert "default-voice: host" in text
+
+
 def test_edit_voices_qwen3_path_roundtrips_relative(tmp_path: Path) -> None:
     """A qwen3 .pt is stored relative on disk but absolute in memory for the engine."""
     from slidesonnet.models import VoiceConfig

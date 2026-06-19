@@ -922,6 +922,50 @@ async def test_pause_length_edit_resets_player_so_replay_rebuilds(
     assert str(audio.props.get("src")) != first
 
 
+async def test_play_press_flushes_focused_silence_edit_and_rebuilds(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A play press must rebuild after a *focused, uncommitted* edge-silence change.
+
+    Regression (KNOWN_ISSUES): the silence/pause fields commit on blur, so changing
+    End silence and pressing Play all *without blurring* left the loaded deck track
+    un-revoked — the press resumed the stale track and the new silence was never
+    heard. A play press now flushes the open field first and, if it changed the
+    block, rebuilds. The in-process sim sets ``.value`` without firing blur, which
+    is exactly the focused-uncommitted condition.
+    """
+    import asyncio
+
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_deck", lambda self, progress=None: _fake_preview(self.pdf_path, [])
+    )
+    monkeypatch.setattr(EditorState, "synth_targets", lambda self, t, *, force=False: 1)
+    await user.open("/")
+    play_all = next(iter(user.find(marker="play-deck").elements))
+    audio = next(iter(user.find(marker="preview-audio").elements))
+
+    user.find(marker="play-deck").click()  # loads + plays the deck track
+    await user.should_see("Preview ready", retries=300)
+    assert play_all.props.get("icon") == "pause"
+    first = str(audio.props.get("src"))
+
+    # Stretch End silence but DO NOT blur — the edit is uncommitted, the deck track
+    # is still loaded. Pressing Play all must flush this, see the change, and rebuild.
+    next(iter(user.find(marker="silence-secs-end").elements)).set_value(3.0)
+    user.find(marker="play-deck").click()
+    for _ in range(100):
+        if str(audio.props.get("src")) != first:
+            break
+        await asyncio.sleep(0.05)
+    assert str(audio.props.get("src")) != first  # rebuilt, not resumed
+    # ...and the flushed edit persisted to disk (materialized as an end pause)
+    assert "pause: 3" in (tmp_path / "marked.narration").read_text(encoding="utf-8")
+
+
 async def test_pdf_only_refresh_keeps_narration_field(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
