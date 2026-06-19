@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **"Play all" shows a progress bar while assembling the audio track.** Building
+  the whole-deck preview concatenates a per-page WAV for every slide and can take
+  a while on a long deck — previously just a spinner with no sense of progress.
+  The editor now shows an **"Assembling audio · X/N"** bar (reusing the generation
+  progress bar) that advances per page and completes on the final concat, so you
+  can see it's working and how far along it is. `api.build_preview` /
+  `render.render_audio_track` gained a `progress` callback that drives it.
 - **Unified, level-controlled logging across the CLI and editor.** Logging is now
   configured once at startup, so a `logger.info`/`logger.exception` from any module
   (including the background generation worker) reaches you instead of vanishing.
@@ -213,6 +220,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   voice must switch to `inworld`.
 
 ### Fixed
+- **The paid-synth confirmation popup now names the engine you actually picked.**
+  The "spending API credits" dialog read the on-disk default (`config.tts.backend`,
+  still `kokoro` for most decks) while the paid gate and the synthesis itself use
+  the session-selected engine — so picking Inworld in the editor and pressing
+  Generate warned about *kokoro*. It now reads `active_backend`, so the warning
+  names the engine that will actually run.
 - **Editing the narration file externally no longer leaves a stale preview.**
   With a whole-deck (or single-slide) preview loaded, hand-editing the
   `.narration` sidecar on disk — e.g. changing a slide transition — reloaded the

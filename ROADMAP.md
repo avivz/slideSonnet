@@ -9,11 +9,12 @@ the portable voice layer, the Qwen3 local engine (built-in CustomVoice speakers,
 prioritized auto-gen, progress UI, cancellable play / cancel-all), the in-editor
 Voices dialog + named-only utterance picker, auto-prune of local orphans, the
 **full transition gallery, per-slide start/end silences, and centered-overlay
-transitions** (the last three landed 2026-06-18 — see Done). None of it is tagged
-yet, and **CI's `test` job has been hanging to its 6h ceiling on every push since
-the qwen-voices merge** (lint/typecheck/build stay green) — so the 1.0.0a2 release
-is blocked until CI is green again. Fixing CI is the top item below; shipping
-a2 is second.
+transitions** (the last three landed 2026-06-18 — see Done), the **Inworld cloud
+engine** (ElevenLabs now removed), and the **paid-synth confirmation + `.env`
+loading fixes**. None of it is tagged yet, but **CI is green again as of
+2026-06-19** — the `test`-job hang that blocked every push since the qwen-voices
+merge is fixed (see Done). So 1.0.0a2 is **unblocked**: the top item below is now
+shipping it (after the one prune-policy fix that gates it).
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -21,26 +22,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — next feature work (toward 1.0.0a2)
 
-1. [ ] **Fix the CI `test`-job 6h hang — release blocker.** *(Broken CI; full
-   write-up + repro in `dev/KNOWN_ISSUES.md`.)* Since the qwen-voices merge,
-   every push's `test (3.13)` job runs to GitHub's 6h ceiling and is cancelled
-   (lint/typecheck/build stay green), so a2 can't go out. *Cause:* the
-   auto-build/engine-picker GUI unit tests (`test_gui.py::test_auto_build_*` /
-   `test_engine_picker_*`) drive the background generation queue with a slow
-   local engine; CI has no `torch`/`kokoro`/`qwen_tts`, so the worker can't
-   build, the dangling asyncio task is never drained, and the NiceGUI
-   `user`-fixture event-loop teardown blocks forever — with no default
-   pytest-timeout it burns the full 6h. *Fix:* (a) add `--timeout=120
-   --timeout-method=thread` to the CI test command (pytest-timeout is already in
-   `[dev]`) so a hang fails in ~2 min not 6h; (b) keep CI from running the
-   qwen/kokoro auto-gen path — mock `synth_targets` / stop the worker on
-   teardown in those unit tests ("CI runs nothing with qwen"). *Repro:* hide
-   `torch`/`kokoro`/`qwen_tts` via `sitecustomize`, run the unit tier with
-   `--timeout`; it hangs in the `test_auto_build_*` region. *Appetite:* half a
-   day. **[agent]**
-
-2. [ ] **Tag & ship 1.0.0a2.** *(The single highest-leverage item once CI is
-   green: a large
+1. [ ] **Tag & ship 1.0.0a2 — now unblocked (CI is green).** *(The single
+   highest-leverage item now that CI passes on `main` (633ccc5): a large
    `[Unreleased]` batch sits on `main`, shipped and tested but installable by
    no one.)* *Story:* As a slideSonnet user on PyPI, I want the work that's
    already on `main` — the full transition gallery, per-slide silences and
@@ -52,14 +35,14 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    <date>` with a fresh empty `[Unreleased]` above it; (c) `make test-unit` is
    green locally and CI's lint/typecheck/test/build all pass on `main`; (d)
    `git tag v1.0.0a2 && git push origin v1.0.0a2` drives the publish workflow
-   (TestPyPI → PyPI → GitHub Release) to green. *Sequencing:* CI must be green
-   first (#1) — the publish workflow runs the same suite — then land the
-   prune-policy fix (#3) so a2 doesn't ship the Qwen3-audio-loss risk;
+   (TestPyPI → PyPI → GitHub Release) to green. *Sequencing:* CI is green (the
+   publish workflow runs the same suite), so the one gate left is the prune-policy
+   fix (#2) — land it first so a2 doesn't ship the Qwen3-audio-loss risk;
    everything else in Now/Next is post-a2. *Appetite:* an afternoon (mostly
    verification + the human's tag push). **[human→agent]**
 
-3. [ ] **Per-engine cache prune policy — stop auto-prune from throwing away
-   Qwen3 audio.** *(Risk surfaced by the just-shipped auto-prune of local
+2. [ ] **Per-engine cache prune policy — stop auto-prune from throwing away
+   Qwen3 audio.** *(The one gate before a2 — see #1.)* *(Risk surfaced by the just-shipped auto-prune of local
    orphans.)* `EditorState._write_and_reload` → `prune_local_orphans` sweeps any
    orphaned clip whose engine is **not paid** (`clean.py:102`, gated on
    `API_BACKENDS`). Qwen3 is `paid=False` but slow/expensive on the iGPU (seconds
@@ -79,7 +62,37 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    registry in `tts/__init__.py`, replace the `parsed[1] in API_BACKENDS` test in
    `prune_local_orphans` with a policy lookup; repro test in `test_clean.py`
    (Qwen3 orphan survives, Kokoro orphan removed). **[agent]**
-4. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
+3. [ ] **Bug: changing a pause/edge-silence doesn't refresh the loaded "Play
+   all" track.** *(Open bug, priority-1 quality — full write-up in
+   `dev/KNOWN_ISSUES.md`. Not an a2 blocker; pick up right after the release
+   path above.)* *Symptom:* after **Play all**, change a slide's pause length or
+   Start/End silence, then press **Play all** again — the preview still plays the
+   *old* pauses. The loaded whole-deck track isn't revoked because the
+   silence/pause number fields commit only on `blur`/Ctrl+S, so a play press while
+   the field still has focus never rebuilds (resume replays the stale track).
+   Sibling of the just-fixed external-edit stale-preview bug (see Done) — both are
+   the "stale loaded track" family; the fix here is to flush open fields on any
+   play press and rebuild if the flush changed the block. *Repro test (first
+   action, browser tier — the in-process `user` sim is blind to focus/blur):* Play
+   all a generated deck, change End-silence, press Play all again *without*
+   blurring, assert the new track's duration reflects the change. *Appetite:* half
+   a day. **[agent]**
+4. [ ] **Bug: a renamed named-voice lingers in the per-utterance voice picker.**
+   *(Open bug, priority-1 quality — full write-up in `dev/KNOWN_ISSUES.md`. Not an
+   a2 blocker.)* *Symptom:* rename a voice in the **Voices…** dialog (e.g.
+   `lecturer` → `host`) and save — the per-utterance **Voice** picker still offers
+   `lecturer`, and utterances that used it still show `lecturer` (now resolving as
+   *unmapped*) instead of following the rename. *Cause:* the rename updates the
+   deck's `voices:` map key but nothing rewrites the references —
+   `EditorState.edit_voices` is handed only the new full map, so it can't tell a
+   rename from a delete-old + add-new. *Fix:* make rename a first-class op (track
+   per-row old→new identity in the Voices dialog, rewrite every utterance `voice:`
+   and `default-voice` == old → new before saving). *Repro test (first action):*
+   in `tests/test_voices.py` — seed `voices: {lecturer}` + an utterance
+   `voice: lecturer`, rename → `host`, assert the utterance now references `host`,
+   `voice_options()` no longer contains `lecturer`, and the sidecar round-trips
+   with no `lecturer` left. *Appetite:* half a day. **[agent]**
+5. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
    shipped and mocked-tested — see Done. This is the one human step gating a real
    own-voice render: nothing about Qwen3 has run on real weights + a real voice
    yet.)* *Story:* As the deck author, I want to record a ~10 s reference, build
@@ -94,33 +107,22 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-5. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
-   deck author who wants studio-grade narration, I want a `--engine inworld`
-   cloud backend that synthesizes one cached clip per utterance, so I can
-   render an HQ demo without paying ElevenLabs' ~10× rate. Inworld beats
-   ElevenLabs on control *and* price (~$0.009/min vs ~$0.10–0.27/min), with
-   Markdown-style emotion control, top quality-to-price on the 2026 arena,
-   and instant own-voice cloning from a ~5–15 s clip (consent attestation
-   standard; voice + clip leave the machine). Researched 2026-06-10. This is
-   also the debt behind "ElevenLabs dropped pending the switch" in the a1 docs.
-   *Acceptance examples:* (a) given `[tts.inworld]` with an API key, `slidesonnet
-   tts deck.pdf --engine inworld` synthesizes one clip per utterance, each
-   content-addressed cached (re-run makes zero API calls); (b) a mocked API
-   failure surfaces as a clean `TTSError`, not a traceback, and leaves no
-   half-written cache file (atomic write, like Kokoro); (c) `slidesonnet doctor`
-   reports the engine as configured/unconfigured from the key's presence;
-   (d) every Inworld test uses a mocked client — the suite never makes a real
-   paid call (same guard pattern as the ElevenLabs conftest sentinel).
-   *Appetite:* ~two days for the agent's engine + mocked tests. Agent implements
-   behind the engine interface (a `[tts.inworld]` config section + extra); human
-   supplies the key, runs a small paid smoke test, and judges voice quality.
-   *Status (2026-06-19):* the engine has **shipped on `main`** (see CHANGELOG
-   `[Unreleased]`); a `.env`-not-loaded bug that made the first paid run fail with
-   "`INWORLD_API_KEY` not set" is fixed, and "Generate missing" now confirms before
-   billing a paid engine. Remaining is the human's paid smoke test + voice-quality
-   judgement. *Decision made:* **remove ElevenLabs outright** (as was done with
-   Piper) — see the dedicated removal item below. **[agent→human]**
-6. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
+6. [ ] **Validate Inworld on a real paid run — smoke test + voice-quality
+   judgement.** *(The engine shipped on `main` and ElevenLabs is removed — see
+   Done. This is the one human step left before Inworld is a trusted render path;
+   it gates the HQ demo re-render, Next #3.)* *Story:* As the deck author, I want
+   to run a small paid Inworld synthesis and judge the voice, so I can decide
+   whether to use it for the HQ demo. *Acceptance examples:* (a) with
+   `INWORLD_API_KEY` in `.env`, `slidesonnet tts <deck> --engine inworld`
+   synthesizes a handful of real clips, each content-addressed cached (a re-run
+   makes zero API calls) and costing a few cents; (b) the human listens and records
+   a verdict (ship / tune voice+emotion / not yet); (c) Markdown-style emotion
+   control and a ~5–15 s own-voice clone are spot-checked if the verdict is "tune".
+   *Appetite:* an hour (mostly the human's; the agent drives the CLI and reports
+   cost + cache hits). *Note:* the supporting fixes already landed — `.env` loads
+   on the synthesis path (anchored at the deck dir) and "Generate missing" confirms
+   before billing a paid engine. **[human→agent]**
+7. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
    author proofing narration, I want to play the preview faster so I can review
    a long deck without sitting through every clip at 1×. *Acceptance examples:*
    (a) a speed control in the transport (e.g. 1× / 1.25× / 1.5× / 2×, or a
@@ -137,7 +139,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    TTS-level change — distinct from the per-utterance `pace:` directive, which
    re-synthesizes. Browser pitch-correction (`preservesPitch`) is on by default,
    so 2× stays natural, not chipmunked. **[agent]**
-7. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+8. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
    own little PR (the background job queue they build on shipped — see Done).
    *Appetite:* an afternoon each.
    - When narration text is edited, immediately (before blur) flip the box's
@@ -176,7 +178,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      transition); checked, it plays the slide's in/out transitions as today. The
      whole-deck preview is unaffected either way, and the setting is local/editor
      state (not written to the deck).
-8. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+9. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -212,8 +214,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    diagnostics on real overlay decks, editor save/reload paths. Finish with
    a joint human+AI review of coverage and quality. **[agent→human]**
 3. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
-   ElevenLabs render (don't pay ElevenLabs for renders we're about to drop).
-   Blocked on Now #4 (the Inworld engine). Human triggers the paid render;
+   ElevenLabs render (ElevenLabs is now removed — see Done). Blocked on Now #6
+   (the Inworld paid validation + voice-quality verdict). Human triggers the render;
    agent uploads to the `v0.0.0` GitHub Release (`gh release upload --clobber`)
    and refreshes README links. **[human→agent]**
 4. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
@@ -289,6 +291,46 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    call and reason; (b) dropped keys removed from `Config`/`TTSConfig` parsing,
    their defaults, and the docs, with a `### Removed`/`### Changed` CHANGELOG note;
    (c) `make test-unit` + typecheck green. *Appetite:* half a day. **[agent→human]**
+11. [ ] **Pre-assemble the "Play all" track in the background (opt-in).** *Story:*
+   As a deck author who has finished generating narration, I want the whole-deck
+   audio track assembled in the background while I'm idle, so pressing **Play all**
+   starts instantly instead of waiting for the FFmpeg concat. *Acceptance examples:*
+   (a) a new checkbox (e.g. **"Pre-build Play-all audio"**), **off by default** and
+   persisted like "Auto-generate as I edit"; with it on, once the generation queue
+   is idle *and* every clip is cached, the whole-deck track assembles in the
+   background, and a later **Play all** uses it with no visible "building preview"
+   wait; (b) the pre-build never competes with generation — it gates on the queue's
+   idle signal (`JobQueue.await_idle` / `_idle`, `gui/jobs.py`) and only fires when
+   nothing is pending or running, and a real Play preempts it; (c) any edit
+   (narration text, voice, per-slide silence, transition) or a fresh generate
+   invalidates the prebuilt track, which re-assembles in the background once things
+   settle (debounced) — Play all never serves stale audio; (d) with the checkbox
+   **off**, behavior is unchanged (assemble on demand at Play-all time). *Appetite:*
+   half a day. *Design note:* reuse `preview_deck`/`build_preview`; cache the
+   assembled track keyed to a deck/config/voice hash so an edit invalidates it.
+   Complements the Now #8 sub-item "let Play all start before everything is
+   generated" — that's *partial* play mid-generation; this is *instant* play once
+   the deck is fully generated and idle. **[agent]**
+12. [ ] **Cache inventory — show what's cached (count + size) before clearing it.**
+   *(From a 2026-06-19 request; the visibility precursor to a cache-clearing UX
+   the user plans to build. The counting already exists —
+   `clean.py::_count_dir(path) -> (files, bytes)` and `CleanResult.removed_mb`.)*
+   *Story:* As a deck author about to clear the TTS cache, I want to see how many
+   utterances are cached and how much disk they use — and how much a clear
+   reclaimed — so I can decide whether to clear and confirm afterward that
+   something actually happened. *Acceptance examples:* (a) a cache-status readout
+   reports the **number of cached utterance clips** and their **total size in MB**
+   for the deck's content-addressed audio cache (`.slidesonnet/audio/`), e.g.
+   "142 clips · 86.3 MB"; (b) it separates the reclaimable audio cache from render
+   artifacts so the number matches what a clear would remove at the chosen
+   `--keep` level; (c) clearing then reports the before→after delta ("removed 96
+   clips · freed 58.1 MB") for visible confirmation — surface the existing
+   `CleanResult.removed_mb`; (d) the inventory is a pure read (mutates nothing) and
+   pairs with the planned `clean --dry-run` (Later #5). *Open question — surface:*
+   CLI (a `cache`/`clean --dry-run` header) and/or an editor panel? The request
+   ties it to the editor's cache-clearing flow, so likely both — **decide the
+   surface before build.** *Appetite:* half a day (sizing is `_count_dir`; the work
+   is the surface + before/after delta). **[agent]**
 
 ## Later — before 1.0 final
 
@@ -328,7 +370,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 3. **Layered reconciliation** — optional text-fingerprint fallback when ids are
    missing, for non-Beamer sources.
 4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
-   interface). (Qwen3-TTS local shipped — see Done; Inworld is Now #4; the Qwen3
+   interface). (Qwen3-TTS local shipped — see Done; Inworld is Now #6; the Qwen3
    DashScope cloud mode is in Next.)
 5. **Multi-deck playlists** — concatenate several PDFs into one video.
 6. **`--json` output** for CI/automation.
@@ -361,6 +403,29 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **External narration edits no longer leave a stale preview** (2026-06-19,
+  `a3638b6`; CHANGELOG `[Unreleased]` `### Fixed`, ships in a2). With a whole-deck
+  or single-slide preview loaded, hand-editing the `.narration` sidecar on disk
+  (e.g. changing a transition) reloaded the editor's fields but kept the *old*
+  preview track — pressing play resumed stale audio and the stale transition
+  morph instead of rebuilding. `_poll_sources` now revokes a loaded preview track
+  on any external reload (mirroring what `replace_block` already does for in-GUI
+  edits). Found while using the editor; reproduced first as browser journey 11
+  (`test_external_edit_revokes_loaded_preview`), red→green. The in-GUI blur-timing
+  sibling (silence/pause fields) is still open — now Now #3.
+- [x] **Fixed the CI `test`-job hang — the a2 release blocker** (2026-06-19,
+  `e9b6744`; CI green on `main` at `633ccc5`). GUI unit tests that play/generate
+  drove the background queue through real synthesis, but CI installs only `[dev]`
+  (no `kokoro`/`torch`/`qwen_tts`), so the deck-synthesis path raised "kokoro
+  package not installed" and errored 9 playback tests (earlier the dangling task
+  ran the job to GitHub's 6h ceiling). *Fix:* an autouse, **`gui`-scoped** conftest
+  fixture stubs `synth.create_tts` with a tiny-WAV engine (same rationale as the
+  pdftoppm rasterize stub — GUI unit tests shouldn't shell out to a real backend);
+  scoping to the `gui` marker keeps the real engine for the cache-key/pace tests
+  (`test_kokoro`/`test_clean`/`test_synth`). Plus `--timeout=120
+  --timeout-method=thread` on the CI command as a hang safety-net. Verified: the 9
+  tests pass even with real `kokoro.synthesize` forced to raise; full unit tier 736
+  passed; CI's lint/typecheck/test/build all green on `main`. *(Was Now #1.)*
 - [x] **Remove the ElevenLabs backend outright** (2026-06-19, CHANGELOG
   `[Unreleased]` `### Removed`): Inworld is the sole cloud engine now (matches
   ElevenLabs quality at ~10× less). `tts/elevenlabs.py`, its `BackendSpec`, the
@@ -431,7 +496,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
   distinct "Loading the voice model…" status on first load and disables
   auto-generate (`paid OR not realtime`). Fully mocked-unit-tested
   (`tests/test_qwen3.py`) plus a local-only real-weights smoke test behind the
-  extra. *Human record-and-judge step split out to Now #3; a per-utterance `.pt`
+  extra. *Human record-and-judge step split out to Now #5; a per-utterance `.pt`
   content-hash cache nicety is the only remaining debt (Next).*
 - [x] **GUI generation-engine picker (session-only)** (2026-06-17, merged to `main`
   in PR #1; CHANGELOG `[Unreleased]`): an **Engine** dropdown in the editor console
