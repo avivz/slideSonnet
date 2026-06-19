@@ -172,6 +172,28 @@ def test_concatenate_segments_xfade_output_duration(work_dir):
     )
 
 
+def _pix_fmt(path: Path) -> str:
+    """Probe a video file's pixel format via ffprobe."""
+    out = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=pix_fmt",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout.strip()
+
+
 @pytest.mark.integration
 def test_compose_transition_clip_duration(work_dir):
     from slidesonnet.video.composer import compose_transition_clip
@@ -186,6 +208,35 @@ def test_compose_transition_clip_duration(work_dir):
     )
     assert out.exists()
     assert 0.4 <= get_duration(out) <= 0.7
+
+
+@pytest.mark.integration
+def test_compose_transition_clip_is_yuv420p(work_dir):
+    """Transition clips must encode as yuv420p, matching the slide segments.
+
+    xfade renegotiates the filter-graph format and, left unpinned, emits a
+    yuv444p (High 4:4:4 Predictive) stream. Concatenated by stream-copy with the
+    yuv420p slide segments, that yields a non-uniform H.264 stream that Windows'
+    H.264 decoder (4:2:0 only) rejects mid-playback with "unsupported codec
+    settings" — even though ffmpeg/VLC tolerate it. Pin yuv420p so every segment
+    is uniform and the muxed deck plays everywhere.
+    """
+    from slidesonnet.video.composer import compose_transition_clip
+
+    a = work_dir / "a.png"
+    b = work_dir / "b.png"
+    _make_png(a)
+    _make_png(b)
+    seg = work_dir / "seg.mp4"
+    trans = work_dir / "trans.mp4"
+    _make_wav(work_dir / "s.wav", 0.5)
+    compose_segment(a, work_dir / "s.wav", seg, duration=0.5, resolution="640x480", crf=30)
+    compose_transition_clip(
+        a, b, trans, duration=0.5, transition="wipeleft", resolution="640x480", crf=30
+    )
+    assert _pix_fmt(trans) == "yuv420p"
+    # …and it matches the slide segments it gets concatenated with.
+    assert _pix_fmt(trans) == _pix_fmt(seg)
 
 
 @pytest.mark.integration

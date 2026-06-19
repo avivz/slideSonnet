@@ -159,10 +159,16 @@ def compose_transition_clip(
     # Loop each still a hair longer than the xfade so offset+duration stays
     # inside the input length — xfade is strict about that boundary.
     src_len = duration + 0.3
+    # xfade renegotiates the graph format and emits yuv444p unless pinned; the
+    # slide segments are yuv420p, so an unpinned transition makes the concatenated
+    # stream non-uniform and Windows' 4:2:0-only H.264 decoder rejects it
+    # ("unsupported codec settings") at the first transition. Force yuv420p so
+    # every segment matches.
     filter_complex = (
         f"[0:v]{pad},setsar=1[a];"
         f"[1:v]{pad},setsar=1[b];"
-        f"[a][b]xfade=transition={transition}:duration={duration}:offset=0,fps={fps}[v]"
+        f"[a][b]xfade=transition={transition}:duration={duration}:offset=0,"
+        f"fps={fps},format=yuv420p[v]"
     )
     cmd = [
         "ffmpeg",
