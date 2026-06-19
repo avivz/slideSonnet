@@ -1691,3 +1691,19 @@ async def test_paid_engine_generate_missing_queues_after_confirm(
     user.find(marker="paid-confirm").click()
     await user.should_see("Generating", retries=200)
     assert enqueued == [({("intro-title", 0)}, True)]  # confirmed → queued, paid allowed
+
+
+async def test_paid_confirm_names_the_session_engine_not_disk_default(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The paid popup names the *session-selected* engine, not the on-disk default:
+    picking Inworld in the editor while the toml still says kokoro must warn about
+    inworld (the engine that will actually bill), not kokoro."""
+    monkeypatch.setattr("slidesonnet.gui.state.available_backends", lambda: ["kokoro", "inworld"])
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")  # no toml → disk default kokoro
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    sel = next(iter(user.find(marker="engine-select").elements))
+    sel.set_value("inworld")  # session pick: a paid engine while disk config is kokoro
+    user.find(marker="gen-missing").click()
+    await user.should_see("inworld will spend API credits")  # the engine that bills, not kokoro

@@ -2153,7 +2153,9 @@ class EditorView:
         Every path that can bill a cloud engine (play, "Generate missing") routes
         through here first, so a paid engine never spends credits unattended.
         """
-        backend = self.state.config.tts.backend
+        # The *session-selected* engine is what bills (and what the paid gate
+        # checks) — not the on-disk default, which may still be kokoro.
+        backend = self.state.active_backend
         with ui.dialog() as dialog, ui.card():
             ui.label(
                 f"{count} segment(s) aren't cached — synthesizing them with "
