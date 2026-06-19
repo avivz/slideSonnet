@@ -13,7 +13,6 @@ import pytest
 from slidesonnet.doctor import (
     CheckResult,
     _get_cli_version,
-    check_api_key,
     check_ffmpeg,
     check_inworld_api_key,
     check_nicegui,
@@ -41,9 +40,9 @@ def test_run_all_checks_groups() -> None:
     # marp must be gone from the new toolchain
     all_names = {c.name for _, checks in run_all_checks() for c in checks}
     assert "marp-cli" not in all_names
-    # all three TTS backends are reported (kokoro/qwen3 free, elevenlabs paid)
+    # all TTS backends are reported (kokoro/qwen3 free, inworld paid)
     tts_names = {c.name for c in groups["TTS backends (at least one required)"]}
-    assert {"kokoro", "qwen-tts", "elevenlabs"} <= tts_names
+    assert {"kokoro", "qwen-tts", "inworld-tts"} <= tts_names
 
 
 def test_get_cli_version_missing_command_returns_none() -> None:
@@ -89,21 +88,6 @@ def test_python_package_version_fallback(monkeypatch: pytest.MonkeyPatch) -> Non
     result = check_nicegui()
     assert result.status == "ok"
     assert result.version == "installed"
-
-
-def test_api_key_set(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ELEVENLABS_API_KEY", "secret")
-    result = check_api_key()
-    assert result.status == "ok"
-    assert result.version == "set"
-
-
-def test_api_key_missing_without_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(sys.modules, "dotenv", None)  # makes `from dotenv import ...` fail
-    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
-    result = check_api_key()
-    assert result.status == "missing"
-    assert "export" in result.hint or ".env" in result.hint
 
 
 def test_inworld_api_key_set(monkeypatch: pytest.MonkeyPatch) -> None:

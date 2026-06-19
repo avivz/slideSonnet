@@ -11,7 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   the `inworld` extra), with an `INWORLD_API_KEY` check in `slidesonnet doctor`.
 - **"Generate missing" asks before spending credits on a paid engine.** The
   whole-deck fill now shows the same confirmation popup the play path uses when
-  the active engine is paid (ElevenLabs/Inworld), so a batch synthesis never
+  the active engine is paid (Inworld), so a batch synthesis never
   bills unattended — declining queues nothing. Auto-generate stays fully disabled
   for paid engines, and a single per-utterance generate is still a one-click
   action.
@@ -40,12 +40,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Editing an utterance reclaims its old local audio automatically.** When you
   change a slide's text or pinned voice, the now-orphaned local clip (Kokoro —
   cheap to regenerate) is pruned the moment the edit saves, so the cache stays in
-  step with the deck. Paid audio (ElevenLabs) is never auto-pruned, and renders are
+  step with the deck. Paid audio (Inworld) is never auto-pruned, and renders are
   untouched.
 - **The Voices dialog picks each engine's voice from a list.** Mapping a named
   voice per engine is now a pick-or-type combobox for engines with a fixed voice
   set (Kokoro's voices, Qwen3's CustomVoice speakers) instead of free text, and a
-  new voice's fields start at each engine's default. ElevenLabs (account-specific
+  new voice's fields start at each engine's default. Inworld (account-specific
   ids) stays free text. Pick a voice from the list or type a custom one.
 - **Play is cancellable while it waits on generation.** Pressing play on a slide
   whose audio isn't ready shows a spinner while the clips render; that wait is now
@@ -85,7 +85,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Edit the voice map in the editor.** A new **Voices…** dialog in the editor
   console lets you create and edit the deck's named voices without hand-editing
   the narration file: each row is an internal name mapped to a concrete voice per
-  engine (a Kokoro voice, an ElevenLabs voice id, or a Qwen3 `.pt` path), with a
+  engine (a Kokoro voice, an Inworld voice name, or a Qwen3 `.pt` path), with a
   **Default voice** picker. Saving writes a well-formed `voices:`/`default-voice:`
   preamble (a Qwen3 `.pt` is stored relative to the deck, as on load), and the
   voice pickers, the unset-voice placeholder, and the `voice-unmapped` warnings
@@ -95,7 +95,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Portable voice layer — internal voice names, cross-engine map in the
   narration file.** The sidecar gained an optional deck-level preamble: a
   `voices:` block mapping an internal name (`lecturer`, `guest`) to a concrete
-  per-engine voice (`lecturer: {kokoro: am_michael, elevenlabs: <id>, qwen3:
+  per-engine voice (`lecturer: {kokoro: am_michael, inworld: <id>, qwen3:
   voice/lecturer.pt}`), plus a top-level `default-voice:`. An utterance's
   `voice:` now names one of *your* internal names; with none it uses
   `default-voice`, with neither the engine default — so switching the active
@@ -132,7 +132,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   the engine is marked non-realtime: the editor's **"Auto-generate as I edit"**
   is disabled for it (free, but too slow to fire on every edit — distinct from
   the paid-engine "would bill" reason), and `slidesonnet doctor` now reports
-  Qwen3 alongside Kokoro and ElevenLabs. Qwen3 reaches its `.pt` voice through
+  Qwen3 alongside Kokoro and Inworld. Qwen3 reaches its `.pt` voice through
   the portable voice map — a `qwen3:` voice resolves to a clone-prompt path
   (relative to the deck dir), so the same script narrates under Kokoro or Qwen3
   by name alone — and the multi-GB model is cached process-wide so it loads once
@@ -186,6 +186,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   (was the `-Base` clone model), so Qwen3 works without a voice-clone prompt. A
   deck that relied on the Base own-voice path must set `model` back to a `…-Base`
   repo (and keep its `.pt` `voice_prompt`).
+
+### Removed
+- **The ElevenLabs TTS backend.** Inworld is the cloud engine now — it matches
+  ElevenLabs on quality at roughly a tenth of the price — so the redundant engine
+  is gone: the `elevenlabs` extra, the `[tts.elevenlabs]` config block and its
+  `elevenlabs_*` keys, the `--engine elevenlabs` choice, and the
+  `ELEVENLABS_API_KEY` check in `slidesonnet doctor`. A deck whose
+  `slidesonnet.toml` still names `backend = "elevenlabs"` or maps an `elevenlabs`
+  voice must switch to `inworld`.
 
 ### Fixed
 - **API keys in `.env` now reach generation, not just `doctor`.** Only

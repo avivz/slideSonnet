@@ -1,6 +1,6 @@
 """Load API keys from a ``.env`` file into the process environment.
 
-Cloud TTS keys (``ELEVENLABS_API_KEY``, ``INWORLD_API_KEY``) live in a ``.env``
+Cloud TTS keys (``INWORLD_API_KEY``) live in a ``.env``
 next to the deck (or at the project root). The engines read ``os.environ``
 directly, but nothing on the synthesis path loaded the file — only
 ``slidesonnet doctor`` did — so a key sitting in ``.env`` was invisible to actual

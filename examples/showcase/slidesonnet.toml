@@ -1,5 +1,5 @@
 # slideSonnet config for the showcase demo.
-# Two Kokoro voices for the dialog; ElevenLabs ids kept for a later HQ re-render.
+# Two Kokoro voices for the dialog.
 
 # Top-level keys must come before any [table] header.
 pronunciation = ["pronunciation/general.md", "pronunciation/names.md"]
@@ -9,10 +9,6 @@ backend = "kokoro"
 
 [tts.kokoro]
 voice = "af_heart"
-
-[tts.elevenlabs]
-voice_id = "qBDvhofpxp92JgXJxDjB"
-model_id = "eleven_v3"
 
 [video]
 resolution = "1920x1080"
@@ -24,4 +20,3 @@ tail_seconds = 0.6
 # Alex's questions use a distinct voice (voice: alex in the sidecar).
 [voices.alex]
 kokoro = "am_michael"
-elevenlabs = "yr43K8H5LoTp6S1QFSGg"

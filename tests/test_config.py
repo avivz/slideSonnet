@@ -27,7 +27,7 @@ def test_load_overrides(tmp_path: Path) -> None:
     (tmp_path / "slidesonnet.toml").write_text(
         """
 [tts]
-backend = "elevenlabs"
+backend = "inworld"
 
 [tts.kokoro]
 voice = "bm_george"
@@ -38,17 +38,17 @@ fps = 30
 
 [voices.narrator]
 kokoro = "am_adam"
-elevenlabs = "abc123"
+inworld = "abc123"
 """,
         encoding="utf-8",
     )
     cfg = load_config(tmp_path / "deck.pdf")
-    assert cfg.tts.backend == "elevenlabs"
+    assert cfg.tts.backend == "inworld"
     assert cfg.tts.kokoro_voice == "bm_george"
     assert cfg.video.resolution == "1280x720"
     assert cfg.video.fps == 30
     assert cfg.voices["narrator"].resolve("kokoro") == "am_adam"
-    assert cfg.voices["narrator"].resolve("elevenlabs") == "abc123"
+    assert cfg.voices["narrator"].resolve("inworld") == "abc123"
 
 
 def test_pronunciation_loaded_and_applied(tmp_path: Path) -> None:
@@ -62,7 +62,7 @@ def test_flat_voice_string(tmp_path: Path) -> None:
     (tmp_path / "slidesonnet.toml").write_text('[voices]\nalice = "af_bella"\n', encoding="utf-8")
     cfg = load_config(tmp_path / "deck.pdf")
     assert cfg.voices["alice"].resolve("kokoro") == "af_bella"
-    assert cfg.voices["alice"].resolve("elevenlabs") == "af_bella"
+    assert cfg.voices["alice"].resolve("inworld") == "af_bella"
 
 
 def test_config_dataclass_defaults() -> None:
@@ -73,28 +73,6 @@ def test_invalid_toml_raises_config_error(tmp_path: Path) -> None:
     (tmp_path / "slidesonnet.toml").write_text("tts = [broken\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="Invalid TOML"):
         load_config(tmp_path / "deck.pdf")
-
-
-def test_elevenlabs_settings_parsed(tmp_path: Path) -> None:
-    (tmp_path / "slidesonnet.toml").write_text(
-        """
-[tts.elevenlabs]
-api_key_env = "MY_KEY"
-voice_id = "v123"
-model_id = "eleven_turbo_v2"
-stability = 0.3
-similarity_boost = 0.9
-speed = 1.1
-""",
-        encoding="utf-8",
-    )
-    cfg = load_config(tmp_path / "deck.pdf")
-    assert cfg.tts.elevenlabs_api_key_env == "MY_KEY"
-    assert cfg.tts.elevenlabs_voice_id == "v123"
-    assert cfg.tts.elevenlabs_model_id == "eleven_turbo_v2"
-    assert cfg.tts.elevenlabs_stability == 0.3
-    assert cfg.tts.elevenlabs_similarity_boost == 0.9
-    assert cfg.tts.elevenlabs_speed == 1.1
 
 
 def test_inworld_settings_parsed(tmp_path: Path) -> None:

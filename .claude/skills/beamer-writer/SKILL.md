@@ -119,7 +119,7 @@ Only needed to override defaults or define named voices/pronunciation:
 
 ```toml
 [tts]
-backend = "kokoro"           # or "elevenlabs"
+backend = "kokoro"           # or "inworld"
 
 [tts.kokoro]
 voice = "af_heart"
@@ -130,7 +130,7 @@ fps = 24
 
 [voices.narrator]
 kokoro = "af_bella"
-elevenlabs = "21m00Tcm4TlvDq8ikWAM"
+inworld = "Ashley"
 
 pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
 ```

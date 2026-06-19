@@ -1,7 +1,7 @@
 """Selective cache cleanup with graduated preservation levels.
 
 nothing — remove the entire .slidesonnet cache
-api     — keep cloud (ElevenLabs) audio, drop local Kokoro audio + renders
+api     — keep cloud (paid, e.g. Inworld) audio, drop local Kokoro audio + renders
 current — keep audio for the current sidecar text (any engine), drop orphans + renders
 exact   — keep only audio matching the current text + active TTS config
 """
@@ -85,7 +85,7 @@ def prune_local_orphans(pdf_path: Path) -> CleanResult:
     Called automatically after a sidecar edit: when text or a pinned voice
     changes, its old clip's ``text_hash`` falls out of the current set and the
     file becomes dead weight. Local engines (Kokoro) are cheap to regenerate, so
-    we reclaim it eagerly. Paid audio (ElevenLabs) is never auto-pruned, renders
+    we reclaim it eagerly. Paid audio (e.g. Inworld) is never auto-pruned, renders
     are left alone, and unrecognized filenames are kept — an automatic, silent
     sweep should only delete clips it is certain it produced.
     """

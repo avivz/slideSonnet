@@ -5,9 +5,9 @@ by synthesis (audio/synth.py) and selective cleanup (clean.py).
 
 Filename format: {text_hash}.{backend}.{config_hash}.{ext}
   - text_hash:   sha256(text + voice)[:16]  — identifies the utterance content
-  - backend:     "kokoro" or "elevenlabs"   — readable engine name
+  - backend:     "kokoro" or "inworld"      — readable engine name
   - config_hash: sha256(cache_key)[:8]      — differentiates engine configs
-  - ext:         backend-specific extension (.wav for kokoro, .mp3 for elevenlabs)
+  - ext:         backend-specific extension (.wav for kokoro, .mp3 for inworld)
 """
 
 from __future__ import annotations

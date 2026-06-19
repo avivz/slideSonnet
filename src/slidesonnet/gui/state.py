@@ -489,12 +489,11 @@ class EditorState:
         """``(pickable voices, default voice)`` for *backend* — drives the Voices dialog.
 
         Kokoro and Qwen3 (CustomVoice) expose a fixed voice list, so the dialog
-        offers a combobox started at the engine default; ElevenLabs ids are
-        account-specific (no list) so that field stays free text. ElevenLabs is not
-        instantiated here — its client needs an API key, and it has no list anyway.
+        offers a combobox started at the engine default; a cloud engine with
+        account-specific voice ids (Inworld) returns an empty list, so that field
+        stays free text. Constructing the engine here is cheap — it only reads
+        config; no client is created until synthesis (which needs an API key).
         """
-        if backend == "elevenlabs":
-            return [], (self.config.tts.elevenlabs_voice_id or None)
         engine = create_tts(replace(self.config.tts, backend=cast(Backend, backend)))
         return list(engine.list_voices()), engine.default_voice()
 

@@ -1633,7 +1633,7 @@ async def test_paid_engine_preview_asks_before_synthesis(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
-    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "elevenlabs"\n', encoding="utf-8")
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "inworld"\n', encoding="utf-8")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     user.find(marker="play-slide").click()
@@ -1657,7 +1657,7 @@ async def test_paid_engine_generate_missing_asks_before_synthesis(
         JobQueue, "enqueue", lambda self, targets, **kw: (enqueued.append(set(targets)), [])[1]
     )
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
-    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "elevenlabs"\n', encoding="utf-8")
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "inworld"\n', encoding="utf-8")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     user.find(marker="gen-missing").click()
@@ -1683,7 +1683,7 @@ async def test_paid_engine_generate_missing_queues_after_confirm(
         )[1],
     )
     pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
-    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "elevenlabs"\n', encoding="utf-8")
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "inworld"\n', encoding="utf-8")
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     user.find(marker="gen-missing").click()

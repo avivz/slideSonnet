@@ -182,8 +182,8 @@ def test_gui_engine_pick_repoints_cost_gates(tmp_path: Path) -> None:
     assert state.tts_is_paid is False
     assert state.voice_options() == []  # named-only, engine-independent
 
-    state.set_backend("elevenlabs")
-    assert state.active_backend == "elevenlabs"
+    state.set_backend("inworld")
+    assert state.active_backend == "inworld"
     assert state.tts_is_paid is True  # paid gate follows the pick
     assert state.voice_options() == []  # still engine-independent
 
@@ -217,7 +217,7 @@ def test_editing_an_utterance_prunes_stale_local_audio(tmp_path: Path) -> None:
     """An edit drops the just-orphaned local clip but keeps paid audio.
 
     Local engines are cheap to regenerate, so the editor reclaims a clip the
-    moment its utterance text changes; ElevenLabs audio (paid) is never swept.
+    moment its utterance text changes; Inworld audio (paid) is never swept.
     """
     from slidesonnet.cache import audio_dir
     from slidesonnet.hashing import audio_filename
@@ -227,7 +227,7 @@ def test_editing_an_utterance_prunes_stale_local_audio(tmp_path: Path) -> None:
     ad = audio_dir(state.pdf_path)
     ad.mkdir(parents=True, exist_ok=True)
     stale = audio_filename("Original narration line.", "kokoro", "kokoro:am_echo")
-    paid = audio_filename("Original narration line.", "elevenlabs", "elevenlabs:v")
+    paid = audio_filename("Original narration line.", "inworld", "inworld:v")
     (ad / stale).write_bytes(b"a")
     (ad / paid).write_bytes(b"b")
 
@@ -295,7 +295,7 @@ def test_editor_surfaces_voice_unmapped_for_active_engine(tmp_path: Path) -> Non
     assert state.status_for("intro-title") == "ready"
 
     # pick an engine 'guest' has no voice for -> the warning lights that slide
-    state.set_backend("elevenlabs")
+    state.set_backend("inworld")
     assert voice_warnings() == ["intro-title"]
     assert state.status_for("intro-title") == "warning"
     assert any("guest" in d.message for d in state.diagnostics_for_current())
@@ -313,8 +313,8 @@ def test_resolved_engine_voice_follows_the_active_engine(tmp_path: Path) -> None
     assert state.resolved_engine_voice("lecturer") == "am_michael"  # kokoro mapping
     assert state.resolved_engine_voice("guest") == "af_bella"
 
-    state.set_backend("elevenlabs")
-    assert state.resolved_engine_voice("lecturer") is None  # no elevenlabs mapping
+    state.set_backend("inworld")
+    assert state.resolved_engine_voice("lecturer") is None  # no inworld mapping
 
 
 def test_editor_default_voice_label_is_the_named_default_only(tmp_path: Path) -> None:
@@ -335,7 +335,7 @@ def test_editor_default_voice_label_is_the_named_default_only(tmp_path: Path) ->
 
 def test_engine_voice_choices_lists_voices_and_default(tmp_path: Path) -> None:
     """The Voices dialog gets a per-engine (voices, default): a list for Kokoro/Qwen3,
-    free text for ElevenLabs. ElevenLabs must not be instantiated (it needs a key)."""
+    free text for a cloud engine (Inworld) with account-specific voice ids."""
     from slidesonnet.tts.kokoro import KOKORO_VOICES
 
     state = _state(tmp_path)
@@ -346,8 +346,8 @@ def test_engine_voice_choices_lists_voices_and_default(tmp_path: Path) -> None:
     qwen_opts, qwen_default = state.engine_voice_choices("qwen3")
     assert "Vivian" in qwen_opts and qwen_default == "Vivian"  # CustomVoice speakers
 
-    eleven_opts, _ = state.engine_voice_choices("elevenlabs")
-    assert eleven_opts == []  # account-specific ids, no fixed list → free text
+    inworld_opts, _ = state.engine_voice_choices("inworld")
+    assert inworld_opts == []  # account-specific ids, no fixed list → free text
 
 
 def test_edit_voices_adds_named_voice_and_persists(tmp_path: Path) -> None:
@@ -394,16 +394,16 @@ def test_edit_voices_clears_voice_unmapped_warning(tmp_path: Path) -> None:
     pdf = prep_marked_deck(tmp_path)
     (tmp_path / "marked.narration").write_text(_voice_map_sidecar(), encoding="utf-8")
     state = EditorState(pdf)
-    state.set_backend("elevenlabs")  # 'guest' has no elevenlabs voice
+    state.set_backend("inworld")  # 'guest' has no inworld voice
     assert any(d.code == "voice-unmapped" for d in state.all_diagnostics())
 
     voices = state.voice_map_for_display()
-    voices["guest"].backend_voices["elevenlabs"] = "EL_guest"
+    voices["guest"].backend_voices["inworld"] = "IW_guest"
     state.edit_voices(voices, state.deck.default_voice)
 
     # the warning clears, and the mapping is on disk
     assert not any(d.code == "voice-unmapped" for d in state.all_diagnostics())
-    assert "elevenlabs: EL_guest" in (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "inworld: IW_guest" in (tmp_path / "marked.narration").read_text(encoding="utf-8")
 
 
 def test_edit_voices_deletes_a_voice(tmp_path: Path) -> None:
@@ -563,9 +563,9 @@ def test_pdf_change_invalidates_image_cache(tmp_path: Path) -> None:
 def test_config_change_reloads_config(tmp_path: Path) -> None:
     state = _state(tmp_path)
     assert state.config.tts.backend == "kokoro"
-    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "elevenlabs"\n', encoding="utf-8")
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "inworld"\n', encoding="utf-8")
     assert state.poll_sources() is True
-    assert state.config.tts.backend == "elevenlabs"
+    assert state.config.tts.backend == "inworld"
 
 
 def test_poll_surfaces_persistent_config_error(tmp_path: Path) -> None:

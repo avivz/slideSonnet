@@ -19,14 +19,14 @@ class TestVoiceConfig:
 
     def test_resolve_unmapped_backend_returns_none(self) -> None:
         vc = VoiceConfig(name="narrator", backend_voices={"kokoro": "af_heart"})
-        assert vc.resolve("elevenlabs") is None
+        assert vc.resolve("inworld") is None
 
     def test_all_voice_ids(self) -> None:
         vc = VoiceConfig(
             name="narrator",
-            backend_voices={"kokoro": "af_heart", "elevenlabs": "EXAVITQu4vr4xnSDxMaL"},
+            backend_voices={"kokoro": "af_heart", "inworld": "Ashley"},
         )
-        assert vc.all_voice_ids() == {"af_heart", "EXAVITQu4vr4xnSDxMaL"}
+        assert vc.all_voice_ids() == {"af_heart", "Ashley"}
 
     def test_all_voice_ids_empty(self) -> None:
         assert VoiceConfig(name="narrator").all_voice_ids() == set()
@@ -51,14 +51,14 @@ class TestResolveVoice:
         assert resolve_voice("narrator", self.VOICES, "kokoro") == "af_bella"
 
     def test_known_preset_unmapped_backend(self) -> None:
-        assert resolve_voice("narrator", self.VOICES, "elevenlabs") is None
+        assert resolve_voice("narrator", self.VOICES, "inworld") is None
 
 
 class TestAPIBackends:
-    def test_elevenlabs_is_api_kokoro_is_not(self) -> None:
+    def test_inworld_is_api_kokoro_is_not(self) -> None:
         from slidesonnet.tts import API_BACKENDS
 
-        assert "elevenlabs" in API_BACKENDS
+        assert "inworld" in API_BACKENDS
         assert "kokoro" not in API_BACKENDS
 
 
@@ -68,30 +68,15 @@ class TestTTSConfigValidation:
         assert cfg.backend == "kokoro"
         assert cfg.kokoro_voice == "am_echo"
 
-    @pytest.mark.parametrize("stability", [-0.1, 1.1])
-    def test_stability_out_of_range(self, stability: float) -> None:
-        with pytest.raises(ValueError, match="elevenlabs_stability"):
-            TTSConfig(elevenlabs_stability=stability)
-
-    @pytest.mark.parametrize("boost", [-0.1, 1.5])
-    def test_similarity_boost_out_of_range(self, boost: float) -> None:
-        with pytest.raises(ValueError, match="elevenlabs_similarity_boost"):
-            TTSConfig(elevenlabs_similarity_boost=boost)
-
-    @pytest.mark.parametrize("value", [0.0, 1.0])
-    def test_stability_boundaries_accepted(self, value: float) -> None:
-        cfg = TTSConfig(elevenlabs_stability=value, elevenlabs_similarity_boost=value)
-        assert cfg.elevenlabs_stability == value
-
     @pytest.mark.parametrize("speed", [0.0, -1.0])
     def test_kokoro_speed_must_be_positive(self, speed: float) -> None:
         with pytest.raises(ValueError, match="kokoro_speed"):
             TTSConfig(kokoro_speed=speed)
 
     @pytest.mark.parametrize("speed", [0.0, -0.5])
-    def test_elevenlabs_speed_must_be_positive(self, speed: float) -> None:
-        with pytest.raises(ValueError, match="elevenlabs_speed"):
-            TTSConfig(elevenlabs_speed=speed)
+    def test_inworld_speed_must_be_positive(self, speed: float) -> None:
+        with pytest.raises(ValueError, match="inworld_speed"):
+            TTSConfig(inworld_speed=speed)
 
 
 class TestVideoConfigValidation:
@@ -152,10 +137,10 @@ class TestBackendRegistry:
         from slidesonnet.tts import BACKENDS
 
         kokoro = BACKENDS["kokoro"]
-        eleven = BACKENDS["elevenlabs"]
+        inworld = BACKENDS["inworld"]
         qwen3 = BACKENDS["qwen3"]
         assert (kokoro.extension, kokoro.paid, kokoro.realtime) == (".wav", False, True)
-        assert (eleven.extension, eleven.paid, eleven.realtime) == (".mp3", True, True)
+        assert (inworld.extension, inworld.paid, inworld.realtime) == (".mp3", True, True)
         # Qwen3 is free local audio (.wav, not paid) but too slow to auto-generate.
         assert (qwen3.extension, qwen3.paid, qwen3.realtime) == (".wav", False, False)
 
@@ -183,6 +168,6 @@ class TestBackendRegistry:
         assert kokoro.list_voices() == KOKORO_VOICES
         assert kokoro.default_voice() == "af_nova"
 
-        eleven = create_tts(TTSConfig(backend="elevenlabs", elevenlabs_voice_id="v9"))
-        assert eleven.list_voices() == ()
-        assert eleven.default_voice() == "v9"
+        inworld = create_tts(TTSConfig(backend="inworld", inworld_voice="Ashley"))
+        assert inworld.list_voices() == ()
+        assert inworld.default_voice() == "Ashley"

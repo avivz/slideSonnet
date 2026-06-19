@@ -11,7 +11,7 @@ context into the worker thread — so the queue sets the token right before it
 dispatches a job and the engine, running in that thread, reads the *same*
 ``threading.Event`` by reference. Setting the event from the event loop is then
 visible to the polling generation thread. Engines that can't honor it (Kokoro,
-ElevenLabs — fast enough not to need it) simply ignore the token.
+Inworld — fast enough not to need it) simply ignore the token.
 """
 
 from __future__ import annotations

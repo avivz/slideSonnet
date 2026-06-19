@@ -58,7 +58,7 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **tts/** — `BACKENDS` registry (name → extension/paid/factory; the single source
   the CLI choices, config validation, hashing extensions, and clean's paid set
   derive from), `create_tts`, `TTSEngine` base (incl. `list_voices`/`default_voice`),
-  Kokoro, ElevenLabs, pronunciation. Adding an engine = one `BackendSpec` + the
+  Kokoro, Inworld, Qwen3, pronunciation. Adding an engine = one `BackendSpec` + the
   `Backend` Literal in models.py (a test pins them in sync).
 - **video/composer.py** — FFmpeg: `compose_segment`, `compose_silent_segment`,
   `concatenate_segments`, `concatenate_audio`, `get_duration`.

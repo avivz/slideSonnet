@@ -19,7 +19,7 @@ class TTSEngine(ABC):
             text: The text to synthesize.
             output_path: Where to write the audio file.
             voice: Optional backend-specific voice override (voice name for Kokoro,
-                   voice_id for ElevenLabs). None uses the default.
+                   voice name for Inworld). None uses the default.
 
         Returns:
             Duration of the generated audio in seconds.

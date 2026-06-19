@@ -18,7 +18,7 @@ ProgressFn = Callable[[str, int, int], None]
 
 # The typed source of backend names. mypy can't derive a Literal from the
 # runtime registry (tts.BACKENDS); a test pins the two in sync.
-Backend = Literal["kokoro", "elevenlabs", "qwen3", "inworld"]
+Backend = Literal["kokoro", "qwen3", "inworld"]
 
 #: Devices the local Qwen3 engine can load onto (base device; the engine appends
 #: ``:0`` for the accelerators). Validated on TTSConfig.
@@ -68,12 +68,6 @@ class TTSConfig:
     backend: Backend = "kokoro"
     kokoro_voice: str = "am_echo"
     kokoro_speed: float = 1.0
-    elevenlabs_api_key_env: str = "ELEVENLABS_API_KEY"
-    elevenlabs_voice_id: str = ""
-    elevenlabs_model_id: str = "eleven_multilingual_v2"
-    elevenlabs_stability: float = 0.5
-    elevenlabs_similarity_boost: float = 0.75
-    elevenlabs_speed: float = 1.0
     # CustomVoice ships ready-to-use named speakers (works out of the box); a
     # ``...-Base`` repo instead clones an own voice from ``qwen3_voice_prompt``.
     qwen3_model: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
@@ -86,19 +80,8 @@ class TTSConfig:
     inworld_speed: float = 1.0  # base speaking_rate; per-utterance :pace multiplies this
 
     def __post_init__(self) -> None:
-        if not (0.0 <= self.elevenlabs_stability <= 1.0):
-            raise ValueError(
-                f"elevenlabs_stability must be between 0 and 1, got {self.elevenlabs_stability}"
-            )
-        if not (0.0 <= self.elevenlabs_similarity_boost <= 1.0):
-            raise ValueError(
-                "elevenlabs_similarity_boost must be between 0 and 1, "
-                f"got {self.elevenlabs_similarity_boost}"
-            )
         if self.kokoro_speed <= 0:
             raise ValueError(f"kokoro_speed must be positive, got {self.kokoro_speed}")
-        if self.elevenlabs_speed <= 0:
-            raise ValueError(f"elevenlabs_speed must be positive, got {self.elevenlabs_speed}")
         if self.inworld_speed <= 0:
             raise ValueError(f"inworld_speed must be positive, got {self.inworld_speed}")
         if self.qwen3_device not in _QWEN3_DEVICES:

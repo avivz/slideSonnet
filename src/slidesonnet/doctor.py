@@ -148,12 +148,6 @@ def check_kokoro() -> CheckResult:
     )
 
 
-def check_elevenlabs() -> CheckResult:
-    return _check_python_package(
-        "elevenlabs", "elevenlabs", "pip install slidesonnet[elevenlabs]", "Cloud TTS (paid)"
-    )
-
-
 def check_qwen3() -> CheckResult:
     return _check_python_package(
         "qwen-tts", "qwen_tts", "pip install slidesonnet[qwen3]", "Local own-voice TTS (free)"
@@ -177,10 +171,6 @@ def _check_api_key(env: str, engine: str) -> CheckResult:
     )
 
 
-def check_api_key() -> CheckResult:
-    return _check_api_key("ELEVENLABS_API_KEY", "elevenlabs")
-
-
 def check_inworld_api_key() -> CheckResult:
     return _check_api_key("INWORLD_API_KEY", "inworld")
 
@@ -197,9 +187,9 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
         ("Beamer toolchain (for compiling your deck)", [check_latexmk(), check_pdflatex()]),
         (
             "TTS backends (at least one required)",
-            [check_kokoro(), check_qwen3(), check_elevenlabs(), check_inworld()],
+            [check_kokoro(), check_qwen3(), check_inworld()],
         ),
-        ("API keys", [check_api_key(), check_inworld_api_key()]),
+        ("API keys", [check_inworld_api_key()]),
     ]
 
 

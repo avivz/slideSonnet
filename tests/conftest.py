@@ -61,35 +61,6 @@ def _isolate_model_cache() -> Iterator[None]:
         mod._MODEL_CACHE.clear()
 
 
-class _GuardedElevenLabs:
-    """Stand-in for the real ElevenLabs client: any construction is a test bug.
-
-    Tests that need a client mock ``@patch("slidesonnet.tts.elevenlabs.ElevenLabs")``
-    over this, so only an unmocked (would-be real, would-be billed) construction
-    ever reaches here.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        raise AssertionError(
-            "test constructed a real ElevenLabs client — this would call the paid API; "
-            "mock slidesonnet.tts.elevenlabs.ElevenLabs instead"
-        )
-
-
-@pytest.fixture(autouse=True)
-def _no_real_elevenlabs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Make a real ElevenLabs call impossible from any test.
-
-    Two layers: the API key env var is pinned to a sentinel (load_dotenv won't
-    override an existing var, so doctor's ``load_dotenv()`` can't leak the real
-    key from the repo-root ``.env`` into the suite), and the client class is
-    replaced with one that fails fast on construction.
-    """
-    monkeypatch.setenv("ELEVENLABS_API_KEY", _SENTINEL_KEY)
-    monkeypatch.setattr("slidesonnet.tts.elevenlabs.ElevenLabs", _GuardedElevenLabs)
-    yield
-
-
 class _GuardedInworld:
     """Stand-in for the real Inworld client: any construction is a test bug.
 
@@ -107,7 +78,7 @@ class _GuardedInworld:
 
 @pytest.fixture(autouse=True)
 def _no_real_inworld(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Make a real Inworld call impossible from any test (mirrors ElevenLabs).
+    """Make a real Inworld call impossible from any test.
 
     The API key env var is pinned to a sentinel (so doctor's ``load_dotenv()``
     can't leak a real key from ``.env``), and the SDK client class is replaced

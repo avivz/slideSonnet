@@ -1,6 +1,6 @@
 """Integration tests for export/subs (ffmpeg, pdftoppm, and Kokoro).
 
-Never uses ElevenLabs. Marked integration so CI's unit-only run skips them.
+Never uses a paid cloud engine. Marked integration so CI's unit-only run skips them.
 """
 
 from __future__ import annotations

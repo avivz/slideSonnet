@@ -21,7 +21,7 @@ def _seed(tmp_path: Path) -> Path:
     ad.mkdir(parents=True)
     # valid 3-part names: {text_hash}.{backend}.{config_hash}.{ext}
     (ad / "aaaa.kokoro.bbbb.wav").write_bytes(b"x")
-    (ad / "cccc.elevenlabs.dddd.mp3").write_bytes(b"y")
+    (ad / "cccc.inworld.dddd.mp3").write_bytes(b"y")
     rd = render_dir(pdf)
     rd.mkdir(parents=True)
     (rd / "page-0001.png").write_bytes(b"img")
@@ -33,7 +33,7 @@ def test_keep_api_drops_kokoro_keeps_cloud(tmp_path: Path) -> None:
     clean(pdf, keep="api")
     ad = audio_dir(pdf)
     assert not (ad / "aaaa.kokoro.bbbb.wav").exists()
-    assert (ad / "cccc.elevenlabs.dddd.mp3").exists()
+    assert (ad / "cccc.inworld.dddd.mp3").exists()
     assert not render_dir(pdf).exists()  # renders always removed
 
 
@@ -59,7 +59,7 @@ def test_removed_mb_converts_bytes() -> None:
 def test_clean_reports_counts_and_bytes(tmp_path: Path) -> None:
     pdf = _seed(tmp_path)
     result = clean(pdf, keep="api")
-    # kokoro clip (1 byte) + render png (3 bytes) removed; elevenlabs clip kept
+    # kokoro clip (1 byte) + render png (3 bytes) removed; inworld clip kept
     assert result.removed_files == 2
     assert result.removed_bytes == 4
     assert result.kept_files == 1
@@ -98,7 +98,7 @@ def test_keep_api_drops_unparseable_names_and_skips_subdirs(tmp_path: Path) -> N
     clean(pdf, keep="api")
     assert not (ad / "oldformat.wav").exists()
     assert (sub / "stray.wav").exists()  # directories are skipped, not unlinked
-    assert (ad / "cccc.elevenlabs.dddd.mp3").exists()
+    assert (ad / "cccc.inworld.dddd.mp3").exists()
 
 
 # --- keep="current" / keep="exact" need a real deck (PDF + sidecar + optional config) ---
@@ -128,15 +128,15 @@ def test_keep_current_keeps_text_matches_any_engine(tmp_path: Path) -> None:
     ad = audio_dir(pdf)
     ad.mkdir(parents=True)
     current_kokoro = audio_filename(HELLO, "kokoro", "kokoro:am_echo")
-    current_eleven = audio_filename(HELLO, "elevenlabs", "elevenlabs:v:m:0.5:0.75")
+    current_inworld = audio_filename(HELLO, "inworld", "inworld:v:m:0.5:0.75")
     stale = audio_filename("Old deleted text.", "kokoro", "kokoro:am_echo")
-    for name in (current_kokoro, current_eleven, stale):
+    for name in (current_kokoro, current_inworld, stale):
         (ad / name).write_bytes(b"a")
     (ad / "oldformat.wav").write_bytes(b"old")
 
     result = clean(pdf, keep="current")
     assert (ad / current_kokoro).exists()  # current text, local engine
-    assert (ad / current_eleven).exists()  # current text, cloud engine — engine-agnostic
+    assert (ad / current_inworld).exists()  # current text, cloud engine — engine-agnostic
     assert not (ad / stale).exists()  # orphaned utterance
     assert not (ad / "oldformat.wav").exists()  # unparseable name
     assert result.kept_files == 2
@@ -183,7 +183,7 @@ def test_keep_exact_keeps_only_active_engine_config(tmp_path: Path) -> None:
     # Active engine with defaults: kokoro, voice am_echo -> cache_key "kokoro:am_echo"
     exact = audio_filename(HELLO, "kokoro", "kokoro:am_echo")
     other_config = audio_filename(HELLO, "kokoro", "kokoro:af_bella")
-    other_engine = audio_filename(HELLO, "elevenlabs", "elevenlabs:v:m:0.5:0.75")
+    other_engine = audio_filename(HELLO, "inworld", "inworld:v:m:0.5:0.75")
     for name in (exact, other_config, other_engine):
         (ad / name).write_bytes(b"a")
 
@@ -242,7 +242,7 @@ def test_prune_local_orphans_drops_edited_away_local_clips(tmp_path: Path) -> No
     ad.mkdir(parents=True)
     current = audio_filename(HELLO, "kokoro", "kokoro:am_echo")
     stale = audio_filename("Old deleted text.", "kokoro", "kokoro:af_bella")
-    paid_orphan = audio_filename("Old deleted text.", "elevenlabs", "elevenlabs:v")
+    paid_orphan = audio_filename("Old deleted text.", "inworld", "inworld:v")
     for name in (current, stale, paid_orphan):
         (ad / name).write_bytes(b"a")
 

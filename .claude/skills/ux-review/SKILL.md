@@ -83,7 +83,7 @@ Apply these CLI-adapted heuristics (derived from Nielsen's 10, clig.dev, and Atl
 1. **Read `dev/UX.md`** (if present) for the full list of review questions organized by topic.
 2. **Scope the review** to the area specified in `$ARGUMENTS`. If no area is specified, pick the 3 highest-impact areas.
 3. **Examine the actual code** — read the relevant source files (CLI entry points, output formatting, error handling, help text). Don't speculate; look at what the user actually sees.
-4. **Run commands** when possible to observe real output. Use `--help`, `check`, `doctor`, etc. Never use `--engine elevenlabs` (costs money).
+4. **Run commands** when possible to observe real output. Use `--help`, `check`, `doctor`, etc. Never use `--engine inworld` (costs money).
 5. **Produce findings** in this format:
 
 ### Finding Format
@@ -123,7 +123,7 @@ UX review ({date}, {area reviewed}): {number} findings.
 
 - Do not review code quality, architecture, or test coverage — focus only on what the user sees and experiences. (The GUI editor's UX is in scope; its internals are not.)
 - Do not propose breaking changes to the sidecar grammar or `\ssid` macro without flagging migration cost.
-- Do not run `--engine elevenlabs` or any command that costs money.
+- Do not run `--engine inworld` or any command that costs money.
 - Do not suggest adding features; focus on improving what exists.
 
 ## Reference

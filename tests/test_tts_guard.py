@@ -1,4 +1,4 @@
-"""The suite-wide guard against real ElevenLabs API calls (see conftest.py).
+"""The suite-wide guard against real Inworld API calls (see conftest.py).
 
 A real ``.env`` with a live key sits in the repo root, and ``doctor`` runs
 ``load_dotenv()`` — without the guard, one unit test running the real doctor
@@ -12,20 +12,7 @@ import os
 import pytest
 
 from slidesonnet.models import TTSConfig
-from slidesonnet.tts.elevenlabs import ElevenLabsTTS
 from slidesonnet.tts.inworld import InworldTTS
-
-
-def test_api_key_env_is_sentinel() -> None:
-    """The autouse guard replaces any real key with a sentinel for every test."""
-    assert os.environ.get("ELEVENLABS_API_KEY") == "unit-test-no-real-calls"
-
-
-def test_real_client_construction_fails_fast() -> None:
-    """Constructing the real ElevenLabs client inside a test raises immediately."""
-    tts = ElevenLabsTTS(TTSConfig(backend="elevenlabs", elevenlabs_voice_id="v1"))
-    with pytest.raises(AssertionError, match="real ElevenLabs client"):
-        tts._ensure_client()
 
 
 def test_dotenv_cannot_override_sentinel() -> None:
@@ -33,11 +20,11 @@ def test_dotenv_cannot_override_sentinel() -> None:
     from dotenv import load_dotenv
 
     load_dotenv()
-    assert os.environ.get("ELEVENLABS_API_KEY") == "unit-test-no-real-calls"
+    assert os.environ.get("INWORLD_API_KEY") == "unit-test-no-real-calls"
 
 
 def test_inworld_api_key_env_is_sentinel() -> None:
-    """The autouse guard pins the Inworld key to a sentinel too."""
+    """The autouse guard pins the Inworld key to a sentinel."""
     assert os.environ.get("INWORLD_API_KEY") == "unit-test-no-real-calls"
 
 

@@ -42,7 +42,7 @@ def test_load_env_finds_dotenv_at_anchor_dir(
     e.g. the editor launched from ``$HOME``. ``load_env`` must find the deck's
     ``.env`` when anchored at the deck directory, regardless of cwd. Previously
     the search ran only from the cwd upward, so a key sitting next to the deck was
-    invisible and Inworld/ElevenLabs failed with "API_KEY not set"."""
+    invisible and Inworld failed with "API_KEY not set"."""
     cwd = tmp_path / "elsewhere"
     cwd.mkdir()
     deck_dir = tmp_path / "decks" / "talk"

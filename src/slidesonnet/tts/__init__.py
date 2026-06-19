@@ -24,12 +24,6 @@ def _make_kokoro(tts: TTSConfig) -> TTSEngine:
     return KokoroTTS(voice=tts.kokoro_voice, speed=tts.kokoro_speed)
 
 
-def _make_elevenlabs(tts: TTSConfig) -> TTSEngine:
-    from slidesonnet.tts.elevenlabs import ElevenLabsTTS
-
-    return ElevenLabsTTS(tts)
-
-
 def _make_inworld(tts: TTSConfig) -> TTSEngine:
     from slidesonnet.tts.inworld import InworldTTS
 
@@ -75,9 +69,6 @@ class BackendSpec:
 
 BACKENDS: dict[str, BackendSpec] = {
     "kokoro": BackendSpec("kokoro", ".wav", paid=False, factory=_make_kokoro, import_name="kokoro"),
-    "elevenlabs": BackendSpec(
-        "elevenlabs", ".mp3", paid=True, factory=_make_elevenlabs, import_name="elevenlabs"
-    ),
     "inworld": BackendSpec(
         "inworld", ".mp3", paid=True, factory=_make_inworld, import_name="inworld_tts"
     ),

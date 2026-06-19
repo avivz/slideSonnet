@@ -70,7 +70,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    examples:* (a) editing utterance A's text does **not** delete a now-orphaned
    Qwen3 clip for the *old* text of A (or for an unrelated slide) — Qwen3 orphans
    are kept by default; (b) Kokoro orphans are still pruned eagerly (unchanged);
-   (c) ElevenLabs (paid) is still never auto-swept (unchanged); (d) the keep/drop
+   (c) Inworld (paid) is still never auto-swept (unchanged); (d) the keep/drop
    decision reads from a single per-engine policy on `BackendSpec` (e.g.
    `prune_policy: eager | keep-paid | keep-expensive-local | never`), not a
    hardcoded `paid` check, so a new engine declares its policy in one place;
@@ -277,27 +277,13 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    to `SpeechRef`; the work is threading it through `synth` → `TTSEngine.synthesize`
    (a new optional `direction` arg, default None, ignored by Kokoro) → Qwen3's
    `generate_custom_voice/voice_design`, plus folding it into the hash. **[agent]**
-10. [ ] **Remove the ElevenLabs backend outright** (decision made 2026-06-19 — see
-   Now #5). Inworld is the cloud engine now; ElevenLabs was always ~10× the price
-   and is being dropped, as Piper was. *Story:* As a maintainer, I want one cloud
-   engine in the tree so there's less to test, document, and guard against
-   accidental paid calls. *Acceptance examples:* (a) `tts/elevenlabs.py`, its
-   `BackendSpec`, the `elevenlabs` extra in `pyproject.toml`, the `[tts]`
-   `elevenlabs_*` config keys + `Backend` literal entry, and the ElevenLabs branch
-   of `engine_voice_choices` are all gone; (b) the conftest ElevenLabs sentinel
-   guard and `test`-suite references are removed (the Inworld guard stays); (c)
-   `slidesonnet doctor` no longer lists ElevenLabs; (d) docs/README/CHANGELOG drop
-   it (a `### Removed` note); (e) `make test-unit`, lint, and typecheck stay green.
-   *Sequencing:* after the human validates Inworld (Now #5) — don't remove the only
-   working cloud engine before its replacement is judged good. *Appetite:* half a
-   day. **[agent]**
-11. [ ] **Config audit — what's necessary vs vestigial.** A pass over the
+10. [ ] **Config audit — what's necessary vs vestigial.** A pass over the
    user-facing config surface (`slidesonnet.toml` → `config.py`/`models.py`) and
    the project's own config files to find keys/sections that are dead, redundant,
    or now defaulted-away. Known candidates: `[tts] backend` (kept only as the
    initial editor default — the engine picker is session-state; full removal as a
-   config key was deferred — see Done), and the soon-gone `elevenlabs_*` keys (item
-   #10). *Story:* As someone configuring a deck, I want the documented config to be
+   config key was deferred — see Done). (The `elevenlabs_*` keys are already gone —
+   see Done, ElevenLabs removal.) *Story:* As someone configuring a deck, I want the documented config to be
    only what still does something, so I'm not cargo-culting dead keys. *Acceptance
    examples:* (a) a written inventory of every config key with a keep/drop/merge
    call and reason; (b) dropped keys removed from `Config`/`TTSConfig` parsing,
@@ -375,6 +361,17 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Remove the ElevenLabs backend outright** (2026-06-19, CHANGELOG
+  `[Unreleased]` `### Removed`): Inworld is the sole cloud engine now (matches
+  ElevenLabs quality at ~10× less). `tts/elevenlabs.py`, its `BackendSpec`, the
+  `elevenlabs` extra + mypy override in `pyproject.toml`, the `[tts] elevenlabs_*`
+  config keys and their validation, the `Backend` literal entry, and the
+  `elevenlabs` branch of `engine_voice_choices` are all gone; the conftest
+  ElevenLabs sentinel guard and all test-suite references are removed (the Inworld
+  guard stays — `test_elevenlabs*.py` deleted, the rest converted to `inworld`);
+  `slidesonnet doctor` no longer lists it; the example tomls dropped their dead
+  `[tts.elevenlabs]` blocks and `elevenlabs` voice maps. `make test-unit` (706
+  passed), lint, and typecheck stay green.
 - [x] **Transition gallery + per-slide silences + centered-overlay transitions**
   (2026-06-18, CHANGELOG `[Unreleased]`): the former Now #1, fully shipped on
   `main`. The full FFmpeg `xfade` gallery behind a curated **Type + Direction**

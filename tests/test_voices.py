@@ -30,7 +30,7 @@ def _voice_deck(**deck_kwargs: object) -> Deck:
             )
         },
         voices={
-            "lecturer": VoiceConfig("lecturer", {"kokoro": "am_michael", "elevenlabs": "L1"}),
+            "lecturer": VoiceConfig("lecturer", {"kokoro": "am_michael", "inworld": "L1"}),
             "guest": VoiceConfig("guest", {"kokoro": "af_bella"}),
         },
         default_voice="lecturer",
@@ -47,8 +47,8 @@ def test_resolution_uses_deck_map_and_default() -> None:
 
 def test_resolution_follows_active_engine() -> None:
     deck = _voice_deck()
-    refs = synth_mod.speech_refs(deck, Config(tts=TTSConfig(backend="elevenlabs")))
-    # 'guest' has no elevenlabs voice -> None (engine default); 'lecturer' -> L1
+    refs = synth_mod.speech_refs(deck, Config(tts=TTSConfig(backend="inworld")))
+    # 'guest' has no inworld voice -> None (engine default); 'lecturer' -> L1
     assert [r.voice for r in refs] == [None, "L1"]
 
 
@@ -107,18 +107,18 @@ def test_voice_diagnostics_flag_unmapped_engine() -> None:
         PageNarration("b", [Segment.speech("Yo.")]),  # uses the default
     ]
     voices = {
-        "lecturer": VoiceConfig("lecturer", {"kokoro": "am_michael", "elevenlabs": "L1"}),
-        "guest": VoiceConfig("guest", {"kokoro": "af_bella"}),  # no elevenlabs
+        "lecturer": VoiceConfig("lecturer", {"kokoro": "am_michael", "inworld": "L1"}),
+        "guest": VoiceConfig("guest", {"kokoro": "af_bella"}),  # no inworld
     }
 
     # kokoro maps everything -> no warnings
     assert voice_diagnostics(blocks, voices, "lecturer", "kokoro") == []
 
-    # elevenlabs: 'guest' is unmapped -> one warning, attached to its slide
-    diags = voice_diagnostics(blocks, voices, "lecturer", "elevenlabs")
+    # inworld: 'guest' is unmapped -> one warning, attached to its slide
+    diags = voice_diagnostics(blocks, voices, "lecturer", "inworld")
     assert [d.code for d in diags] == ["voice-unmapped"]
     assert diags[0].slide_id == "a"
-    assert "guest" in diags[0].message and "elevenlabs" in diags[0].message
+    assert "guest" in diags[0].message and "inworld" in diags[0].message
 
 
 def test_voice_diagnostics_ignore_raw_ids() -> None:

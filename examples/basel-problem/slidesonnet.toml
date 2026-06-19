@@ -1,5 +1,4 @@
 # slideSonnet config for the Basel Problem demo.
-# Kokoro is used now; the ElevenLabs voice ids are kept for a later HQ re-render.
 
 # Top-level keys must come before any [table] header.
 pronunciation = ["pronunciation/names.md"]
@@ -9,10 +8,6 @@ backend = "kokoro"
 
 [tts.kokoro]
 voice = "am_michael"
-
-[tts.elevenlabs]
-voice_id = "aMSt68OGf4xUZAnLpTU8"
-model_id = "eleven_v3"
 
 [video]
 resolution = "1920x1080"
@@ -24,4 +19,3 @@ tail_seconds = 0.8
 # A second voice for the Bernoulli quote (voice: bernoulli in the sidecar).
 [voices.bernoulli]
 kokoro = "bm_george"
-elevenlabs = "jhYRUrjaLTqNSQTIDKZw"

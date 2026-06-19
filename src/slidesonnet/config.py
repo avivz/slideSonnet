@@ -19,7 +19,7 @@ Example ``slidesonnet.toml``::
 
     [voices.narrator]
     kokoro = "af_heart"
-    elevenlabs = "EXAVITQu4vr4xnSDxMaL"
+    inworld = "Ashley"
 
     pronunciation = ["pronunciation.md"]
 """
@@ -95,7 +95,6 @@ def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
 
 def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     kokoro = raw.get("kokoro", {})
-    el = raw.get("elevenlabs", {})
     qwen3 = raw.get("qwen3", {})
     inworld = raw.get("inworld", {})
     kwargs: dict[str, Any] = {}
@@ -113,16 +112,6 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     ):
         if key in qwen3:
             kwargs[target] = str(qwen3[key])
-    for key, target, cast in (
-        ("api_key_env", "elevenlabs_api_key_env", str),
-        ("voice_id", "elevenlabs_voice_id", str),
-        ("model_id", "elevenlabs_model_id", str),
-        ("stability", "elevenlabs_stability", float),
-        ("similarity_boost", "elevenlabs_similarity_boost", float),
-        ("speed", "elevenlabs_speed", float),
-    ):
-        if key in el:
-            kwargs[target] = cast(el[key])
     for key, target, cast in (
         ("api_key_env", "inworld_api_key_env", str),
         ("voice", "inworld_voice", str),

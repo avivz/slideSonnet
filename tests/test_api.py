@@ -99,13 +99,13 @@ def test_synthesize_deck_counts_new_clips_and_overrides_engine(
 
     monkeypatch.setattr("slidesonnet.audio.synth.create_tts", factory)
     pdf = _narrated_deck(tmp_path)
-    n = api.synthesize_deck(pdf, engine="elevenlabs")
+    n = api.synthesize_deck(pdf, engine="inworld")
     assert n == 1  # one speech segment, newly synthesized
     assert engine.calls == 1
-    assert seen["backend"] == "elevenlabs"  # engine override reached the factory
+    assert seen["backend"] == "inworld"  # engine override reached the factory
     # Second run is fully cached (duration probed, not synthesized).
     monkeypatch.setattr("slidesonnet.audio.synth.get_duration", lambda path: 1.0)
-    assert api.synthesize_deck(pdf, engine="elevenlabs") == 0
+    assert api.synthesize_deck(pdf, engine="inworld") == 0
     assert engine.calls == 1
 
 

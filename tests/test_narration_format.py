@@ -320,7 +320,7 @@ voices:
   lecturer:
     kokoro: am_michael
     qwen3: voice/lecturer.pt
-    elevenlabs: abc123
+    inworld: abc123
   guest:
     kokoro: af_bella
 
@@ -340,7 +340,7 @@ def test_parse_document_reads_voice_preamble() -> None:
     assert doc.voices["lecturer"].backend_voices == {
         "kokoro": "am_michael",
         "qwen3": "voice/lecturer.pt",
-        "elevenlabs": "abc123",
+        "inworld": "abc123",
     }
     assert doc.voices["guest"].backend_voices == {"kokoro": "af_bella"}
     # the blocks still parse, and an utterance names an internal voice

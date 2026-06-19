@@ -1995,7 +1995,7 @@ class EditorView:
             ui.label("Voices").classes("ss-section")
             ui.label(
                 "Name a voice, then map it to a concrete voice per engine: a Kokoro "
-                "voice (e.g. am_michael), an ElevenLabs voice id, or a Qwen3 .pt path "
+                "voice (e.g. am_michael), an Inworld voice name, or a Qwen3 .pt path "
                 "relative to the deck. Leave an engine blank to use its own default. "
                 "Saved in the narration file, so the deck narrates under any engine."
             ).classes("ss-hint")

@@ -172,7 +172,7 @@ def _write_wav(path: Path, samples: list[float]) -> None:
     # Write to a temp file in the same directory, then atomically rename onto the
     # target. Guarantees one writer per cache file: two background jobs (or a
     # force-regenerate racing a queued job) can't corrupt each other's output, and
-    # a reader never sees a half-written WAV. Mirrors the elevenlabs backend.
+    # a reader never sees a half-written WAV. Mirrors the inworld backend.
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=path.suffix)
     try:

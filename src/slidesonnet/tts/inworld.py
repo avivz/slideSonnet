@@ -1,7 +1,7 @@
 """Inworld TTS backend — cloud, paid, studio-grade text-to-speech.
 
-Inworld matches ElevenLabs on quality while costing ~10x less, with a
-speaking-rate control that maps onto the deck's per-utterance ``:pace``. The
+Inworld is a low-cost, high-quality cloud engine, with a speaking-rate
+control that maps onto the deck's per-utterance ``:pace``. The
 engine talks to the ``inworld-tts`` SDK; its client returns the full audio as
 bytes, so synthesis is naturally atomic — a failed call writes nothing.
 """
