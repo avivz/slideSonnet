@@ -43,6 +43,32 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_logging() -> Iterator[None]:
+    """Strip slideSonnet's console/file handlers between tests for order-independence.
+
+    Deck commands now attach a rotating file handler (under the deck's tmp_path
+    cache) and the CLI group installs a console handler; left in place they would
+    keep writing to a previous test's now-deleted directory and leak across tests.
+    We remove only our own named handlers, leaving pytest's ``caplog`` alone.
+    """
+    import logging
+
+    from slidesonnet.logging_setup import PACKAGE_LOGGER
+
+    def _strip() -> None:
+        for logger in (logging.getLogger(), logging.getLogger(PACKAGE_LOGGER)):
+            for handler in list(logger.handlers):
+                if str(getattr(handler, "name", "")).startswith("slidesonnet-"):
+                    logger.removeHandler(handler)
+                    handler.close()
+        logging.getLogger(PACKAGE_LOGGER).setLevel(logging.NOTSET)
+
+    _strip()
+    yield
+    _strip()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_model_cache() -> Iterator[None]:
     """Reset the process-wide TTS model cache between tests for order-independence.
 

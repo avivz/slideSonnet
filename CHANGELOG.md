@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Unified, level-controlled logging across the CLI and editor.** Logging is now
+  configured once at startup, so a `logger.info`/`logger.exception` from any module
+  (including the background generation worker) reaches you instead of vanishing.
+  `--verbose`/`-v` shows debug detail, `--quiet`/`-q` drops to warnings, and the
+  `SLIDESONNET_LOG` env var sets the level when no flag is given (flag wins). Each
+  deck command also writes a rotating run log to `<deck>/.slidesonnet/slidesonnet.log`
+  capturing full DEBUG detail for post-mortem diagnosis — so a background-job
+  failure now lands on disk with its traceback. Configure it with `--log-file PATH`,
+  `--no-log-file`, or a `[logging]` section in `slidesonnet.toml` (`file`, `level`,
+  `max_bytes`, `backup_count`; size-based rotation caps disk at
+  `max_bytes * (backup_count + 1)`). The run log is a disposable artifact, removed
+  by `slidesonnet clean`. The editor's ad-hoc `[gen] …` progress prints are now
+  structured `logger` calls routed through the same configuration.
 - **Inworld cloud TTS engine (`--engine inworld`).** A paid cloud backend that
   synthesizes one content-addressed clip per utterance (`[tts.inworld]` config +
   the `inworld` extra), with an `INWORLD_API_KEY` check in `slidesonnet doctor`.

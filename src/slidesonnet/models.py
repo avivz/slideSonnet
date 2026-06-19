@@ -7,6 +7,7 @@ PageNarration / Deck) lives in :mod:`slidesonnet.narration.model`.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -88,6 +89,36 @@ class TTSConfig:
             raise ValueError(
                 f"qwen3_device must be one of {sorted(_QWEN3_DEVICES)}, got {self.qwen3_device!r}"
             )
+
+
+@dataclass
+class LoggingConfig:
+    """Log-file configuration (the console level comes from the CLI, not here).
+
+    *file* is an explicit path, or ``None`` to use the default under the deck's
+    ``.slidesonnet/`` cache. *enabled* is ``False`` when the user wrote
+    ``file = false`` in the TOML to turn the log file off entirely. The file
+    captures down to *level* (DEBUG by default) and rotates by size, capping disk
+    at roughly ``max_bytes * (backup_count + 1)``.
+    """
+
+    enabled: bool = True
+    file: str | None = None
+    level: str = "DEBUG"
+    max_bytes: int = 2_000_000
+    backup_count: int = 3
+
+    def __post_init__(self) -> None:
+        if logging.getLevelName(self.level.upper()) == f"Level {self.level.upper()}":
+            raise ValueError(
+                f"Invalid log level '{self.level}': expected one of "
+                "DEBUG, INFO, WARNING, ERROR, CRITICAL"
+            )
+        self.level = self.level.upper()
+        if self.max_bytes <= 0:
+            raise ValueError(f"max_bytes must be positive, got {self.max_bytes}")
+        if self.backup_count < 0:
+            raise ValueError(f"backup_count must be non-negative, got {self.backup_count}")
 
 
 _RESOLUTION_RE = re.compile(r"^\d+x\d+$")

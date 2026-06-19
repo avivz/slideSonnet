@@ -14,6 +14,7 @@ side effects — the banner, opening the browser — belong to the watcher only.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import threading
@@ -33,6 +34,8 @@ from slidesonnet.gui.launch import (
     is_wsl,
     launch_browser,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def should_open_browser(samples: Iterable[int | None]) -> bool:
@@ -76,7 +79,9 @@ def _open_browser_soon(url: str) -> None:
             browser, env_browser=env_browser, wsl=wsl, wslview=shutil.which("wslview")
         )
     if cmd is None and not use_webbrowser:
-        print(f"Open {url} in your browser (under WSL: install 'wslview' or pass --browser).")
+        logger.info(
+            "Open %s in your browser (under WSL: install 'wslview' or pass --browser).", url
+        )
         return
     opener = cmd
 
@@ -102,6 +107,23 @@ if __name__ in {"__main__", "__mp_main__"}:
     _host = os.environ.get("SLIDESONNET_DEV_HOST", "127.0.0.1")
     _port = int(os.environ.get("SLIDESONNET_DEV_PORT", "8080"))
 
+    # This is a fresh process (the exec'd reload server), so re-establish logging
+    # the CLI group set up — the level and log-file choice arrive via env.
+    from slidesonnet.logging_setup import (
+        ENV_LEVEL,
+        attach_deck_file_logging,
+        configure_console_logging,
+        resolve_console_level,
+    )
+
+    configure_console_logging(resolve_console_level(env=os.environ.get(ENV_LEVEL)))
+    _dev_log = os.environ.get("SLIDESONNET_DEV_LOG_FILE")
+    attach_deck_file_logging(
+        _pdf,
+        override=Path(_dev_log) if _dev_log else None,
+        disabled=os.environ.get("SLIDESONNET_DEV_NO_LOG_FILE") == "1",
+    )
+
     @ui.page("/")
     def _index() -> None:
         build_editor(_pdf, _sidecar)
@@ -115,7 +137,7 @@ if __name__ in {"__main__", "__mp_main__"}:
 
     if __name__ == "__main__":  # watcher process: one-shot side effects
         _url = f"http://{_host}:{_port}"
-        print(f"slideSonnet editor (dev, auto-reload) at {_url}  (Ctrl-C to stop)")
+        logger.info("slideSonnet editor (dev, auto-reload) at %s  (Ctrl-C to stop)", _url)
         if os.environ.get("SLIDESONNET_DEV_NO_BROWSER") != "1":
             _open_browser_soon(_url)
 

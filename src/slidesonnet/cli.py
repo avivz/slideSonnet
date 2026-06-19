@@ -14,6 +14,12 @@ import click
 
 from slidesonnet import __version__
 from slidesonnet.diagnostics import Diagnostic, count_by_severity, has_errors
+from slidesonnet.logging_setup import (
+    ENV_LEVEL,
+    attach_deck_file_logging,
+    configure_console_logging,
+    resolve_console_level,
+)
 from slidesonnet.tts import BACKENDS
 from slidesonnet.exceptions import SlideSonnetError
 
@@ -22,19 +28,16 @@ logger = logging.getLogger(__name__)
 _SEVERITY_COLOR = {"error": "red", "warning": "yellow", "info": "cyan"}
 
 
-class _CliFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        if record.levelno >= logging.WARNING:
-            return f"{record.levelname}: {record.getMessage()}"
-        return record.getMessage()
+def _attach_deck_logging(ctx: click.Context, pdf: Path) -> None:
+    """Add the rotating run-log for *pdf*, honoring --log-file/--no-log-file and config.
 
-
-def _configure_logging(quiet: bool = False) -> None:
-    if not logging.root.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(_CliFormatter())
-        logging.root.addHandler(handler)
-    logging.root.setLevel(logging.WARNING if quiet else logging.INFO)
+    Console logging is already configured by the group; this layers a file handler
+    so a ``logger.exception`` from any module (including the background job worker)
+    lands on disk with its traceback.
+    """
+    attach_deck_file_logging(
+        pdf, override=ctx.obj.get("log_file"), disabled=ctx.obj.get("no_log_file", False)
+    )
 
 
 class _SuggestGroup(click.Group):
@@ -60,8 +63,18 @@ class _SuggestGroup(click.Group):
 @click.group(cls=_SuggestGroup, invoke_without_command=True)
 @click.version_option(version=__version__)
 @click.option("--quiet", "-q", is_flag=True, help="Suppress progress output (errors still shown)")
+@click.option("--verbose", "-v", is_flag=True, help="Show debug-level detail in the console")
+@click.option(
+    "--log-file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write the run log here (default: <deck>/.slidesonnet/slidesonnet.log)",
+)
+@click.option("--no-log-file", is_flag=True, help="Don't write a run-log file")
 @click.pass_context
-def main(ctx: click.Context, quiet: bool) -> None:
+def main(
+    ctx: click.Context, quiet: bool, verbose: bool, log_file: Path | None, no_log_file: bool
+) -> None:
     """slideSonnet — write, preview, and render narration for a PDF deck.
 
     \b
@@ -84,9 +97,16 @@ def main(ctx: click.Context, quiet: bool) -> None:
       clean   deck.pdf [--keep ...]        prune the audio/render cache
       doctor                               check installed dependencies
     """
-    _configure_logging(quiet=quiet)
+    try:
+        level = resolve_console_level(quiet=quiet, verbose=verbose, env=os.environ.get(ENV_LEVEL))
+    except ValueError as e:
+        raise click.UsageError(str(e)) from e
+    configure_console_logging(level)
     ctx.ensure_object(dict)
     ctx.obj["quiet"] = quiet
+    ctx.obj["verbose"] = verbose
+    ctx.obj["log_file"] = log_file
+    ctx.obj["no_log_file"] = no_log_file
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
@@ -188,10 +208,14 @@ def _progress(slide_id: str, done: int, total: int) -> None:
 @_NARRATION_OPT
 @_ENGINE_OPT
 @click.option("--id", "ids", multiple=True, help="Synthesize only these slide-ids (repeatable)")
-def tts(pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, ...]) -> None:
+@click.pass_context
+def tts(
+    ctx: click.Context, pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, ...]
+) -> None:
     """Synthesize narration into the content-addressed cache (cache-aware)."""
     from slidesonnet.api import synthesize_deck
 
+    _attach_deck_logging(ctx, pdf)
     with _cli_errors():
         n = synthesize_deck(
             pdf,
@@ -225,7 +249,9 @@ def tts(pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, .
     show_default=True,
     help="One cue per speech segment, or per slide",
 )
+@click.pass_context
 def export(
+    ctx: click.Context,
     pdf: Path,
     output: Path,
     narration: Path | None,
@@ -239,6 +265,7 @@ def export(
     """Render the narrated (or silent) video with optional subtitles."""
     from slidesonnet.api import export as run_export
 
+    _attach_deck_logging(ctx, pdf)
     with _cli_errors():
         result = run_export(
             pdf,
@@ -274,7 +301,9 @@ def export(
 )
 @click.option("--timing", default="tts", show_default=True, help="tts | estimate | fixed:N")
 @click.option("--wpm", default=150.0, show_default=True)
+@click.pass_context
 def subs(
+    ctx: click.Context,
     pdf: Path,
     output: Path,
     narration: Path | None,
@@ -286,6 +315,7 @@ def subs(
     """Write subtitles without rendering video (cached audio durations, else timing model)."""
     from slidesonnet.api import write_subs
 
+    _attach_deck_logging(ctx, pdf)
     with _cli_errors():
         path = write_subs(
             pdf,
@@ -356,7 +386,9 @@ def clean(pdf: Path, keep: str, yes: bool) -> None:
     help="Auto-restart the editor when slideSonnet's own source code changes "
     "(for hacking on slideSonnet itself).",
 )
+@click.pass_context
 def edit(
+    ctx: click.Context,
     pdf: Path,
     narration: Path | None,
     host: str,
@@ -388,8 +420,17 @@ def edit(
             app_window=app_window,
             no_browser=no_browser,
         )
-        os.execve(sys.executable, argv, {**os.environ, **extra_env})
+        # The reload server is a fresh process that never re-enters this group, so
+        # carry the console level and log-file choice across the exec via env.
+        env = {**os.environ, **extra_env}
+        env[ENV_LEVEL] = logging.getLevelName(logging.root.level)
+        if ctx.obj.get("no_log_file"):
+            env["SLIDESONNET_DEV_NO_LOG_FILE"] = "1"
+        elif ctx.obj.get("log_file") is not None:
+            env["SLIDESONNET_DEV_LOG_FILE"] = str(Path(ctx.obj["log_file"]).resolve())
+        os.execve(sys.executable, argv, env)
 
+    _attach_deck_logging(ctx, pdf)
     run_editor(
         pdf,
         sidecar_path=narration,

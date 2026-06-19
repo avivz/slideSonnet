@@ -13,7 +13,12 @@ from click.testing import CliRunner
 
 from slidesonnet.api import ExportResult
 from slidesonnet.clean import CleanResult
-from slidesonnet.cli import _CliFormatter, _configure_logging, main
+from slidesonnet.cli import main
+from slidesonnet.logging_setup import (
+    _ConsoleFormatter,
+    configure_console_logging,
+    resolve_console_level,
+)
 from slidesonnet.exceptions import SlideSonnetError
 from tests.conftest import simple_narration
 
@@ -122,7 +127,7 @@ def test_no_subcommand_prints_help() -> None:
 
 
 def test_cli_formatter_prefixes_warnings_only() -> None:
-    fmt = _CliFormatter()
+    fmt = _ConsoleFormatter()
     warn = logging.LogRecord("x", logging.WARNING, __file__, 1, "careful", None, None)
     info = logging.LogRecord("x", logging.INFO, __file__, 1, "progress", None, None)
     assert fmt.format(warn) == "WARNING: careful"
@@ -130,17 +135,13 @@ def test_cli_formatter_prefixes_warnings_only() -> None:
 
 
 def test_configure_logging_installs_handler_and_quiet_level() -> None:
-    root = logging.getLogger()
-    saved_handlers = root.handlers[:]
-    saved_level = root.level
-    root.handlers.clear()
-    try:
-        _configure_logging(quiet=True)
-        assert root.level == logging.WARNING
-        assert any(isinstance(h.formatter, _CliFormatter) for h in root.handlers)
-    finally:
-        root.handlers[:] = saved_handlers
-        root.setLevel(saved_level)
+    configure_console_logging(resolve_console_level(quiet=True))
+    consoles = [
+        h for h in logging.getLogger().handlers if getattr(h, "name", "") == "slidesonnet-console"
+    ]
+    assert len(consoles) == 1
+    assert consoles[0].level == logging.WARNING
+    assert isinstance(consoles[0].formatter, _ConsoleFormatter)
 
 
 def _copy_pdf(tmp_path: Path) -> Path:
@@ -216,6 +217,48 @@ def test_tts_progress_logs_slide_ids(
         result = CliRunner().invoke(main, ["tts", str(_copy_pdf(tmp_path))])
     assert result.exit_code == 0
     assert "[1/2] intro-title" in caplog.text
+
+
+def test_tts_writes_run_log_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_synthesize_deck(pdf: Path, **kwargs: Any) -> int:
+        kwargs["progress"]("intro-title", 1, 1)
+        return 1
+
+    monkeypatch.setattr("slidesonnet.api.synthesize_deck", fake_synthesize_deck)
+    pdf = _copy_pdf(tmp_path)
+    result = CliRunner().invoke(main, ["tts", str(pdf)])
+    assert result.exit_code == 0
+    log = tmp_path / ".slidesonnet" / "slidesonnet.log"
+    assert log.exists()
+    assert "intro-title" in log.read_text(encoding="utf-8")
+
+
+def test_no_log_file_skips_run_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("slidesonnet.api.synthesize_deck", lambda pdf, **kw: 0)
+    pdf = _copy_pdf(tmp_path)
+    result = CliRunner().invoke(main, ["--no-log-file", "tts", str(pdf)])
+    assert result.exit_code == 0
+    assert not (tmp_path / ".slidesonnet" / "slidesonnet.log").exists()
+
+
+def test_log_file_override_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_synthesize_deck(pdf: Path, **kwargs: Any) -> int:
+        kwargs["progress"]("intro-title", 1, 1)
+        return 1
+
+    monkeypatch.setattr("slidesonnet.api.synthesize_deck", fake_synthesize_deck)
+    pdf = _copy_pdf(tmp_path)
+    custom = tmp_path / "elsewhere" / "run.log"
+    result = CliRunner().invoke(main, ["--log-file", str(custom), "tts", str(pdf)])
+    assert result.exit_code == 0
+    assert custom.exists()
+    assert not (tmp_path / ".slidesonnet" / "slidesonnet.log").exists()
+
+
+def test_quiet_and_verbose_conflict(tmp_path: Path) -> None:
+    result = CliRunner().invoke(main, ["--quiet", "--verbose", "init", str(_copy_pdf(tmp_path))])
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
 
 
 def test_tts_reports_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

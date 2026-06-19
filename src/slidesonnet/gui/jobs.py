@@ -253,7 +253,7 @@ class JobQueue:
             handle.status = "running"
             handle.started_at = time.monotonic()
             done, total = self.progress()
-            print(f"[gen] {done + 1}/{total}  {self._describe(handle)} — synthesizing…", flush=True)
+            logger.info("[gen] %d/%d  %s — synthesizing…", done + 1, total, self._describe(handle))
             self._emit()
             try:
                 with cancel_scope(handle.cancel):
@@ -268,23 +268,24 @@ class JobQueue:
                     handle.status = "queued"
                     self._pending[handle.key] = handle
                     self._wake.set()
-                    print(f"[gen] {self._describe(handle)} — preempted, re-queued", flush=True)
+                    logger.info("[gen] %s — preempted, re-queued", self._describe(handle))
                     self._emit()
                     continue
                 # Aborted by cancel-all: drop it (fall through to the done bookkeeping
                 # below) so it isn't re-queued and its awaiters are released.
                 handle.status = "error"
-                print(f"[gen] {self._describe(handle)} — canceled", flush=True)
+                logger.info("[gen] %s — canceled", self._describe(handle))
             except Exception as exc:  # keep the worker alive; surface on the handle
                 handle.status = "error"
                 handle.error = exc
-                logger.exception("background generation failed for %s", handle.key)
-                print(f"[gen] {self._describe(handle)} — FAILED: {exc}", flush=True)
+                # exception() records the traceback at ERROR — the run-log now has
+                # the cause a swallowed background failure used to hide.
+                logger.exception("[gen] %s — FAILED", self._describe(handle))
                 self._safe_on_error(handle)
             else:
                 handle.status = "done"
                 elapsed = time.monotonic() - (handle.started_at or time.monotonic())
-                print(f"[gen] {self._describe(handle)} — done in {elapsed:.1f}s", flush=True)
+                logger.info("[gen] %s — done in %.1fs", self._describe(handle), elapsed)
             self._running = None
             self._inflight.pop(handle.key, None)
             handle.done.set()

@@ -1779,10 +1779,10 @@ class EditorView:
         the long first pause while the multi-GB model loads.
         """
         if self.state.model_warmup_pending():
-            print(
-                f"[gen] loading the {self.state.active_backend} voice model — the first "
-                "clip may take a while; the rest are quick.",
-                flush=True,
+            logger.info(
+                "[gen] loading the %s voice model — the first clip may take a while; "
+                "the rest are quick.",
+                self.state.active_backend,
             )
 
     def enqueue_segment(self, speech_index: int) -> None:
@@ -1818,7 +1818,7 @@ class EditorView:
         targets = self.state.targets_for_sweep()
         backend = self.state.active_backend
         if not targets:
-            print(f"[gen] nothing to generate — all audio for {backend} exists", flush=True)
+            logger.info("[gen] nothing to generate — all audio for %s exists", backend)
             self.flash(f"Nothing to generate — all audio for {backend} exists")
             return
         if self.state.tts_is_paid and not await self.confirm_paid_synth(
@@ -1827,7 +1827,7 @@ class EditorView:
             return
         self._flag_model_warmup()
         handles = self.jobs.enqueue(targets, allow_paid=True)
-        print(f"[gen] queued {len(handles)} clip(s) for {backend}", flush=True)
+        logger.info("[gen] queued %d clip(s) for %s", len(handles), backend)
         self.flash(f"Generating {len(handles)} clip(s) with {backend}…")
         self.render_side()
         self._render_gen_progress()
@@ -1891,7 +1891,7 @@ class EditorView:
     def cancel_all_generation(self) -> None:
         """Drop every queued clip and stop the running one (the progress-bar ✕)."""
         cleared = self.jobs.cancel_all()
-        print(f"[gen] canceled {cleared} queued/running clip(s)", flush=True)
+        logger.info("[gen] canceled %d queued/running clip(s)", cleared)
         self.flash(
             f"Canceled generation ({cleared} clip{'s' if cleared != 1 else ''})"
             if cleared
@@ -1963,13 +1963,13 @@ class EditorView:
         since switched away — the (cached) load still benefits a later switch back.
         """
         backend = self.state.active_backend
-        self._flag_model_warmup()  # prints "loading the qwen3 voice model…" to the terminal
+        self._flag_model_warmup()  # logs "loading the qwen3 voice model…" to the terminal
         try:
             await run.io_bound(self.state.warm_active_engine)
         except Exception:
             logger.exception("model warmup failed")
             return
-        print(f"[gen] {backend} voice model ready", flush=True)
+        logger.info("[gen] %s voice model ready", backend)
         if self.state.active_backend == backend:
             with self.client:
                 self.render()  # warmup banner clears now that is_warm() is True
@@ -2271,5 +2271,5 @@ def run_editor(
                 url,
             )
 
-    print(f"slideSonnet editor running at {url}  (Ctrl-C to stop)")
+    logger.info("slideSonnet editor running at %s  (Ctrl-C to stop)", url)
     ui.run(host=host, port=port, title="slideSonnet", reload=False, show=show)

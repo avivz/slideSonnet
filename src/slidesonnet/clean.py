@@ -63,6 +63,7 @@ def clean(pdf_path: Path, keep: KeepLevel = "api") -> CleanResult:
     if keep == "nothing":
         shutil.rmtree(root)
     else:
+        _remove_logs(pdf_path)
         _remove_renders(pdf_path)
         if keep == "api":
             _keep_api(pdf_path)
@@ -106,6 +107,16 @@ def prune_local_orphans(pdf_path: Path) -> CleanResult:
         f.unlink()
         result.removed_files += 1
     return result
+
+
+def _remove_logs(pdf_path: Path) -> None:
+    """Drop the run log and its rotated backups — a disposable diagnostic artifact."""
+    from slidesonnet.logging_setup import LOG_FILENAME
+
+    root = cache_root(pdf_path)
+    for log in root.glob(f"{LOG_FILENAME}*"):
+        if log.is_file():
+            log.unlink()
 
 
 def _remove_renders(pdf_path: Path) -> None:

@@ -16,6 +16,34 @@ def test_missing_config_is_all_defaults(tmp_path: Path) -> None:
     assert cfg.tts.backend == "kokoro"
     assert cfg.video.resolution == "1920x1080"
     assert cfg.voices == {}
+    assert cfg.logging.enabled is True
+    assert cfg.logging.file is None
+
+
+def test_logging_section_overrides(tmp_path: Path) -> None:
+    (tmp_path / "slidesonnet.toml").write_text(
+        """
+[logging]
+file = "logs/run.log"
+level = "INFO"
+max_bytes = 5000
+backup_count = 1
+""",
+        encoding="utf-8",
+    )
+    cfg = load_config(tmp_path / "deck.pdf")
+    assert cfg.logging.enabled is True
+    # A relative path is resolved against the config dir, like other path settings.
+    assert cfg.logging.file == str((tmp_path / "logs/run.log").resolve())
+    assert cfg.logging.level == "INFO"
+    assert cfg.logging.max_bytes == 5000
+    assert cfg.logging.backup_count == 1
+
+
+def test_logging_can_be_disabled(tmp_path: Path) -> None:
+    (tmp_path / "slidesonnet.toml").write_text("[logging]\nfile = false\n", encoding="utf-8")
+    cfg = load_config(tmp_path / "deck.pdf")
+    assert cfg.logging.enabled is False
 
 
 def test_default_config_path(tmp_path: Path) -> None:

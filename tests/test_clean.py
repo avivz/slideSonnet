@@ -28,6 +28,16 @@ def _seed(tmp_path: Path) -> Path:
     return pdf
 
 
+def test_clean_removes_run_log(tmp_path: Path) -> None:
+    pdf = _seed(tmp_path)
+    log = cache_root(pdf) / "slidesonnet.log"
+    log.write_text("run log", encoding="utf-8")
+    (cache_root(pdf) / "slidesonnet.log.1").write_text("rotated", encoding="utf-8")
+    clean(pdf, keep="api")  # the log is a disposable artifact, gone on any clean
+    assert not log.exists()
+    assert not (cache_root(pdf) / "slidesonnet.log.1").exists()
+
+
 def test_keep_api_drops_kokoro_keeps_cloud(tmp_path: Path) -> None:
     pdf = _seed(tmp_path)
     clean(pdf, keep="api")

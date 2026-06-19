@@ -21,6 +21,12 @@ Example ``slidesonnet.toml``::
     kokoro = "af_heart"
     inworld = "Ashley"
 
+    [logging]
+    file = ".slidesonnet/slidesonnet.log"  # or false to disable the run log
+    level = "DEBUG"                          # file detail level; console obeys -v/-q
+    max_bytes = 2_000_000                    # rotate past ~2 MB
+    backup_count = 3                         # keep slidesonnet.log.1 .. .3
+
     pronunciation = ["pronunciation.md"]
 """
 
@@ -34,7 +40,7 @@ from typing import Any
 
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.tts import BACKENDS
-from slidesonnet.models import TTSConfig, VideoConfig, VoiceConfig
+from slidesonnet.models import LoggingConfig, TTSConfig, VideoConfig, VoiceConfig
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
 
 logger = logging.getLogger(__name__)
@@ -50,6 +56,7 @@ class Config:
     tts: TTSConfig = field(default_factory=TTSConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
     voices: dict[str, VoiceConfig] = field(default_factory=dict)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
     pronunciation_files: list[Path] = field(default_factory=list)
     pronunciation: dict[str, str] = field(default_factory=dict)
 
@@ -83,6 +90,7 @@ def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
         tts=_parse_tts(raw.get("tts", {})),
         video=_parse_video(raw.get("video", {})),
         voices=_parse_voices(raw.get("voices", {})),
+        logging=_parse_logging(raw.get("logging", {}), cfg_dir),
         pronunciation_files=[cfg_dir / p for p in raw.get("pronunciation", [])],
     )
     # The Qwen3 voice prompt is a file path; resolve it relative to the config
@@ -136,6 +144,27 @@ def _parse_video(raw: dict[str, Any]) -> VideoConfig:
         if key in raw:
             kwargs[key] = cast(raw[key])
     return VideoConfig(**kwargs)
+
+
+def _parse_logging(raw: dict[str, Any], cfg_dir: Path) -> LoggingConfig:
+    kwargs: dict[str, Any] = {}
+    file = raw.get("file")
+    if file is False:
+        # `file = false` turns the log file off entirely.
+        kwargs["enabled"] = False
+    elif isinstance(file, str):
+        # A relative path is relative to the config, so a deck stays portable.
+        kwargs["file"] = str((cfg_dir / file).resolve())
+    if "level" in raw:
+        kwargs["level"] = str(raw["level"])
+    if "max_bytes" in raw:
+        kwargs["max_bytes"] = int(raw["max_bytes"])
+    if "backup_count" in raw:
+        kwargs["backup_count"] = int(raw["backup_count"])
+    try:
+        return LoggingConfig(**kwargs)
+    except ValueError as e:
+        raise ConfigError(f"slidesonnet.toml [logging]: {e}") from e
 
 
 def _parse_voices(raw: dict[str, Any]) -> dict[str, VoiceConfig]:
