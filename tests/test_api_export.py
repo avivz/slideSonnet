@@ -33,7 +33,9 @@ def pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
                 results[(slide_id, i)] = SynthResult(path=clip, duration=2.0, from_cache=True)
         return results
 
-    def fake_track(timeline: Any, clips: Any, *, render_dir: Path) -> tuple[Path, list[Path]]:
+    def fake_track(
+        timeline: Any, clips: Any, *, render_dir: Path, progress: Any = None
+    ) -> tuple[Path, list[Path]]:
         calls["track"].append(timeline)
         return tmp_path / "track.wav", [tmp_path / "p.wav" for _ in timeline.pages]
 
