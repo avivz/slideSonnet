@@ -31,6 +31,7 @@ from slidesonnet.deck import (
     unique_real_ids,
 )
 from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
+from slidesonnet.env import load_env
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
@@ -115,6 +116,10 @@ class EditorState:
 
     def __init__(self, pdf_path: Path, *, sidecar_path: Path | None = None) -> None:
         self.pdf_path = pdf_path.resolve()
+        # Load the deck's .env up front so cloud keys are present on every editor
+        # path — including warm/voice-listing, which create_tts directly rather
+        # than through api._load (the synthesis path already anchors there too).
+        load_env(self.pdf_path.parent)
         self.sidecar_path = sidecar_path or default_sidecar_path(self.pdf_path)
         self.config = load_config(self.pdf_path)
         # The generation engine is chosen in the GUI (session-only, never written

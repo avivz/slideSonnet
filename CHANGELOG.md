@@ -192,9 +192,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   `slidesonnet doctor` loaded `.env`; the engines read `os.environ` directly, so
   a key sitting in `.env` was invisible to actual synthesis — a paid render or
   preview failed with "`INWORLD_API_KEY` not set" even though the key was there.
-  `create_tts` (the one factory every synthesis path flows through) now loads
-  `.env` first, searching from the working directory upward; an exported variable
-  still wins over the file.
+  Every synthesis path now loads `.env` first, **anchored at the deck's
+  directory** (then the cwd) — so the key is found no matter where the editor or
+  CLI was launched from (e.g. from `$HOME` while editing a deck whose `.env` sits
+  in a tree the cwd never reaches upward). The deck-dir `.env` wins over the
+  cwd's, and an exported variable still wins over both.
 - **Kokoro no longer floods the terminal on load.** The two torch warnings its
   model construction always emits (an LSTM `dropout` UserWarning and a `weight_norm`
   deprecation FutureWarning) are suppressed around the pipeline build, so the

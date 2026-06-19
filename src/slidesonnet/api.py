@@ -163,7 +163,11 @@ def _load(
 ) -> tuple[Deck, Config]:
     from slidesonnet.config import load_config
     from slidesonnet.deck import load_deck
+    from slidesonnet.env import load_env
 
+    # Anchor the .env search at the deck dir so a cloud key is found no matter
+    # where the editor/CLI was launched from (the cwd may never reach it upward).
+    load_env(pdf_path.parent)
     config = load_config(pdf_path, config_path=config_path)
     if engine is not None:
         config.tts.backend = engine
