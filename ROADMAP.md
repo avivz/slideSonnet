@@ -151,8 +151,9 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    diagnostics on real overlay decks, editor save/reload paths. Finish with
    a joint human+AI review of coverage and quality. **[agent→human]**
 3. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
-   ElevenLabs render (ElevenLabs is now removed — see Done). Blocked on Now #6
-   (the Inworld paid validation + voice-quality verdict). Human triggers the render;
+   ElevenLabs render (ElevenLabs is now removed — see Done). Inworld is now
+   validated on a real paid run (see Done), so the remaining blocker is **Now #1**
+   (the MP3 subtitle drift fix) for clean subtitles. Human triggers the render;
    agent uploads to the `v0.0.0` GitHub Release (`gh release upload --clobber`)
    and refreshes README links. **[human→agent]**
 4. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
@@ -262,7 +263,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    **off**, behavior is unchanged (assemble on demand at Play-all time). *Appetite:*
    half a day. *Design note:* reuse `preview_deck`/`build_preview`; cache the
    assembled track keyed to a deck/config/voice hash so an edit invalidates it.
-   Complements the Now #8 sub-item "let Play all start before everything is
+   Complements the Now #4 sub-item "let Play all start before everything is
    generated" — that's *partial* play mid-generation; this is *instant* play once
    the deck is fully generated and idle. **[agent]**
 13. [ ] **Cache inventory — show what's cached (count + size) before clearing it.**
@@ -325,7 +326,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    **[agent]**
 17. [ ] **Bug: "Play all" flashes black between a transition and the next slide.**
    *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic flicker, not
-   a2-blocking. Sibling of #15 and Now #3 — the "hold the old frame until the new
+   a2-blocking. Sibling of #16 — the "hold the old frame until the new
    one paints" family.)* *Symptom:* during whole-deck play, an animated boundary
    plays the morph then blinks through a black frame before the next slide — a
    two-clock handoff gap between the morph overlay (`gui/static/morph.html`, RAF
@@ -376,7 +377,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 3. **Layered reconciliation** — optional text-fingerprint fallback when ids are
    missing, for non-Beamer sources.
 4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
-   interface). (Qwen3-TTS local shipped — see Done; Inworld is Now #6; the Qwen3
+   interface). (Qwen3-TTS local + Inworld cloud both shipped — see Done; the Qwen3
    DashScope cloud mode is in Next.)
 5. **Multi-deck playlists** — concatenate several PDFs into one video.
 6. **`--json` output** for CI/automation.
@@ -472,7 +473,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
   on any external reload (mirroring what `replace_block` already does for in-GUI
   edits). Found while using the editor; reproduced first as browser journey 11
   (`test_external_edit_revokes_loaded_preview`), red→green. The in-GUI blur-timing
-  sibling (silence/pause fields) is still open — now Now #3.
+  sibling (silence/pause fields) also shipped in a2 (the play-press flush fix above).
 - [x] **Fixed the CI `test`-job hang — the a2 release blocker** (2026-06-19,
   `e9b6744`; CI green on `main` at `633ccc5`). GUI unit tests that play/generate
   drove the background queue through real synthesis, but CI installs only `[dev]`
