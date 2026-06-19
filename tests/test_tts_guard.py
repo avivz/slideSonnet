@@ -13,6 +13,7 @@ import pytest
 
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.elevenlabs import ElevenLabsTTS
+from slidesonnet.tts.inworld import InworldTTS
 
 
 def test_api_key_env_is_sentinel() -> None:
@@ -33,3 +34,15 @@ def test_dotenv_cannot_override_sentinel() -> None:
 
     load_dotenv()
     assert os.environ.get("ELEVENLABS_API_KEY") == "unit-test-no-real-calls"
+
+
+def test_inworld_api_key_env_is_sentinel() -> None:
+    """The autouse guard pins the Inworld key to a sentinel too."""
+    assert os.environ.get("INWORLD_API_KEY") == "unit-test-no-real-calls"
+
+
+def test_real_inworld_client_construction_fails_fast() -> None:
+    """Constructing the real Inworld client inside a test raises immediately."""
+    tts = InworldTTS(TTSConfig(backend="inworld", inworld_voice="Ashley"))
+    with pytest.raises(AssertionError, match="real Inworld client"):
+        tts._ensure_client()

@@ -77,6 +77,7 @@ def engine_for_pace(tts: TTSConfig, pace: Pace | None, cache: dict[float, TTSEng
             tts,
             kokoro_speed=tts.kokoro_speed * speed,
             elevenlabs_speed=tts.elevenlabs_speed * speed,
+            inworld_speed=tts.inworld_speed * speed,
         )
         cache[speed] = create_tts(cfg)
     return cache[speed]

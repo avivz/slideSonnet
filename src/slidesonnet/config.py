@@ -97,6 +97,7 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     kokoro = raw.get("kokoro", {})
     el = raw.get("elevenlabs", {})
     qwen3 = raw.get("qwen3", {})
+    inworld = raw.get("inworld", {})
     kwargs: dict[str, Any] = {}
     if "backend" in raw:
         kwargs["backend"] = raw["backend"]
@@ -122,6 +123,14 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     ):
         if key in el:
             kwargs[target] = cast(el[key])
+    for key, target, cast in (
+        ("api_key_env", "inworld_api_key_env", str),
+        ("voice", "inworld_voice", str),
+        ("model", "inworld_model", str),
+        ("speed", "inworld_speed", float),
+    ):
+        if key in inworld:
+            kwargs[target] = cast(inworld[key])
     return TTSConfig(**kwargs)
 
 

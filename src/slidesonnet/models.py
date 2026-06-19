@@ -18,7 +18,7 @@ ProgressFn = Callable[[str, int, int], None]
 
 # The typed source of backend names. mypy can't derive a Literal from the
 # runtime registry (tts.BACKENDS); a test pins the two in sync.
-Backend = Literal["kokoro", "elevenlabs", "qwen3"]
+Backend = Literal["kokoro", "elevenlabs", "qwen3", "inworld"]
 
 #: Devices the local Qwen3 engine can load onto (base device; the engine appends
 #: ``:0`` for the accelerators). Validated on TTSConfig.
@@ -80,6 +80,10 @@ class TTSConfig:
     qwen3_device: str = "xpu"
     qwen3_voice_prompt: str = ""  # path to a .pt voice-clone prompt (Base own-voice only)
     qwen3_language: str = "English"
+    inworld_api_key_env: str = "INWORLD_API_KEY"
+    inworld_voice: str = ""  # an Inworld voice name (e.g. "Ashley"); see the voice library
+    inworld_model: str = "inworld-tts-1.5-max"  # quality-optimized; -mini trades for latency
+    inworld_speed: float = 1.0  # base speaking_rate; per-utterance :pace multiplies this
 
     def __post_init__(self) -> None:
         if not (0.0 <= self.elevenlabs_stability <= 1.0):
@@ -95,6 +99,8 @@ class TTSConfig:
             raise ValueError(f"kokoro_speed must be positive, got {self.kokoro_speed}")
         if self.elevenlabs_speed <= 0:
             raise ValueError(f"elevenlabs_speed must be positive, got {self.elevenlabs_speed}")
+        if self.inworld_speed <= 0:
+            raise ValueError(f"inworld_speed must be positive, got {self.inworld_speed}")
         if self.qwen3_device not in _QWEN3_DEVICES:
             raise ValueError(
                 f"qwen3_device must be one of {sorted(_QWEN3_DEVICES)}, got {self.qwen3_device!r}"

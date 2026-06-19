@@ -15,6 +15,7 @@ from slidesonnet.doctor import (
     _get_cli_version,
     check_api_key,
     check_ffmpeg,
+    check_inworld_api_key,
     check_nicegui,
     check_pymupdf,
     check_python,
@@ -103,6 +104,21 @@ def test_api_key_missing_without_dotenv(monkeypatch: pytest.MonkeyPatch) -> None
     result = check_api_key()
     assert result.status == "missing"
     assert "export" in result.hint or ".env" in result.hint
+
+
+def test_inworld_api_key_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("INWORLD_API_KEY", "secret")
+    result = check_inworld_api_key()
+    assert result.name == "INWORLD_API_KEY"
+    assert result.status == "ok"
+    assert result.version == "set"
+
+
+def test_inworld_api_key_missing_without_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "dotenv", None)  # makes `from dotenv import ...` fail
+    monkeypatch.delenv("INWORLD_API_KEY", raising=False)
+    result = check_inworld_api_key()
+    assert result.status == "missing"
 
 
 def _groups(group: str, *checks: CheckResult) -> list[tuple[str, list[CheckResult]]]:

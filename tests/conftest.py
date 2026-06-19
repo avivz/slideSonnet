@@ -86,6 +86,34 @@ def _no_real_elevenlabs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
+class _GuardedInworld:
+    """Stand-in for the real Inworld client: any construction is a test bug.
+
+    Tests that need a client mock ``@patch("slidesonnet.tts.inworld.InworldClient")``
+    over this, so only an unmocked (would-be real, would-be billed) construction
+    ever reaches here.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        raise AssertionError(
+            "test constructed a real Inworld client — this would call the paid API; "
+            "mock slidesonnet.tts.inworld.InworldClient instead"
+        )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_inworld(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Make a real Inworld call impossible from any test (mirrors ElevenLabs).
+
+    The API key env var is pinned to a sentinel (so doctor's ``load_dotenv()``
+    can't leak a real key from ``.env``), and the SDK client class is replaced
+    with one that fails fast on construction.
+    """
+    monkeypatch.setenv("INWORLD_API_KEY", _SENTINEL_KEY)
+    monkeypatch.setattr("slidesonnet.tts.inworld.InworldClient", _GuardedInworld)
+    yield
+
+
 # 1x1 black pixel — a valid PNG for stubbing rasterized page images
 _TINY_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQAB"

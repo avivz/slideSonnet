@@ -29,6 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 kokoro = ["kokoro>=0.9"]
 elevenlabs = ["elevenlabs>=1.0"]
+inworld = ["inworld-tts>=1.0"]
 qwen3 = ["qwen-tts>=0.1", "torch>=2.0"]
 dev = [
     "pytest>=8.0",
@@ -67,6 +68,7 @@ strict = true
 [[tool.mypy.overrides]]
 module = [
     "elevenlabs.*",
+    "inworld_tts.*",
     "dotenv.*",
     "kokoro.*",
     "qwen_tts.*",

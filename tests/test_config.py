@@ -97,6 +97,24 @@ speed = 1.1
     assert cfg.tts.elevenlabs_speed == 1.1
 
 
+def test_inworld_settings_parsed(tmp_path: Path) -> None:
+    (tmp_path / "slidesonnet.toml").write_text(
+        """
+[tts.inworld]
+api_key_env = "MY_INWORLD_KEY"
+voice = "Ashley"
+model = "inworld-tts-1.5-mini"
+speed = 1.2
+""",
+        encoding="utf-8",
+    )
+    cfg = load_config(tmp_path / "deck.pdf")
+    assert cfg.tts.inworld_api_key_env == "MY_INWORLD_KEY"
+    assert cfg.tts.inworld_voice == "Ashley"
+    assert cfg.tts.inworld_model == "inworld-tts-1.5-mini"
+    assert cfg.tts.inworld_speed == 1.2
+
+
 def test_qwen3_settings_parsed_and_prompt_resolved(tmp_path: Path) -> None:
     (tmp_path / "slidesonnet.toml").write_text(
         """

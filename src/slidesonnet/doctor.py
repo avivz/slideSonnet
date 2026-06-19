@@ -160,23 +160,32 @@ def check_qwen3() -> CheckResult:
     )
 
 
-def check_api_key() -> CheckResult:
+def check_inworld() -> CheckResult:
+    return _check_python_package(
+        "inworld-tts", "inworld_tts", "pip install slidesonnet[inworld]", "Cloud TTS (paid)"
+    )
+
+
+def _check_api_key(env: str, engine: str) -> CheckResult:
     try:
         from dotenv import load_dotenv
 
         load_dotenv()
     except ImportError:
         pass
-    key = os.environ.get("ELEVENLABS_API_KEY")
-    if key:
-        return CheckResult("ELEVENLABS_API_KEY", "ok", "set", "", "Only needed for elevenlabs TTS")
+    if os.environ.get(env):
+        return CheckResult(env, "ok", "set", "", f"Only needed for {engine} TTS")
     return CheckResult(
-        "ELEVENLABS_API_KEY",
-        "missing",
-        "",
-        "Add to .env or export in shell",
-        "Only for elevenlabs TTS",
+        env, "missing", "", "Add to .env or export in shell", f"Only for {engine} TTS"
     )
+
+
+def check_api_key() -> CheckResult:
+    return _check_api_key("ELEVENLABS_API_KEY", "elevenlabs")
+
+
+def check_inworld_api_key() -> CheckResult:
+    return _check_api_key("INWORLD_API_KEY", "inworld")
 
 
 def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
@@ -191,9 +200,9 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
         ("Beamer toolchain (for compiling your deck)", [check_latexmk(), check_pdflatex()]),
         (
             "TTS backends (at least one required)",
-            [check_kokoro(), check_qwen3(), check_elevenlabs()],
+            [check_kokoro(), check_qwen3(), check_elevenlabs(), check_inworld()],
         ),
-        ("API keys", [check_api_key()]),
+        ("API keys", [check_api_key(), check_inworld_api_key()]),
     ]
 
 

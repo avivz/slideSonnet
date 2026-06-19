@@ -29,6 +29,12 @@ def _make_elevenlabs(tts: TTSConfig) -> TTSEngine:
     return ElevenLabsTTS(tts)
 
 
+def _make_inworld(tts: TTSConfig) -> TTSEngine:
+    from slidesonnet.tts.inworld import InworldTTS
+
+    return InworldTTS(tts)
+
+
 def _make_qwen3(tts: TTSConfig) -> TTSEngine:
     from slidesonnet.tts.qwen3 import Qwen3TTS
 
@@ -70,6 +76,9 @@ BACKENDS: dict[str, BackendSpec] = {
     "kokoro": BackendSpec("kokoro", ".wav", paid=False, factory=_make_kokoro, import_name="kokoro"),
     "elevenlabs": BackendSpec(
         "elevenlabs", ".mp3", paid=True, factory=_make_elevenlabs, import_name="elevenlabs"
+    ),
+    "inworld": BackendSpec(
+        "inworld", ".mp3", paid=True, factory=_make_inworld, import_name="inworld_tts"
     ),
     "qwen3": BackendSpec(
         "qwen3",
