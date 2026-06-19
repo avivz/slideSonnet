@@ -1643,3 +1643,51 @@ async def test_paid_engine_preview_asks_before_synthesis(
     from slidesonnet.cache import audio_dir
 
     assert not list(audio_dir(pdf).glob("*"))
+
+
+async def test_paid_engine_generate_missing_asks_before_synthesis(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story: "Generate missing" must never spend API credits on a paid engine
+    without an explicit confirmation popup — cancelling queues nothing."""
+    from slidesonnet.gui.jobs import JobQueue
+
+    enqueued: list[set[tuple[str, int]]] = []
+    monkeypatch.setattr(
+        JobQueue, "enqueue", lambda self, targets, **kw: (enqueued.append(set(targets)), [])[1]
+    )
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "elevenlabs"\n', encoding="utf-8")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(marker="gen-missing").click()
+    await user.should_see("API credits")  # confirm dialog, not a silent paid sweep
+    user.find("Cancel").click()
+    assert enqueued == []  # declined → nothing queued, no credits spent
+
+
+async def test_paid_engine_generate_missing_queues_after_confirm(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Confirming the popup queues the missing clips (allow_paid) — the gate is a
+    confirmation, not a block."""
+    from slidesonnet.gui.jobs import JobQueue
+
+    enqueued: list[tuple[set[tuple[str, int]], bool]] = []
+    monkeypatch.setattr(
+        JobQueue,
+        "enqueue",
+        lambda self, targets, **kw: (
+            enqueued.append((set(targets), kw.get("allow_paid", False))),
+            [],
+        )[1],
+    )
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello there.\n")
+    (tmp_path / "slidesonnet.toml").write_text('[tts]\nbackend = "elevenlabs"\n', encoding="utf-8")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(marker="gen-missing").click()
+    await user.should_see("API credits")
+    user.find(marker="paid-confirm").click()
+    await user.should_see("Generating", retries=200)
+    assert enqueued == [({("intro-title", 0)}, True)]  # confirmed → queued, paid allowed

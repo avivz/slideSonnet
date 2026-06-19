@@ -167,12 +167,9 @@ def check_inworld() -> CheckResult:
 
 
 def _check_api_key(env: str, engine: str) -> CheckResult:
-    try:
-        from dotenv import load_dotenv
+    from slidesonnet.env import load_env
 
-        load_dotenv()
-    except ImportError:
-        pass
+    load_env()
     if os.environ.get(env):
         return CheckResult(env, "ok", "set", "", f"Only needed for {engine} TTS")
     return CheckResult(

@@ -7,8 +7,13 @@ See `CHANGELOG.md` for shipped changes. A large post-a1 batch sits in CHANGELOG
 `[Unreleased]`, on `main`, untagged: the background generation queue + auto-build,
 the portable voice layer, the Qwen3 local engine (built-in CustomVoice speakers,
 prioritized auto-gen, progress UI, cancellable play / cancel-all), the in-editor
-Voices dialog + named-only utterance picker, auto-prune of local orphans, and the
-transition-gallery core. None of it is tagged yet — 1.0.0a2 is the next release.
+Voices dialog + named-only utterance picker, auto-prune of local orphans, the
+**full transition gallery, per-slide start/end silences, and centered-overlay
+transitions** (the last three landed 2026-06-18 — see Done). None of it is tagged
+yet, and **CI's `test` job has been hanging to its 6h ceiling on every push since
+the qwen-voices merge** (lint/typecheck/build stay green) — so the 1.0.0a2 release
+is blocked until CI is green again. Fixing CI is the top item below; shipping
+a2 is second.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -16,85 +21,44 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — next feature work (toward 1.0.0a2)
 
-1. [~] **Transition gallery (full `xfade` set) — core shipped, follow-ups
-   remain.** *(The gallery itself is in `CHANGELOG [Unreleased]`; what's left is
-   the absorb-source extension + the over-long warning, in "Remaining follow-ups"
-   below.)* *Story:* As a deck author, I
-   want to pick from FFmpeg's whole `xfade` transition gallery — not just a
-   crossfade but `fade`, `wipeleft/right/up/down`, `slide*`, `dissolve`,
-   `circleopen`, `pixelize`, etc. — set per page boundary, and have the export
-   render exactly that. Across real slide changes a transition is a flourish;
-   across **sub-slide steps** (consecutive PDF pages that are overlay
-   incrementals of one logical Beamer/Typst slide) a wipe/slide reads as a
-   *build animation*, recovering the motion a flat PDF throws away. Today only
-   `cut`/`crossfade` exist in the model and even `crossfade` renders as a hard
-   cut. **Render model (decided 2026-06-16, revised 2026-06-18): centered overlay**
-   — a `D`-second transition is a *visual overlay centered on the A→B boundary*
-   (D/2 over the tail of A, D/2 over the head of B), playing over whatever audio is
-   already there (silence or speech); it never changes the audio or the deck's total
-   duration, so preview stays aligned with no timeline surgery. (Supersedes the
-   earlier "absorb into the outgoing tail only, clamp if too long" plan — see the
-   reshaped follow-ups below.) *Acceptance examples:* (a) `transition-out: wipeleft 0.5` → exported
-   video wipes left over 0.5 s during slide A's tail hold; total duration equals
-   the all-`cut` render (transition absorbed, not added/subtracted); (b)
-   `crossfade N` still works (now one entry in the gallery, mapped to xfade
-   `fade`); (c) an unknown/misspelled transition name is a `check`/parse error,
-   not a silent cut; (d) all-`cut` decks export byte-identically to today; (e)
-   the editor's transition picker offers the curated gallery via a short Type +
-   Direction picker. *Appetite:* ~three days.
-   *Progress (branch `feat/transition-gallery`):* ✅ contract (taxonomy module +
-   model/grammar, `test_transition_gallery.py`); ✅ picker UX (Type+Direction
-   selects, GUI + browser tests); ✅ rendering (`compose_transition_clip` +
-   `compose_video` absorb-into-hold, integration-tested: total unchanged, morph
-   clip produced); ✅ in-editor preview morph (a client-side overlay,
-   `gui/static/morph.html` driven by `_morph_schedule`, approximates the xfade
-   in the browser and **completes at the cue boundary** to match the export's
-   timing — whole-deck *and* single-slide play, the latter showing the slide's
-   own in/out transitions against a black frame at the deck ends;
-   `test_morph_schedule_*`/`_single_slide_morph` + browser journeys); ✅
-   `fadeblack`/`fadewhite` families ("Fade through black/white"); ✅ the
-   preview audio track is fingerprint-cached so a repeat play does no ffmpeg.
+1. [ ] **Fix the CI `test`-job 6h hang — release blocker.** *(Broken CI; full
+   write-up + repro in `dev/KNOWN_ISSUES.md`.)* Since the qwen-voices merge,
+   every push's `test (3.13)` job runs to GitHub's 6h ceiling and is cancelled
+   (lint/typecheck/build stay green), so a2 can't go out. *Cause:* the
+   auto-build/engine-picker GUI unit tests (`test_gui.py::test_auto_build_*` /
+   `test_engine_picker_*`) drive the background generation queue with a slow
+   local engine; CI has no `torch`/`kokoro`/`qwen_tts`, so the worker can't
+   build, the dangling asyncio task is never drained, and the NiceGUI
+   `user`-fixture event-loop teardown blocks forever — with no default
+   pytest-timeout it burns the full 6h. *Fix:* (a) add `--timeout=120
+   --timeout-method=thread` to the CI test command (pytest-timeout is already in
+   `[dev]`) so a hang fails in ~2 min not 6h; (b) keep CI from running the
+   qwen/kokoro auto-gen path — mock `synth_targets` / stop the worker on
+   teardown in those unit tests ("CI runs nothing with qwen"). *Repro:* hide
+   `torch`/`kokoro`/`qwen_tts` via `sitecustomize`, run the unit tier with
+   `--timeout`; it hangs in the `test_auto_build_*` region. *Appetite:* half a
+   day. **[agent]**
 
-   *Reshaped follow-ups — explicit per-slide silences + centered-overlay
-   transitions (design locked 2026-06-18):* the invisible global hold/lead
-   (`[video] tail_seconds`/`pre_silence`) becomes a **per-slide, editable
-   silence** the author controls, and the transition becomes a centered visual
-   overlay (above). Rules: (1) **every slide has a leading and a trailing
-   silence** — not pinned blocks but *positional*: the last block, if a pause, *is*
-   the trailing silence, otherwise an implicit default silence follows it (the
-   front mirrors it). Adding an utterance inserts it *before* the trailing silence;
-   moving an utterance after a pause demotes that pause to mid-slide and a fresh
-   implicit silence reappears at the end. (2) **Absent = default; explicit
-   replaces** — a slide with no authored silence renders with the deck default;
-   authoring `pause: 2` as the trailing block makes the hold *exactly* 2s (not 2 +
-   default), and `pause: 0` means no hold (the "really quick change" case). (3)
-   **The GUI materializes implicit→explicit on save** — opening a deck and saving
-   writes the start/end `pause:` lines for every slide (a one-time large diff, by
-   design); the **CLI/API path leaves them implicit** and honors the defaults when
-   absent. (4) **Centered-overlay render** — `transition-out: wipeleft 0.8` between
-   A and B draws an 0.8s wipe centered on the boundary (0.4s over A's tail, 0.4s
-   over B's head) as a pure visual overlay: the assembled audio track and the
-   deck's total duration are byte-identical to the same deck rendered all-`cut`.
-   Where the centered window overlaps speech (silence pool smaller than `D`), the
-   morph simply plays over the narration — no clamp, no pad (can feel rushed on a
-   real slide change; accepted). The one surviving clamp+warn case: a transition
-   longer than twice the shorter adjacent slide can't be centered, so it's clamped
-   and `slidesonnet check` warns. *Acceptance examples:* (a) the editor shows an
-   editable **start silence** and **end silence** per slide, defaulting to the deck
-   value; setting end silence to 0 flips with no hold; (b) `transition-out:
-   wipeleft 0.8` renders centered on the boundary with the audio track + total
-   duration byte-identical to the all-`cut` render; (c) a deck never opened in the
-   GUI round-trips byte-stable and renders identically to today (defaults honored);
-   (d) opening that deck in the GUI and saving materializes every slide's start/end
-   `pause:` lines once, after which the render is still identical; (e) a 2s
-   transition on a 0.3s slide is clamped with a `check` warning. *Appetite:* ~three
-   days (model/grammar default-silence semantics + per-slide editor fields +
-   centered-overlay render & preview-morph re-center + tests). The preview morph
-   still approximates a few families (`pixelize`/`dissolve` → fade) — fine for
-   proofing, only the export is pixel-exact. Gallery reference:
-   <https://trac.ffmpeg.org/wiki/Xfade>. **[agent]**
+2. [ ] **Tag & ship 1.0.0a2.** *(The single highest-leverage item once CI is
+   green: a large
+   `[Unreleased]` batch sits on `main`, shipped and tested but installable by
+   no one.)* *Story:* As a slideSonnet user on PyPI, I want the work that's
+   already on `main` — the full transition gallery, per-slide silences and
+   centered-overlay transitions, the Qwen3 local engine, the portable voice
+   layer, the Voices dialog, and the background generation queue — in an
+   installable release, so I'm not stuck on a1's feature set. *Acceptance
+   examples:* (a) `src/slidesonnet/__init__.py` `__version__` is bumped to
+   `1.0.0a2`; (b) `CHANGELOG.md`'s `[Unreleased]` is retitled `[1.0.0a2] —
+   <date>` with a fresh empty `[Unreleased]` above it; (c) `make test-unit` is
+   green locally and CI's lint/typecheck/test/build all pass on `main`; (d)
+   `git tag v1.0.0a2 && git push origin v1.0.0a2` drives the publish workflow
+   (TestPyPI → PyPI → GitHub Release) to green. *Sequencing:* CI must be green
+   first (#1) — the publish workflow runs the same suite — then land the
+   prune-policy fix (#3) so a2 doesn't ship the Qwen3-audio-loss risk;
+   everything else in Now/Next is post-a2. *Appetite:* an afternoon (mostly
+   verification + the human's tag push). **[human→agent]**
 
-2. [ ] **Per-engine cache prune policy — stop auto-prune from throwing away
+3. [ ] **Per-engine cache prune policy — stop auto-prune from throwing away
    Qwen3 audio.** *(Risk surfaced by the just-shipped auto-prune of local
    orphans.)* `EditorState._write_and_reload` → `prune_local_orphans` sweeps any
    orphaned clip whose engine is **not paid** (`clean.py:102`, gated on
@@ -115,7 +79,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    registry in `tts/__init__.py`, replace the `parsed[1] in API_BACKENDS` test in
    `prune_local_orphans` with a policy lookup; repro test in `test_clean.py`
    (Qwen3 orphan survives, Kokoro orphan removed). **[agent]**
-3. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
+4. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
    shipped and mocked-tested — see Done. This is the one human step gating a real
    own-voice render: nothing about Qwen3 has run on real weights + a real voice
    yet.)* *Story:* As the deck author, I want to record a ~10 s reference, build
@@ -130,7 +94,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-4. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
+5. [ ] **Switch the cloud engine: ElevenLabs → Inworld TTS.** *Story:* As a
    deck author who wants studio-grade narration, I want a `--engine inworld`
    cloud backend that synthesizes one cached clip per utterance, so I can
    render an HQ demo without paying ElevenLabs' ~10× rate. Inworld beats
@@ -150,9 +114,13 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    *Appetite:* ~two days for the agent's engine + mocked tests. Agent implements
    behind the engine interface (a `[tts.inworld]` config section + extra); human
    supplies the key, runs a small paid smoke test, and judges voice quality.
-   Decision point: keep ElevenLabs as a legacy optional backend or remove it
-   outright (as was done with Piper). **[agent→human]**
-5. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
+   *Status (2026-06-19):* the engine has **shipped on `main`** (see CHANGELOG
+   `[Unreleased]`); a `.env`-not-loaded bug that made the first paid run fail with
+   "`INWORLD_API_KEY` not set" is fixed, and "Generate missing" now confirms before
+   billing a paid engine. Remaining is the human's paid smoke test + voice-quality
+   judgement. *Decision made:* **remove ElevenLabs outright** (as was done with
+   Piper) — see the dedicated removal item below. **[agent→human]**
+6. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
    author proofing narration, I want to play the preview faster so I can review
    a long deck without sitting through every clip at 1×. *Acceptance examples:*
    (a) a speed control in the transport (e.g. 1× / 1.25× / 1.5× / 2×, or a
@@ -169,7 +137,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    TTS-level change — distinct from the per-utterance `pace:` directive, which
    re-synthesizes. Browser pitch-correction (`preservesPitch`) is on by default,
    so 2× stays natural, not chipmunked. **[agent]**
-6. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+7. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
    own little PR (the background job queue they build on shipped — see Done).
    *Appetite:* an afternoon each.
    - When narration text is edited, immediately (before blur) flip the box's
@@ -208,7 +176,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      transition); checked, it plays the slide's in/out transitions as today. The
      whole-deck preview is unaffected either way, and the setting is local/editor
      state (not written to the deck).
-7. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+8. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -217,71 +185,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    disk while you have unsaved field text saves your text first (no silent loss),
    and never auto-saves on a sidecar-triggered reload. *Appetite:* half a day each.
    **[agent]**
-8. [ ] **Open / switch decks from within the editor.** *Story:* As a user with
-   several decks, I want to open another deck from inside `slidesonnet edit`
-   without quitting and relaunching on a new path, so I can move between projects
-   in one session. *Acceptance examples:* (a) an "Open deck…" control accepts
-   another deck PDF (same or another directory) and re-points the whole editor —
-   filmstrip, sidecar, diagnostics, audio cache, live-reload poller — onto it;
-   (b) switching while the current deck has unsaved narration edits saves them
-   first (or prompts), never silently dropping them (shares the save-before-reload
-   guard with Now #5); (c) the new deck's `slidesonnet.toml` engine/voices take
-   effect (re-read, not the prior deck's); (d) the transport is stopped and
-   rewound on switch — no audio from the previous deck bleeds into the new one;
-   (e) decks are discoverable: a path input plus, if cheap, a list of sibling
-   `*.pdf` that have a `.narration` sidecar in the launch directory. *Appetite:*
-   ~one to two days. *Design note:* today `build_editor` constructs a single
-   `EditorState` from the launch path and starts one live-reload poller; switching
-   means tearing down that poller and re-initializing state in place (or routing
-   to a fresh page) rather than assuming one deck per process. **[agent]**
-
-9. [ ] **Wire the director's note to supporting models.** *Story:* As a deck
-   author, I write a per-utterance *direction* — "cheerfully", "slow and somber",
-   "as an aside" — and the engines that can act on a natural-language style cue
-   actually do, so the same script can be delivered with intent rather than flat.
-   The `direction` field already exists end-to-end (sidecar grammar `direct:`,
-   the editor's per-utterance input, round-trip-stable) but **no engine consumes
-   it today** — it's collected and ignored. The natural target is Qwen3, whose
-   CustomVoice and VoiceDesign models take an `instruct=` style prompt
-   (`generate_custom_voice(..., instruct=...)`); cloud engines map it to whatever
-   style controls they expose (or ignore it). *Acceptance examples:* (a) an
-   utterance with `direct: cheerfully` on Qwen3 CustomVoice passes that string as
-   `instruct` and the clip is audibly more upbeat than the same text without it;
-   (b) the direction joins the audio cache key (see the standing note in
-   `hashing.py`) so editing the note regenerates exactly the affected clips and
-   nothing else; (c) an engine that has no style input ignores the direction with
-   no error, and the editor signals which engines honor it (mirroring how the
-   voice picker marks per-engine support); (d) an empty/whitespace direction is
-   indistinguishable from none (no spurious cache churn, no empty `instruct`).
-   *Appetite:* ~one day. *Design note:* the per-segment `direction` already flows
-   to `SpeechRef`; the work is threading it through `synth` → `TTSEngine.synthesize`
-   (a new optional `direction` arg, default None, ignored by Kokoro) → Qwen3's
-   `generate_custom_voice/voice_design`, plus folding it into the hash. **[agent]**
-
-10. [ ] **Batched synthesis for heavy engines (use the spare iGPU).** *Story:* As
-    a deck author on a local GPU, my Qwen3 generation pins the iGPU at only ~50%
-    because autoregressive decoding is latency-bound, not compute-bound — so the
-    queue should synthesize a small *batch* of nearby clips in one `generate`
-    call (qwen_tts's `generate_custom_voice`/`generate_voice_clone` already accept
-    list inputs and run the sequences together), filling the idle gaps without the
-    thread-safety hazard of two `generate()`s on one cached model or the ~2×
-    memory of a second model instance. *Acceptance examples:* (a) with auto-build
-    on and several uncached clips near the cursor, the worker pops up to N (e.g.
-    2–4) and synthesizes them in a single batched call, measurably raising iGPU
-    utilization and clips/min over the one-at-a-time loop; (b) batching respects
-    the distance priority (the batch is the N best-next clips) and the play
-    preempt still aborts the whole in-flight batch promptly; (c) light/realtime
-    engines (Kokoro) and the CLI path are unaffected — batching is opt-in per
-    engine via a `batch_size`/capability, default 1; (d) a batched clip's cache
-    file, duration, and hash are identical to generating it alone (batching is a
-    throughput optimization, not a content change). *Appetite:* ~two days.
-    *Design note:* the worker currently pops one `JobHandle`; batching means
-    popping the top-N pending by priority into one synth call and a `synthesize_batch`
-    on the engine (default = loop), with the heavy path overriding it. **[agent]**
-
 ## Next — toward 1.0 final
 
-1. [ ] **Unify logging across the project** (from inbox). Generation feedback is
+1. [ ] **Unify logging across the project** (from inbox; reaffirmed 2026-06-19 as
+   the requested "general sweep for logs"). Generation feedback is
    ad-hoc: the job worker and editor `print("[gen] …")` straight to stdout, while
    the rest of the code uses module `logger`s whose output never appears because
    logging is never configured (no handler/level at CLI/editor startup) — so
@@ -295,7 +202,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    (c) the `print("[gen] …")` progress lines become structured `logger` calls (or
    are deliberately kept as the few user-facing progress lines, with everything
    else routed through logging); (d) a background-job failure is logged with a
-   traceback at the configured level, no longer silently swallowed. *Appetite:*
+   traceback at the configured level, no longer silently swallowed. *Recent
+   example (2026-06-19):* the `.env`-not-loaded bug surfaced only as a terse
+   `[gen] … FAILED` print; a configured logger with the traceback would have
+   pointed straight at the missing-key cause. *Appetite:*
    half a day. **[agent]**
 2. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
    gaps to fill deliberately: export timing modes end-to-end, `check`
@@ -325,6 +235,74 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    chapter markers from the narration sidecars. **[human]**
 7. [ ] **README refresh** — new video links, Kokoro install instructions,
    editor screenshots of the new dark studio theme. **[agent]**
+8. [ ] **Open / switch decks from within the editor.** *(Was Now; deferred
+   post-a2 — a session-management feature, not release-blocking.)* *Story:* As a
+   user with several decks, I want to open another deck from inside `slidesonnet
+   edit` without quitting and relaunching on a new path, so I can move between
+   projects in one session. *Acceptance examples:* (a) an "Open deck…" control
+   accepts another deck PDF (same or another directory) and re-points the whole
+   editor — filmstrip, sidecar, diagnostics, audio cache, live-reload poller —
+   onto it; (b) switching while the current deck has unsaved narration edits saves
+   them first (or prompts), never silently dropping them (shares the
+   save-before-reload guard with the orphaned-leftovers Now item); (c) the new
+   deck's `slidesonnet.toml` engine/voices take effect (re-read, not the prior
+   deck's); (d) the transport is stopped and rewound on switch — no audio from the
+   previous deck bleeds into the new one; (e) decks are discoverable: a path input
+   plus, if cheap, a list of sibling `*.pdf` that have a `.narration` sidecar in
+   the launch directory. *Appetite:* ~one to two days. *Design note:* today
+   `build_editor` constructs a single `EditorState` from the launch path and
+   starts one live-reload poller; switching means tearing down that poller and
+   re-initializing state in place (or routing to a fresh page) rather than
+   assuming one deck per process. **[agent]**
+9. [ ] **Wire the director's note to supporting models.** *(Was Now; deferred
+   behind the Inworld/Qwen3 engine work it depends on.)* *Story:* As a deck
+   author, I write a per-utterance *direction* — "cheerfully", "slow and somber",
+   "as an aside" — and the engines that can act on a natural-language style cue
+   actually do, so the same script can be delivered with intent rather than flat.
+   The `direction` field already exists end-to-end (sidecar grammar `direct:`,
+   the editor's per-utterance input, round-trip-stable) but **no engine consumes
+   it today** — it's collected and ignored. The natural target is Qwen3, whose
+   CustomVoice and VoiceDesign models take an `instruct=` style prompt
+   (`generate_custom_voice(..., instruct=...)`); cloud engines map it to whatever
+   style controls they expose (or ignore it). *Acceptance examples:* (a) an
+   utterance with `direct: cheerfully` on Qwen3 CustomVoice passes that string as
+   `instruct` and the clip is audibly more upbeat than the same text without it;
+   (b) the direction joins the audio cache key (see the standing note in
+   `hashing.py`) so editing the note regenerates exactly the affected clips and
+   nothing else; (c) an engine that has no style input ignores the direction with
+   no error, and the editor signals which engines honor it (mirroring how the
+   voice picker marks per-engine support); (d) an empty/whitespace direction is
+   indistinguishable from none (no spurious cache churn, no empty `instruct`).
+   *Appetite:* ~one day. *Design note:* the per-segment `direction` already flows
+   to `SpeechRef`; the work is threading it through `synth` → `TTSEngine.synthesize`
+   (a new optional `direction` arg, default None, ignored by Kokoro) → Qwen3's
+   `generate_custom_voice/voice_design`, plus folding it into the hash. **[agent]**
+10. [ ] **Remove the ElevenLabs backend outright** (decision made 2026-06-19 — see
+   Now #5). Inworld is the cloud engine now; ElevenLabs was always ~10× the price
+   and is being dropped, as Piper was. *Story:* As a maintainer, I want one cloud
+   engine in the tree so there's less to test, document, and guard against
+   accidental paid calls. *Acceptance examples:* (a) `tts/elevenlabs.py`, its
+   `BackendSpec`, the `elevenlabs` extra in `pyproject.toml`, the `[tts]`
+   `elevenlabs_*` config keys + `Backend` literal entry, and the ElevenLabs branch
+   of `engine_voice_choices` are all gone; (b) the conftest ElevenLabs sentinel
+   guard and `test`-suite references are removed (the Inworld guard stays); (c)
+   `slidesonnet doctor` no longer lists ElevenLabs; (d) docs/README/CHANGELOG drop
+   it (a `### Removed` note); (e) `make test-unit`, lint, and typecheck stay green.
+   *Sequencing:* after the human validates Inworld (Now #5) — don't remove the only
+   working cloud engine before its replacement is judged good. *Appetite:* half a
+   day. **[agent]**
+11. [ ] **Config audit — what's necessary vs vestigial.** A pass over the
+   user-facing config surface (`slidesonnet.toml` → `config.py`/`models.py`) and
+   the project's own config files to find keys/sections that are dead, redundant,
+   or now defaulted-away. Known candidates: `[tts] backend` (kept only as the
+   initial editor default — the engine picker is session-state; full removal as a
+   config key was deferred — see Done), and the soon-gone `elevenlabs_*` keys (item
+   #10). *Story:* As someone configuring a deck, I want the documented config to be
+   only what still does something, so I'm not cargo-culting dead keys. *Acceptance
+   examples:* (a) a written inventory of every config key with a keep/drop/merge
+   call and reason; (b) dropped keys removed from `Config`/`TTSConfig` parsing,
+   their defaults, and the docs, with a `### Removed`/`### Changed` CHANGELOG note;
+   (c) `make test-unit` + typecheck green. *Appetite:* half a day. **[agent→human]**
 
 ## Later — before 1.0 final
 
@@ -365,15 +343,57 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    missing, for non-Beamer sources.
 4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
    interface). (Qwen3-TTS local shipped — see Done; Inworld is Now #4; the Qwen3
-   DashScope cloud mode is Next #3.)
+   DashScope cloud mode is in Next.)
 5. **Multi-deck playlists** — concatenate several PDFs into one video.
 6. **`--json` output** for CI/automation.
-7. *(Promoted & merged into Now #3 "Transition gallery" on 2026-06-15 — the
-   sub-slide-animation use case and the full xfade gallery are now part of that
-   item, not a separate backlog entry.)*
+7. **Batched synthesis for heavy engines (use the spare iGPU).** *(Was Now;
+   deferred — a throughput optimization that only pays off once a real Qwen3
+   own-voice render is happening, which is itself gated on the record+judge step.)*
+   *Story:* As a deck author on a local GPU, my Qwen3 generation pins the iGPU at
+   only ~50% because autoregressive decoding is latency-bound, not compute-bound —
+   so the queue should synthesize a small *batch* of nearby clips in one
+   `generate` call (qwen_tts's `generate_custom_voice`/`generate_voice_clone`
+   already accept list inputs and run the sequences together), filling the idle
+   gaps without the thread-safety hazard of two `generate()`s on one cached model
+   or the ~2× memory of a second model instance. *Acceptance examples:* (a) with
+   auto-build on and several uncached clips near the cursor, the worker pops up to
+   N (e.g. 2–4) and synthesizes them in a single batched call, measurably raising
+   iGPU utilization and clips/min over the one-at-a-time loop; (b) batching
+   respects the distance priority (the batch is the N best-next clips) and the
+   play preempt still aborts the whole in-flight batch promptly; (c) light/realtime
+   engines (Kokoro) and the CLI path are unaffected — batching is opt-in per
+   engine via a `batch_size`/capability, default 1; (d) a batched clip's cache
+   file, duration, and hash are identical to generating it alone (batching is a
+   throughput optimization, not a content change). *Appetite:* ~two days.
+   *Design note:* the worker currently pops one `JobHandle`; batching means
+   popping the top-N pending by priority into one synth call and a
+   `synthesize_batch` on the engine (default = loop), with the heavy path
+   overriding it. **[agent]**
+8. *(Promoted & merged into the transition gallery on 2026-06-15 — the
+   sub-slide-animation use case and the full xfade gallery shipped as part of it;
+   see Done.)*
 
 ## Done (v1 rewrite)
 
+- [x] **Transition gallery + per-slide silences + centered-overlay transitions**
+  (2026-06-18, CHANGELOG `[Unreleased]`): the former Now #1, fully shipped on
+  `main`. The full FFmpeg `xfade` gallery behind a curated **Type + Direction**
+  picker (`fade`/`wipe`/`slide`/`cover`/`reveal`/`circle`/`dissolve`/`pixelize`,
+  plus `fadeblack`/`fadewhite`), an unknown name is a parse error not a silent
+  cut, and a client-side **preview morph** (`gui/static/morph.html` driven by
+  `_morph_schedule`) that completes at the cue boundary for whole-deck *and*
+  single-slide play. Plus the reshaped follow-ups locked 2026-06-18: per-slide
+  editable **Start/End silence** fields — the old invisible global lead/tail is
+  now a positional, author-controlled `pause:` (absent = deck default, explicit
+  replaces, `0` = no hold; the GUI materializes implicit→explicit on save while
+  the CLI/API path stays implicit) — and **centered-overlay transitions** (a
+  D-second transition is a pure visual overlay centered on the A→B boundary; the
+  assembled audio track and the deck's total duration are byte-identical to the
+  all-`cut` render, and an over-long transition clamps with a
+  `slidesonnet check` `transition-too-long` warning). Tests: `test_render.py`
+  (`_centers_transition_and_preserves_total`, `_clamps_to_shorter_slide`, silence
+  helpers), `test_diagnostics.py` (`transition-too-long`), GUI/state start/end
+  silence fields, `test_transition_gallery.py`, morph-schedule + browser journeys.
 - [x] **Editor voice/generation polish batch** (2026-06-18, CHANGELOG
   `[Unreleased]`): a run of editor work on `main` after the portable-voice/Qwen3
   merge — the **Voices…** dialog to create/edit the deck's named voices

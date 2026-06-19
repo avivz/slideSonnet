@@ -1560,7 +1560,7 @@ class EditorView:
         play_all.on_click(lambda: self.player.request_preview(play_all, True))
         stop_btn.on_click(lambda: self.player.stop_playback())
         gen_all_btn = self.gen_all_btn
-        gen_all_btn.on_click(lambda: self.enqueue_missing())
+        gen_all_btn.on_click(self.enqueue_missing)
         export_btn.on_click(lambda: self.run_action(export_btn, self._export_work))
 
         ui.timer(SOURCE_POLL_INTERVAL_S, self._poll_sources)
@@ -1807,14 +1807,23 @@ class EditorView:
             self.player.stop_playback()
         self.blocks.sync_gen_buttons()
 
-    def enqueue_missing(self) -> None:
-        """Queue every uncached clip across the deck — non-blocking background fill."""
+    async def enqueue_missing(self) -> None:
+        """Queue every uncached clip across the deck — non-blocking background fill.
+
+        On a paid cloud engine this is a batch that would spend credits, so it
+        asks for explicit confirmation first (mirroring the play path); declining
+        queues nothing.
+        """
         self.blocks.save_current()  # flush any open edit before the worker reads disk
         targets = self.state.targets_for_sweep()
         backend = self.state.active_backend
         if not targets:
             print(f"[gen] nothing to generate — all audio for {backend} exists", flush=True)
             self.flash(f"Nothing to generate — all audio for {backend} exists")
+            return
+        if self.state.tts_is_paid and not await self.confirm_paid_synth(
+            len(targets), action_label="Generate"
+        ):
             return
         self._flag_model_warmup()
         handles = self.jobs.enqueue(targets, allow_paid=True)
@@ -2138,7 +2147,12 @@ class EditorView:
         result = self.state.export(out)
         return f"Exported {out.name} ({result.duration:.1f}s)"
 
-    async def confirm_paid_synth(self, count: int) -> bool:
+    async def confirm_paid_synth(self, count: int, action_label: str = "Generate & play") -> bool:
+        """Popup gate before any paid synthesis. Returns True only on explicit OK.
+
+        Every path that can bill a cloud engine (play, "Generate missing") routes
+        through here first, so a paid engine never spends credits unattended.
+        """
         backend = self.state.config.tts.backend
         with ui.dialog() as dialog, ui.card():
             ui.label(
@@ -2147,7 +2161,8 @@ class EditorView:
             )
             with ui.row().classes("w-full justify-end"):
                 ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat no-caps")
-                ui.button("Generate & play", on_click=lambda: dialog.submit(True)).props("no-caps")
+                confirm = ui.button(action_label, on_click=lambda: dialog.submit(True))
+                confirm.props("no-caps").mark("paid-confirm")
         return bool(await dialog)
 
     # ---- live reload of deck sources (PDF recompile, sidecar/config edits) ----

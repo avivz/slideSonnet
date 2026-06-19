@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from slidesonnet.env import load_env
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
 
@@ -116,7 +117,13 @@ API_BACKENDS: frozenset[str] = frozenset(n for n, spec in BACKENDS.items() if sp
 
 
 def create_tts(tts: TTSConfig) -> TTSEngine:
-    """Create a TTS engine from a :class:`TTSConfig`."""
+    """Create a TTS engine from a :class:`TTSConfig`.
+
+    Loads ``.env`` first so a cloud engine's API key (which the engine reads from
+    ``os.environ``) is present no matter which path — CLI, GUI preview, or the
+    background queue — reached here.
+    """
+    load_env()
     spec = BACKENDS.get(tts.backend)
     if spec is None:
         raise ValueError(f"Unknown TTS backend: {tts.backend}")

@@ -6,6 +6,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Inworld cloud TTS engine (`--engine inworld`).** A paid cloud backend that
+  synthesizes one content-addressed clip per utterance (`[tts.inworld]` config +
+  the `inworld` extra), with an `INWORLD_API_KEY` check in `slidesonnet doctor`.
+- **"Generate missing" asks before spending credits on a paid engine.** The
+  whole-deck fill now shows the same confirmation popup the play path uses when
+  the active engine is paid (ElevenLabs/Inworld), so a batch synthesis never
+  bills unattended — declining queues nothing. Auto-generate stays fully disabled
+  for paid engines, and a single per-utterance generate is still a one-click
+  action.
 - **Per-slide start/end silence, editable in the editor.** The hold at a slide's
   start and end (previously the invisible global `pre_silence`/`tail_seconds`) is
   now a per-slide value you can see and set: a slide with narration shows **Start
@@ -179,6 +188,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   repo (and keep its `.pt` `voice_prompt`).
 
 ### Fixed
+- **API keys in `.env` now reach generation, not just `doctor`.** Only
+  `slidesonnet doctor` loaded `.env`; the engines read `os.environ` directly, so
+  a key sitting in `.env` was invisible to actual synthesis — a paid render or
+  preview failed with "`INWORLD_API_KEY` not set" even though the key was there.
+  `create_tts` (the one factory every synthesis path flows through) now loads
+  `.env` first, searching from the working directory upward; an exported variable
+  still wins over the file.
 - **Kokoro no longer floods the terminal on load.** The two torch warnings its
   model construction always emits (an LSTM `dropout` UserWarning and a `weight_norm`
   deprecation FutureWarning) are suppressed around the pipeline build, so the
