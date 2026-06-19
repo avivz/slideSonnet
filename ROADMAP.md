@@ -10,11 +10,14 @@ prioritized auto-gen, progress UI, cancellable play / cancel-all), the in-editor
 Voices dialog + named-only utterance picker, auto-prune of local orphans, the
 **full transition gallery, per-slide start/end silences, and centered-overlay
 transitions** (the last three landed 2026-06-18 — see Done), the **Inworld cloud
-engine** (ElevenLabs now removed), and the **paid-synth confirmation + `.env`
-loading fixes**. None of it is tagged yet, but **CI is green again as of
-2026-06-19** — the `test`-job hang that blocked every push since the qwen-voices
-merge is fixed (see Done). So 1.0.0a2 is **unblocked**: the top item below is now
-shipping it (after the one prune-policy fix that gates it).
+engine** (ElevenLabs now removed), the **paid-synth confirmation + `.env`
+loading fixes**, the **Play-all assembly progress bar**, and a **Windows-playback
+fix** (transition clips are now `yuv420p`, so an exported deck no longer dies at
+the first transition on Windows' 4:2:0-only decoder — see Done). None of it is
+tagged yet, but **CI is green on `main` as of 2026-06-19** — the `test`-job hang
+that blocked every push since the qwen-voices merge is fixed (see Done). So
+1.0.0a2 is **unblocked**: the top item below is now shipping it (after the one
+prune-policy fix that gates it).
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -35,64 +38,32 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    <date>` with a fresh empty `[Unreleased]` above it; (c) `make test-unit` is
    green locally and CI's lint/typecheck/test/build all pass on `main`; (d)
    `git tag v1.0.0a2 && git push origin v1.0.0a2` drives the publish workflow
-   (TestPyPI → PyPI → GitHub Release) to green. *Sequencing:* CI is green (the
-   publish workflow runs the same suite), so the one gate left is the prune-policy
-   fix (#2) — land it first so a2 doesn't ship the Qwen3-audio-loss risk;
-   everything else in Now/Next is post-a2. *Appetite:* an afternoon (mostly
-   verification + the human's tag push). **[human→agent]**
+   (TestPyPI → PyPI → GitHub Release) to green. *Status (2026-06-19):* the prune
+   gate **and** both priority-1 bugs (old #2–#4) are now fixed, tested, and on a
+   clean tree; `__version__` is bumped to `1.0.0a2` and `CHANGELOG` is retitled
+   `[1.0.0a2] — 2026-06-19`. lint/typecheck/`make test-unit` (737 passed) all
+   green locally. **Only the human's `git push` of `main` + the `v1.0.0a2` tag
+   remain** (paid/irreversible publish). *Appetite:* the tag push. **[human]**
 
-2. [ ] **Per-engine cache prune policy — stop auto-prune from throwing away
-   Qwen3 audio.** *(The one gate before a2 — see #1.)* *(Risk surfaced by the just-shipped auto-prune of local
-   orphans.)* `EditorState._write_and_reload` → `prune_local_orphans` sweeps any
-   orphaned clip whose engine is **not paid** (`clean.py:102`, gated on
-   `API_BACKENDS`). Qwen3 is `paid=False` but slow/expensive on the iGPU (seconds
-   per clip), so an edit can silently discard minutes of just-generated own-voice
-   audio. *Story:* As a deck author rendering with a heavy local engine, I want my
-   freshly-generated Qwen3 clips to survive an edit, so I don't pay the
-   regeneration cost for a one-word fix elsewhere in the deck. *Acceptance
-   examples:* (a) editing utterance A's text does **not** delete a now-orphaned
-   Qwen3 clip for the *old* text of A (or for an unrelated slide) — Qwen3 orphans
-   are kept by default; (b) Kokoro orphans are still pruned eagerly (unchanged);
-   (c) Inworld (paid) is still never auto-swept (unchanged); (d) the keep/drop
-   decision reads from a single per-engine policy on `BackendSpec` (e.g.
-   `prune_policy: eager | keep-paid | keep-expensive-local | never`), not a
-   hardcoded `paid` check, so a new engine declares its policy in one place;
-   (e) `slidesonnet clean --keep nothing` still removes everything on explicit
-   request. *Appetite:* half a day. *Design note:* add the policy field to the
-   registry in `tts/__init__.py`, replace the `parsed[1] in API_BACKENDS` test in
-   `prune_local_orphans` with a policy lookup; repro test in `test_clean.py`
-   (Qwen3 orphan survives, Kokoro orphan removed). **[agent]**
-3. [ ] **Bug: changing a pause/edge-silence doesn't refresh the loaded "Play
-   all" track.** *(Open bug, priority-1 quality — full write-up in
-   `dev/KNOWN_ISSUES.md`. Not an a2 blocker; pick up right after the release
-   path above.)* *Symptom:* after **Play all**, change a slide's pause length or
-   Start/End silence, then press **Play all** again — the preview still plays the
-   *old* pauses. The loaded whole-deck track isn't revoked because the
-   silence/pause number fields commit only on `blur`/Ctrl+S, so a play press while
-   the field still has focus never rebuilds (resume replays the stale track).
-   Sibling of the just-fixed external-edit stale-preview bug (see Done) — both are
-   the "stale loaded track" family; the fix here is to flush open fields on any
-   play press and rebuild if the flush changed the block. *Repro test (first
-   action, browser tier — the in-process `user` sim is blind to focus/blur):* Play
-   all a generated deck, change End-silence, press Play all again *without*
-   blurring, assert the new track's duration reflects the change. *Appetite:* half
-   a day. **[agent]**
-4. [ ] **Bug: a renamed named-voice lingers in the per-utterance voice picker.**
-   *(Open bug, priority-1 quality — full write-up in `dev/KNOWN_ISSUES.md`. Not an
-   a2 blocker.)* *Symptom:* rename a voice in the **Voices…** dialog (e.g.
-   `lecturer` → `host`) and save — the per-utterance **Voice** picker still offers
-   `lecturer`, and utterances that used it still show `lecturer` (now resolving as
-   *unmapped*) instead of following the rename. *Cause:* the rename updates the
-   deck's `voices:` map key but nothing rewrites the references —
-   `EditorState.edit_voices` is handed only the new full map, so it can't tell a
-   rename from a delete-old + add-new. *Fix:* make rename a first-class op (track
-   per-row old→new identity in the Voices dialog, rewrite every utterance `voice:`
-   and `default-voice` == old → new before saving). *Repro test (first action):*
-   in `tests/test_voices.py` — seed `voices: {lecturer}` + an utterance
-   `voice: lecturer`, rename → `host`, assert the utterance now references `host`,
-   `voice_options()` no longer contains `lecturer`, and the sidecar round-trips
-   with no `lecturer` left. *Appetite:* half a day. **[agent]**
-5. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
+2. [ ] **Fix Inworld (MP3) subtitle drift — deferred, does NOT gate a2.** *(New,
+   from the 2026-06-19 SRT investigation; decided post-a2 — full write-up in
+   `dev/KNOWN_ISSUES.md`. Pairs with #4 below, the first real Inworld run.)*
+   *Symptom:* SRT/VTT subtitles drift progressively **late** on Inworld renders
+   (~32 ms/clip, ~1.6 s by clip 50); Kokoro/Qwen3 (`.wav`) are unaffected. *Cause
+   (measured):* the subtitle timeline is built from `get_duration(clip)` (ffprobe
+   `format.duration`), which over-reports an MP3 by its encoder delay + padding,
+   while `concatenate_audio` decodes to the true (shorter) length — so the timeline
+   accumulates phantom length the audio doesn't have. *Story:* As a deck author
+   rendering with Inworld, I want subtitles that stay locked to the speech for the
+   whole deck. *Acceptance examples:* (a) for a synthetic MP3-cache deck,
+   `timeline.total_duration == get_duration(track.wav)` within a few ms (fails
+   today); (b) `sum(get_duration(clip_i)) ≈ get_duration(concatenate_audio(clips))`
+   for MP3 input; (c) Kokoro/WAV behaviour is byte-identical (already drift-free).
+   *Recommended fix:* normalize Inworld MP3 cache clips to WAV on synthesis (so
+   ffprobe == concat length, and the 24k/22k/44.1k rate zoo goes away); or measure
+   decoded samples instead of `format.duration`. *Repro is free* (encode tones to
+   MP3, no Inworld call). *Appetite:* half a day. **[agent]**
+3. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
    shipped and mocked-tested — see Done. This is the one human step gating a real
    own-voice render: nothing about Qwen3 has run on real weights + a real voice
    yet.)* *Story:* As the deck author, I want to record a ~10 s reference, build
@@ -107,7 +78,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-6. [ ] **Validate Inworld on a real paid run — smoke test + voice-quality
+4. [ ] **Validate Inworld on a real paid run — smoke test + voice-quality
    judgement.** *(The engine shipped on `main` and ElevenLabs is removed — see
    Done. This is the one human step left before Inworld is a trusted render path;
    it gates the HQ demo re-render, Next #3.)* *Story:* As the deck author, I want
@@ -122,7 +93,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    cost + cache hits). *Note:* the supporting fixes already landed — `.env` loads
    on the synthesis path (anchored at the deck dir) and "Generate missing" confirms
    before billing a paid engine. **[human→agent]**
-7. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
+5. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
    author proofing narration, I want to play the preview faster so I can review
    a long deck without sitting through every clip at 1×. *Acceptance examples:*
    (a) a speed control in the transport (e.g. 1× / 1.25× / 1.5× / 2×, or a
@@ -139,7 +110,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    TTS-level change — distinct from the per-utterance `pace:` directive, which
    re-synthesizes. Browser pitch-correction (`preservesPitch`) is on by default,
    so 2× stays natural, not chipmunked. **[agent]**
-8. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+6. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
    own little PR (the background job queue they build on shipped — see Done).
    *Appetite:* an afternoon each.
    - When narration text is edited, immediately (before blur) flip the box's
@@ -178,7 +149,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      transition); checked, it plays the slide's in/out transitions as today. The
      whole-deck preview is unaffected either way, and the setting is local/editor
      state (not written to the deck).
-9. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+7. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -331,6 +302,58 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    ties it to the editor's cache-clearing flow, so likely both — **decide the
    surface before build.** *Appetite:* half a day (sizing is `_count_dir`; the work
    is the surface + before/after delta). **[agent]**
+13. [ ] **Export progress bar — feedback during the long FFmpeg render.** *(From
+   inbox 2026-06-19. The just-shipped "Play all" assembly bar is the template —
+   `api.build_preview`/`render.render_audio_track` gained a `progress` callback
+   driving an "Assembling audio · X/N" bar; export wants the same.)* *Story:* As
+   a deck author exporting to MP4, I want a progress indicator so I can see the
+   render is working and how far along it is, instead of staring at a silent
+   2-minute FFmpeg run. *Acceptance examples:* (a) `slidesonnet export` prints a
+   per-segment/per-stage progress line (e.g. "Encoding segment 12/48") that
+   advances and completes; (b) the editor's export action shows the same bar it
+   shows for assembly (reuse the progress widget); (c) the `progress` callback is
+   threaded through the export path (`render`/`composer`) the same way it was for
+   the audio track. *Appetite:* an afternoon. *Design note:* pairs with #14
+   (draft mode) — both are export-iteration ergonomics. **[agent]**
+14. [ ] **Draft/fast export mode — trade quality for speed while iterating.**
+   *(From inbox 2026-06-19.)* *Story:* As a deck author who just wants to
+   see/share a render quickly, I want a fast draft export that trades quality for
+   speed, so I'm not waiting ~2 min for a full 1080p encode on every iteration.
+   *Acceptance examples:* (a) a single `--draft` (a.k.a. `--fast`) flag on
+   `slidesonnet export` (and an editor toggle) flips a preset bundle — faster
+   x264 `preset` (e.g. `ultrafast`), lower `resolution` (e.g. 1280×720), higher
+   `crf`, and plain cuts (skip the per-boundary xfade re-encode) — measurably
+   faster wall-clock than the default; (b) audio is untouched (cache reused), so a
+   later full export needs no re-synthesis; (c) without the flag, output is
+   byte-for-byte the current default. *Appetite:* an afternoon (the plumbing
+   exists — `config.video` already carries `resolution`/`fps`/`crf`/`preset`; this
+   is a preset bundle behind one flag). **[agent]**
+15. [ ] **Bug: filmstrip blanks and reloads every thumbnail on a PDF change.**
+   *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic refresh-cost, not
+   a2-blocking.)* *Symptom:* a live-reload (recompile) tears down the whole strip
+   (`EditorView.build_strip`, `gui/app.py:1598` — `clear()` + fresh cache-busting
+   URLs) so the browser refetches all N thumbnails before any reappears — a blank
+   flash even though almost nothing changed. *Fix:* mirror the stage image's
+   `set_source` pattern — reuse thumbnail elements when the page count is
+   unchanged and only re-source the pages whose `(mtime,size)` token changed; full
+   rebuild only on add/remove/reorder. *Repro test (first action):* the structural
+   half is unit-testable (assert elements reused + only the changed thumb's src
+   token changes); the no-flash timing is browser-tier. *Appetite:* half a day.
+   **[agent]**
+16. [ ] **Bug: "Play all" flashes black between a transition and the next slide.**
+   *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic flicker, not
+   a2-blocking. Sibling of #15 and Now #3 — the "hold the old frame until the new
+   one paints" family.)* *Symptom:* during whole-deck play, an animated boundary
+   plays the morph then blinks through a black frame before the next slide — a
+   two-clock handoff gap between the morph overlay (`gui/static/morph.html`, RAF
+   vs `audio.currentTime`, time-based `GRACE`) and the throttled `timeupdate`
+   stage cue-flip (`PreviewPlayer.on_timeupdate`, `app.py:654`) which calls the
+   heavy `view.render()`. *Fix:* event-gate the `hide()` on the stage `<img>`
+   confirming it painted the new slide (not a fixed `GRACE`), and/or make the
+   cue-flip a cheap `set_source` instead of a full re-render. *Repro test (first
+   action, browser tier):* Play-all across an animated boundary, assert no black
+   frame between morph-complete and the next slide painting. *Appetite:* half a
+   day. **[agent]**
 
 ## Later — before 1.0 final
 
@@ -403,6 +426,46 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Per-engine cache prune policy — Qwen3 audio survives an edit** (2026-06-19;
+  CHANGELOG `[1.0.0a2]` `### Fixed`; the a2 gate, former Now #2). The silent
+  on-edit orphan sweep keyed on `paid`, treating free-but-slow Qwen3 as cheap and
+  silently deleting minutes of own-voice audio on an unrelated edit. Whether the
+  sweep may drop a backend's orphans is now `BackendSpec.auto_prune_orphans` (only
+  real-time local audio — Kokoro — is eager; Qwen3 and paid Inworld are kept);
+  `prune_local_orphans` reads `AUTO_PRUNE_BACKENDS` instead of `API_BACKENDS`.
+  `clean --keep nothing` still nukes all. Repro test
+  `test_clean.py::test_prune_local_orphans_keeps_expensive_local_qwen3`.
+- [x] **Changing a pause/edge-silence refreshes the loaded "Play all" track**
+  (2026-06-19; CHANGELOG `[1.0.0a2]` `### Fixed`; former Now #3). The silence/pause
+  number fields commit on blur, so a Play-all press before the blur resumed the
+  stale loaded track. `PreviewPlayer.request_preview` now flushes the open field
+  (`commit_audible`) on any play press and rebuilds when it changed. Turned out
+  unit-testable (the in-process sim's `set_value` is the focused-uncommitted
+  condition): `test_gui.py::test_play_press_flushes_focused_silence_edit_and_rebuilds`,
+  verified red→green.
+- [x] **Renaming a voice follows through to every reference** (2026-06-19;
+  CHANGELOG `[1.0.0a2]` `### Fixed`; former Now #4). A rename updated only the
+  `voices:` map key, leaving utterances pointing at the gone name (unmapped) and
+  the picker offering it. The Voices dialog now tracks per-row old→new identity and
+  `edit_voices(renames=…)` rewrites every utterance `voice:` and the `default-voice`
+  old → new before saving. Repro test
+  `test_gui_state.py::test_edit_voices_rename_rewrites_references`.
+- [x] **Exported decks with transitions play on Windows again** (2026-06-19,
+  `6aa0e65`; CHANGELOG `[Unreleased]` `### Fixed`, ships in a2). FFmpeg's `xfade`
+  emitted `yuv444p` for transition clips while slide segments were `yuv420p`, so
+  the stream-copy concat made a non-uniform H.264 stream — ffmpeg/VLC tolerated
+  the mid-stream switch but Windows' 4:2:0-only decoder rejected it at the first
+  transition (first slide played, then "unsupported codec settings"). Transition
+  clips are now pinned to `yuv420p`. Repro test
+  `test_composer.py::test_compose_transition_clip_is_yuv420p`.
+- [x] **"Play all" shows an assembly progress bar** (2026-06-19, `fadf0f4`;
+  CHANGELOG `[Unreleased]` `### Added`, ships in a2). Building the whole-deck
+  preview concatenates a per-page WAV for every slide and can take a while on a
+  long deck — previously just a spinner. The editor now shows an "Assembling
+  audio · X/N" bar (reusing the generation progress bar) that advances per page;
+  `api.build_preview`/`render.render_audio_track` gained a `progress` callback.
+  The export-side sibling (a progress bar for the long FFmpeg render) is now
+  Next #13.
 - [x] **External narration edits no longer leave a stale preview** (2026-06-19,
   `a3638b6`; CHANGELOG `[Unreleased]` `### Fixed`, ships in a2). With a whole-deck
   or single-slide preview loaded, hand-editing the `.narration` sidecar on disk

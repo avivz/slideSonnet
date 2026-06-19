@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.0.0a2] — 2026-06-19
+
 ### Added
 - **"Play all" shows a progress bar while assembling the audio track.** Building
   the whole-deck preview concatenates a per-page WAV for every slide and can take
@@ -220,6 +222,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   voice must switch to `inworld`.
 
 ### Fixed
+- **Changing a pause or edge-silence now takes effect on the next Play, even
+  without leaving the field.** The pause/Start/End-silence number fields commit
+  when you leave them, and a Play-all press could land before that — so changing a
+  silence and immediately pressing Play all replayed the *old* track (the loaded
+  whole-deck preview was never revoked). A play press now flushes the focused
+  field first and rebuilds the preview when it changed, so what you hear always
+  reflects the latest silence. A press that changed nothing still resumes in place.
+- **Renaming a voice now follows through to every utterance and the deck default.**
+  Renaming a named voice in the **Voices…** dialog (e.g. `lecturer` → `host`) used
+  to update only the `voices:` map key — utterances that used the voice still
+  referenced the old name (now resolving as *unmapped*) and the old name lingered
+  in the per-utterance picker. The dialog now tracks each row's old→new identity
+  and rewrites every utterance `voice:` and the `default-voice` from the old name
+  to the new one before saving, so no reference is left dangling and the picker
+  stops offering the gone name. (Deleting a voice is unchanged — its references are
+  left to surface as unmapped, not silently rewritten.)
+- **Auto-prune no longer discards expensive Qwen3 audio on an unrelated edit.**
+  The silent on-edit orphan sweep deleted any *non-paid* engine's orphaned clips,
+  treating "free" as "cheap to regenerate" — but a Qwen3 clip is free yet slow
+  (seconds per clip on a local GPU), so editing one slide could silently throw
+  away minutes of just-generated own-voice audio elsewhere in the deck. Whether
+  the sweep may delete a backend's orphans is now a per-engine policy
+  (`BackendSpec.auto_prune_orphans`): only real-time local audio (Kokoro) is
+  reclaimed eagerly; paid audio (Inworld — would re-bill) and expensive local
+  audio (Qwen3) are kept. An explicit `slidesonnet clean --keep nothing` still
+  removes everything.
+- **Exported decks with transitions now play on Windows.** FFmpeg's `xfade`
+  renegotiates the filter-graph pixel format and emitted `yuv444p` (High 4:4:4)
+  for the transition clips while the plain slide segments stayed `yuv420p` — a
+  stream-copy concat then produced a non-uniform H.264 stream. ffmpeg and VLC
+  tolerate the mid-stream format switch, but Windows' 4:2:0-only H.264 decoder
+  rejected it at the first transition ("unsupported codec settings"): the first
+  slide played, then playback died. The transition clips are now pinned to
+  `yuv420p` so every segment matches. Repro test
+  `test_compose_transition_clip_is_yuv420p`.
 - **The paid-synth confirmation popup now names the engine you actually picked.**
   The "spending API credits" dialog read the on-disk default (`config.tts.backend`,
   still `kokoro` for most decks) while the paid gate and the synthesis itself use
