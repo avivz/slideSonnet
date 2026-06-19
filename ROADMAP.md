@@ -1,11 +1,10 @@
 # Roadmap
 
-Current version: **1.0.0a2 cut but not yet published.** Last release on PyPI is
-1.0.0a1 (2026-06-16). The PDF + narration-sidecar editor rewrite; repo is public.
+Current version: **1.0.0a2 — published to PyPI 2026-06-19** (TestPyPI → PyPI →
+GitHub Release all green; `v1.0.0a2` tagged). The PDF + narration-sidecar editor
+rewrite; repo is public. `CHANGELOG` `[Unreleased]` is empty again.
 
-`__version__` is `1.0.0a2`, `CHANGELOG` has `[1.0.0a2] — 2026-06-19` titled (with
-a fresh empty `[Unreleased]`), and the release commit (`994c28b`) is **pushed to
-`main` with CI green** (lint/typecheck/test/build). The a2 batch over a1: the
+The a2 batch over a1: the
 background generation queue + auto-build, the portable voice layer, the Qwen3
 local engine (built-in CustomVoice speakers, prioritized auto-gen, progress UI,
 cancellable play / cancel-all), the in-editor Voices dialog + named-only utterance
@@ -15,41 +14,21 @@ the **per-engine cache prune policy** (Qwen3 audio survives an edit), the
 **Play-all assembly progress bar**, a **Windows-playback fix** (`yuv420p`
 transition clips), and three editor bug fixes (voice-rename references, stale
 Play-all track on silence change, paid-synth/`.env` loading) — all in
-`CHANGELOG [1.0.0a2]` and Done. **The only thing left to publish a2 is the human
-running `git tag v1.0.0a2 && git push origin v1.0.0a2`** (Now #1) — paid and
-irreversible, so it isn't automated.
+`CHANGELOG [1.0.0a2]` and Done. With a2 out, the Now tier turns to the
+cloud path: **Inworld is validated on a real paid run** (works, voice is good)
+and the one defect left there is the **MP3 subtitle drift** (Now #1).
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
 (paid, irreversible, or account-bound).
 
-## Now — next feature work (toward 1.0.0a2)
+## Now — next feature work (post-a2, toward 1.0)
 
-1. [ ] **Tag & ship 1.0.0a2 — now unblocked (CI is green).** *(The single
-   highest-leverage item now that CI passes on `main` (633ccc5): a large
-   `[Unreleased]` batch sits on `main`, shipped and tested but installable by
-   no one.)* *Story:* As a slideSonnet user on PyPI, I want the work that's
-   already on `main` — the full transition gallery, per-slide silences and
-   centered-overlay transitions, the Qwen3 local engine, the portable voice
-   layer, the Voices dialog, and the background generation queue — in an
-   installable release, so I'm not stuck on a1's feature set. *Acceptance
-   examples:* (a) `src/slidesonnet/__init__.py` `__version__` is bumped to
-   `1.0.0a2`; (b) `CHANGELOG.md`'s `[Unreleased]` is retitled `[1.0.0a2] —
-   <date>` with a fresh empty `[Unreleased]` above it; (c) `make test-unit` is
-   green locally and CI's lint/typecheck/test/build all pass on `main`; (d)
-   `git tag v1.0.0a2 && git push origin v1.0.0a2` drives the publish workflow
-   (TestPyPI → PyPI → GitHub Release) to green. *Status (2026-06-19):* **done
-   except the tag.** The prune gate + both priority-1 bugs (old #2–#4) are fixed
-   and tested; `__version__` is `1.0.0a2`, `CHANGELOG` is retitled `[1.0.0a2] —
-   2026-06-19` with a fresh empty `[Unreleased]`; the release commit (`994c28b`)
-   is **pushed to `main` and CI is green** (lint/typecheck/test/build all pass).
-   The *only* remaining step is the human running `git tag v1.0.0a2 && git push
-   origin v1.0.0a2` to fire the publish workflow — paid/irreversible, so it's not
-   automated. *Appetite:* the tag push. **[human]**
-
-2. [ ] **Fix Inworld (MP3) subtitle drift — deferred, does NOT gate a2.** *(New,
-   from the 2026-06-19 SRT investigation; decided post-a2 — full write-up in
-   `dev/KNOWN_ISSUES.md`. Pairs with #4 below, the first real Inworld run.)*
+1. [ ] **Fix Inworld (MP3) subtitle drift — now the top quality item for the
+   Inworld path.** *(Confirmed on a real paid Inworld run 2026-06-19: the engine
+   works and the voice is good "up to the drift" — so this is the one defect left
+   on the cloud path, and it gates a clean HQ demo with subtitles (Next #3). Full
+   write-up in `dev/KNOWN_ISSUES.md`.)*
    *Symptom:* SRT/VTT subtitles drift progressively **late** on Inworld renders
    (~32 ms/clip, ~1.6 s by clip 50); Kokoro/Qwen3 (`.wav`) are unaffected. *Cause
    (measured):* the subtitle timeline is built from `get_duration(clip)` (ffprobe
@@ -65,7 +44,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    ffprobe == concat length, and the 24k/22k/44.1k rate zoo goes away); or measure
    decoded samples instead of `format.duration`. *Repro is free* (encode tones to
    MP3, no Inworld call). *Appetite:* half a day. **[agent]**
-3. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
+2. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
    shipped and mocked-tested — see Done. This is the one human step gating a real
    own-voice render: nothing about Qwen3 has run on real weights + a real voice
    yet.)* *Story:* As the deck author, I want to record a ~10 s reference, build
@@ -80,22 +59,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-4. [ ] **Validate Inworld on a real paid run — smoke test + voice-quality
-   judgement.** *(The engine shipped on `main` and ElevenLabs is removed — see
-   Done. This is the one human step left before Inworld is a trusted render path;
-   it gates the HQ demo re-render, Next #3.)* *Story:* As the deck author, I want
-   to run a small paid Inworld synthesis and judge the voice, so I can decide
-   whether to use it for the HQ demo. *Acceptance examples:* (a) with
-   `INWORLD_API_KEY` in `.env`, `slidesonnet tts <deck> --engine inworld`
-   synthesizes a handful of real clips, each content-addressed cached (a re-run
-   makes zero API calls) and costing a few cents; (b) the human listens and records
-   a verdict (ship / tune voice+emotion / not yet); (c) Markdown-style emotion
-   control and a ~5–15 s own-voice clone are spot-checked if the verdict is "tune".
-   *Appetite:* an hour (mostly the human's; the agent drives the CLI and reports
-   cost + cache hits). *Note:* the supporting fixes already landed — `.env` loads
-   on the synthesis path (anchored at the deck dir) and "Generate missing" confirms
-   before billing a paid engine. **[human→agent]**
-5. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
+3. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
    author proofing narration, I want to play the preview faster so I can review
    a long deck without sitting through every clip at 1×. *Acceptance examples:*
    (a) a speed control in the transport (e.g. 1× / 1.25× / 1.5× / 2×, or a
@@ -112,7 +76,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    TTS-level change — distinct from the per-utterance `pace:` directive, which
    re-synthesizes. Browser pitch-correction (`preservesPitch`) is on by default,
    so 2× stays natural, not chipmunked. **[agent]**
-6. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+4. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
    own little PR (the background job queue they build on shipped — see Done).
    *Appetite:* an afternoon each.
    - When narration text is edited, immediately (before blur) flip the box's
@@ -151,7 +115,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      transition); checked, it plays the slide's in/out transitions as today. The
      whole-deck preview is unaffected either way, and the setting is local/editor
      state (not written to the deck).
-7. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -445,6 +409,20 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Published 1.0.0a2** (2026-06-19; tag `v1.0.0a2`). The whole post-a1 batch
+  is now installable: the publish workflow ran TestPyPI → PyPI → GitHub Release all
+  green. Shipped the transition gallery + per-slide silences + centered-overlay
+  transitions, the Qwen3 local engine, the portable voice layer + Voices dialog,
+  the background generation queue + auto-build, the Inworld cloud engine
+  (ElevenLabs removed), the per-engine prune policy, the Play-all assembly bar, the
+  `yuv420p` Windows-playback fix, and the editor bug-fix batch — all in
+  `CHANGELOG [1.0.0a2]`. (Was Now #1.)
+- [x] **Inworld validated on a real paid run** (2026-06-19; was Now #4). A real
+  paid synthesis ran end-to-end; the engine works and the voice quality is good.
+  *Verdict:* ship-worthy "up to the drift" — the one defect surfaced is the **MP3
+  subtitle drift** (now Now #1), so a clean HQ demo with subtitles (Next #3) waits
+  on that fix, not on the engine. The `.env`-on-synthesis and paid-confirm
+  supporting fixes held up in the real run.
 - [x] **Per-engine cache prune policy — Qwen3 audio survives an edit** (2026-06-19;
   CHANGELOG `[1.0.0a2]` `### Fixed`; the a2 gate, former Now #2). The silent
   on-edit orphan sweep keyed on `paid`, treating free-but-slow Qwen3 as cheap and
