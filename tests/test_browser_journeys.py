@@ -599,3 +599,53 @@ def test_transport_play_stop_and_deck_cue_flip(
     marked(page, "play-deck").click()
     expect(page.get_by_text("Slide 2 / 6")).to_be_visible(timeout=30_000)
     expect(stage_img).not_to_have_attribute("src", first_src)
+
+
+# --------------------------------------------------------------------------
+# journey 11: an external sidecar edit revokes a loaded preview track
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.timeout(120)
+def test_external_edit_revokes_loaded_preview(
+    page: Page, editor_server: ServerFactory, tmp_path: Path
+) -> None:
+    """Editing the sidecar on disk while a whole-deck preview is loaded must drop
+    the stale track, so the next play rebuilds with the new transition/audio
+    instead of resuming the old one (the morph schedule is baked into the track)."""
+    from slidesonnet.narration.format import serialize_sidecar
+    from slidesonnet.narration.model import PageNarration, Segment, Transition
+
+    pdf = _prep(tmp_path, "@intro-title\nOne.\n\n@euler-setup\nTwo.\n")
+    page.goto(editor_server(pdf, stub_seconds=2.0))
+    play_all = marked(page, "play-deck")
+
+    play_all.click()
+    expect(page.get_by_text("Preview ready").first).to_be_visible(timeout=30_000)
+    expect(play_all).to_contain_text("pause")  # deck track loaded and playing
+
+    # change a slide's transition out on disk — the loaded track's morph is now stale
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(
+        serialize_sidecar(
+            [
+                PageNarration(
+                    slide_id="intro-title",
+                    segments=[Segment.speech("One.")],
+                    transition_out=Transition("wipeup", 0.5),
+                ),
+                PageNarration(slide_id="euler-setup", segments=[Segment.speech("Two.")]),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    later = time.time() + 5
+    os.utime(sidecar, (later, later))
+
+    expect(page.get_by_text("Deck files changed on disk — reloaded").first).to_be_visible(
+        timeout=15_000
+    )
+    # the loaded track was revoked: the transport reset, so the button is back to
+    # its idle icon (the next press will rebuild, not resume the stale preview)
+    expect(play_all).to_contain_text("playlist_play", timeout=5_000)
+    expect(page.locator(".ss-time")).to_have_text("")

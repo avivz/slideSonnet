@@ -2189,6 +2189,13 @@ class EditorView:
             # file do nothing
             self.flash(f"Deck file has an error — {state.source_error}", "warning")
             return
+        # A loaded preview track (its assembled audio and baked-in morph schedule)
+        # is now stale — the deck changed under it. Revoke it so the next play
+        # rebuilds instead of resuming the old audio/transitions. We only reach
+        # here with no build in flight (guarded above), so this can't yank one
+        # mid-build; an in-GUI edit already does this via replace_block.
+        if self.player.playback.loaded_key is not None:
+            self.player.stop_playback()
         try:
             await run.io_bound(state.ensure_images)  # rasterize off the event loop
         except Exception:

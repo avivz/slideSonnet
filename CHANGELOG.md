@@ -213,6 +213,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   voice must switch to `inworld`.
 
 ### Fixed
+- **Editing the narration file externally no longer leaves a stale preview.**
+  With a whole-deck (or single-slide) preview loaded, hand-editing the
+  `.narration` sidecar on disk — e.g. changing a slide transition — reloaded the
+  editor's fields but kept the *old* preview track: pressing play again resumed
+  the stale audio and transition morph instead of rebuilding. The editor now
+  revokes a loaded preview whenever the deck changes on disk, so the next play
+  rebuilds from the new file.
 - **API keys in `.env` now reach generation, not just `doctor`.** Only
   `slidesonnet doctor` loaded `.env`; the engines read `os.environ` directly, so
   a key sitting in `.env` was invisible to actual synthesis — a paid render or
