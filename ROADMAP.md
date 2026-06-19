@@ -1,23 +1,23 @@
 # Roadmap
 
-Current version: 1.0.0a1 (alpha, published to PyPI 2026-06-16) — the PDF +
-narration-sidecar editor rewrite. Repo is public.
+Current version: **1.0.0a2 cut but not yet published.** Last release on PyPI is
+1.0.0a1 (2026-06-16). The PDF + narration-sidecar editor rewrite; repo is public.
 
-See `CHANGELOG.md` for shipped changes. A large post-a1 batch sits in CHANGELOG
-`[Unreleased]`, on `main`, untagged: the background generation queue + auto-build,
-the portable voice layer, the Qwen3 local engine (built-in CustomVoice speakers,
-prioritized auto-gen, progress UI, cancellable play / cancel-all), the in-editor
-Voices dialog + named-only utterance picker, auto-prune of local orphans, the
-**full transition gallery, per-slide start/end silences, and centered-overlay
-transitions** (the last three landed 2026-06-18 — see Done), the **Inworld cloud
-engine** (ElevenLabs now removed), the **paid-synth confirmation + `.env`
-loading fixes**, the **Play-all assembly progress bar**, and a **Windows-playback
-fix** (transition clips are now `yuv420p`, so an exported deck no longer dies at
-the first transition on Windows' 4:2:0-only decoder — see Done). None of it is
-tagged yet, but **CI is green on `main` as of 2026-06-19** — the `test`-job hang
-that blocked every push since the qwen-voices merge is fixed (see Done). So
-1.0.0a2 is **unblocked**: the top item below is now shipping it (after the one
-prune-policy fix that gates it).
+`__version__` is `1.0.0a2`, `CHANGELOG` has `[1.0.0a2] — 2026-06-19` titled (with
+a fresh empty `[Unreleased]`), and the release commit (`994c28b`) is **pushed to
+`main` with CI green** (lint/typecheck/test/build). The a2 batch over a1: the
+background generation queue + auto-build, the portable voice layer, the Qwen3
+local engine (built-in CustomVoice speakers, prioritized auto-gen, progress UI,
+cancellable play / cancel-all), the in-editor Voices dialog + named-only utterance
+picker, the **full transition gallery, per-slide start/end silences, and
+centered-overlay transitions**, the **Inworld cloud engine** (ElevenLabs removed),
+the **per-engine cache prune policy** (Qwen3 audio survives an edit), the
+**Play-all assembly progress bar**, a **Windows-playback fix** (`yuv420p`
+transition clips), and three editor bug fixes (voice-rename references, stale
+Play-all track on silence change, paid-synth/`.env` loading) — all in
+`CHANGELOG [1.0.0a2]` and Done. **The only thing left to publish a2 is the human
+running `git tag v1.0.0a2 && git push origin v1.0.0a2`** (Now #1) — paid and
+irreversible, so it isn't automated.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -38,12 +38,14 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    <date>` with a fresh empty `[Unreleased]` above it; (c) `make test-unit` is
    green locally and CI's lint/typecheck/test/build all pass on `main`; (d)
    `git tag v1.0.0a2 && git push origin v1.0.0a2` drives the publish workflow
-   (TestPyPI → PyPI → GitHub Release) to green. *Status (2026-06-19):* the prune
-   gate **and** both priority-1 bugs (old #2–#4) are now fixed, tested, and on a
-   clean tree; `__version__` is bumped to `1.0.0a2` and `CHANGELOG` is retitled
-   `[1.0.0a2] — 2026-06-19`. lint/typecheck/`make test-unit` (737 passed) all
-   green locally. **Only the human's `git push` of `main` + the `v1.0.0a2` tag
-   remain** (paid/irreversible publish). *Appetite:* the tag push. **[human]**
+   (TestPyPI → PyPI → GitHub Release) to green. *Status (2026-06-19):* **done
+   except the tag.** The prune gate + both priority-1 bugs (old #2–#4) are fixed
+   and tested; `__version__` is `1.0.0a2`, `CHANGELOG` is retitled `[1.0.0a2] —
+   2026-06-19` with a fresh empty `[Unreleased]`; the release commit (`994c28b`)
+   is **pushed to `main` and CI is green** (lint/typecheck/test/build all pass).
+   The *only* remaining step is the human running `git tag v1.0.0a2 && git push
+   origin v1.0.0a2` to fire the publish workflow — paid/irreversible, so it's not
+   automated. *Appetite:* the tag push. **[human]**
 
 2. [ ] **Fix Inworld (MP3) subtitle drift — deferred, does NOT gate a2.** *(New,
    from the 2026-06-19 SRT investigation; decided post-a2 — full write-up in
@@ -250,7 +252,24 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    to `SpeechRef`; the work is threading it through `synth` → `TTSEngine.synthesize`
    (a new optional `direction` arg, default None, ignored by Kokoro) → Qwen3's
    `generate_custom_voice/voice_design`, plus folding it into the hash. **[agent]**
-10. [ ] **Config audit — what's necessary vs vestigial.** A pass over the
+10. [ ] **Per-engine generation parameters (creativity/temperature & friends).**
+   *(From inbox 2026-06-19. Design it together with #9 — both are per-engine
+   expressive controls; build the parameter surface once.)* *Story:* As a deck
+   author, I want to dial an engine's generation knobs — starting with Inworld's
+   **creativity/temperature** (expressive ↔ consistent) — so I can tune the
+   delivery without re-authoring the script. *Acceptance examples:* (a) a
+   `[tts.inworld]` `creativity` (a.k.a. temperature) config key is passed through
+   to the Inworld synthesis call and changes the output; (b) the parameter joins
+   the audio cache key, so changing it regenerates exactly the affected clips and
+   nothing else (and is content-hashed, not churned by unrelated edits); (c) an
+   engine with no such knob ignores it with no error; (d) a written **inventory of
+   which generation parameters each engine accepts** (Inworld creativity/emotion;
+   Qwen3 CustomVoice/VoiceDesign `instruct=` + any sampling knobs; Kokoro =
+   speed/voice-blend only), each spot-checked to confirm it actually moves the
+   output. *Open question — surface:* config-only first, or also per-deck/editor?
+   Decide before build. *Appetite:* ~one day (shares the `TTSEngine.synthesize`
+   param + cache-key threading with #9 — do them as one design). **[agent→human]**
+11. [ ] **Config audit — what's necessary vs vestigial.** A pass over the
    user-facing config surface (`slidesonnet.toml` → `config.py`/`models.py`) and
    the project's own config files to find keys/sections that are dead, redundant,
    or now defaulted-away. Known candidates: `[tts] backend` (kept only as the
@@ -262,7 +281,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    call and reason; (b) dropped keys removed from `Config`/`TTSConfig` parsing,
    their defaults, and the docs, with a `### Removed`/`### Changed` CHANGELOG note;
    (c) `make test-unit` + typecheck green. *Appetite:* half a day. **[agent→human]**
-11. [ ] **Pre-assemble the "Play all" track in the background (opt-in).** *Story:*
+12. [ ] **Pre-assemble the "Play all" track in the background (opt-in).** *Story:*
    As a deck author who has finished generating narration, I want the whole-deck
    audio track assembled in the background while I'm idle, so pressing **Play all**
    starts instantly instead of waiting for the FFmpeg concat. *Acceptance examples:*
@@ -282,7 +301,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    Complements the Now #8 sub-item "let Play all start before everything is
    generated" — that's *partial* play mid-generation; this is *instant* play once
    the deck is fully generated and idle. **[agent]**
-12. [ ] **Cache inventory — show what's cached (count + size) before clearing it.**
+13. [ ] **Cache inventory — show what's cached (count + size) before clearing it.**
    *(From a 2026-06-19 request; the visibility precursor to a cache-clearing UX
    the user plans to build. The counting already exists —
    `clean.py::_count_dir(path) -> (files, bytes)` and `CleanResult.removed_mb`.)*
@@ -302,7 +321,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    ties it to the editor's cache-clearing flow, so likely both — **decide the
    surface before build.** *Appetite:* half a day (sizing is `_count_dir`; the work
    is the surface + before/after delta). **[agent]**
-13. [ ] **Export progress bar — feedback during the long FFmpeg render.** *(From
+14. [ ] **Export progress bar — feedback during the long FFmpeg render.** *(From
    inbox 2026-06-19. The just-shipped "Play all" assembly bar is the template —
    `api.build_preview`/`render.render_audio_track` gained a `progress` callback
    driving an "Assembling audio · X/N" bar; export wants the same.)* *Story:* As
@@ -315,7 +334,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    threaded through the export path (`render`/`composer`) the same way it was for
    the audio track. *Appetite:* an afternoon. *Design note:* pairs with #14
    (draft mode) — both are export-iteration ergonomics. **[agent]**
-14. [ ] **Draft/fast export mode — trade quality for speed while iterating.**
+15. [ ] **Draft/fast export mode — trade quality for speed while iterating.**
    *(From inbox 2026-06-19.)* *Story:* As a deck author who just wants to
    see/share a render quickly, I want a fast draft export that trades quality for
    speed, so I'm not waiting ~2 min for a full 1080p encode on every iteration.
@@ -328,7 +347,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    byte-for-byte the current default. *Appetite:* an afternoon (the plumbing
    exists — `config.video` already carries `resolution`/`fps`/`crf`/`preset`; this
    is a preset bundle behind one flag). **[agent]**
-15. [ ] **Bug: filmstrip blanks and reloads every thumbnail on a PDF change.**
+16. [ ] **Bug: filmstrip blanks and reloads every thumbnail on a PDF change.**
    *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic refresh-cost, not
    a2-blocking.)* *Symptom:* a live-reload (recompile) tears down the whole strip
    (`EditorView.build_strip`, `gui/app.py:1598` — `clear()` + fresh cache-busting
@@ -340,7 +359,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    half is unit-testable (assert elements reused + only the changed thumb's src
    token changes); the no-flash timing is browser-tier. *Appetite:* half a day.
    **[agent]**
-16. [ ] **Bug: "Play all" flashes black between a transition and the next slide.**
+17. [ ] **Bug: "Play all" flashes black between a transition and the next slide.**
    *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic flicker, not
    a2-blocking. Sibling of #15 and Now #3 — the "hold the old frame until the new
    one paints" family.)* *Symptom:* during whole-deck play, an animated boundary
