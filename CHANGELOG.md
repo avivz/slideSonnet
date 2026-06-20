@@ -24,6 +24,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   is local editor state (off each session), never written to the deck.
 
 ### Changed
+- **Default Inworld model is now `inworld-tts-2`** (was `inworld-tts-1.5-max`).
+  Override per deck with `[tts.inworld] model` in `slidesonnet.toml`. Note: the
+  model is part of the audio cache key, so existing Inworld clips re-synthesize on
+  next generate under the new default.
 - **A narration edit marks its clip stale immediately.** Typing in an utterance
   now flips that clip's generate badge to "not generated yet" (amber) within a
   keystroke — before you blur or save — so you can see at a glance that the cached

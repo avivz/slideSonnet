@@ -77,7 +77,7 @@ class TTSConfig:
     qwen3_language: str = "English"
     inworld_api_key_env: str = "INWORLD_API_KEY"
     inworld_voice: str = "Simon"  # built-in default voice; any Inworld voice name (see library)
-    inworld_model: str = "inworld-tts-1.5-max"  # quality-optimized; -mini trades for latency
+    inworld_model: str = "inworld-tts-2"  # default model; override per deck via [tts.inworld] model
     inworld_speed: float = 1.0  # base speaking_rate; per-utterance :pace multiplies this
 
     def __post_init__(self) -> None:

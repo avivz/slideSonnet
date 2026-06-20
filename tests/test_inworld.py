@@ -9,6 +9,11 @@ from slidesonnet.exceptions import TTSError
 from slidesonnet.models import TTSConfig
 
 
+def test_default_model_is_inworld_tts_2():
+    """The out-of-the-box Inworld model is inworld-tts-2 (override via [tts.inworld] model)."""
+    assert TTSConfig().inworld_model == "inworld-tts-2"
+
+
 def test_missing_api_key(monkeypatch):
     """Init succeeds without API key; synthesize() raises TTSError."""
     monkeypatch.delenv("INWORLD_API_KEY", raising=False)
