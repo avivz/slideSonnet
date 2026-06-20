@@ -23,7 +23,7 @@ voices:
 @challenge-mengoli
   pause: 0.3
   utterance:
-    text: The problem was first posed by Pietro Men-golee in 1650.
+    text: The problem was first posed by Pietro Mengoli in 1650.
   pause: 0.3
   utterance:
     text: The sum does converge — you can check that by comparison with the integral of one over x squared. Add the first thousand terms and you get about 1.6439. It clearly approaches something near 1.6449. But what is this number? Nobody could figure it out.
@@ -45,7 +45,7 @@ voices:
 @enter-euler
   pause: 0.3
   utterance:
-    text: For eighty-five years, nobody could solve it. Then in 1734, a twenty-seven year old named Le-o-nard Euler, working at the Academy of Sciences in Saint Petersburg, found the answer.
+    text: For eighty-five years, nobody could solve it. Then in 1734, a twenty-seven year old named Leonhard Euler, working at the Academy of Sciences in Saint Petersburg, found the answer.
   pause: 0.8
 
 @euler-answer

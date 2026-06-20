@@ -1,5 +1,9 @@
 # slideSonnet config for the Basel Problem demo.
 
+# Top-level keys must come before any [table] header.
+# IPA pronunciation hints for names (spoken form; see the file's note re: subtitles).
+pronunciation = ["pronunciation/names.md"]
+
 [tts]
 backend = "kokoro"
 
