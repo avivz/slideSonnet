@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import tempfile
 from pathlib import Path
 
 from slidesonnet.exceptions import FFmpegError
@@ -472,14 +473,17 @@ def get_duration(media_path: Path, *, stream: str | None = None) -> float:
     Raises FFmpegError if ffprobe is missing, the file cannot be probed,
     or the output doesn't contain a valid duration.
     """
-    show_flag = "-show_streams" if stream else "-show_format"
+    # One probe carries both the container duration and the stream list, so the
+    # default path can tell a compressed audio clip (whose header over-reports)
+    # from a sample-exact WAV without a second ffprobe.
     cmd = [
         "ffprobe",
         "-v",
         "quiet",
         "-print_format",
         "json",
-        show_flag,
+        "-show_format",
+        "-show_streams",
         str(media_path),
     ]
     result = run_tool(
@@ -501,12 +505,76 @@ def get_duration(media_path: Path, *, stream: str | None = None) -> float:
         # Fall back to format duration if the requested stream has none
         return get_duration(media_path)
 
+    # A lossy audio clip's container duration includes encoder delay + end
+    # padding the decoder strips, so it over-reports the true playable length.
+    # concatenate_audio decodes, so summing such clips' header durations drifts
+    # ahead of the assembled track (and the subtitle timeline with it). Measure
+    # the decoded length instead — WAV/PCM and video keep the cheap header read.
+    if _is_delay_padded_audio(info):
+        return _decoded_audio_duration(media_path)
+
     try:
         duration_str = info["format"]["duration"]
     except KeyError:
         raise FFmpegError(f"ffprobe output missing 'format.duration' for '{media_path}'")
 
     return _parse_duration(duration_str, media_path)
+
+
+#: Audio codecs that carry encoder delay + end padding, so a container's
+#: ``format.duration`` over-reports the true *decoded* length (e.g. LAME priming
+#: on MP3 ≈ 1152 samples; AAC encoder delay). Inworld returns MP3; the rest are
+#: included so any future compressed-cache engine is correct by default. WAV/PCM
+#: is sample-exact from the header and is deliberately absent.
+_DELAY_PADDED_AUDIO_CODECS = frozenset({"mp3", "aac", "vorbis", "opus", "wmav1", "wmav2"})
+
+
+def _is_delay_padded_audio(probe_info: dict[str, object]) -> bool:
+    """True for an *audio-only* file whose codec carries encoder delay/padding.
+
+    A file with a video stream (e.g. the muxed deck mp4) is excluded — only
+    standalone compressed speech clips need the decode-accurate measurement.
+    """
+    raw_streams = probe_info.get("streams", [])
+    streams = raw_streams if isinstance(raw_streams, list) else []
+    if any(s.get("codec_type") == "video" for s in streams):
+        return False
+    return any(
+        s.get("codec_type") == "audio" and s.get("codec_name") in _DELAY_PADDED_AUDIO_CODECS
+        for s in streams
+    )
+
+
+def _decoded_audio_duration(media_path: Path) -> float:
+    """True playable length of a compressed clip, by decoding it to PCM.
+
+    Transcodes to PCM WAV — exactly what :func:`concatenate_audio` does — and
+    reads the resulting padding-free duration, so summing per-clip durations
+    matches the assembled track to the sample.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        decoded = Path(td) / "decoded.wav"
+        cmd = [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            str(media_path),
+            "-map",
+            "0:a:0",
+            "-c:a",
+            "pcm_s16le",
+            str(decoded),
+        ]
+        run_tool(
+            cmd,
+            error_cls=FFmpegError,
+            install_hint="ffmpeg",
+            fail_message=f"ffmpeg failed decoding '{media_path}' to measure its length",
+        )
+        # decoded.wav is PCM (not delay-padded), so this reads its exact header.
+        return get_duration(decoded)
 
 
 def _parse_duration(value: str, media_path: Path) -> float:

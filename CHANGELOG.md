@@ -17,6 +17,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   This is HTML5 `audio.playbackRate` on the transport player, distinct from
   `pace:` (which re-synthesizes).
 
+### Fixed
+- **Subtitles no longer drift late on Inworld (MP3) renders.** An MP3 carries
+  encoder delay + end padding, so its container `format.duration` over-reports the
+  true decoded length by ~tens of ms per clip — and the subtitle timeline, built
+  from those per-clip durations, slid progressively later (≈1–2 s behind by the end
+  of a long deck) while the assembled audio track (which decodes the clips) did not.
+  `get_duration` now measures the *decoded* length for compressed audio-only clips
+  (MP3/AAC/…) by decoding to PCM, exactly as `concatenate_audio` does, so per-clip
+  durations sum to the assembled track and the cues stay locked to the speech.
+  WAV (Kokoro/Qwen3) was always sample-exact and is unaffected (it keeps the cheap
+  header read), as is the muxed video. The fix applies to already-cached `.mp3`
+  audio too — no re-synthesis or re-billing. Repro test
+  `tests/test_subtitle_drift.py` (free — libmp3lame tones, no Inworld call).
+
 ## [1.0.0a2] — 2026-06-19
 
 ### Added
