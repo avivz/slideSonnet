@@ -7,6 +7,7 @@ from pathlib import Path
 from slidesonnet.cache import audio_dir, cache_root, render_dir
 from slidesonnet.clean import CleanResult, clean, prune_local_orphans
 from slidesonnet.hashing import audio_filename, text_hash
+from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.format import serialize_sidecar
 from slidesonnet.narration.model import PageNarration, Segment
 
@@ -166,6 +167,67 @@ def test_keep_current_includes_preset_voice_variants(tmp_path: Path) -> None:
     assert (ad / voiced).exists()  # preset's mapped voice id
     assert (ad / voiceless).exists()  # default-voice variant always kept
     assert not (ad / other_voice).exists()  # voice not in the preset
+
+
+def _seed_deck_preamble_voices(tmp_path: Path) -> Path:
+    """A deck whose voices live in the sidecar *preamble* (like the basel demo):
+    ``config.voices`` is empty, and a default-voiced utterance falls back to a
+    named preset that resolves to a concrete per-backend id (Inworld ``Tyler``,
+    Kokoro ``am_michael``)."""
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    blocks = [PageNarration("intro-title", [Segment.speech(HELLO)])]  # no per-seg voice
+    lecturer = VoiceConfig(
+        name="lecturer", backend_voices={"inworld": "Tyler", "kokoro": "am_michael"}
+    )
+    (tmp_path / "marked.narration").write_text(
+        serialize_sidecar(blocks, voices={"lecturer": lecturer}, default_voice="lecturer"),
+        encoding="utf-8",
+    )
+    return pdf
+
+
+def test_keep_current_keeps_preamble_default_voice_any_engine(tmp_path: Path) -> None:
+    """Regression: a default-voiced utterance whose voice lives in the deck
+    preamble resolves to a concrete per-backend id. ``--keep current`` must
+    recognize those clips (esp. paid Inworld) instead of deleting them as
+    orphans. Content is garbage; only the cache *name* matters."""
+    pdf = _seed_deck_preamble_voices(tmp_path)
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True)
+    # Names synthesis actually writes for the default (lecturer) voice:
+    inworld_clip = f"{text_hash(HELLO, 'Tyler')}.inworld.aaaaaaaa.mp3"
+    kokoro_clip = f"{text_hash(HELLO, 'am_michael')}.kokoro.bbbbbbbb.wav"
+    voiceless = f"{text_hash(HELLO)}.kokoro.bbbbbbbb.wav"  # default variant, also kept
+    wrong_voice = f"{text_hash(HELLO, 'af_nope')}.kokoro.bbbbbbbb.wav"  # not a current voice
+    stale = f"{text_hash('Old gone text.', 'Tyler')}.inworld.aaaaaaaa.mp3"  # orphaned text
+    for name in (inworld_clip, kokoro_clip, voiceless, wrong_voice, stale):
+        (ad / name).write_bytes(b"garbage")
+
+    clean(pdf, keep="current")
+    assert (ad / inworld_clip).exists()  # paid clip for the preamble default voice — KEPT
+    assert (ad / kokoro_clip).exists()  # local clip for the preamble default voice
+    assert (ad / voiceless).exists()  # bare default-voice variant
+    assert not (ad / wrong_voice).exists()  # voice not mapped by the preset
+    assert not (ad / stale).exists()  # text no longer in the deck
+
+
+def test_keep_exact_resolves_preamble_default_voice(tmp_path: Path) -> None:
+    """Regression for ``--keep exact``: the active engine's expected filename must
+    use the preamble default voice (``lecturer`` -> ``am_michael`` on Kokoro), not
+    the voiceless name — otherwise it deletes the clip synthesis really wrote."""
+    pdf = _seed_deck_preamble_voices(tmp_path)
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True)
+    # active engine: kokoro defaults -> cache_key "kokoro:am_echo"; default voice -> am_michael
+    exact = audio_filename(HELLO, "kokoro", "kokoro:am_echo", voice="am_michael")
+    voiceless = audio_filename(HELLO, "kokoro", "kokoro:am_echo")
+    (ad / exact).write_bytes(b"garbage")
+    (ad / voiceless).write_bytes(b"garbage")
+
+    clean(pdf, keep="exact")
+    assert (ad / exact).exists()  # the name synthesis actually writes
+    assert not (ad / voiceless).exists()  # default voice is am_michael, not None
 
 
 def test_keep_current_skips_subdirs_and_missing_audio_dir(tmp_path: Path) -> None:

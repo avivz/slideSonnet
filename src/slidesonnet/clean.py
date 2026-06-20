@@ -16,10 +16,10 @@ from typing import Literal
 
 from slidesonnet.audio.synth import engine_for_pace
 from slidesonnet.cache import audio_dir, cache_root, render_dir
-from slidesonnet.config import load_config
+from slidesonnet.config import Config, load_config
 from slidesonnet.deck import load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
-from slidesonnet.models import resolve_voice
+from slidesonnet.models import VoiceConfig, resolve_voice
 from slidesonnet.tts import API_BACKENDS, AUTO_PRUNE_BACKENDS
 from slidesonnet.narration.model import Pace
 from slidesonnet.tts.base import TTSEngine
@@ -166,26 +166,49 @@ def _keep_filenames(pdf_path: Path, filenames: set[str]) -> None:
             f.unlink()
 
 
-def _iter_speech(pdf_path: Path) -> list[tuple[str, str | None, Pace | None]]:
-    """Return (text, voice_preset, pace) for every speech segment in the sidecar."""
+def _speech_plan(
+    pdf_path: Path,
+) -> tuple[Config, list[tuple[str, str | None, Pace | None]], dict[str, VoiceConfig]]:
+    """Config, speech rows, and the voice map synthesis sees — so clean predicts
+    the exact cache keys synthesis writes.
+
+    Each row is ``(pronunciation-applied text, effective voice preset, pace)``
+    where the preset is ``seg.voice or deck.default_voice`` — the same fallback
+    ``audio/synth`` applies. ``voices`` merges the deck preamble's portable voice
+    layer over config presets (deck wins), mirroring synth. Without both, a
+    default- or preamble-voiced clip resolves to the wrong (or ``None``) voice and
+    a current clip — notably paid Inworld audio whose name carries a concrete
+    voice id — is mistaken for an orphan and deleted.
+    """
     config = load_config(pdf_path)
     deck, _ = load_deck(pdf_path)
-    out: list[tuple[str, str | None, Pace | None]] = []
+    voices = {**config.voices, **deck.voices}
+    rows: list[tuple[str, str | None, Pace | None]] = []
     for block in deck.narration.values():
         for seg in block.speech_segments:
-            out.append((config.apply_pronunciation(seg.text), seg.voice, seg.pace))
-    return out
+            rows.append(
+                (config.apply_pronunciation(seg.text), seg.voice or deck.default_voice, seg.pace)
+            )
+    return config, rows, voices
 
 
 def _current_text_hashes(pdf_path: Path) -> set[str]:
-    """text_hashes for current utterances across all backends (engine-agnostic)."""
-    config = load_config(pdf_path)
+    """text_hashes for current utterances across all backends (engine-agnostic).
+
+    A named preset contributes every per-backend voice id it maps to (plus the
+    bare default-voice variant), so a clip on any engine — including paid Inworld,
+    whose name resolves to a concrete voice id — is recognized as current.
+    """
+    _config, rows, voices = _speech_plan(pdf_path)
     hashes: set[str] = set()
-    for text, voice_preset, _pace in _iter_speech(pdf_path):
-        voices: set[str | None] = {None}
-        if voice_preset and voice_preset in config.voices:
-            voices |= config.voices[voice_preset].all_voice_ids()
-        for voice in voices:
+    for text, preset, _pace in rows:
+        voice_ids: set[str | None] = {None}
+        cfg = voices.get(preset) if preset else None
+        if cfg is not None:
+            voice_ids |= cfg.all_voice_ids()  # every backend's voice id for this preset
+        elif preset:
+            voice_ids.add(preset)  # a raw backend voice id, passed through unchanged
+        for voice in voice_ids:
             hashes.add(text_hash(text, voice))
     return hashes
 
@@ -195,13 +218,14 @@ def _current_filenames(pdf_path: Path) -> set[str]:
 
     Mirrors the synthesis path: a paced utterance embeds its multiplied speed
     in the engine cache key, so its expected name comes from the pace-adjusted
-    engine, not the base one.
+    engine, not the base one; and the voice is resolved against the deck preamble
+    + config presets for the active backend (default voice included).
     """
-    config = load_config(pdf_path)
+    config, rows, voices = _speech_plan(pdf_path)
     engines: dict[float, TTSEngine] = {}
     names: set[str] = set()
-    for text, voice_preset, pace in _iter_speech(pdf_path):
+    for text, preset, pace in rows:
         tts = engine_for_pace(config.tts, pace, engines)
-        voice = resolve_voice(voice_preset, config.voices, config.tts.backend)
+        voice = resolve_voice(preset, voices, config.tts.backend)
         names.add(audio_filename(text, tts.name(), tts.cache_key(), voice))
     return names

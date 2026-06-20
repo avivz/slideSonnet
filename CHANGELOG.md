@@ -35,6 +35,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   green "up to date" badge without a save.
 
 ### Fixed
+- **`clean` no longer deletes current paid audio whose voice lives in the deck
+  preamble.** `clean --keep current` / `--keep exact` reconstructed cache keys from
+  only `config.voices` + the per-utterance `voice:`, ignoring the sidecar
+  preamble's portable voice layer (`voices:` / `default-voice:`) and per-backend
+  `resolve_voice`. A default- or preamble-voiced clip therefore collapsed to voice
+  `None`; for Kokoro that happened to match, but for Inworld the real cache key
+  carries a concrete voice id (e.g. `Tyler`), so the clip was mistaken for an
+  orphan and removed — silently discarding paid, regenerate-for-money audio (hit
+  on the basel demo, whose voices are defined entirely in the preamble). Clean now
+  mirrors synthesis exactly: it merges the deck preamble over config presets,
+  applies `default-voice`, and resolves per-backend. Regression-tested with
+  preamble-voiced decks.
 - **Subtitles no longer drift late on Inworld (MP3) renders.** An MP3 carries
   encoder delay + end padding, so its container `format.duration` over-reports the
   true decoded length by ~tens of ms per clip — and the subtitle timeline, built
