@@ -26,7 +26,7 @@ voices:
     text: The problem was first posed by Pietro Mengoli in 1650.
   pause: 0.3
   utterance:
-    text: The sum does converge — you can check that by comparison with the integral of one over x squared. Add the first thousand terms and you get about 1.6439. It clearly approaches something near 1.6449. But what is this number? Nobody could figure it out.
+    text: The sum does converge — you can check that by comparison with the integral of one over x squared. Add the first thousand terms and you get about... 1.6439. It clearly approaches something near 1.6449. But what is this number? Nobody could figure it out.
   pause: 0.8
 
 @challenge-bernoulli-intro
@@ -75,7 +75,10 @@ voices:
 @step2-zeros
   pause: 0.3
   utterance:
-    text: Now here's Euler's bold move. The function sine of x over x equals zero whenever x is plus or minus pi, plus or minus two pi, plus or minus three pi, and so on.
+    text: Now here's Euler's bold move. The function sine of x over x equals zero whenever x is plus or minus pi,
+  pause: 0.3
+  utterance:
+    text: plus or minus two pi, plus or minus three pi, and so on.
   pause: 0.8
 
 @step2-factor
