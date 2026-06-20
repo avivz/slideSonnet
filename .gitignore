@@ -50,7 +50,8 @@ examples/**/build.log
 # Built videos (hosted on GitHub Releases)
 examples/**/*.mp4
 
-# Legacy MARP-era caches (only ElevenLabs mp3s are tracked)
+# Legacy MARP-era cache dir (vestigial; the live cache is .slidesonnet/).
+# No audio is tracked here anymore — ignore leftover slide thumbnails + Piper wavs.
 examples/**/cache/**/slides/
 examples/**/cache/audio/*.piper.*.wav
 
