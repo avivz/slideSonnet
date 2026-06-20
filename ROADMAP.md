@@ -14,9 +14,11 @@ the **per-engine cache prune policy** (Qwen3 audio survives an edit), the
 **Play-all assembly progress bar**, a **Windows-playback fix** (`yuv420p`
 transition clips), and three editor bug fixes (voice-rename references, stale
 Play-all track on silence change, paid-synth/`.env` loading) — all in
-`CHANGELOG [1.0.0a2]` and Done. With a2 out, the Now tier turns to the
-cloud path: **Inworld is validated on a real paid run** (works, voice is good)
-and the one defect left there is the **MP3 subtitle drift** (Now #1).
+`CHANGELOG [1.0.0a2]` and Done. With a2 out, the cloud path is now clean:
+**Inworld is validated on a real paid run** (works, voice is good) and the **MP3
+subtitle drift** that gated a clean HQ demo with subtitles is **fixed** (see Done)
+— so the Now tier turns to Qwen3 own-voice, minor editor UX, and orphaned-narration
+leftovers.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -24,27 +26,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — next feature work (post-a2, toward 1.0)
 
-1. [ ] **Fix Inworld (MP3) subtitle drift — now the top quality item for the
-   Inworld path.** *(Confirmed on a real paid Inworld run 2026-06-19: the engine
-   works and the voice is good "up to the drift" — so this is the one defect left
-   on the cloud path, and it gates a clean HQ demo with subtitles (Next #3). Full
-   write-up in `dev/KNOWN_ISSUES.md`.)*
-   *Symptom:* SRT/VTT subtitles drift progressively **late** on Inworld renders
-   (~32 ms/clip, ~1.6 s by clip 50); Kokoro/Qwen3 (`.wav`) are unaffected. *Cause
-   (measured):* the subtitle timeline is built from `get_duration(clip)` (ffprobe
-   `format.duration`), which over-reports an MP3 by its encoder delay + padding,
-   while `concatenate_audio` decodes to the true (shorter) length — so the timeline
-   accumulates phantom length the audio doesn't have. *Story:* As a deck author
-   rendering with Inworld, I want subtitles that stay locked to the speech for the
-   whole deck. *Acceptance examples:* (a) for a synthetic MP3-cache deck,
-   `timeline.total_duration == get_duration(track.wav)` within a few ms (fails
-   today); (b) `sum(get_duration(clip_i)) ≈ get_duration(concatenate_audio(clips))`
-   for MP3 input; (c) Kokoro/WAV behaviour is byte-identical (already drift-free).
-   *Recommended fix:* normalize Inworld MP3 cache clips to WAV on synthesis (so
-   ffprobe == concat length, and the 24k/22k/44.1k rate zoo goes away); or measure
-   decoded samples instead of `format.duration`. *Repro is free* (encode tones to
-   MP3, no Inworld call). *Appetite:* half a day. **[agent]**
-2. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
+1. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
    shipped and mocked-tested — see Done. This is the one human step gating a real
    own-voice render: nothing about Qwen3 has run on real weights + a real voice
    yet.)* *Story:* As the deck author, I want to record a ~10 s reference, build
@@ -59,7 +41,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-3. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+2. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
    own little PR (the background job queue they build on shipped — see Done).
    *Appetite:* an afternoon each.
    - When narration text is edited, immediately (before blur) flip the box's
@@ -98,7 +80,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      transition); checked, it plays the slide's in/out transitions as today. The
      whole-deck preview is unaffected either way, and the setting is local/editor
      state (not written to the deck).
-4. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+3. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -134,11 +116,11 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    diagnostics on real overlay decks, editor save/reload paths. Finish with
    a joint human+AI review of coverage and quality. **[agent→human]**
 3. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
-   ElevenLabs render (ElevenLabs is now removed — see Done). Inworld is now
-   validated on a real paid run (see Done), so the remaining blocker is **Now #1**
-   (the MP3 subtitle drift fix) for clean subtitles. Human triggers the render;
-   agent uploads to the `v0.0.0` GitHub Release (`gh release upload --clobber`)
-   and refreshes README links. **[human→agent]**
+   ElevenLabs render (ElevenLabs is now removed — see Done). **Now unblocked:**
+   Inworld is validated on a real paid run and the MP3 subtitle drift is fixed (both
+   in Done), so subtitles render clean. Human triggers the render; agent uploads to
+   the `v0.0.0` GitHub Release (`gh release upload --clobber`) and refreshes README
+   links. **[human→agent]**
 4. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
    now-shipped Qwen3 engine (see Done) for users without a local GPU: ~$0.13/10 min,
    no infra, but the voice leaves the machine (and needs one-time voice enrollment).
@@ -393,6 +375,20 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Inworld (MP3) subtitle drift fixed** (2026-06-19; CHANGELOG `[Unreleased]`
+  `### Fixed`; was Now #1). SRT/VTT subtitles slid progressively **late** on Inworld
+  (`.mp3`) renders (~1–2 s by end of deck) because the subtitle timeline was built
+  from per-clip `get_duration` (ffprobe `format.duration`, which over-reports an MP3
+  by its encoder delay + padding) while `concatenate_audio` decodes to the true
+  shorter length. `get_duration` now measures the *decoded* length for compressed
+  audio-only clips (decode to PCM, as concat does), so per-clip durations sum to the
+  assembled track; WAV/PCM and the muxed video keep the cheap header read. Went with
+  candidate **(b)** — *not* the WAV-cache rewrite (a): no cache-format change, so
+  already-cached paid `.mp3` audio renders drift-free with **no re-synthesis or
+  re-billing**, and `clean`'s paid-keep logic is untouched. Repro test
+  `tests/test_subtitle_drift.py` (free — libmp3lame tones, no Inworld call),
+  red→green; full unit tier 737 passed, lint + `mypy --strict` green. This was the
+  last defect gating a clean HQ demo with subtitles (Next #3).
 - [x] **Accelerated narration playback (1× / 1.25× / 1.5× / 2×)** (2026-06-19;
   CHANGELOG `[Unreleased]` `### Added`; was Now #3). A cycling speed button in the
   editor transport sets the preview player's HTML5 `audio.playbackRate` live (no
