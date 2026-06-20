@@ -191,6 +191,7 @@ captioned silent cut.
 
 - [`examples/basel-problem/`](examples/basel-problem/) — a 22-page Euler proof
   with overlay steps and a second voice for the Bernoulli quote.
+  **[▶ Watch on YouTube](https://youtu.be/pjjHS9vhjpk)** (Inworld narration).
 - [`examples/showcase/`](examples/showcase/) — a self-narrated tour that teaches
   the workflow as a two-voice dialog (written in this very format).
 
