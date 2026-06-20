@@ -1,3 +1,13 @@
+# slidesonnet-format: 2
+default-voice: lecturer
+voices:
+  lecturer:
+    kokoro: af_heart
+    inworld: Tyler
+  alex:
+    kokoro: am_michael
+    inworld: Eleanor
+
 @title
   utterance:
     text: Welcome to slideSonnet. Everything you're about to hear was written as plain text in a sidecar file, and rendered straight from a PDF. Let me show you how.

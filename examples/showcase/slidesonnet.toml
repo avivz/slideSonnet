@@ -1,5 +1,4 @@
 # slideSonnet config for the showcase demo.
-# Two Kokoro voices for the dialog.
 
 # Top-level keys must come before any [table] header.
 pronunciation = ["pronunciation/general.md", "pronunciation/names.md"]
@@ -17,6 +16,6 @@ crf = 23
 pre_silence = 0.3
 tail_seconds = 0.6
 
-# Alex's questions use a distinct voice (voice: alex in the sidecar).
-[voices.alex]
-kokoro = "am_michael"
+# Named voices (lecturer + Alex, the questioner) live in the deck's portable
+# voice layer — the `voices:` preamble of showcase.narration — so the sidecar is
+# self-describing across engines (Kokoro for the demo, Inworld for HQ).

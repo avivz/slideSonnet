@@ -1,8 +1,5 @@
 # slideSonnet config for the Basel Problem demo.
 
-# Top-level keys must come before any [table] header.
-pronunciation = ["pronunciation/names.md"]
-
 [tts]
 backend = "kokoro"
 
@@ -16,6 +13,6 @@ crf = 23
 pre_silence = 0.3
 tail_seconds = 0.8
 
-# A second voice for the Bernoulli quote (voice: bernoulli in the sidecar).
-[voices.bernoulli]
-kokoro = "bm_george"
+# Named voices (lecturer + the Bernoulli quote) live in the deck's portable
+# voice layer — the `voices:` preamble of basel-problem.narration — so the
+# sidecar is self-describing across engines (Kokoro for the demo, Inworld for HQ).
