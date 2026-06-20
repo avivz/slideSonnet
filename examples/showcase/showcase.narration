@@ -9,37 +9,51 @@ voices:
     inworld: Eleanor
 
 @title
+  pause: 0.3
   utterance:
     text: Welcome to slideSonnet. Everything you're about to hear was written as plain text in a sidecar file, and rendered straight from a PDF. Let me show you how.
   pause: 0.5
 
 @intro-q
+  pause: 0.3
   utterance:
     voice: alex
     text: So what does slideSonnet actually do?
+  pause: 0.6
 
 @intro-a
+  pause: 0.3
   utterance:
     text: It compiles narration from plain text. You write what each slide should say, a synthesized voice reads it, and your PDF becomes a timed, subtitled lecture video.
+  pause: 0.6
 
 @why-q
+  pause: 0.3
   utterance:
     voice: alex
     text: Why a computer voice? I could record myself.
+  pause: 0.6
 
 @why-a
+  pause: 0.3
   utterance:
     text: Because slides change, and every change means re-recording. Text doesn't mind. Fix the sentence, re-render, done. Your video's source becomes git-diffable text, versioned like code.
+  pause: 0.6
 
 @markers
+  pause: 0.3
   utterance:
     text: Step one: mark your slides. Add the slideSonnet package to your Beamer source, and give every slide a stable id with the ess-ess-eye-dee macro. The id gets stamped invisibly onto each page, so narration binds to the id, not to a page number that shifts when you insert a slide.
+  pause: 0.6
 
 @init
+  pause: 0.3
   utterance:
     text: Step two: scaffold the sidecar. Run slidesonnet init on your PDF, and it reads the ids straight out of the document and writes a blank narration file, one block per slide, ready for you to fill in. By hand, or by an LLM.
+  pause: 0.6
 
 @format
+  pause: 0.3
   utterance:
     text: Each slide id gets a block of utterances and pauses.
   utterance:
@@ -48,34 +62,48 @@ voices:
   utterance:
     pace: slow
     text: Yes. Word for word.
+  pause: 0.6
 
 @edit-q
+  pause: 0.3
   utterance:
     voice: alex
     text: Do I really have to write that text file by hand?
+  pause: 0.6
 
 @edit-a
+  pause: 0.3
   utterance:
     text: You can, or you can run slidesonnet edit for a local editor. Page through the deck, type narration beside each slide, and preview the whole thing. The preview bakes in your pauses, so it plays back exactly like the final video will.
+  pause: 0.6
 
 @export
+  pause: 0.3
   utterance:
     text: Step four: render. Run slidesonnet export with the kokoro engine for free, natural local speech, or a cloud engine for studio voices. Want a fast rough cut? Use silent mode, or estimate timing, to skip speech entirely. Subtitles are written alongside the video automatically.
+  pause: 0.6
 
 @cache-q
+  pause: 0.3
   utterance:
     voice: alex
     text: Doesn't re-rendering everything get slow?
+  pause: 0.6
 
 @cache-a
+  pause: 0.3
   utterance:
     text: Audio is cached by content. Edit one block, and only that line is re-synthesized. Everything else is reused. And switching engines never throws away audio you already paid for.
+  pause: 0.6
 
 @recap
+  pause: 0.3
   utterance:
     text: That's the whole workflow. Mark your slides, scaffold the narration, check that the ids line up, write and preview, then export. Every step is scriptable, so an LLM or a Makefile can drive the entire pipeline without ever opening the editor.
+  pause: 0.6
 
 @closing
+  pause: 0.3
   utterance:
     text: Mark your slides. Write narration. Render. Give slideSonnet a try.
   pause: 1
