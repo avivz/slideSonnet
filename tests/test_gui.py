@@ -709,6 +709,41 @@ async def test_replaying_preview_reloads_the_new_track(
     assert second != first  # same path, but the browser must see a fresh URL
 
 
+async def test_speed_button_cycles_through_playback_rates(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The transport speed control cycles 1× → 1.25× → 1.5× → 2× → 1× and back."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    speed_btn = next(iter(user.find(marker="speed").elements))
+    assert speed_btn.text == "1×"  # starts at normal speed
+    for expected in ("1.25×", "1.5×", "2×", "1×"):
+        user.find(marker="speed").click()
+        assert speed_btn.text == expected
+
+
+async def test_speed_setting_survives_a_preview_build(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A chosen speed is preview-only and sticks across a new (re)build of the track."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    monkeypatch.setattr(
+        EditorState, "preview_current", lambda self, progress=None: _fake_preview(self.pdf_path, [])
+    )
+    monkeypatch.setattr(EditorState, "synth_targets", lambda self, t, *, force=False: 1)
+    await user.open("/")
+    user.find(marker="speed").click()  # → 1.25×
+    user.find(marker="speed").click()  # → 1.5×
+    user.find(marker="play-slide").click()
+    await user.should_see("Preview ready", retries=300)
+    speed_btn = next(iter(user.find(marker="speed").elements))
+    assert speed_btn.text == "1.5×"  # building a track never resets the chosen speed
+
+
 async def test_stop_then_switch_slides_resets_player(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

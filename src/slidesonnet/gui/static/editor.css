@@ -109,6 +109,7 @@ body{
 .ss-audio{display:none}  /* invisible sound pipe — the transport buttons are the UI */
 .ss-seek{flex:1 1 0;min-width:60px}
 .ss-time{font-size:11px;color:var(--ss-dim);white-space:nowrap}
+.ss-speed{font-size:11px;color:var(--ss-dim);min-width:44px;padding:0 6px}
 /* unattached-narration tray: a distinct warning-tinted panel so it stands out
    from the plain console sections around it */
 .ss-tray{background:rgba(255,200,87,.07);border:1px solid rgba(255,200,87,.32);

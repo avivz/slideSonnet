@@ -59,24 +59,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-3. [ ] **Accelerated narration playback (1.25×/1.5×/2×).** *Story:* As a deck
-   author proofing narration, I want to play the preview faster so I can review
-   a long deck without sitting through every clip at 1×. *Acceptance examples:*
-   (a) a speed control in the transport (e.g. 1× / 1.25× / 1.5× / 2×, or a
-   cycling button) sets the audio element's playback rate live — pressing it
-   mid-play speeds up immediately with **no re-synthesis** and no cache write;
-   (b) the chosen speed sticks across slide changes and across both
-   *play-slide* and *play-all* (whole-deck preview), and the deck preview's
-   automatic slide flips still land on cue at the faster rate; (c) the seek bar
-   and elapsed/total clock stay consistent with the audio's media timeline while
-   sped up (a 2× pass over a 10 s clip finishes in ~5 s of wall-clock);
-   (d) speed is **preview-only** — it never affects the synthesized cache, the
-   `pace:` directive, or the exported video. *Appetite:* an afternoon. *Design
-   note:* this is HTML5 `audio.playbackRate` on the transport's player, not a
-   TTS-level change — distinct from the per-utterance `pace:` directive, which
-   re-synthesizes. Browser pitch-correction (`preservesPitch`) is on by default,
-   so 2× stays natural, not chipmunked. **[agent]**
-4. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
+3. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
    own little PR (the background job queue they build on shipped — see Done).
    *Appetite:* an afternoon each.
    - When narration text is edited, immediately (before blur) flip the box's
@@ -115,7 +98,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
      transition); checked, it plays the slide's in/out transitions as today. The
      whole-deck preview is unaffected either way, and the setting is local/editor
      state (not written to the deck).
-5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+4. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -263,7 +246,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    **off**, behavior is unchanged (assemble on demand at Play-all time). *Appetite:*
    half a day. *Design note:* reuse `preview_deck`/`build_preview`; cache the
    assembled track keyed to a deck/config/voice hash so an edit invalidates it.
-   Complements the Now #4 sub-item "let Play all start before everything is
+   Complements the Now #3 sub-item "let Play all start before everything is
    generated" — that's *partial* play mid-generation; this is *instant* play once
    the deck is fully generated and idle. **[agent]**
 13. [ ] **Cache inventory — show what's cached (count + size) before clearing it.**
@@ -410,6 +393,17 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Accelerated narration playback (1× / 1.25× / 1.5× / 2×)** (2026-06-19;
+  CHANGELOG `[Unreleased]` `### Added`; was Now #3). A cycling speed button in the
+  editor transport sets the preview player's HTML5 `audio.playbackRate` live (no
+  re-synthesis, no cache write); the rate sticks across slides and across
+  play-slide/play-all (re-applied on each track load via `defaultPlaybackRate`),
+  cue flips and the morph overlay stay locked to the faster audio clock, and
+  `preservesPitch` keeps 2× natural. Preview-only — never touches the cache, the
+  `pace:` directive, or the export. Unit tests cover the cycle + stickiness
+  (`test_gui.py::test_speed_button_cycles_through_playback_rates`,
+  `test_speed_setting_survives_a_preview_build`); the real-browser `playbackRate`
+  assertion is browser-tier (`test_browser_journeys.py`).
 - [x] **Published 1.0.0a2** (2026-06-19; tag `v1.0.0a2`). The whole post-a1 batch
   is now installable: the publish workflow ran TestPyPI → PyPI → GitHub Release all
   green. Shipped the transition gallery + per-slide silences + centered-overlay

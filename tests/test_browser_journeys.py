@@ -301,6 +301,43 @@ def test_single_slide_preview_plays_its_in_and_out_transitions(
     assert _eventually(overlay_on, timeout=15.0), "single-slide morph never activated"
 
 
+@pytest.mark.timeout(120)
+def test_speed_control_sets_playback_rate_on_the_audio_element(
+    page: Page, editor_server: ServerFactory, tmp_path: Path
+) -> None:
+    """Cycling the speed control sets the real HTML5 audio.playbackRate, pitch-preserved.
+
+    The in-process sim can't run JS, so the actual playbackRate assignment is
+    only observable in a real browser. The chosen rate must also survive the
+    track (re)load that a play press triggers.
+    """
+    pdf = _prep(tmp_path, "@intro-title\nHello there friends.\n")
+    page.goto(editor_server(pdf, stub_seconds=2.0))
+    expect(page.get_by_text("Slide 1 / 6")).to_be_visible()  # let the editor settle first
+
+    # NiceGUI's ui.audio renders the <audio> element itself with the ss-audio class.
+    def audio_rate() -> float:
+        return float(
+            page.evaluate("() => document.querySelector('audio.ss-audio')?.playbackRate ?? -1")
+        )
+
+    def preserves_pitch() -> bool:
+        return bool(
+            page.evaluate("() => document.querySelector('audio.ss-audio')?.preservesPitch ?? false")
+        )
+
+    marked(page, "speed").click()  # → 1.25×
+    marked(page, "speed").click()  # → 1.5×
+    expect(marked(page, "speed")).to_have_text("1.5×")
+    assert _eventually(lambda: audio_rate() == 1.5, timeout=5.0), "playbackRate not applied"
+    assert preserves_pitch(), "preservesPitch should keep 2× natural, not chipmunked"
+
+    # a play press reloads the track (set_source) — the chosen speed must stick
+    marked(page, "play-slide").click()
+    expect(page.get_by_text("Preview ready").first).to_be_visible(timeout=30_000)
+    assert _eventually(lambda: audio_rate() == 1.5, timeout=5.0), "speed reset on track reload"
+
+
 # --------------------------------------------------------------------------
 # journey 4 (REAL KOKORO): generate → cache → re-generate → blur-edit
 # --------------------------------------------------------------------------

@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Accelerated narration playback (1× / 1.25× / 1.5× / 2×).** A speed control in
+  the editor transport cycles the preview's playback rate live — pressing it
+  mid-play speeds up immediately with **no re-synthesis** and no cache write. The
+  chosen speed sticks across slide changes and across both *play-slide* and
+  *play-all* (re-applied on every track load), the cue-driven slide flips and the
+  transition morph stay locked to the faster audio clock, and pitch is preserved
+  (2× stays natural, not chipmunked). Preview-only: it never touches the
+  synthesized cache, the per-utterance `pace:` directive, or the exported video.
+  This is HTML5 `audio.playbackRate` on the transport player, distinct from
+  `pace:` (which re-synthesizes).
+
 ## [1.0.0a2] — 2026-06-19
 
 ### Added

@@ -418,6 +418,9 @@ class PaneLayout:
 class PreviewPlayer:
     """The preview transport: build/pause/resume/stop, clock, seek, cue flips."""
 
+    # Preview-only playback rates (HTML5 audio.playbackRate); never touch the cache.
+    SPEEDS = (1.0, 1.25, 1.5, 2.0)
+
     def __init__(
         self,
         view: EditorView,
@@ -427,6 +430,7 @@ class PreviewPlayer:
         time_label: Any,
         play_one: Any,
         play_all: Any,
+        speed_btn: Any,
     ) -> None:
         self.view = view
         self.audio = audio
@@ -434,6 +438,8 @@ class PreviewPlayer:
         self.time_label = time_label
         self.play_one = play_one
         self.play_all = play_all
+        self.speed_btn = speed_btn
+        self.speed = 1.0  # preview playback rate; sticks across slides and rebuilds
         self.playback = PlaybackController()
         self.cues: list[Cue] = []
         self.track_duration = 0.0
@@ -461,6 +467,37 @@ class PreviewPlayer:
             ui.run_javascript(script)
         except Exception:
             pass
+
+    @staticmethod
+    def _fmt_speed(s: float) -> str:
+        return f"{s:g}×"  # 1.0→"1×", 1.25→"1.25×", 1.5→"1.5×", 2.0→"2×"
+
+    def cycle_speed(self) -> None:
+        """Step the preview to the next playback rate, wrapping back to 1×.
+
+        Preview-only: this is HTML5 ``audio.playbackRate``, not the per-utterance
+        ``pace:`` directive — it never re-synthesizes, writes the cache, or touches
+        the exported video. The chosen rate sticks across slide changes and across
+        both play-slide and play-all (re-applied on every track (re)load).
+        """
+        i = self.SPEEDS.index(self.speed) if self.speed in self.SPEEDS else 0
+        self.speed = self.SPEEDS[(i + 1) % len(self.SPEEDS)]
+        self.speed_btn.set_text(self._fmt_speed(self.speed))
+        self._apply_speed()
+
+    def _apply_speed(self) -> None:
+        """Push the current rate onto the audio element.
+
+        Sets ``defaultPlaybackRate`` too: a fresh ``set_source`` triggers a media
+        load that resets ``playbackRate`` to the default, so pinning the default
+        keeps the speed across track rebuilds. ``preservesPitch`` keeps 2× natural
+        rather than chipmunked.
+        """
+        self._run_js(
+            f"(() => {{ const a = document.getElementById('c{self.audio.id}'); "
+            f"if (a) {{ a.preservesPitch = true; "
+            f"a.defaultPlaybackRate = {self.speed}; a.playbackRate = {self.speed}; }} }})()"
+        )
 
     def _arm_morph(self, whole_deck: bool, total: float) -> None:
         """Push the morph schedule to the client engine.
@@ -625,6 +662,7 @@ class PreviewPlayer:
                 if start_at > 0:
                     src = f"{src}#t={start_at}"
                 self.audio.set_source(src)
+                self._apply_speed()  # the load resets playbackRate; re-pin the chosen speed
                 self.playback.mark_loaded("deck" if whole_deck else state.current_id)
                 self.track_duration = preview.total_duration
                 self.pos_slider.value = (
@@ -1434,6 +1472,10 @@ class EditorView:
                         play_all.mark("play-deck").tooltip("Preview whole deck")
                         stop_btn = ui.button(icon="stop").props("flat round dense")
                         stop_btn.mark("stop").tooltip("Stop / cancel building")
+                        speed_btn = ui.button("1×").props("flat dense no-caps").classes("ss-speed")
+                        speed_btn.mark("speed").tooltip(
+                            "Playback speed (preview only — no re-synth)"
+                        )
                         ui.element("div").classes("ss-vsep")
                         audio = ui.audio("").classes("ss-audio")
                         audio.mark("preview-audio")
@@ -1548,6 +1590,7 @@ class EditorView:
             time_label=time_label,
             play_one=play_one,
             play_all=play_all,
+            speed_btn=speed_btn,
         )
         self.layout = PaneLayout(strip_split, console_split, strip_toggle, console_toggle)
         self.client = ui.context.client  # background tasks must re-enter the page's slot stack
@@ -1581,6 +1624,7 @@ class EditorView:
         play_one.on_click(lambda: self.player.request_preview(play_one, False))
         play_all.on_click(lambda: self.player.request_preview(play_all, True))
         stop_btn.on_click(lambda: self.player.stop_playback())
+        speed_btn.on_click(lambda: self.player.cycle_speed())
         gen_all_btn = self.gen_all_btn
         gen_all_btn.on_click(self.enqueue_missing)
         export_btn.on_click(lambda: self.run_action(export_btn, self._export_work))
