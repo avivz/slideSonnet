@@ -41,45 +41,21 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-2. [ ] **Minor UX flow fixes** — small editor quality-of-life items, each its
-   own little PR (the background job queue they build on shipped — see Done).
-   *Appetite:* an afternoon each.
-   - When narration text is edited, immediately (before blur) flip the box's
-     regenerate icon to *generate* and mark the slide not-up-to-date; if the
-     edit is undone while typing, revert. (Partly related to editor pass #3,
-     which already revokes the loaded track on edit — this is the per-box icon
-     + dirty-state half that's still open.) *Acceptance:* typing in an utterance
-     flips its badge to amber within a keystroke; Ctrl-Z back to the original
-     text restores the green badge without a save.
-   - Let "play all" start before everything is generated, and pause if
-     playback ever catches up to the generation frontier. *(builds on the queue)*
-     *Acceptance:* pressing play-all on a half-generated deck starts immediately
-     and pauses (not errors) when it reaches the first ungenerated clip, resuming
-     once the queue catches up.
-   - A newly-added utterance inherits the deck's default voice. Today
-     `BlockEditor.add_segment` creates `Segment.speech("")` with **no** voice, so
-     a new line shows the explicit "default" option and resolves through the
-     fallback chain. Make that default explicit and visible, with a strict
-     precedence: **deck default first** (sidecar `default-voice:`, or a config
-     key); **if that doesn't exist, the engine default**. *Acceptance:* (a) with
-     `default-voice: lecturer` set, adding a line starts on `lecturer` (shown
-     selected in the picker); (b) with **no** deck default set, adding a line
-     falls through to the active engine's own default (Kokoro `am_echo`, Qwen3
-     Vivian) — **not an error**, the line is created unset and the "default" option
-     stays valid with nothing pinned; (c) the new line round-trips: an unset line
-     writes no `voice:` (stays portable), and a line is only written with an
-     explicit `voice:` once the author changes it off the default. *Appetite:* an
-     hour.
-   - Toggle transitions in single-slide preview. A single-slide play currently
-     *always* renders that slide's own in/out transitions (the preview morph,
-     against a black frame at the deck ends) — useful for proofing the
-     transition, but a needless flourish when you just want to hear one slide's
-     narration. Add an editor checkbox to opt into it. *Acceptance:* a checkbox
-     (e.g. "Play transitions in single-slide preview"), **off by default**, gates
-     the single-slide morph — unchecked, a single-slide play uses a plain cut (no
-     transition); checked, it plays the slide's in/out transitions as today. The
-     whole-deck preview is unaffected either way, and the setting is local/editor
-     state (not written to the deck).
+2. [ ] **Play "play all" before the deck is fully generated** — the one remaining
+   "minor UX" sub-item, **re-scoped out of an afternoon**. The other three shipped
+   (per-utterance dirty badge, single-slide transition toggle, and the new-line
+   default-voice behavior — see Done). *Story:* As a deck author with a
+   half-generated deck, I want play-all to start immediately and pause (not error)
+   when playback catches up to the first ungenerated clip, resuming once the queue
+   catches up. *Acceptance:* pressing play-all on a half-generated deck starts
+   immediately and pauses at the generation frontier, resuming as the queue
+   advances. *Appetite:* **~2 days, not an afternoon** — this is an architecture
+   change, not a little PR. The whole-deck preview assembles a **single monolithic
+   `track.wav`** (`render.render_audio_track` → one ffmpeg concat) and plays it
+   off a cue sheet, so "pause at the frontier" needs either incremental/streaming
+   assembly (extend the track as pages finish) or per-page playback (stitch on
+   boundaries like the single-slide path). Decide the approach before building.
+   **[agent]**
 3. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
@@ -375,6 +351,22 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Minor editor UX flow fixes — 3 of 4 shipped** (2026-06-19; CHANGELOG
+  `[Unreleased]`; were Now #2 sub-items). (a) **Per-utterance dirty badge:** typing
+  in an utterance flips its generate badge to amber (not-up-to-date) within a
+  keystroke — before blur/save — and undo back to the original restores green
+  (`BlockEditor._mark_text_dirty` + dirty-aware `sync_gen_buttons`; unit test +
+  browser journey for the before-blur timing). (b) **Single-slide transition
+  toggle:** a "Play transitions in single-slide preview" checkbox (off by default,
+  session-local) gates the single-slide morph; whole-deck preview unaffected
+  (`_single_slide_morph(enabled=…)` + `_arm_morph` reads `app.storage.general`).
+  (c) **New-line default voice:** verified **already delivered** by the
+  portable-voice layer — a newly added line stays unset and round-trips with no
+  `voice:`, resolving deck-default→engine-default at synth; locked in with a
+  regression test. The literal "show the engine voice id in the picker" reading was
+  *deliberately rejected* earlier (`test_voice_box_default_option_without_a_named_default`:
+  "never a raw engine id"), so no change there. The 4th sub-item (play-all before
+  fully generated) is re-scoped to its own ~2-day item — see Now #2.
 - [x] **Inworld (MP3) subtitle drift fixed** (2026-06-19; CHANGELOG `[Unreleased]`
   `### Fixed`; was Now #1). SRT/VTT subtitles slid progressively **late** on Inworld
   (`.mp3`) renders (~1–2 s by end of deck) because the subtitle timeline was built

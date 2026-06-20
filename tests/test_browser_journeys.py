@@ -272,10 +272,14 @@ def test_transition_morph_overlay_runs_during_deck_preview(
 
 
 @pytest.mark.timeout(120)
-def test_single_slide_preview_plays_its_in_and_out_transitions(
+def test_single_slide_preview_transitions_gated_by_the_toggle(
     page: Page, editor_server: ServerFactory, tmp_path: Path
 ) -> None:
-    """Playing one slide should animate its own in/out transitions, not flip."""
+    """The single-slide-transitions toggle (off by default) gates the in/out morph.
+
+    Off: a single-slide play is a plain cut (no overlay). On: it animates the
+    slide's own in/out transitions as before.
+    """
     pdf = _prep(tmp_path, "@intro-title\nHello there friends.\n\n@euler-setup\nWorld.\n")
     sidecar = tmp_path / "marked.narration"
     text = sidecar.read_text(encoding="utf-8")
@@ -288,8 +292,6 @@ def test_single_slide_preview_plays_its_in_and_out_transitions(
         encoding="utf-8",
     )
     page.goto(editor_server(pdf, stub_seconds=2.0))
-    marked(page, "play-slide").click()
-    expect(page.get_by_text("Preview ready").first).to_be_visible(timeout=30_000)
 
     def overlay_on() -> bool:
         return bool(
@@ -298,7 +300,55 @@ def test_single_slide_preview_plays_its_in_and_out_transitions(
             )
         )
 
-    assert _eventually(overlay_on, timeout=15.0), "single-slide morph never activated"
+    # default: toggle off → single-slide play is a plain cut, no morph overlay
+    marked(page, "play-slide").click()
+    expect(page.get_by_text("Preview ready").first).to_be_visible(timeout=30_000)
+    assert not _eventually(overlay_on, timeout=4.0), "morph played with the toggle off"
+
+    # turn the toggle on → the in/out transitions animate
+    marked(page, "single-slide-transitions").click()
+    marked(page, "stop").click()
+    marked(page, "play-slide").click()
+    expect(page.get_by_text("Preview ready").first).to_be_visible(timeout=30_000)
+    assert _eventually(overlay_on, timeout=15.0), "single-slide morph never activated when enabled"
+
+
+@pytest.mark.timeout(120)
+def test_editing_a_generated_utterance_flips_badge_before_blur(
+    page: Page, editor_server: ServerFactory, tmp_path: Path
+) -> None:
+    """Typing in a generated utterance flips its badge amber before any blur; undo restores it.
+
+    This is the keystroke/timing half the in-process sim can't see — it writes
+    ``.value`` synchronously and never fires the per-keystroke value-change while
+    the field stays focused.
+    """
+    pdf = _prep(tmp_path, "@intro-title\nHello there.\n")
+    page.goto(editor_server(pdf, stub_seconds=1.0))
+
+    def badge() -> str:
+        return str(
+            page.evaluate(
+                """() => {
+                    const b = document.querySelector('.ss-marker-gen-seg-0');
+                    if (!b) return '?';
+                    if (b.className.includes('text-positive')) return 'green';
+                    if (b.className.includes('text-warning')) return 'amber';
+                    return 'other';
+                }"""
+            )
+        )
+
+    marked(page, "gen-seg-0").click()  # stub TTS generates instantly
+    assert _eventually(lambda: badge() == "green", timeout=15.0), "clip never showed generated"
+
+    box = marked(page, "utext-0").locator("textarea")
+    box.click()
+    box.press_sequentially("!", delay=10)  # one keystroke, focus retained (no blur)
+    assert _eventually(lambda: badge() == "amber", timeout=4.0), "badge didn't flip on edit"
+
+    box.press("Backspace")  # undo back to the original text, still focused
+    assert _eventually(lambda: badge() == "green", timeout=4.0), "badge didn't revert on undo"
 
 
 @pytest.mark.timeout(120)

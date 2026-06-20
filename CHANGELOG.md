@@ -16,6 +16,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   synthesized cache, the per-utterance `pace:` directive, or the exported video.
   This is HTML5 `audio.playbackRate` on the transport player, distinct from
   `pace:` (which re-synthesizes).
+- **Toggle for transitions in single-slide preview.** A new editor checkbox,
+  **"Play transitions in single-slide preview"** (off by default), gates the
+  single-slide morph: unchecked, playing one slide is a plain cut so you just hear
+  its narration; checked, it animates that slide's own in/out transitions as
+  before. The whole-deck preview always plays transitions, unaffected. The setting
+  is local editor state (off each session), never written to the deck.
+
+### Changed
+- **A narration edit marks its clip stale immediately.** Typing in an utterance
+  now flips that clip's generate badge to "not generated yet" (amber) within a
+  keystroke — before you blur or save — so you can see at a glance that the cached
+  audio no longer matches the text; undoing back to the original text restores the
+  green "up to date" badge without a save.
 
 ### Fixed
 - **Subtitles no longer drift late on Inworld (MP3) renders.** An MP3 carries

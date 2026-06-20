@@ -256,6 +256,8 @@ def _single_slide_morph(
     images: Sequence[Path],
     total: float,
     media_url: Callable[[Path], str],
+    *,
+    enabled: bool = True,
 ) -> list[dict[str, Any]]:
     """Morph steps for a *single-slide* preview: its in- and out-transition.
 
@@ -266,7 +268,12 @@ def _single_slide_morph(
     neighbour (the deck's first/last slide) morphs against a black frame
     (``from``/``to`` is ``None``). Each is clamped to half the slide so the two
     never overlap.
+
+    *enabled* is the "Play transitions in single-slide preview" toggle (off by
+    default): when False a single-slide play is a plain cut, no morph at all.
     """
+    if not enabled:
+        return []
 
     def url(j: int) -> str | None:
         return media_url(images[j]) if 0 <= j < len(images) else None
@@ -514,8 +521,16 @@ class PreviewPlayer:
         if whole_deck:
             steps = _morph_schedule(self.cues, state.deck, images, url)
         else:
+            # single-slide transitions are opt-in (off by default) — a plain play
+            # of one slide shouldn't flourish through its in/out morph by default.
             steps = _single_slide_morph(
-                state.current_block, state.incoming_transition, state.index, images, total, url
+                state.current_block,
+                state.incoming_transition,
+                state.index,
+                images,
+                total,
+                url,
+                enabled=bool(app.storage.general.get("single_slide_transitions", False)),
             )
         if not steps:
             self._run_js("window.ssMorph && window.ssMorph.stop()")
@@ -752,6 +767,10 @@ class BlockEditor:
         # collectors for the structured block editor, refreshed by render()
         self.seg_collectors: list[Callable[[], Segment]] = []
         self.seg_gen_controls: list[tuple[Any, Any, int]] = []  # (button, tooltip, speech index)
+        # Speech indices whose live text diverges from the cached/saved text, so
+        # their per-clip badge shows "not generated yet" the moment you type —
+        # before any blur/save — and reverts if you undo back to the original.
+        self._dirty_speech: set[int] = set()
         self.transition_getters: dict[str, Callable[[], Transition]] = {}
         # Per-slide start/end silence fields (only present for slides with speech);
         # "start"/"end" → a getter for that field's seconds. See render()/collect().
@@ -958,6 +977,13 @@ class BlockEditor:
             # it so the next Play rebuilds instead of replaying the old narration.
             text.on("blur", lambda: self.commit_audible())
             text.on("keydown.ctrl.s.prevent", lambda: self.commit_audible())  # save w/o leaving
+            # Flip the per-clip badge to "not generated yet" the instant the text
+            # diverges from the cached take — before blur — and revert it on undo.
+            text.on_value_change(
+                lambda e, si=speech_index, original=seg.text: self._mark_text_dirty(
+                    si, e.value, original
+                )
+            )
             voice.on_value_change(lambda: self.commit_audible())
             pace.on_value_change(lambda: self.commit_audible())
             direct.on("blur", lambda: self.commit_audible())
@@ -1041,6 +1067,7 @@ class BlockEditor:
         self.blocks_col.clear()
         self.seg_collectors.clear()
         self.seg_gen_controls.clear()
+        self._dirty_speech.clear()  # a fresh render reflects the saved text again
         self.transition_getters.clear()
         self.silence_getters.clear()
         block = state.current_block
@@ -1168,10 +1195,24 @@ class BlockEditor:
         if self.save_current():
             self.view.player.stop_playback()
 
+    def _mark_text_dirty(self, speech_index: int, value: str, original: str) -> None:
+        """Track whether a live utterance edit diverges from its cached text.
+
+        Called per keystroke: a diverging edit makes any generated clip stale, so
+        flip its badge to amber right away; typing back to the original (undo)
+        clears the flag and restores the green badge — all without a save.
+        """
+        if (value or "") != (original or ""):
+            self._dirty_speech.add(speech_index)
+        else:
+            self._dirty_speech.discard(speech_index)
+        self.sync_gen_buttons()
+
     def sync_gen_buttons(self) -> None:
         """Each utterance's generate button doubles as its audio indicator:
-        amber wave = no audio yet, green refresh = generated (fresh take), and a
-        spinner while a background job for that clip is queued or running."""
+        amber wave = no audio yet (or an unsaved edit), green refresh = generated
+        and up to date, and a spinner while a background job for that clip is
+        queued or running."""
         if not self.seg_gen_controls:
             return
         view = self.view
@@ -1187,12 +1228,16 @@ class BlockEditor:
                 btn.set_enabled(False)
                 continue
             btn.props(remove="loading")
+            dirty = si in self._dirty_speech  # unsaved edit: the cached take is stale
             cached = si < len(flags) and flags[si]
+            fresh = cached and not dirty
             btn.props(
-                f"icon={'autorenew' if cached else 'graphic_eq'} "
-                f"color={'positive' if cached else 'warning'}"
+                f"icon={'autorenew' if fresh else 'graphic_eq'} "
+                f"color={'positive' if fresh else 'warning'}"
             )
-            if cached:
+            if dirty:
+                tip.set_text("Edited · click to regenerate")
+            elif cached:
                 tip.set_text(f"Generated{_clip_meta_suffix(meta.get(si))} · click for a fresh take")
             else:
                 tip.set_text("No audio yet · click to generate")
@@ -1555,6 +1600,16 @@ class EditorView:
                 self.auto_build = auto_build
                 self._sync_auto_build_gate()
                 auto_build.on_value_change(lambda e: self._on_auto_build_toggle(bool(e.value)))
+                single_trans = ui.checkbox("Play transitions in single-slide preview")
+                single_trans.props("dense").mark("single-slide-transitions")
+                single_trans.tooltip(
+                    "When on, playing one slide animates its in/out transitions; "
+                    "off (default) plays just that slide's narration"
+                )
+                # Off each session — proofing one slide's audio shouldn't morph by
+                # default; the whole-deck preview always plays transitions regardless.
+                app.storage.general["single_slide_transitions"] = False
+                single_trans.bind_value(app.storage.general, "single_slide_transitions")
                 self.gen_all_btn = ui.button("Generate missing", icon="library_music").classes(
                     "w-full"
                 )

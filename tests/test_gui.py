@@ -123,6 +123,74 @@ def test_single_slide_morph_uses_black_frame_at_deck_ends() -> None:
     assert intro["to"] == "a.png"
 
 
+def test_single_slide_morph_disabled_yields_no_steps() -> None:
+    """The single-slide transition toggle (off by default) gates the morph entirely."""
+    from slidesonnet.gui.app import _single_slide_morph
+    from slidesonnet.narration.model import PageNarration, Transition
+
+    block = PageNarration(slide_id="b", transition_out=Transition("wipeleft", 0.5))
+    incoming = Transition("fade", 0.5)
+    images = [Path("a.png"), Path("b.png"), Path("c.png")]
+    kwargs = dict(total=6.0, media_url=lambda p: p.name)
+
+    assert _single_slide_morph(block, incoming, 1, images, enabled=False, **kwargs) == []
+    # default (enabled) still plays the slide's own in/out transitions
+    assert len(_single_slide_morph(block, incoming, 1, images, **kwargs)) == 2
+
+
+async def test_single_slide_transition_toggle_defaults_off(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 'Play transitions in single-slide preview' checkbox starts off each session."""
+    from nicegui import app
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    cb = next(iter(user.find(marker="single-slide-transitions").elements))
+    assert cb.value is False
+    assert app.storage.general.get("single_slide_transitions") is False
+
+
+async def test_editing_text_flips_gen_badge_and_revert_restores_it(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Typing flips a generated clip's badge to amber before any save; undo restores green."""
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    # pretend the saved clip is already generated → badge starts green (autorenew)
+    monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [True])
+    await user.open("/")
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
+    assert gen.props.get("icon") == "autorenew"  # cached → green refresh
+
+    box = user.find(ui.textarea)
+    box.type("X")  # edit diverges from the cached text → not-up-to-date
+    assert gen.props.get("icon") == "graphic_eq"  # amber generate badge, before any blur/save
+
+    box.clear().type("Hello.")  # typed back to the original
+    assert gen.props.get("icon") == "autorenew"  # green restored without a save
+
+
+async def test_added_utterance_round_trips_unset_voice(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A newly added line inherits the deck default *implicitly*: it stays unset
+    (resolves through deck-default → engine-default at synth), so the sidecar
+    writes no `voice:` and the line stays portable until the author picks one."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(marker="add-utterance").click()
+    user.find(marker="utext-1").type("A second line.")  # the freshly added utterance
+    user.find("Next").click()  # navigating commits the slide
+    sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
+    assert "A second line." in sidecar
+    assert "voice:" not in sidecar  # unset line writes no voice — stays portable
+
+
 async def test_navigation(user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pdf = _prep(tmp_path)
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
