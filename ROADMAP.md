@@ -2,23 +2,23 @@
 
 Current version: **1.0.0a2 — published to PyPI 2026-06-19** (TestPyPI → PyPI →
 GitHub Release all green; `v1.0.0a2` tagged). The PDF + narration-sidecar editor
-rewrite; repo is public. `CHANGELOG` `[Unreleased]` is empty again.
+rewrite; repo is public. `main` is clean and CI is green.
 
-The a2 batch over a1: the
-background generation queue + auto-build, the portable voice layer, the Qwen3
-local engine (built-in CustomVoice speakers, prioritized auto-gen, progress UI,
-cancellable play / cancel-all), the in-editor Voices dialog + named-only utterance
-picker, the **full transition gallery, per-slide start/end silences, and
-centered-overlay transitions**, the **Inworld cloud engine** (ElevenLabs removed),
-the **per-engine cache prune policy** (Qwen3 audio survives an edit), the
-**Play-all assembly progress bar**, a **Windows-playback fix** (`yuv420p`
-transition clips), and three editor bug fixes (voice-rename references, stale
-Play-all track on silence change, paid-synth/`.env` loading) — all in
-`CHANGELOG [1.0.0a2]` and Done. With a2 out, the cloud path is now clean:
-**Inworld is validated on a real paid run** (works, voice is good) and the **MP3
-subtitle drift** that gated a clean HQ demo with subtitles is **fixed** (see Done)
-— so the Now tier turns to Qwen3 own-voice, minor editor UX, and orphaned-narration
-leftovers.
+**Accumulating toward the next release** (`CHANGELOG [Unreleased]`, post-a2): the
+**accelerated narration playback** speed control, the **single-slide transition
+toggle**, the **per-utterance dirty badge**, the **default Inworld model** bumped
+to `inworld-tts-2`, the **clean-paid-audio fix** (don't false-orphan a
+preamble-voiced Inworld clip), and the **Inworld (MP3) subtitle-drift fix** —
+all on `main`, none yet in a tagged release. Cut the next alpha (a3) when this
+batch + the current Now items feel like a coherent increment.
+
+**Demo status:** the **basel-problem HQ Inworld render shipped** — rendered with
+Inworld, subtitles re-rendered drift-free, IPA pronunciation tuned, audio
+committed, and **published to YouTube** (README-linked). The **showcase HQ render
+is not done** (still Kokoro; no Inworld audio committed, no YouTube link) — see
+Next. With a2 out and the cloud path clean (Inworld validated on a real paid run,
+MP3 drift fixed — both Done), the Now tier turns to **pronunciation correctness
+for HQ renders**, Qwen3 own-voice, and orphaned-narration leftovers.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -26,7 +26,29 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — next feature work (post-a2, toward 1.0)
 
-1. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
+1. [ ] **Inline pronunciation override — spoken form vs. subtitle form.**
+   *(Promoted from inbox 2026-06-19; the active friction.)* The pronunciation
+   dictionary (`pronunciation/*.md` → `apply_pronunciation`) rewrites text
+   *before* synthesis, and the subtitle timeline is built from that **same
+   rewritten text** — so a respelling like `Mengoli → 'mehngohlee` fixes the audio
+   but **corrupts the subtitles** (they literally show "mehngohlee"). This forced
+   ripping the whole dictionary out of the basel demo (the HQ render shipped with
+   an ad-hoc IPA-in-`/slashes/` workaround instead). *Story:* As a deck author
+   with a name the TTS mispronounces, I want to respell just the *audio* without
+   that respelling leaking into the on-screen captions. *Acceptance examples:*
+   (a) an utterance `…work of [Mengoli](menˈɡɔːli)…` (grammar TBD — must round-trip
+   in the sidecar and not collide with `[pause N]`/markdown) synthesizes the spoken
+   form and the SRT/VTT shows the display form "Mengoli"; (b) the **spoken** form
+   feeds `synth.speech_refs`/`apply_pronunciation` and the **audio cache key** (so
+   editing only the spoken form re-synths exactly that clip and nothing else); the
+   **display** form feeds `render.subtitle_entries`; (c) when only one form is
+   given it serves both (decide which side is the default); (d) on Inworld the
+   spoken form may be IPA (Inworld accepts IPA) — carried through to the per-engine
+   pronunciation mechanism, falling back to plain text where unsupported (Kokoro/
+   Qwen3). *Appetite:* ~one day. *Open question:* pick the grammar; relationship to
+   (or replacement of) the global dictionary — design alongside Next's per-engine
+   dictionary item. **[agent]**
+2. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
    shipped and mocked-tested — see Done. This is the one human step gating a real
    own-voice render: nothing about Qwen3 has run on real weights + a real voice
    yet.)* *Story:* As the deck author, I want to record a ~10 s reference, build
@@ -41,7 +63,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-2. [ ] **Play "play all" before the deck is fully generated** — the one remaining
+3. [ ] **Play "play all" before the deck is fully generated** — the one remaining
    "minor UX" sub-item, **re-scoped out of an afternoon**. The other three shipped
    (per-utterance dirty badge, single-slide transition toggle, and the new-line
    default-voice behavior — see Done). *Story:* As a deck author with a
@@ -56,7 +78,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    assembly (extend the track as pages finish) or per-page playback (stitch on
    boundaries like the single-slide path). Decide the approach before building.
    **[agent]**
-3. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+4. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -91,12 +113,18 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    gaps to fill deliberately: export timing modes end-to-end, `check`
    diagnostics on real overlay decks, editor save/reload paths. Finish with
    a joint human+AI review of coverage and quality. **[agent→human]**
-3. [ ] **HQ demo re-render with Inworld** — replaces the previously planned
-   ElevenLabs render (ElevenLabs is now removed — see Done). **Now unblocked:**
-   Inworld is validated on a real paid run and the MP3 subtitle drift is fixed (both
-   in Done), so subtitles render clean. Human triggers the render; agent uploads to
-   the `v0.0.0` GitHub Release (`gh release upload --clobber`) and refreshes README
-   links. **[human→agent]**
+3. [ ] **HQ demo re-render with Inworld — showcase (basel done).** The
+   **basel-problem** HQ render shipped (Inworld, drift-free subtitles, IPA
+   pronunciation, audio committed, on YouTube — see Done). **Showcase still needs
+   it:** it's Kokoro-only (no Inworld audio committed, no YouTube link). Human
+   triggers the showcase Inworld render; agent re-renders subtitles, commits the
+   paid audio (per the commit-paid-audio rule), uploads the MP4 to the `v0.0.0`
+   GitHub Release (`gh release upload --clobber`) and/or YouTube, and refreshes
+   README links. *Note:* the release-asset MP4s are still the **old March renders**
+   — even basel's release MP4 was never replaced with the Inworld cut (only YouTube
+   was), so this item also covers refreshing basel's release asset if we want the
+   download to match the video. *Depends on:* Now #1 / Next pronunciation — showcase
+   will hit the same IPA-in-subtitles trap basel did. **[human→agent]**
 4. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
    now-shipped Qwen3 engine (see Done) for users without a local GPU: ~$0.13/10 min,
    no infra, but the voice leaves the machine (and needs one-time voice enrollment).
@@ -279,6 +307,46 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    action, browser tier):* Play-all across an animated boundary, assert no black
    frame between morph-complete and the next slide painting. *Appetite:* half a
    day. **[agent]**
+18. [ ] **Per-engine pronunciation dictionaries.** *(From inbox 2026-06-19; design
+   together with Now #1 — shared per-engine pronunciation plumbing.)* The dictionary
+   (`pronunciation/*.md` → `apply_pronunciation`) is engine-*agnostic* today: one
+   `word → replacement` map applied uniformly. But the right replacement is
+   engine-specific — Inworld speaks IPA (`Weierstrass → ˈvaɪərʃtrɑːs`) while
+   Kokoro/Qwen3 read the IPA symbols literally and **mangle the preview/`make basel`
+   render**. *Story:* As a deck author who previews on Kokoro and renders HQ on
+   Inworld, I want one dictionary that pronounces names right on both, without IPA
+   leaking into the Kokoro audio. *Acceptance examples:* (a) a dictionary entry can
+   carry per-engine forms, mirroring the portable voice layer's shape —
+   `Weierstrass → {kokoro: "vy-er-shtrahs", inworld: "ˈvaɪərʃtrɑːs", default:
+   "Weierstrass"}`; (b) the active engine selects its form, falling back to
+   `default`/plain spelling when an engine isn't listed (a Kokoro preview never
+   speaks IPA); (c) the simple single-value `**Word**: repl` form still parses
+   unchanged; (d) `apply_pronunciation` takes the active backend and the resolved
+   per-engine replacement varies the audio cache key (already does, since it varies
+   the spoken text). *Touch points:* `tts/pronunciation.py`, the `.md` grammar, the
+   cache key. *Appetite:* ~one day. **[agent]**
+19. [ ] **Docs pass — verify all docs match narration format v2.** *(From inbox
+   2026-06-19.)* The sidecar format has migrated many times; docs may show stale
+   grammar. *Story:* As a new user reading the docs, I want every narration example
+   to match what the parser (`narration/format.py`, `FORMAT_VERSION = 2`) actually
+   accepts. *Acceptance:* (a) README, CLAUDE.md, CHANGELOG, any docs/examples
+   READMEs, `slidesonnet init` scaffolding, and CLI `--help` are reconciled against
+   the v2 grammar — specifically the voice preamble (`# slidesonnet-format: 2`,
+   `default-voice:`, the `voices:` block mapping internal names → per-engine
+   voices); (b) examples cross-checked against the migrated demo sidecars
+   (`examples/basel-problem`, `examples/showcase`) as the canonical reference;
+   (c) decide whether a single canonical narration-format reference doc should exist
+   and consolidate scattered/duplicated examples to it. *Appetite:* half a day.
+   **[agent]**
+20. [ ] **Skills pass — verify committed `.claude/skills/` are current.** *(From
+   inbox 2026-06-19.)* Same migration-drift risk as the docs. *Story:* As a
+   maintainer using the skills, I want each skill free of stale narration grammar,
+   removed pre-1.0 pipeline concepts (MARP/Beamer parsers, doit, playlists, inline
+   `\say`/`<!-- say -->`), outdated CLI flags, and pre-v2 voice-config guidance.
+   *Acceptance:* (a) `beamer-writer`, `build`, `pm`, `ux-review` audited and
+   reconciled; (b) `beamer-writer` in particular emits **valid format-v2** sidecars
+   with a correct `voices:` preamble, verified against the migrated demo sidecars.
+   *Appetite:* half a day. **[agent]**
 
 ## Later — before 1.0 final
 
@@ -351,6 +419,30 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **basel-problem HQ Inworld render shipped** (2026-06-19/20; was the basel
+  half of Next #3). The basel deck was rendered on the Inworld cloud engine with
+  drift-free subtitles (the MP3 drift fix), pronunciation tuned to IPA bound in
+  `/slashes/` so Inworld speaks it phonemically, paid audio committed (23 `.inworld`
+  clips, per the commit-paid-audio rule), pacing pauses tuned between blocks, and
+  the result **published to YouTube** — README links it (`https://youtu.be/pjjHS9vhjpk`,
+  "Inworld narration"). *Caveat:* the `v0.0.0` GitHub Release MP4 (`basel-problem.mp4`)
+  is still the old March/Kokoro cut — only YouTube got the Inworld render; refreshing
+  the release asset is folded into Next #3. The **showcase** HQ render is still
+  pending (Kokoro-only) — see Next #3.
+- [x] **`clean` no longer false-orphans preamble-voiced paid audio** (2026-06-19,
+  `a40cc51`; CHANGELOG `[Unreleased]` `### Fixed`). `clean --keep current`/`exact`
+  reconstructed cache keys from only `config.voices` + per-utterance `voice:`,
+  ignoring the sidecar's portable voice preamble (`voices:`/`default-voice:`) and
+  per-backend `resolve_voice` — so a default/preamble-voiced Inworld clip collapsed
+  to voice `None`, mismatched the real key (a concrete voice id like `Tyler`), and
+  was deleted as an orphan: silent loss of paid, regenerate-for-money audio (hit on
+  the basel demo, whose voices live entirely in the preamble). Clean now mirrors
+  synthesis exactly — merges the preamble over config, applies `default-voice`,
+  resolves per-backend. Regression test in `tests/test_clean.py`.
+- [x] **Default Inworld model bumped to `inworld-tts-2`** (2026-06-19, `a69ba00`;
+  CHANGELOG `[Unreleased]` `### Changed`; was `inworld-tts-1.5-max`). Override per
+  deck with `[tts.inworld] model`. The model is part of the audio cache key, so
+  existing Inworld clips re-synthesize on next generate under the new default.
 - [x] **Minor editor UX flow fixes — 3 of 4 shipped** (2026-06-19; CHANGELOG
   `[Unreleased]`; were Now #2 sub-items). (a) **Per-utterance dirty badge:** typing
   in an utterance flips its generate badge to amber (not-up-to-date) within a
