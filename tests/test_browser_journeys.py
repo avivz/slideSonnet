@@ -494,6 +494,11 @@ def test_block_editing_add_attrs_reorder_delete(
     page: Page, editor_server: ServerFactory, tmp_path: Path
 ) -> None:
     pdf = _prep(tmp_path)  # no sidecar: intro-title starts empty
+    # The per-utterance picker offers *named* voices only (raw engine ids are
+    # deliberately not listed), so the deck needs a name defined to pick one.
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[voices.guest]\nkokoro = "af_bella"\n', encoding="utf-8"
+    )
     page.goto(editor_server(pdf))
 
     marked(page, "add-utterance").click()
@@ -507,8 +512,9 @@ def test_block_editing_add_attrs_reorder_delete(
     assert _eventually(lambda: "pause: 1" in _sidecar(tmp_path))
 
     marked(page, "uvoice-0").click()
-    page.get_by_role("option", name="af_bella", exact=True).click()
-    assert _eventually(lambda: "voice: af_bella" in _sidecar(tmp_path))
+    # the option reads "guest (af_bella)" — the name, with its engine voice greyed
+    page.get_by_role("option", name="guest").first.click()
+    assert _eventually(lambda: "voice: guest" in _sidecar(tmp_path))
 
     marked(page, "upace-0").click()
     page.get_by_role("option", name="slow", exact=True).click()
@@ -520,16 +526,26 @@ def test_block_editing_add_attrs_reorder_delete(
     page.locator(".ss-id").click()  # blur commits
     assert _eventually(lambda: "direct: warmly" in _sidecar(tmp_path))
 
-    marked(page, "seg-down-0").click()  # move the utterance below the pause
+    # A *trailing* pause is the block's end-silence field, not a reorderable card
+    # (split_edge_silences), so it can't be moved past — reordering needs a
+    # second utterance to swap with.
+    marked(page, "add-utterance").click()
+    second = marked(page, "utext-1").locator("textarea")
+    second.click()
+    second.fill("Second spoken line.")
+    page.locator(".ss-id").click()  # blur commits
+    assert _eventually(lambda: "text: Second spoken line." in _sidecar(tmp_path))
+
+    marked(page, "seg-down-0").click()  # first line moves below the second
     assert _eventually(
         lambda: (
-            "pause: 1" in _sidecar(tmp_path)
-            and _sidecar(tmp_path).index("pause: 1") < _sidecar(tmp_path).index("text: First")
+            "text: Second spoken line." in _sidecar(tmp_path)
+            and _sidecar(tmp_path).index("text: Second") < _sidecar(tmp_path).index("text: First")
         )
     )
 
-    marked(page, "seg-del-0").click()  # the pause sits at index 0 now — delete it
-    assert _eventually(lambda: "pause:" not in _sidecar(tmp_path))
+    marked(page, "seg-del-0").click()  # "Second" sits at index 0 now — delete it
+    assert _eventually(lambda: "text: Second spoken line." not in _sidecar(tmp_path))
     assert "text: First spoken line." in _sidecar(tmp_path)
 
 

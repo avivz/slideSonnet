@@ -1241,9 +1241,17 @@ class BlockEditor:
         slide_id = self.view.state.current_id
         changed = self.view.state.replace_block(segs, transition_in=tin, transition_out=tout)
         if changed:
+            # The dirty flags mean "unsaved text the cached clip no longer
+            # matches". Saving settles that question: from here the cache flags
+            # (recomputed against the saved text) are the truth on their own.
+            # Leaving them set kept every touched utterance amber for the rest of
+            # the visit — including right after auto-build regenerated its audio —
+            # since this path deliberately doesn't rebuild the cards.
+            self._dirty_speech.clear()
             self.view.show_saved_flash()
             self.view.render_side()
             self.view.schedule_auto_build(slide_id)
+            self.sync_gen_buttons()
         return changed
 
     def commit(self) -> None:

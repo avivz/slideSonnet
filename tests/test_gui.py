@@ -152,6 +152,39 @@ async def test_single_slide_transition_toggle_defaults_off(
     assert app.storage.general.get("single_slide_transitions") is False
 
 
+async def test_saving_an_edit_clears_the_stale_badge(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once an edit is saved, the badge must follow the cache, not the typing.
+
+    The amber "Edited · click to regenerate" state means *unsaved* text that the
+    cached clip no longer matches. After a save the cache flags are computed
+    against the saved text and are the truth on their own — leaving the flag set
+    made every touched utterance claim it was stale for the rest of the visit,
+    even right after its audio regenerated.
+    """
+    from slidesonnet.gui.state import EditorState
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    # every clip reads as generated, so only the dirty flag can turn the badge amber
+    monkeypatch.setattr(EditorState, "speech_cached_flags", lambda self: [True])
+    await user.open("/")
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
+    assert gen.props.get("icon") == "autorenew"
+
+    box = user.find(ui.textarea)
+    box.clear().type("Rewritten line.")
+    assert gen.props.get("icon") == "graphic_eq"  # unsaved edit → amber
+
+    user.find(marker="utext-0").trigger("keydown.ctrl.s.prevent")  # save in place
+    await user.should_see("Rewritten line.")
+    gen = next(iter(user.find(marker="gen-seg-0").elements))
+    assert gen.props.get("icon") == "autorenew", (
+        "a saved-and-cached utterance still showed the stale-edit badge"
+    )
+
+
 async def test_editing_text_flips_gen_badge_and_revert_restores_it(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

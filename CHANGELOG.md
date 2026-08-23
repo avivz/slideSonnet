@@ -54,6 +54,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   green "up to date" badge without a save.
 
 ### Fixed
+- **A saved utterance no longer keeps claiming its audio is stale.** Editing an
+  utterance flips its badge to amber ("Edited · click to regenerate"), which is
+  right while the edit is unsaved — but the flag was only cleared by a full
+  rebuild of the narration cards, and saving deliberately doesn't rebuild them
+  (it would destroy focus). So once you touched a line, its badge stayed amber
+  for the rest of the visit — including right after auto-build had regenerated
+  its audio — until you navigated to another slide and back. The flag is now
+  cleared on save, after which the cache state alone drives the badge: amber
+  while nothing matches the saved text, green as soon as a clip does.
 - **Page images are now served per deck.** The editor mounted its media directory
   once per process, so a second deck opened in the same session was served the
   *first* deck's page images (or none). Media is now addressed by deck
