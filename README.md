@@ -165,7 +165,8 @@ A deck is any PDF with a matching `.narration` beside it; subfolders are searche
 (`week01/intro/intro.pdf` and friends), and dot-folders, `node_modules`, and deck
 caches are skipped. Once you're in a deck, **Ctrl+K** opens a type-to-filter deck
 switcher and **Alt+←/→** step to the previous/next deck. Switching saves the slide
-you were editing first, and asks before stopping any audio still generating.
+you were editing first and cancels audio still generating for the deck you're
+leaving — clips already finished stay cached, and coming back re-queues the rest.
 
 **WSL note:** to open the editor in your *Windows* browser instead of a Linux
 one:

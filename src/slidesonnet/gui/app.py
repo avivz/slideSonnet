@@ -52,9 +52,6 @@ _MEDIA_URL = "/ssmedia"
 #: The decks this process serves, addressed by token. Set by :func:`run_editor`;
 #: created on demand for the standalone ``build_editor`` path (tests, dev server).
 _registry: DeckRegistry | None = None
-#: Set once the user ticks "don't ask again" on the switch-while-generating
-#: prompt. Process-wide, i.e. for as long as this editor is running.
-_skip_switch_prompt = False
 
 
 def deck_url(token: str) -> str:
@@ -1821,11 +1818,11 @@ class EditorView:
         next_btn.set_enabled(not alone)
         next_btn.on_click(lambda: self.step_deck(1))
 
-    async def step_deck(self, delta: int) -> None:
+    def step_deck(self, delta: int) -> None:
         """Move *delta* decks along the library order (wrapping)."""
         target = self.registry.neighbour(self.entry.token, delta)
         if target is not None and target.token != self.entry.token:
-            await self.switch_to(target)
+            self.switch_to(target)
 
     async def open_switcher(self) -> None:
         """Type-to-filter palette over every deck in the library."""
@@ -1878,45 +1875,22 @@ class EditorView:
 
         chosen = await dialog
         if chosen is not None and chosen.token != self.entry.token:
-            await self.switch_to(chosen)
+            self.switch_to(chosen)
 
-    async def switch_to(self, entry: DeckEntry) -> None:
-        """Leave for *entry*: save first, ask about live generation, then navigate."""
+    def switch_to(self, entry: DeckEntry) -> None:
+        """Leave for *entry*: save, stop generating for this deck, then navigate.
+
+        Generation is tied to the page, so switching ends it either way; doing it
+        here makes that explicit and stops the worker before we go, rather than
+        letting it start one more (possibly paid) clip for the deck we are
+        leaving. Finished audio is already in the cache, and coming back
+        re-enqueues whatever is still missing.
+        """
         self.blocks.save_current()  # the focused field's text must not vanish
-        if not await self._confirm_leaving_generation(entry):
-            return
+        self.jobs.cancel_all()
+        self.jobs.stop()
         self.player.stop_playback()
         navigate_to_deck(entry.token)
-
-    async def _confirm_leaving_generation(self, entry: DeckEntry) -> bool:
-        """True to proceed. Prompts when clips are still generating for this deck.
-
-        Completed clips are already in the content-addressed cache and returning
-        re-enqueues the rest, so the real cost is the one in-flight clip — but on
-        a paid engine that clip is money, so the prompt is worth its keystroke.
-        """
-        global _skip_switch_prompt
-        outstanding = self.jobs.outstanding()
-        if outstanding == 0 or _skip_switch_prompt:
-            return True
-        clips = "1 clip is" if outstanding == 1 else f"{outstanding} clips are"
-        with ui.dialog() as dialog, ui.card().classes("ss-confirm"):
-            ui.label(f"{clips} still generating").classes("ss-confirm-title")
-            ui.label(
-                f"Leaving for {entry.name} stops them. Audio already generated is kept, "
-                "and coming back picks up where this left off."
-            ).classes("ss-confirm-body")
-            skip = ui.checkbox("Don't ask again while the editor is open")
-            skip.mark("switch-skip")
-            with ui.row().classes("w-full justify-end gap-2"):
-                stay = ui.button("Stay").props("flat")
-                stay.mark("switch-stay").on_click(lambda: dialog.submit(False))
-                go = ui.button("Switch anyway").props("unelevated")
-                go.mark("switch-go").on_click(lambda: dialog.submit(True))
-        proceed = await dialog
-        if proceed and skip.value:
-            _skip_switch_prompt = True
-        return bool(proceed)
 
     # ---- filmstrip -----------------------------------------------------
     def build_strip(self) -> None:
@@ -2079,7 +2053,7 @@ class EditorView:
         if e.modifiers.alt:
             delta = nav_direction(e.key)
             if delta:
-                self._page_task(self.step_deck(delta))
+                self.step_deck(delta)
             return
         if e.modifiers.ctrl and str(e.key).lower() == "k":
             self._page_task(self.open_switcher())

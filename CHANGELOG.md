@@ -23,8 +23,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   dropdown. Each deck gets its own URL (`/d/<token>`), so browser back/forward
   and bookmarks work and two decks can be open in two tabs. Switching **saves the
   slide you were editing first**, stops playback, points the run-log at the new
-  deck, and — when clips are still generating — asks before it stops them
-  (with a don't-ask-again for the session).
+  deck, and cancels any audio still generating for the deck you are leaving
+  (finished clips stay cached; coming back re-queues the rest).
 - **Accelerated narration playback (1× / 1.25× / 1.5× / 2×).** A speed control in
   the editor transport cycles the preview's playback rate live — pressing it
   mid-play speeds up immediately with **no re-synthesis** and no cache write. The

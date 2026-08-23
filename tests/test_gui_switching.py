@@ -198,43 +198,23 @@ async def test_switching_saves_the_current_slide_first(user: User, course: Path)
     assert "Edited before leaving." in sidecar
 
 
-async def test_switching_prompts_while_clips_are_generating(
+async def test_switching_stops_generation_without_prompting(
     user: User, course: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Clips in flight are cancelled on the way out, with nothing to confirm.
+
+    Order matters: the queue is stopped *before* we navigate, so the worker
+    can't start another (possibly paid) clip for a deck we have already left.
+    """
     from slidesonnet.gui import app as gui_app
 
-    monkeypatch.setattr(gui_app, "_skip_switch_prompt", False)
-    monkeypatch.setattr(gui_app.JobQueue, "outstanding", lambda self: 3)
+    calls: list[str] = []
+    monkeypatch.setattr(gui_app.JobQueue, "stop", lambda self: calls.append("stop"))
+    monkeypatch.setattr(gui_app, "navigate_to_deck", lambda token: calls.append("go"))
     await user.open(deck_url(deck_token(course / "week01" / "intro.pdf")))
     user.find(marker="deck-next").click()
-    await user.should_see("3 clips are still generating")
-    user.find(marker="switch-stay").click()
-    await user.should_see("week01 / intro")  # stayed put
-
-
-async def test_switching_proceeds_when_the_prompt_is_accepted(
-    user: User, course: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from slidesonnet.gui import app as gui_app
-
-    monkeypatch.setattr(gui_app, "_skip_switch_prompt", False)
-    monkeypatch.setattr(gui_app.JobQueue, "outstanding", lambda self: 1)
-    await user.open(deck_url(deck_token(course / "week01" / "intro.pdf")))
-    user.find(marker="deck-next").click()
-    await user.should_see("1 clip is still generating")
-    user.find(marker="switch-go").click()
-    await user.should_see("week02 / llm_basics")
-
-
-async def test_no_prompt_when_nothing_is_generating(
-    user: User, course: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from slidesonnet.gui import app as gui_app
-
-    monkeypatch.setattr(gui_app, "_skip_switch_prompt", False)
-    await user.open(deck_url(deck_token(course / "week01" / "intro.pdf")))
-    user.find(marker="deck-next").click()
-    await user.should_see("week02 / llm_basics")
+    await user.should_see("week01 / intro")  # navigation is stubbed; we are still here
+    assert calls == ["stop", "go"]
 
 
 # ---- leaving a page ----------------------------------------------------

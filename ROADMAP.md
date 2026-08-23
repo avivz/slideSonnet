@@ -403,7 +403,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 9. **Cross-deck background generation — lift the JobQueue out of the page.**
    *(Split out of Now's deck-switching item, 2026-08-23.)* Today the queue is
    built per page and dies on `client.on_disconnect`, so switching decks stops
-   deck A's generation (the switch prompts before it does). *Story:* As someone
+   deck A's generation — the switch now cancels it outright (the confirm prompt
+   was removed 2026-08-23 as friction on a fast audit loop). *Story:* As someone
    auditing a course, I want deck A to keep rendering clips while I read deck B,
    so a long generation isn't hostage to where I'm looking. *Design sketch:* a
    process-level registry of queues keyed by deck token, each with its own
@@ -428,7 +429,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
   cleanup) and back/forward, bookmarks, and two-decks-in-two-tabs all work.
   Ctrl+K palette, Alt+←/→ stepping (wrapping), header deck dropdown. Switching
   saves the edited slide first, stops the transport, re-points the run-log, and
-  prompts when clips are still generating (don't-ask-again for the session).
+  cancels generation for the deck being left (finished clips stay cached).
   **The `/ssmedia` blocker is fixed**: media is per-deck (`/ssmedia/{token}/…`,
   range requests preserved, unregistered tokens 404) — verified live with two
   decks open at once serving distinct images. New: `gui/library.py`,
