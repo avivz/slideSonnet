@@ -1,0 +1,18 @@
+<script>
+  // NiceGUI shows its "Connection lost" popup the moment the websocket closes
+  // (its disconnect handler flips the element visible, with no grace period).
+  // Navigating away always closes that socket, so every deck switch flashed the
+  // popup in the corner while the next page loaded. The browser keeps showing
+  // this document until the new one arrives, so hiding the popup as we leave is
+  // what removes the flash — and doing it on unload covers every way out: the
+  // deck switcher, a library card, browser back/forward, a typed URL.
+  // A page we are NOT leaving still reports a genuine disconnect normally.
+  (() => {
+    const hide = () => {
+      const p = document.getElementById("popup");
+      if (p) p.style.display = "none";
+    };
+    window.addEventListener("beforeunload", hide);
+    window.addEventListener("pagehide", hide);
+  })();
+</script>

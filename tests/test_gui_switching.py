@@ -237,6 +237,35 @@ async def test_no_prompt_when_nothing_is_generating(
     await user.should_see("week02 / llm_basics")
 
 
+# ---- leaving a page ----------------------------------------------------
+
+
+def test_pages_suppress_the_connection_lost_popup_while_leaving() -> None:
+    """Switching decks navigates, which closes the socket — and NiceGUI flags
+    that instantly, flashing "Connection lost" in the corner while the next page
+    loads. The unload handler that hides it must be in every page's head."""
+    from slidesonnet.gui.theme import HEAD_LEAVING
+
+    assert "beforeunload" in HEAD_LEAVING and "pagehide" in HEAD_LEAVING
+    assert 'getElementById("popup")' in HEAD_LEAVING
+
+
+async def test_editor_page_carries_the_leaving_handler(user: User, course: Path) -> None:
+    from slidesonnet.gui.theme import HEAD_LEAVING
+
+    await user.open(deck_url(deck_token(course / "week01" / "intro.pdf")))
+    head = "".join(str(h) for h in user.client.head_html)
+    assert HEAD_LEAVING in head
+
+
+async def test_library_page_carries_the_leaving_handler(user: User, course: Path) -> None:
+    from slidesonnet.gui.theme import HEAD_LEAVING
+
+    await user.open("/")
+    head = "".join(str(h) for h in user.client.head_html)
+    assert HEAD_LEAVING in head
+
+
 # ---- media routing (the blocker: one mount used to serve deck A only) ----
 
 

@@ -62,6 +62,16 @@ def deck_url(token: str) -> str:
     return f"/d/{token}"
 
 
+def navigate_to_deck(token: str) -> None:
+    """Leave for another deck, without the connection-lost popup on the way.
+
+    The suppression itself lives in ``static/leaving.html`` (an unload handler,
+    so it covers browser back/forward too); this is just the one place that
+    knows a deck token is where we're going.
+    """
+    ui.navigate.to(deck_url(token))
+
+
 def _filter_decks(entries: Sequence[DeckEntry], query: str) -> list[DeckEntry]:
     """Decks whose label contains every whitespace-separated term of *query*.
 
@@ -1876,7 +1886,7 @@ class EditorView:
         if not await self._confirm_leaving_generation(entry):
             return
         self.player.stop_playback()
-        ui.navigate.to(deck_url(entry.token))
+        navigate_to_deck(entry.token)
 
     async def _confirm_leaving_generation(self, entry: DeckEntry) -> bool:
         """True to proceed. Prompts when clips are still generating for this deck.

@@ -15,6 +15,7 @@ from pathlib import Path
 from nicegui import run, ui
 
 from slidesonnet.deck import load_deck
+from slidesonnet.gui.app import navigate_to_deck
 from slidesonnet.gui.library import DeckEntry, DeckRegistry
 from slidesonnet.gui.theme import apply_theme, wordmark
 from slidesonnet.pdf.reader import read_page_ids
@@ -154,7 +155,7 @@ def _deck_card(entry: DeckEntry) -> ui.label:
             if sub:
                 ui.label(sub).classes("ss-lib-path ss-mono")
         stats_label = ui.label("…").classes("ss-lib-stats ss-mono")
-    card.on("click", lambda _e=None, e=entry: ui.navigate.to(f"/d/{e.token}"))
+    card.on("click", lambda _e=None, e=entry: navigate_to_deck(e.token))
     return stats_label
 
 

@@ -64,6 +64,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   the dpi; a recompile still re-renders. Deck switching drops from ~3.6 s of
   server work to ~45 ms. Each deck re-renders once more after upgrading, to
   write its first stamp.
+- **No more "Connection lost" flash when switching decks.** NiceGUI shows that
+  popup the instant the websocket closes — its disconnect handler flips it
+  visible with no grace period — and navigating to another deck always closes
+  the socket, so it flashed in the corner while the next page loaded no matter
+  how fast that was. Pages now hide it as they unload, which covers every way
+  out: the switcher, a library card, browser back/forward. A page you are not
+  leaving still reports a genuine disconnect as before.
 - **Versioned media is cached by the browser.** Page-image URLs already carry a
   `?v=<mtime>-<size>` stamp, but responses set no `Cache-Control`, so every
   thumbnail was revalidated on each deck switch. Versioned URLs are now

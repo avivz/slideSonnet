@@ -17,6 +17,8 @@ HEAD_CSS = (_STATIC_DIR / "editor.css").read_text(encoding="utf-8")
 HEAD_FONTS = (_STATIC_DIR / "fonts.html").read_text(encoding="utf-8")
 HEAD_RESIZE = (_STATIC_DIR / "resize.html").read_text(encoding="utf-8")
 HEAD_MORPH = (_STATIC_DIR / "morph.html").read_text(encoding="utf-8")
+#: Suppresses the connection-lost popup while navigating away (see the file).
+HEAD_LEAVING = (_STATIC_DIR / "leaving.html").read_text(encoding="utf-8")
 
 
 def apply_theme(*, aspect: float | None = None, extras: str = "") -> None:
@@ -37,7 +39,9 @@ def apply_theme(*, aspect: float | None = None, extras: str = "") -> None:
         dark_page="#0e1116",
     )
     ar_css = f":root{{--ss-ar:{aspect:.4f}}}" if aspect is not None else ""
-    ui.add_head_html(HEAD_FONTS + "<style>" + HEAD_CSS + ar_css + "</style>" + extras)
+    ui.add_head_html(
+        HEAD_FONTS + "<style>" + HEAD_CSS + ar_css + "</style>" + HEAD_LEAVING + extras
+    )
 
 
 def wordmark() -> None:
