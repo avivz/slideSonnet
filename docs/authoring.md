@@ -103,6 +103,7 @@ transitions:
 slidesonnet export deck.pdf -o deck.mp4 --engine kokoro     # narrated + subtitles
 slidesonnet export deck.pdf -o deck.mp4 --silent            # fast silent cut
 slidesonnet edit  deck.pdf                                  # GUI editor + preview
+slidesonnet edit  ~/courses/aicode                          # ...on a whole folder of decks
 ```
 
 ## Config (`slidesonnet.toml`, optional)

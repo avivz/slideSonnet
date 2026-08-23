@@ -63,8 +63,17 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **video/composer.py** — FFmpeg: `compose_segment`, `compose_silent_segment`,
   `concatenate_segments`, `concatenate_audio`, `get_duration`.
 - **gui/state.py** — UI-free `EditorState` (nav, edit→sidecar, save, TTS, preview, export).
-- **gui/app.py** — NiceGUI view; `build_editor`, `run_editor`. Whole-deck preview plays
-  one assembled track and flips the page image on cue-sheet boundaries.
+- **gui/app.py** — NiceGUI view; `build_editor`, `register_pages`, `run_editor`. Whole-deck
+  preview plays one assembled track and flips the page image on cue-sheet boundaries.
+  Routes: `/` (library) and `/d/{token}` (one deck) — switching decks is a page
+  navigation, so NiceGUI's own teardown (job queue stopped on disconnect, timers
+  dropped with the client) is the whole cleanup. Media is served per deck from
+  `/ssmedia/{token}/…`.
+- **gui/library.py** — UI-free deck discovery + `DeckRegistry`: `deck_token` (sha1 of the
+  resolved path), a capped downward scan for `*.pdf` + sibling `<stem>.narration`, natural
+  sort, neighbour lookup. Only registered decks resolve, so a URL can't open arbitrary files.
+- **gui/library_view.py** — the library landing page (grouped list, lazy per-deck stats).
+- **gui/theme.py** — palette + head assets shared by both pages.
 - **api.py** — typed entry points mirroring the CLI: `sty_text`/`write_sty`,
   `init_sidecar`, `check_deck`, `synthesize_deck`, `export`, `write_subs`, `build_preview`.
 - **cli.py** — Click commands: `sty`, `init`, `check`, `tts`, `export`, `subs`, `edit`,

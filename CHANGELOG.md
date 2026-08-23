@@ -6,6 +6,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Switch decks inside the editor — a deck library, a switcher palette, and
+  next/previous-deck keys.** `slidesonnet edit` now opens on a **library** of every
+  deck it finds, so a course of decks no longer means one relaunch per deck.
+  `edit` accepts a folder (`slidesonnet edit ~/courses/aicode`), a deck
+  (`edit deck.pdf`, which also lists its neighbours), or nothing at all (the
+  current folder); `--root` scans a wider tree than the deck you opened.
+  Discovery walks *down* from that folder for any PDF with a matching
+  `.narration` beside it — no repository assumption — pruning dot-folders,
+  `node_modules`, and deck caches, and capped in depth and breadth so launching
+  somewhere huge reports a truncated scan instead of hanging. The library groups
+  decks by top-level folder, sorts them naturally (`week9` before `week10`), and
+  fills in each deck's size and how much is still to narrate after first paint.
+  Inside a deck, **Ctrl+K** opens a type-to-filter switcher, **Alt+←/→** step
+  through the library (wrapping), and the header names the current deck as a
+  dropdown. Each deck gets its own URL (`/d/<token>`), so browser back/forward
+  and bookmarks work and two decks can be open in two tabs. Switching **saves the
+  slide you were editing first**, stops playback, points the run-log at the new
+  deck, and — when clips are still generating — asks before it stops them
+  (with a don't-ask-again for the session).
 - **Accelerated narration playback (1× / 1.25× / 1.5× / 2×).** A speed control in
   the editor transport cycles the preview's playback rate live — pressing it
   mid-play speeds up immediately with **no re-synthesis** and no cache write. The
@@ -35,6 +54,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   green "up to date" badge without a save.
 
 ### Fixed
+- **Page images are now served per deck.** The editor mounted its media directory
+  once per process, so a second deck opened in the same session was served the
+  *first* deck's page images (or none). Media is now addressed by deck
+  (`/ssmedia/<token>/…`), with range requests preserved so preview seeking is
+  unaffected. Only decks in the open library resolve, so a hand-typed URL can't
+  reach files elsewhere on disk.
 - **`clean` no longer deletes current paid audio whose voice lives in the deck
   preamble.** `clean --keep current` / `--keep exact` reconstructed cache keys from
   only `config.voices` + the per-utterance `voice:`, ignoring the sidecar

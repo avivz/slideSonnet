@@ -13,10 +13,11 @@ import os
 import shutil
 import time
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from fastapi import HTTPException, Request, Response
 from nicegui import app, background_tasks, run, ui
 from nicegui.events import KeyEventArguments
 
@@ -30,6 +31,8 @@ from slidesonnet.gui.launch import (
     is_wsl,
     launch_browser,
 )
+from slidesonnet.gui.library import DeckEntry, DeckRegistry, deck_token
+from slidesonnet.gui.theme import HEAD_MORPH, HEAD_RESIZE, apply_theme, wordmark
 from slidesonnet.gui.state import (
     EditorState,
     bracket_silences,
@@ -45,7 +48,51 @@ from slidesonnet.tts import BACKENDS
 logger = logging.getLogger(__name__)
 
 _MEDIA_URL = "/ssmedia"
-_served: set[str] = set()
+
+#: The decks this process serves, addressed by token. Set by :func:`run_editor`;
+#: created on demand for the standalone ``build_editor`` path (tests, dev server).
+_registry: DeckRegistry | None = None
+#: Set once the user ticks "don't ask again" on the switch-while-generating
+#: prompt. Process-wide, i.e. for as long as this editor is running.
+_skip_switch_prompt = False
+
+
+def deck_url(token: str) -> str:
+    """The editor page URL for a deck token."""
+    return f"/d/{token}"
+
+
+def _filter_decks(entries: Sequence[DeckEntry], query: str) -> list[DeckEntry]:
+    """Decks whose label contains every whitespace-separated term of *query*.
+
+    Substring-per-term rather than fuzzy subsequence: with deck names as
+    regular as ``lecture02_4_llm_basics_p1``, typing ``02_4`` or ``llm`` should
+    mean exactly what it looks like. Library order is preserved.
+    """
+    terms = query.lower().split()
+    if not terms:
+        return list(entries)
+    return [e for e in entries if all(term in e.label.lower() for term in terms)]
+
+
+def set_registry(registry: DeckRegistry) -> None:
+    """Install the process-wide deck registry (see :func:`run_editor`)."""
+    global _registry
+    _registry = registry
+
+
+def registry_for(pdf_path: Path) -> DeckRegistry:
+    """The active registry, creating one rooted at *pdf_path*'s directory if needed.
+
+    ``build_editor`` is entered directly by the dev server and the test harness,
+    which never call :func:`run_editor`; those get a single-deck library rather
+    than a missing one.
+    """
+    global _registry
+    if _registry is None:
+        _registry = DeckRegistry(pdf_path.resolve().parent)
+    return _registry
+
 
 # Sentinel value for the per-utterance picker's explicit "default" choice — an
 # utterance set to it carries no voice and speaks with the deck default. Chosen so
@@ -200,7 +247,7 @@ def _media_url(state: EditorState, path: Path, *, cache_bust: bool = False) -> s
     ``(mtime, size)`` stamp so a re-render changes the URL and forces a refetch.
     """
     rel = path.resolve().relative_to(render_dir(state.pdf_path).resolve())
-    url = f"{_MEDIA_URL}/{rel.as_posix()}"
+    url = f"{_MEDIA_URL}/{deck_token(state.pdf_path)}/{rel.as_posix()}"
     if cache_bust:
         try:
             st = path.stat()
@@ -295,22 +342,35 @@ def _single_slide_morph(
 
 
 def _serve_media(state: EditorState) -> None:
-    rdir = render_dir(state.pdf_path)
-    (rdir / "pages").mkdir(parents=True, exist_ok=True)
-    key = str(rdir)
-    if key in _served:
+    """Ensure this deck's render dir exists and the media endpoint is live.
+
+    One dynamic route serves every deck, keyed by token — a single ``/ssmedia``
+    mount would bind to whichever deck was opened first and then hand deck A's
+    page images to deck B. Requests go through NiceGUI's range-response helper,
+    so the preview player can still seek within the assembled track.
+    """
+    (render_dir(state.pdf_path) / "pages").mkdir(parents=True, exist_ok=True)
+    # Asking the router rather than tracking a flag: the route belongs to the
+    # app instance, and a stale module-level flag would silently skip
+    # registration on a rebuilt app (as the test server does per test).
+    route_path = _MEDIA_URL + "/{token}/{filename:path}"
+    if any(getattr(route, "path", None) == route_path for route in app.routes):
         return
-    app.add_media_files(_MEDIA_URL, rdir)
-    _served.add(key)
 
+    from nicegui.app.range_response import get_range_response
 
-# look & feel lives in gui/static/ (editor.css, fonts.html, resize.html),
-# inlined into the page head once per editor build
-_STATIC_DIR = Path(__file__).parent / "static"
-_HEAD_CSS = (_STATIC_DIR / "editor.css").read_text(encoding="utf-8")
-_HEAD_FONTS = (_STATIC_DIR / "fonts.html").read_text(encoding="utf-8")
-_HEAD_RESIZE = (_STATIC_DIR / "resize.html").read_text(encoding="utf-8")
-_HEAD_MORPH = (_STATIC_DIR / "morph.html").read_text(encoding="utf-8")
+    @app.get(route_path)
+    def _read_media(  # pyright: ignore[reportUnusedFunction]
+        request: Request, token: str, filename: str, nicegui_chunk_size: int = 8192
+    ) -> Response:
+        entry = _registry.resolve(token) if _registry is not None else None
+        if entry is None:  # unknown deck: never touch the filesystem for it
+            raise HTTPException(status_code=404, detail="Not Found")
+        local_dir = render_dir(entry.pdf_path).resolve()
+        filepath = (local_dir / filename).resolve()
+        if not filepath.is_relative_to(local_dir) or not filepath.is_file():
+            raise HTTPException(status_code=404, detail="Not Found")
+        return get_range_response(filepath, request, chunk_size=nicegui_chunk_size)
 
 
 _ALL_DOTS = "ss-dot-error ss-dot-warning ss-dot-ready ss-dot-empty"
@@ -1384,8 +1444,15 @@ class EditorView:
     client: Any
     jobs: JobQueue
 
-    def __init__(self, state: EditorState) -> None:
+    def __init__(self, state: EditorState, entry: DeckEntry | None = None) -> None:
         self.state = state
+        self.registry = registry_for(state.pdf_path)
+        # The library entry this page is showing. Built from the state when the
+        # caller didn't supply one (the dev server and test harness enter through
+        # build_editor with a bare path).
+        self.entry = entry or self.registry.register(
+            state.pdf_path, sidecar_path=state.sidecar_path
+        )
         self.busy = False  # one action (synth/export/preview build) at a time
         self._flash_token = 0  # keeps an old fade timer from wiping a newer message
         self.thumb_cards: list[tuple[Any, Any, Any]] = []  # (card, dot, audio-missing badge)
@@ -1398,31 +1465,17 @@ class EditorView:
     def build(self) -> None:
         """Build the widget tree, attach the components, and wire all events."""
         state = self.state
-        ui.dark_mode().enable()
-        ui.colors(
-            primary="#5db3f0",
-            positive="#2e7d4f",
-            negative="#c0443c",
-            warning="#a8772a",
-            dark="#151a22",
-            dark_page="#0e1116",
-        )
         try:
             aspect = page_aspect(state.pdf_path)
         except Exception:  # never let a malformed page block the editor
             aspect = 16 / 9
-        ar_css = f":root{{--ss-ar:{aspect:.4f}}}"
-        ui.add_head_html(
-            _HEAD_FONTS + "<style>" + _HEAD_CSS + ar_css + "</style>" + _HEAD_RESIZE + _HEAD_MORPH
-        )
+        apply_theme(aspect=aspect, extras=HEAD_RESIZE + HEAD_MORPH)
 
         # --- header: wordmark · deck · save flash · error pill ---
         with ui.header().classes("ss-header items-center justify-between no-wrap"):
             with ui.row().classes("items-center gap-3 no-wrap"):
-                ui.html(
-                    '<span class="ss-wordmark">slide<span class="ss-accent">Sonnet</span></span>'
-                )
-                ui.label(state.pdf_path.name).classes("ss-chip ss-mono")
+                wordmark()
+                self._build_deck_switcher()
             with ui.row().classes("items-center gap-3 no-wrap"):
                 self.saved_flash = ui.label("● saved").classes("ss-saved opacity-0")
                 self.err_badge = ui.label().classes("ss-pill")
@@ -1701,6 +1754,142 @@ class EditorView:
         if self.auto_build_active():  # deck opened with auto-build already on: fill it
             self._sweep_auto_build()
 
+    # ---- deck switching --------------------------------------------------
+    def _page_task(self, coro: Coroutine[Any, Any, None]) -> None:
+        """Run *coro* as a background task inside this page's slot stack.
+
+        A task spawned from a keyboard handler starts with an empty slot stack,
+        so anything it builds (the palette, a confirm dialog) would have nowhere
+        to attach; re-entering the client fixes that for the whole task.
+        """
+
+        async def run() -> None:
+            with self.client:
+                await coro
+
+        background_tasks.create(run())
+
+    def _build_deck_switcher(self) -> None:
+        """Header control: previous/next deck plus the current deck's name.
+
+        The name is a button rather than a label so switching is discoverable
+        without knowing the shortcut; the arrows are the sequential-audit path.
+        """
+        entry = self.entry
+        alone = len(self.registry.entries()) < 2
+        prev_btn = ui.button(icon="chevron_left").props("flat round dense size=sm")
+        prev_btn.mark("deck-prev").tooltip("Deck back (Alt+←)")
+        prev_btn.set_enabled(not alone)
+        prev_btn.on_click(lambda: self.step_deck(-1))
+
+        label = f"{entry.section} / {entry.name}" if entry.section else entry.name
+        deck_btn = ui.button(label, icon="expand_more").props("flat dense no-caps")
+        deck_btn.classes("ss-chip ss-mono ss-deck-btn").mark("deck-switcher")
+        deck_btn.tooltip("Switch deck (Ctrl+K)")
+        deck_btn.on_click(self.open_switcher)
+
+        next_btn = ui.button(icon="chevron_right").props("flat round dense size=sm")
+        next_btn.mark("deck-next").tooltip("Deck forward (Alt+→)")
+        next_btn.set_enabled(not alone)
+        next_btn.on_click(lambda: self.step_deck(1))
+
+    async def step_deck(self, delta: int) -> None:
+        """Move *delta* decks along the library order (wrapping)."""
+        target = self.registry.neighbour(self.entry.token, delta)
+        if target is not None and target.token != self.entry.token:
+            await self.switch_to(target)
+
+    async def open_switcher(self) -> None:
+        """Type-to-filter palette over every deck in the library."""
+        self.registry.rescan()  # a deck added since launch should show up
+        entries = self.registry.entries()
+        matches: list[DeckEntry] = list(entries)
+        cursor = 0
+
+        with ui.dialog() as dialog, ui.card().classes("ss-palette"):
+            search = ui.input(placeholder="Jump to deck…").props("autofocus dense borderless")
+            search.classes("ss-palette-input ss-mono w-full").mark("switcher-input")
+            results = ui.column().classes("ss-palette-list gap-0 w-full")
+
+            def render() -> None:
+                results.clear()
+                with results:
+                    if not matches:
+                        ui.label("No deck matches").classes("ss-palette-empty ss-mono")
+                        return
+                    for i, entry in enumerate(matches):
+                        row = ui.row().classes("ss-palette-row items-baseline gap-2 no-wrap")
+                        if i == cursor:
+                            row.classes(add="ss-palette-active")
+                        if entry.token == self.entry.token:
+                            row.classes(add="ss-palette-current")
+                        with row:
+                            ui.label(entry.section or "·").classes("ss-palette-section ss-mono")
+                            ui.label(entry.name).classes("ss-palette-name ss-mono")
+                        row.mark(f"switcher-row-{i}")
+                        row.on("click", lambda _e=None, x=entry: dialog.submit(x))
+
+            def refilter() -> None:
+                nonlocal matches, cursor
+                matches = _filter_decks(entries, search.value or "")
+                cursor = 0
+                render()
+
+            def move(delta: int) -> None:
+                nonlocal cursor
+                if matches:
+                    cursor = (cursor + delta) % len(matches)
+                    render()
+
+            search.on_value_change(lambda _e: refilter())
+            search.on("keydown.down", lambda: move(1))
+            search.on("keydown.up", lambda: move(-1))
+            search.on("keydown.enter", lambda: dialog.submit(matches[cursor]) if matches else None)
+            search.on("keydown.escape", lambda: dialog.submit(None))
+            render()
+
+        chosen = await dialog
+        if chosen is not None and chosen.token != self.entry.token:
+            await self.switch_to(chosen)
+
+    async def switch_to(self, entry: DeckEntry) -> None:
+        """Leave for *entry*: save first, ask about live generation, then navigate."""
+        self.blocks.save_current()  # the focused field's text must not vanish
+        if not await self._confirm_leaving_generation(entry):
+            return
+        self.player.stop_playback()
+        ui.navigate.to(deck_url(entry.token))
+
+    async def _confirm_leaving_generation(self, entry: DeckEntry) -> bool:
+        """True to proceed. Prompts when clips are still generating for this deck.
+
+        Completed clips are already in the content-addressed cache and returning
+        re-enqueues the rest, so the real cost is the one in-flight clip — but on
+        a paid engine that clip is money, so the prompt is worth its keystroke.
+        """
+        global _skip_switch_prompt
+        outstanding = self.jobs.outstanding()
+        if outstanding == 0 or _skip_switch_prompt:
+            return True
+        clips = "1 clip is" if outstanding == 1 else f"{outstanding} clips are"
+        with ui.dialog() as dialog, ui.card().classes("ss-confirm"):
+            ui.label(f"{clips} still generating").classes("ss-confirm-title")
+            ui.label(
+                f"Leaving for {entry.name} stops them. Audio already generated is kept, "
+                "and coming back picks up where this left off."
+            ).classes("ss-confirm-body")
+            skip = ui.checkbox("Don't ask again while the editor is open")
+            skip.mark("switch-skip")
+            with ui.row().classes("w-full justify-end gap-2"):
+                stay = ui.button("Stay").props("flat")
+                stay.mark("switch-stay").on_click(lambda: dialog.submit(False))
+                go = ui.button("Switch anyway").props("unelevated")
+                go.mark("switch-go").on_click(lambda: dialog.submit(True))
+        proceed = await dialog
+        if proceed and skip.value:
+            _skip_switch_prompt = True
+        return bool(proceed)
+
     # ---- filmstrip -----------------------------------------------------
     def build_strip(self) -> None:
         """(Re)build the filmstrip; thumbnails degrade to id tiles without pdftoppm."""
@@ -1857,6 +2046,15 @@ class EditorView:
 
     def _on_key(self, e: KeyEventArguments) -> None:
         if not e.action.keydown:
+            return
+        # Alt+←/→ steps decks; the bare arrows keep stepping slides.
+        if e.modifiers.alt:
+            delta = nav_direction(e.key)
+            if delta:
+                self._page_task(self.step_deck(delta))
+            return
+        if e.modifiers.ctrl and str(e.key).lower() == "k":
+            self._page_task(self.open_switcher())
             return
         delta = nav_direction(e.key)
         if delta:
@@ -2395,25 +2593,89 @@ class EditorView:
         self.flash("Deck files changed on disk — reloaded", "info")
 
 
-def build_editor(pdf_path: Path, sidecar_path: Path | None = None) -> EditorState:
-    """Build the editor UI for *pdf_path* in the current page; return its state."""
+def build_editor(
+    pdf_path: Path, sidecar_path: Path | None = None, *, entry: DeckEntry | None = None
+) -> EditorState:
+    """Build the editor UI for *pdf_path* in the current page; return its state.
+
+    *entry* is the library entry being opened, when the caller has one; without
+    it the deck is registered on the spot so its media and neighbours resolve.
+    """
     state = EditorState(pdf_path, sidecar_path=sidecar_path)
     _serve_media(state)
-    EditorView(state).build()
+    _retarget_deck_log(pdf_path)
+    EditorView(state, entry).build()
     return state
 
 
+#: How the run-log was configured on the command line, so a deck switch can
+#: re-apply the same choice to the deck it lands on.
+_log_prefs: dict[str, Any] = {"override": None, "disabled": False}
+
+
+def set_log_preferences(*, override: Path | None, disabled: bool) -> None:
+    """Remember the CLI's ``--log-file``/``--no-log-file`` choice for later switches."""
+    _log_prefs["override"] = override
+    _log_prefs["disabled"] = disabled
+
+
+def _retarget_deck_log(pdf_path: Path) -> None:
+    """Point the run-log at the deck now being edited.
+
+    The file handler is attached once per process and re-targeted here, so
+    opening deck B stops appending B's lines to deck A's
+    ``.slidesonnet/slidesonnet.log``. An explicit ``--log-file`` still wins.
+    """
+    from slidesonnet.logging_setup import attach_deck_file_logging
+
+    attach_deck_file_logging(
+        pdf_path,
+        override=cast(Path | None, _log_prefs["override"]),
+        disabled=bool(_log_prefs["disabled"]),
+    )
+
+
+def register_pages(registry: DeckRegistry) -> None:
+    """Register the library page (``/``) and the per-deck editor page.
+
+    One parameterized route serves every deck: switching decks is a navigation,
+    so the page teardown NiceGUI already does (job queue stopped on disconnect,
+    timers dropped with the client) is the whole of the cleanup.
+    """
+    set_registry(registry)
+
+    @ui.page("/")
+    def _library() -> None:  # pyright: ignore[reportUnusedFunction]
+        from slidesonnet.gui.library_view import build_library
+
+        build_library(registry)
+
+    @ui.page("/d/{token}")
+    def _deck(token: str) -> None:  # pyright: ignore[reportUnusedFunction]
+        entry = registry.resolve(token)
+        if entry is None:  # stale bookmark, or a deck that has since moved away
+            ui.navigate.to("/")
+            return
+        build_editor(entry.pdf_path, entry.sidecar_path, entry=entry)
+
+
 def run_editor(
-    pdf_path: Path,
+    pdf_path: Path | None = None,
     *,
     sidecar_path: Path | None = None,
+    root: Path | None = None,
     host: str = "127.0.0.1",
     port: int = 8080,
     open_browser: bool = True,
     browser: str | None = None,
     app_window: bool = False,
 ) -> None:
-    """Launch the NiceGUI editor for *pdf_path* (blocking).
+    """Launch the NiceGUI editor, opening the deck library at ``/`` (blocking).
+
+    *pdf_path* is the deck to highlight in the library (and it is registered even
+    when it sits outside *root*); pass ``None`` to open the library alone.
+    *root* is the directory the library is scanned from — ``--root``, else the
+    directory given to ``edit``, else the cwd. No VCS assumption is made.
 
     *browser* (or the ``SLIDESONNET_BROWSER`` env var) is a command used to open
     the URL — e.g. ``wslview``, ``"cmd.exe /c start"``, or a browser path; a
@@ -2424,14 +2686,23 @@ def run_editor(
     (``<edge|chrome> --app=URL``) — auto-detecting Edge/Chrome (Windows-side
     under WSL). Note: Firefox has no app-window mode.
     """
-    pdf_path = pdf_path.resolve()
+    scan_root = (root or (pdf_path.parent if pdf_path else Path.cwd())).resolve()
+    registry = DeckRegistry(scan_root)
+    result = registry.rescan()
+    if pdf_path is not None:
+        registry.register(pdf_path, sidecar_path=sidecar_path)
+    register_pages(registry)
+
+    logger.info(
+        "Deck library: %d deck(s) under %s%s",
+        len(registry.entries()),
+        scan_root,
+        " (scan truncated — pass --root to narrow it)" if result.truncated else "",
+    )
+
     url = f"http://{host}:{port}"
     env_browser = os.environ.get("SLIDESONNET_BROWSER")
     wsl = is_wsl()
-
-    @ui.page("/")
-    def _index() -> None:
-        build_editor(pdf_path, sidecar_path)
 
     show = False
     if open_browser and app_window:

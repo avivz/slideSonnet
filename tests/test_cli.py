@@ -451,6 +451,65 @@ def test_edit_invokes_run_editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert seen["app_window"] is True
 
 
+def test_edit_scans_the_decks_own_folder_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import slidesonnet.gui.app as gui_app
+
+    pdf = _copy_pdf(tmp_path)
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(gui_app, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
+    result = CliRunner().invoke(main, ["edit", str(pdf), "--no-browser"])
+    assert result.exit_code == 0
+    assert seen["pdf_path"] == pdf
+    assert seen["root"] == tmp_path.resolve()
+
+
+def test_edit_accepts_a_folder_of_decks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`edit <dir>` opens the library for that tree with no deck preselected."""
+    import slidesonnet.gui.app as gui_app
+
+    course = tmp_path / "course"
+    course.mkdir()
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(gui_app, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
+    result = CliRunner().invoke(main, ["edit", str(course), "--no-browser"])
+    assert result.exit_code == 0
+    assert seen["pdf_path"] is None
+    assert seen["root"] == course.resolve()
+
+
+def test_edit_root_overrides_the_scanned_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deck can be opened while browsing a wider tree."""
+    import slidesonnet.gui.app as gui_app
+
+    deep = tmp_path / "week01"
+    deep.mkdir()
+    pdf = _copy_pdf(deep)
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(gui_app, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
+    result = CliRunner().invoke(main, ["edit", str(pdf), "--root", str(tmp_path), "--no-browser"])
+    assert result.exit_code == 0
+    assert seen["pdf_path"] == pdf
+    assert seen["root"] == tmp_path.resolve()
+
+
+def test_edit_with_no_target_scans_the_current_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import slidesonnet.gui.app as gui_app
+
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(gui_app, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(main, ["edit", "--no-browser"])
+    assert result.exit_code == 0
+    assert seen["pdf_path"] is None
+    assert seen["root"] == tmp_path.resolve()
+
+
 def test_edit_dev_execs_devserver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import slidesonnet.gui.app as gui_app
     import slidesonnet.gui.launch as gui_launch

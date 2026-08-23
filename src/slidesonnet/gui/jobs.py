@@ -236,6 +236,10 @@ class JobQueue:
         """The clip currently generating, if any (drives the live elapsed timer)."""
         return self._running
 
+    def outstanding(self) -> int:
+        """Clips queued or generating right now — what a deck switch would stop."""
+        return len(self._pending) + (1 if self._running is not None else 0)
+
     def progress(self) -> tuple[int, int]:
         """``(done, total)`` clips for the current generation burst (``(0, 0)`` idle).
 

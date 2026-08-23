@@ -16,6 +16,8 @@ test-only twists, neither of which touches production code:
 
 Environment:
     SLIDESONNET_EDIT_PDF           deck to edit (required)
+    SLIDESONNET_LIB_ROOT           folder scanned for the deck library
+                                   (default: the deck's own folder)
     SLIDESONNET_TEST_PORT          port to serve on (default 8666)
     SLIDESONNET_TEST_REAL_TTS      "1" -> keep the real TTS engine
     SLIDESONNET_TEST_STUB_SECONDS  stub clip length in seconds (default 1.0)
@@ -30,7 +32,8 @@ from pathlib import Path
 from nicegui import ui
 from nicegui.element import Element
 
-from slidesonnet.gui.app import build_editor
+from slidesonnet.gui.app import build_editor, register_pages, set_registry
+from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
 
@@ -102,10 +105,23 @@ if __name__ in {"__main__", "__mp_main__"}:
     if os.environ.get("SLIDESONNET_TEST_REAL_TTS") != "1":
         _patch_tts(float(os.environ.get("SLIDESONNET_TEST_STUB_SECONDS", "1.0")))
     _pdf = Path(os.environ["SLIDESONNET_EDIT_PDF"])
+    _lib_root = os.environ.get("SLIDESONNET_LIB_ROOT")
+    if _lib_root:
+        # Production routing: library at "/", decks at "/d/{token}" — what the
+        # deck-switching journeys need (real neighbours, real navigation).
+        _registry = DeckRegistry(Path(_lib_root))
+        _registry.rescan()
+        _registry.register(_pdf)
+        register_pages(_registry)
+    else:
+        # Default: one deck straight at "/", the shape every other journey opens.
+        _registry = DeckRegistry(_pdf.parent)
+        _registry.register(_pdf)
+        set_registry(_registry)
 
-    @ui.page("/")
-    def index() -> None:
-        build_editor(_pdf)
+        @ui.page("/")
+        def index() -> None:
+            build_editor(_pdf)
 
     ui.run(
         host="127.0.0.1",

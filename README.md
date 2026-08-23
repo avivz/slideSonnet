@@ -149,6 +149,24 @@ track with the pauses baked in and flips the slide image on cue — so the previ
 is sample-accurate to the exported video. A diagnostics panel flags duplicate,
 missing, orphan, or `auto-…` ids.
 
+### Many decks in one session
+
+The editor opens on a **library** of the decks it finds, so a course of decks
+doesn't mean relaunching per deck:
+
+```bash
+slidesonnet edit                      # decks under the current folder
+slidesonnet edit ~/courses/aicode     # decks under a course folder
+slidesonnet edit deck.pdf             # that deck, plus its neighbours
+slidesonnet edit deck.pdf --root ~/courses   # ...while browsing a wider tree
+```
+
+A deck is any PDF with a matching `.narration` beside it; subfolders are searched
+(`week01/intro/intro.pdf` and friends), and dot-folders, `node_modules`, and deck
+caches are skipped. Once you're in a deck, **Ctrl+K** opens a type-to-filter deck
+switcher and **Alt+←/→** step to the previous/next deck. Switching saves the slide
+you were editing first, and asks before stopping any audio still generating.
+
 **WSL note:** to open the editor in your *Windows* browser instead of a Linux
 one:
 - `slidesonnet edit deck.pdf --app` — a chromeless app window via Edge/Chrome
@@ -170,7 +188,7 @@ slidesonnet export deck.pdf -o OUT.mp4
         [--timing tts|estimate|fixed:N] [--wpm N]
         [--subtitles srt|vtt|both|none] [--sub-granularity segment|slide]
 slidesonnet subs   deck.pdf -o OUT.srt [--format srt|vtt] [--timing ...]
-slidesonnet edit   deck.pdf                         launch the editor
+slidesonnet edit   [deck.pdf|FOLDER] [--root DIR]   launch the editor
 slidesonnet clean  deck.pdf [--keep nothing|api|current|exact]
 slidesonnet doctor
 ```

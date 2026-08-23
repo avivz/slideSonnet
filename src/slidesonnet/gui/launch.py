@@ -122,8 +122,9 @@ def app_invocation(
 
 
 def dev_invocation(
-    pdf_path: Path,
+    pdf_path: Path | None,
     *,
+    root: Path | None = None,
     sidecar_path: Path | None,
     host: str,
     port: int,
@@ -138,10 +139,13 @@ def dev_invocation(
     than the console-script entry point; parameters travel via environment.
     """
     env = {
-        "SLIDESONNET_DEV_PDF": str(pdf_path.resolve()),
         "SLIDESONNET_DEV_HOST": host,
         "SLIDESONNET_DEV_PORT": str(port),
     }
+    if pdf_path is not None:
+        env["SLIDESONNET_DEV_PDF"] = str(pdf_path.resolve())
+    if root is not None:
+        env["SLIDESONNET_DEV_ROOT"] = str(root.resolve())
     if sidecar_path is not None:
         env["SLIDESONNET_DEV_SIDECAR"] = str(sidecar_path.resolve())
     if browser:

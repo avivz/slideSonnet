@@ -44,7 +44,14 @@ LAUNCHER = Path(__file__).parent / "browser_main.py"
 class ServerFactory(Protocol):
     """Start an editor server for a deck; returns its base URL."""
 
-    def __call__(self, pdf: Path, *, real_tts: bool = False, stub_seconds: float = 1.0) -> str: ...
+    def __call__(
+        self,
+        pdf: Path,
+        *,
+        real_tts: bool = False,
+        stub_seconds: float = 1.0,
+        library_root: Path | None = None,
+    ) -> str: ...
 
 
 def _free_port() -> int:
@@ -72,7 +79,13 @@ def editor_server() -> Iterator[ServerFactory]:
     """Factory that launches the real editor server in a subprocess per deck."""
     procs: list[subprocess.Popen[bytes]] = []
 
-    def start(pdf: Path, *, real_tts: bool = False, stub_seconds: float = 1.0) -> str:
+    def start(
+        pdf: Path,
+        *,
+        real_tts: bool = False,
+        stub_seconds: float = 1.0,
+        library_root: Path | None = None,
+    ) -> str:
         port = _free_port()
         # NiceGUI's ui.run special-cases PYTEST_*/NICEGUI_* env vars (its own
         # screen-test mode); the subprocess is a REAL server, so drop them.
@@ -82,6 +95,8 @@ def editor_server() -> Iterator[ServerFactory]:
         env["SLIDESONNET_TEST_STUB_SECONDS"] = str(stub_seconds)
         if real_tts:
             env["SLIDESONNET_TEST_REAL_TTS"] = "1"
+        if library_root is not None:
+            env["SLIDESONNET_LIB_ROOT"] = str(library_root)
         # run from the deck's tmp dir so NiceGUI's app.storage.general (the
         # auto-build checkbox persists there) lands in .nicegui/ under tmp_path
         # — isolated per deck, never leaking the flag between browser subprocesses
@@ -736,3 +751,66 @@ def test_external_edit_revokes_loaded_preview(
     # its idle icon (the next press will rebuild, not resume the stale preview)
     expect(play_all).to_contain_text("playlist_play", timeout=5_000)
     expect(page.locator(".ss-time")).to_have_text("")
+
+
+# --------------------------------------------------------------------------
+# deck switching: real keyboard, real navigation
+# --------------------------------------------------------------------------
+
+
+def _course(tmp_path: Path) -> tuple[Path, Path]:
+    """Two narrated decks in one tree; returns (root, first deck)."""
+    decks: list[Path] = []
+    for week, stem in (("week01", "intro"), ("week02", "advanced")):
+        folder = tmp_path / week
+        folder.mkdir(parents=True, exist_ok=True)
+        pdf = folder / f"{stem}.pdf"
+        pdf.write_bytes(MARKED.read_bytes())
+        (folder / f"{stem}.narration").write_text(
+            simple_narration(f"@intro\nLine in {stem}.\n"), encoding="utf-8"
+        )
+        decks.append(pdf)
+    return tmp_path, decks[0]
+
+
+def test_library_card_opens_a_deck(
+    editor_server: ServerFactory, page: Page, tmp_path: Path
+) -> None:
+    root, first = _course(tmp_path)
+    url = editor_server(first, library_root=root)
+    page.goto(url)
+    expect(page.get_by_text("2 decks")).to_be_visible()
+    page.get_by_text("intro", exact=True).first.click()
+    expect(marked(page, "deck-switcher")).to_be_visible()
+    expect(page.get_by_text("week01 / intro")).to_be_visible()
+
+
+def test_alt_arrow_steps_to_the_next_deck(
+    editor_server: ServerFactory, page: Page, tmp_path: Path
+) -> None:
+    """The real keyboard path: a background task must still reach the page's slots."""
+    root, first = _course(tmp_path)
+    url = editor_server(first, library_root=root)
+    page.goto(url)
+    page.get_by_text("intro", exact=True).first.click()
+    expect(page.get_by_text("week01 / intro")).to_be_visible()
+    page.locator("body").click(position={"x": 5, "y": 400})  # focus off any field
+    page.keyboard.press("Alt+ArrowRight")
+    expect(page.get_by_text("week02 / advanced")).to_be_visible()
+
+
+def test_ctrl_k_opens_the_switcher_and_filters(
+    editor_server: ServerFactory, page: Page, tmp_path: Path
+) -> None:
+    root, first = _course(tmp_path)
+    url = editor_server(first, library_root=root)
+    page.goto(url)
+    page.get_by_text("intro", exact=True).first.click()
+    expect(page.get_by_text("week01 / intro")).to_be_visible()
+    page.locator("body").click(position={"x": 5, "y": 400})
+    page.keyboard.press("Control+k")
+    expect(marked(page, "switcher-input")).to_be_visible()
+    marked(page, "switcher-input").locator("input").fill("advanced")
+    expect(marked(page, "switcher-row-0")).to_be_visible()
+    page.keyboard.press("Enter")
+    expect(page.get_by_text("week02 / advanced")).to_be_visible()

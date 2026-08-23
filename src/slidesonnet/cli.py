@@ -40,6 +40,21 @@ def _attach_deck_logging(ctx: click.Context, pdf: Path) -> None:
     )
 
 
+def _split_edit_target(target: Path | None, root: Path | None) -> tuple[Path | None, Path]:
+    """Resolve ``edit``'s TARGET into ``(deck to open, folder to scan)``.
+
+    A folder means "browse this tree"; a file means "open this deck", and its
+    own folder is the default library scope. ``--root`` always wins, so a deck
+    can be opened while browsing a wider tree. No VCS lookup is involved: the
+    scope is what you pointed at, nothing inferred.
+    """
+    if target is not None and target.is_dir():
+        return None, (root or target).resolve()
+    if target is not None:
+        return target, (root or target.parent).resolve()
+    return None, (root or Path.cwd()).resolve()
+
+
 class _SuggestGroup(click.Group):
     """Click group that suggests close matches for misspelled subcommands."""
 
@@ -362,8 +377,13 @@ def clean(pdf: Path, keep: str, yes: bool) -> None:
 
 
 @main.command()
-@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@click.argument("target", required=False, type=click.Path(exists=True, path_type=Path))
 @_NARRATION_OPT
+@click.option(
+    "--root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Folder to scan for decks (default: the folder given, else the current one)",
+)
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8080, show_default=True, type=int)
 @click.option("--no-browser", is_flag=True, help="Do not auto-open a browser tab")
@@ -389,8 +409,9 @@ def clean(pdf: Path, keep: str, yes: bool) -> None:
 @click.pass_context
 def edit(
     ctx: click.Context,
-    pdf: Path,
+    target: Path | None,
     narration: Path | None,
+    root: Path | None,
     host: str,
     port: int,
     no_browser: bool,
@@ -400,6 +421,17 @@ def edit(
 ) -> None:
     """Launch the NiceGUI narration editor.
 
+    TARGET is a deck PDF to open, or a folder of decks to browse. With neither,
+    the current folder is scanned. The editor opens on a library of every deck
+    it finds (a PDF with a matching .narration beside it), searching
+    subfolders; switch decks from there, with Ctrl+K, or with Alt+left/right.
+
+    \b
+      slidesonnet edit                                  # decks under the current folder
+      slidesonnet edit ~/courses/aicode                 # decks under a course folder
+      slidesonnet edit deck.pdf                         # that deck, plus its neighbours
+      slidesonnet edit deck.pdf --root ~/courses        # ...browsing a wider tree
+
     \b
     On WSL the editor opens in your Windows browser via `wslview` if installed
     (apt install wslu). Other ways to open it:
@@ -407,12 +439,15 @@ def edit(
       slidesonnet edit deck.pdf --browser "cmd.exe /c start"
       slidesonnet edit deck.pdf --browser '/mnt/c/.../msedge.exe --app={url}'
     """
+    pdf, scan_root = _split_edit_target(target, root)
+    from slidesonnet.gui import app as gui_app
     from slidesonnet.gui.app import run_editor
     from slidesonnet.gui.launch import dev_invocation
 
     if dev:
         argv, extra_env = dev_invocation(
             pdf,
+            root=scan_root,
             sidecar_path=narration,
             host=host,
             port=port,
@@ -430,10 +465,15 @@ def edit(
             env["SLIDESONNET_DEV_LOG_FILE"] = str(Path(ctx.obj["log_file"]).resolve())
         os.execve(sys.executable, argv, env)
 
-    _attach_deck_logging(ctx, pdf)
+    if pdf is not None:
+        _attach_deck_logging(ctx, pdf)
+    gui_app.set_log_preferences(
+        override=ctx.obj.get("log_file"), disabled=ctx.obj.get("no_log_file", False)
+    )
     run_editor(
         pdf,
         sidecar_path=narration,
+        root=scan_root,
         host=host,
         port=port,
         open_browser=not no_browser,

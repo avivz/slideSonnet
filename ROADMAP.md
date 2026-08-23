@@ -17,8 +17,11 @@ Inworld, subtitles re-rendered drift-free, IPA pronunciation tuned, audio
 committed, and **published to YouTube** (README-linked). The **showcase HQ render
 is not done** (still Kokoro; no Inworld audio committed, no YouTube link) — see
 Next. With a2 out and the cloud path clean (Inworld validated on a real paid run,
-MP3 drift fixed — both Done), the Now tier turns to **pronunciation correctness
-for HQ renders**, Qwen3 own-voice, and orphaned-narration leftovers.
+MP3 drift fixed — both Done), the Now tier is led by **deck switching + a deck
+library in the editor** (promoted 2026-08-23 — a whole course of decks is about
+to be audited and relaunching the editor per deck is the friction), followed by
+**pronunciation correctness for HQ renders**, Qwen3 own-voice, and
+orphaned-narration leftovers.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -123,7 +126,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    README links. *Note:* the release-asset MP4s are still the **old March renders**
    — even basel's release MP4 was never replaced with the Inworld cut (only YouTube
    was), so this item also covers refreshing basel's release asset if we want the
-   download to match the video. *Depends on:* Now #1 / Next pronunciation — showcase
+   download to match the video. *Depends on:* Now #2 / Next pronunciation — showcase
    will hit the same IPA-in-subtitles trap basel did. **[human→agent]**
 4. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
    now-shipped Qwen3 engine (see Done) for users without a local GPU: ~$0.13/10 min,
@@ -144,26 +147,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    chapter markers from the narration sidecars. **[human]**
 7. [ ] **README refresh** — new video links, Kokoro install instructions,
    editor screenshots of the new dark studio theme. **[agent]**
-8. [ ] **Open / switch decks from within the editor.** *(Was Now; deferred
-   post-a2 — a session-management feature, not release-blocking.)* *Story:* As a
-   user with several decks, I want to open another deck from inside `slidesonnet
-   edit` without quitting and relaunching on a new path, so I can move between
-   projects in one session. *Acceptance examples:* (a) an "Open deck…" control
-   accepts another deck PDF (same or another directory) and re-points the whole
-   editor — filmstrip, sidecar, diagnostics, audio cache, live-reload poller —
-   onto it; (b) switching while the current deck has unsaved narration edits saves
-   them first (or prompts), never silently dropping them (shares the
-   save-before-reload guard with the orphaned-leftovers Now item); (c) the new
-   deck's `slidesonnet.toml` engine/voices take effect (re-read, not the prior
-   deck's); (d) the transport is stopped and rewound on switch — no audio from the
-   previous deck bleeds into the new one; (e) decks are discoverable: a path input
-   plus, if cheap, a list of sibling `*.pdf` that have a `.narration` sidecar in
-   the launch directory. *Appetite:* ~one to two days. *Design note:* today
-   `build_editor` constructs a single `EditorState` from the launch path and
-   starts one live-reload poller; switching means tearing down that poller and
-   re-initializing state in place (or routing to a fresh page) rather than
-   assuming one deck per process. **[agent]**
-9. [ ] **Wire the director's note to supporting models.** *(Was Now; deferred
+8. [ ] **Wire the director's note to supporting models.** *(Was Now; deferred
    behind the Inworld/Qwen3 engine work it depends on.)* *Story:* As a deck
    author, I write a per-utterance *direction* — "cheerfully", "slow and somber",
    "as an aside" — and the engines that can act on a natural-language style cue
@@ -186,8 +170,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    to `SpeechRef`; the work is threading it through `synth` → `TTSEngine.synthesize`
    (a new optional `direction` arg, default None, ignored by Kokoro) → Qwen3's
    `generate_custom_voice/voice_design`, plus folding it into the hash. **[agent]**
-10. [ ] **Per-engine generation parameters (creativity/temperature & friends).**
-   *(From inbox 2026-06-19. Design it together with #9 — both are per-engine
+9. [ ] **Per-engine generation parameters (creativity/temperature & friends).**
+   *(From inbox 2026-06-19. Design it together with #8 — both are per-engine
    expressive controls; build the parameter surface once.)* *Story:* As a deck
    author, I want to dial an engine's generation knobs — starting with Inworld's
    **creativity/temperature** (expressive ↔ consistent) — so I can tune the
@@ -202,8 +186,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    speed/voice-blend only), each spot-checked to confirm it actually moves the
    output. *Open question — surface:* config-only first, or also per-deck/editor?
    Decide before build. *Appetite:* ~one day (shares the `TTSEngine.synthesize`
-   param + cache-key threading with #9 — do them as one design). **[agent→human]**
-11. [ ] **Config audit — what's necessary vs vestigial.** A pass over the
+   param + cache-key threading with #8 — do them as one design). **[agent→human]**
+10. [ ] **Config audit — what's necessary vs vestigial.** A pass over the
    user-facing config surface (`slidesonnet.toml` → `config.py`/`models.py`) and
    the project's own config files to find keys/sections that are dead, redundant,
    or now defaulted-away. Known candidates: `[tts] backend` (kept only as the
@@ -215,7 +199,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    call and reason; (b) dropped keys removed from `Config`/`TTSConfig` parsing,
    their defaults, and the docs, with a `### Removed`/`### Changed` CHANGELOG note;
    (c) `make test-unit` + typecheck green. *Appetite:* half a day. **[agent→human]**
-12. [ ] **Pre-assemble the "Play all" track in the background (opt-in).** *Story:*
+11. [ ] **Pre-assemble the "Play all" track in the background (opt-in).** *Story:*
    As a deck author who has finished generating narration, I want the whole-deck
    audio track assembled in the background while I'm idle, so pressing **Play all**
    starts instantly instead of waiting for the FFmpeg concat. *Acceptance examples:*
@@ -232,10 +216,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    **off**, behavior is unchanged (assemble on demand at Play-all time). *Appetite:*
    half a day. *Design note:* reuse `preview_deck`/`build_preview`; cache the
    assembled track keyed to a deck/config/voice hash so an edit invalidates it.
-   Complements the Now #3 sub-item "let Play all start before everything is
+   Complements the Now #4 sub-item "let Play all start before everything is
    generated" — that's *partial* play mid-generation; this is *instant* play once
    the deck is fully generated and idle. **[agent]**
-13. [ ] **Cache inventory — show what's cached (count + size) before clearing it.**
+12. [ ] **Cache inventory — show what's cached (count + size) before clearing it.**
    *(From a 2026-06-19 request; the visibility precursor to a cache-clearing UX
    the user plans to build. The counting already exists —
    `clean.py::_count_dir(path) -> (files, bytes)` and `CleanResult.removed_mb`.)*
@@ -255,7 +239,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    ties it to the editor's cache-clearing flow, so likely both — **decide the
    surface before build.** *Appetite:* half a day (sizing is `_count_dir`; the work
    is the surface + before/after delta). **[agent]**
-14. [ ] **Export progress bar — feedback during the long FFmpeg render.** *(From
+13. [ ] **Export progress bar — feedback during the long FFmpeg render.** *(From
    inbox 2026-06-19. The just-shipped "Play all" assembly bar is the template —
    `api.build_preview`/`render.render_audio_track` gained a `progress` callback
    driving an "Assembling audio · X/N" bar; export wants the same.)* *Story:* As
@@ -266,9 +250,9 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    advances and completes; (b) the editor's export action shows the same bar it
    shows for assembly (reuse the progress widget); (c) the `progress` callback is
    threaded through the export path (`render`/`composer`) the same way it was for
-   the audio track. *Appetite:* an afternoon. *Design note:* pairs with #14
+   the audio track. *Appetite:* an afternoon. *Design note:* pairs with #13
    (draft mode) — both are export-iteration ergonomics. **[agent]**
-15. [ ] **Draft/fast export mode — trade quality for speed while iterating.**
+14. [ ] **Draft/fast export mode — trade quality for speed while iterating.**
    *(From inbox 2026-06-19.)* *Story:* As a deck author who just wants to
    see/share a render quickly, I want a fast draft export that trades quality for
    speed, so I'm not waiting ~2 min for a full 1080p encode on every iteration.
@@ -281,7 +265,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    byte-for-byte the current default. *Appetite:* an afternoon (the plumbing
    exists — `config.video` already carries `resolution`/`fps`/`crf`/`preset`; this
    is a preset bundle behind one flag). **[agent]**
-16. [ ] **Bug: filmstrip blanks and reloads every thumbnail on a PDF change.**
+15. [ ] **Bug: filmstrip blanks and reloads every thumbnail on a PDF change.**
    *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic refresh-cost, not
    a2-blocking.)* *Symptom:* a live-reload (recompile) tears down the whole strip
    (`EditorView.build_strip`, `gui/app.py:1598` — `clear()` + fresh cache-busting
@@ -293,7 +277,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    half is unit-testable (assert elements reused + only the changed thumb's src
    token changes); the no-flash timing is browser-tier. *Appetite:* half a day.
    **[agent]**
-17. [ ] **Bug: "Play all" flashes black between a transition and the next slide.**
+16. [ ] **Bug: "Play all" flashes black between a transition and the next slide.**
    *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic flicker, not
    a2-blocking. Sibling of #16 — the "hold the old frame until the new
    one paints" family.)* *Symptom:* during whole-deck play, an animated boundary
@@ -307,8 +291,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    action, browser tier):* Play-all across an animated boundary, assert no black
    frame between morph-complete and the next slide painting. *Appetite:* half a
    day. **[agent]**
-18. [ ] **Per-engine pronunciation dictionaries.** *(From inbox 2026-06-19; design
-   together with Now #1 — shared per-engine pronunciation plumbing.)* The dictionary
+17. [ ] **Per-engine pronunciation dictionaries.** *(From inbox 2026-06-19; design
+   together with Now #2 — shared per-engine pronunciation plumbing.)* The dictionary
    (`pronunciation/*.md` → `apply_pronunciation`) is engine-*agnostic* today: one
    `word → replacement` map applied uniformly. But the right replacement is
    engine-specific — Inworld speaks IPA (`Weierstrass → ˈvaɪərʃtrɑːs`) while
@@ -325,7 +309,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    per-engine replacement varies the audio cache key (already does, since it varies
    the spoken text). *Touch points:* `tts/pronunciation.py`, the `.md` grammar, the
    cache key. *Appetite:* ~one day. **[agent]**
-19. [ ] **Docs pass — verify all docs match narration format v2.** *(From inbox
+18. [ ] **Docs pass — verify all docs match narration format v2.** *(From inbox
    2026-06-19.)* The sidecar format has migrated many times; docs may show stale
    grammar. *Story:* As a new user reading the docs, I want every narration example
    to match what the parser (`narration/format.py`, `FORMAT_VERSION = 2`) actually
@@ -338,7 +322,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    (c) decide whether a single canonical narration-format reference doc should exist
    and consolidate scattered/duplicated examples to it. *Appetite:* half a day.
    **[agent]**
-20. [ ] **Skills pass — verify committed `.claude/skills/` are current.** *(From
+19. [ ] **Skills pass — verify committed `.claude/skills/` are current.** *(From
    inbox 2026-06-19.)* Same migration-drift risk as the docs. *Story:* As a
    maintainer using the skills, I want each skill free of stale narration grammar,
    removed pre-1.0 pipeline concepts (MARP/Beamer parsers, doit, playlists, inline
@@ -416,8 +400,44 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 8. *(Promoted & merged into the transition gallery on 2026-06-15 — the
    sub-slide-animation use case and the full xfade gallery shipped as part of it;
    see Done.)*
+9. **Cross-deck background generation — lift the JobQueue out of the page.**
+   *(Split out of Now's deck-switching item, 2026-08-23.)* Today the queue is
+   built per page and dies on `client.on_disconnect`, so switching decks stops
+   deck A's generation (the switch prompts before it does). *Story:* As someone
+   auditing a course, I want deck A to keep rendering clips while I read deck B,
+   so a long generation isn't hostage to where I'm looking. *Design sketch:* a
+   process-level registry of queues keyed by deck token, each with its own
+   `EditorState`-free synth context; the page attaches to (rather than owns) its
+   deck's queue, and idle queues shut down. *Open questions:* one global worker or
+   one per deck (paid-engine rate limits, iGPU contention with Qwen3); how a
+   detached queue surfaces failures with no page to flash them; interaction with
+   the per-deck run-log handler. *Appetite:* ~two days. **[agent]**
+
 
 ## Done (v1 rewrite)
+
+- [x] **Deck switching + a deck library in the editor** (2026-08-23; CHANGELOG
+  `[Unreleased]`; was Now #1). `slidesonnet edit` now opens on a library of every
+  deck under the scanned folder — `edit <folder>`, `edit <deck.pdf>`, or bare
+  `edit` for the cwd, plus `--root` to widen the scope. Discovery walks *down*
+  for a PDF with a sibling `<stem>.narration` (no VCS assumption), pruning
+  dot-dirs/`node_modules`/deck caches and capped in depth and breadth so a huge
+  tree reports a truncated scan instead of hanging; 13 decks in `~/courses/aicode`
+  scan in ~5 ms. Decks are addressed by a deterministic token and routed at
+  `/d/{token}`, so a switch is a page navigation (NiceGUI's own teardown does the
+  cleanup) and back/forward, bookmarks, and two-decks-in-two-tabs all work.
+  Ctrl+K palette, Alt+←/→ stepping (wrapping), header deck dropdown. Switching
+  saves the edited slide first, stops the transport, re-points the run-log, and
+  prompts when clips are still generating (don't-ask-again for the session).
+  **The `/ssmedia` blocker is fixed**: media is per-deck (`/ssmedia/{token}/…`,
+  range requests preserved, unregistered tokens 404) — verified live with two
+  decks open at once serving distinct images. New: `gui/library.py`,
+  `gui/library_view.py`, `gui/theme.py`; 51 new tests (unit + in-process GUI +
+  3 browser journeys covering the real keyboard path). *Deferred as designed:*
+  lazy stats shipped, but recents-across-sessions did not; the `load_env`
+  `os.environ` leak between decks stands (see Later backlog); cross-deck
+  background generation stays in Later backlog #9.
+
 
 - [x] **basel-problem HQ Inworld render shipped** (2026-06-19/20; was the basel
   half of Next #3). The basel deck was rendered on the Inworld cloud engine with

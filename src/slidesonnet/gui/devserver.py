@@ -27,7 +27,7 @@ from pathlib import Path
 from nicegui import app, ui
 
 import slidesonnet
-from slidesonnet.gui.app import build_editor
+from slidesonnet.gui.app import register_pages, set_log_preferences
 from slidesonnet.gui.launch import (
     app_invocation,
     browser_invocation,
@@ -101,7 +101,9 @@ def _open_browser_soon(url: str) -> None:
 
 
 if __name__ in {"__main__", "__mp_main__"}:
-    _pdf = Path(os.environ["SLIDESONNET_DEV_PDF"])
+    _pdf_env = os.environ.get("SLIDESONNET_DEV_PDF")
+    _pdf = Path(_pdf_env) if _pdf_env else None
+    _root = Path(os.environ.get("SLIDESONNET_DEV_ROOT", str(Path.cwd())))
     _sidecar_env = os.environ.get("SLIDESONNET_DEV_SIDECAR")
     _sidecar = Path(_sidecar_env) if _sidecar_env else None
     _host = os.environ.get("SLIDESONNET_DEV_HOST", "127.0.0.1")
@@ -118,15 +120,22 @@ if __name__ in {"__main__", "__mp_main__"}:
 
     configure_console_logging(resolve_console_level(env=os.environ.get(ENV_LEVEL)))
     _dev_log = os.environ.get("SLIDESONNET_DEV_LOG_FILE")
-    attach_deck_file_logging(
-        _pdf,
-        override=Path(_dev_log) if _dev_log else None,
-        disabled=os.environ.get("SLIDESONNET_DEV_NO_LOG_FILE") == "1",
-    )
+    _no_log = os.environ.get("SLIDESONNET_DEV_NO_LOG_FILE") == "1"
+    if _pdf is not None:
+        attach_deck_file_logging(
+            _pdf, override=Path(_dev_log) if _dev_log else None, disabled=_no_log
+        )
 
-    @ui.page("/")
-    def _index() -> None:
-        build_editor(_pdf, _sidecar)
+    # Same library + per-deck routing as the normal editor, so deck switching
+    # works while hacking on slideSonnet with --dev.
+    from slidesonnet.gui.library import DeckRegistry
+
+    set_log_preferences(override=Path(_dev_log) if _dev_log else None, disabled=_no_log)
+    _registry = DeckRegistry(_root)
+    _registry.rescan()
+    if _pdf is not None:
+        _registry.register(_pdf, sidecar_path=_sidecar)
+    register_pages(_registry)
 
     @app.get("/ss-dev/clients")
     def _clients() -> dict[str, int]:
