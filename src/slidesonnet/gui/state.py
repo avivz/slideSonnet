@@ -216,9 +216,16 @@ class EditorState:
         return {labels[key] for key, stamp in current.items() if stamp != self._stamps[key]}
 
     def ensure_images(self) -> list[Path]:
-        """Rasterize page images on first use (needs pdftoppm)."""
+        """Page images for this deck, rendering them only when they're missing.
+
+        ``reuse`` matters most when switching decks: a state is built per deck
+        open, and re-running pdftoppm over an unchanged 49-page deck costs ~3.5 s
+        of blocking work every time. A recompile still re-renders — the stamp
+        carries the PDF's mtime and size — and :meth:`poll_sources` drops the
+        memo so the new build is picked up.
+        """
         if self._images is None:
-            self._images = rasterize(self.pdf_path, render_dir(self.pdf_path) / "pages")
+            self._images = rasterize(self.pdf_path, render_dir(self.pdf_path) / "pages", reuse=True)
         return self._images
 
     # ---- navigation ----------------------------------------------------

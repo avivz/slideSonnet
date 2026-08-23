@@ -535,6 +535,11 @@ def test_block_editing_add_attrs_reorder_delete(
     second.fill("Second spoken line.")
     page.locator(".ss-id").click()  # blur commits
     assert _eventually(lambda: "text: Second spoken line." in _sidecar(tmp_path))
+    # The sidecar landing only says the *server* committed; a structural commit
+    # then rebuilds the cards, and clicking a reorder arrow mid-rebuild hits a
+    # detached button. Wait for the rebuilt DOM to carry both lines first.
+    expect(marked(page, "utext-1").locator("textarea")).to_have_value("Second spoken line.")
+    expect(marked(page, "utext-0").locator("textarea")).to_have_value("First spoken line.")
 
     marked(page, "seg-down-0").click()  # first line moves below the second
     assert _eventually(
@@ -543,6 +548,10 @@ def test_block_editing_add_attrs_reorder_delete(
             and _sidecar(tmp_path).index("text: Second") < _sidecar(tmp_path).index("text: First")
         )
     )
+
+    # Same rebuild race as above: the reorder rebuilt the cards, so wait until
+    # index 0 actually *is* the second line before clicking its delete button.
+    expect(marked(page, "utext-0").locator("textarea")).to_have_value("Second spoken line.")
 
     marked(page, "seg-del-0").click()  # "Second" sits at index 0 now — delete it
     assert _eventually(lambda: "text: Second spoken line." not in _sidecar(tmp_path))

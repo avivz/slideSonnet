@@ -54,6 +54,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   green "up to date" badge without a save.
 
 ### Fixed
+- **Opening a deck no longer re-rasterizes it.** `rasterize` cleared the page
+  images and re-ran `pdftoppm` over the whole PDF every time, with no cache
+  check — ~3.5 s of blocking work for a 49-slide deck. That was invisible when
+  it happened once per launch, but the deck library opens a deck on every
+  switch, which made switching take seconds and (exceeding NiceGUI's 3 s
+  reconnect timeout) flash "connection lost" on the way. An existing render is
+  now reused when a stamp beside the images matches the PDF's mtime, size, and
+  the dpi; a recompile still re-renders. Deck switching drops from ~3.6 s of
+  server work to ~45 ms. Each deck re-renders once more after upgrading, to
+  write its first stamp.
+- **Versioned media is cached by the browser.** Page-image URLs already carry a
+  `?v=<mtime>-<size>` stamp, but responses set no `Cache-Control`, so every
+  thumbnail was revalidated on each deck switch. Versioned URLs are now
+  `immutable`; the assembled preview track, which is rewritten in place at a
+  stable URL, still revalidates.
 - **A saved utterance no longer keeps claiming its audio is stale.** Editing an
   utterance flips its badge to amber ("Edited · click to regenerate"), which is
   right while the edit is unsaved — but the flag was only cleared by a full

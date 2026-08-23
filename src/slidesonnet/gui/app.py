@@ -370,7 +370,17 @@ def _serve_media(state: EditorState) -> None:
         filepath = (local_dir / filename).resolve()
         if not filepath.is_relative_to(local_dir) or not filepath.is_file():
             raise HTTPException(status_code=404, detail="Not Found")
-        return get_range_response(filepath, request, chunk_size=nicegui_chunk_size)
+        response = get_range_response(filepath, request, chunk_size=nicegui_chunk_size)
+        # A versioned URL (?v=<mtime>-<size>, see _media_url) names one exact
+        # render, so it can be cached hard: without this the browser revalidates
+        # every filmstrip thumbnail on each deck switch — 49 round-trips for a
+        # deck whose images haven't moved. Unversioned URLs (the assembled
+        # track.wav, rewritten in place) must keep revalidating.
+        versioned = bool(request.query_params.get("v"))
+        response.headers["Cache-Control"] = (
+            "public, max-age=31536000, immutable" if versioned else "no-cache"
+        )
+        return response
 
 
 _ALL_DOTS = "ss-dot-error ss-dot-warning ss-dot-ready ss-dot-empty"
