@@ -251,3 +251,99 @@ class TestWriteWav:
         _write_wav(tmp_path / "clip.wav", [0.5] * 1000)
 
         assert sorted(p.name for p in tmp_path.iterdir()) == ["clip.wav"]
+
+
+class TestCacheFirstDownloads:
+    """Kokoro resolves model/voice files from the local HF cache before it will
+    talk to huggingface.co — so a flaky or absent network can't stall startup."""
+
+    @staticmethod
+    def _orig(recorder: list[dict[str, object]], *, missing: bool = False) -> object:
+        from huggingface_hub.errors import LocalEntryNotFoundError
+
+        def fake(repo_id: str, filename: str, **kwargs: object) -> str:
+            recorder.append({"filename": filename, **kwargs})
+            if missing and kwargs.get("local_files_only"):
+                raise LocalEntryNotFoundError("not cached")
+            return f"/cache/{filename}"
+
+        return fake
+
+    def test_cached_file_never_touches_the_network(self) -> None:
+        from slidesonnet.tts.kokoro import _cache_first
+
+        calls: list[dict[str, object]] = []
+        wrapped = _cache_first(self._orig(calls))  # type: ignore[arg-type]
+
+        assert wrapped(repo_id="r", filename="config.json") == "/cache/config.json"
+        assert calls == [{"filename": "config.json", "local_files_only": True}]
+
+    def test_uncached_file_falls_back_to_downloading(self) -> None:
+        from slidesonnet.tts.kokoro import _cache_first
+
+        calls: list[dict[str, object]] = []
+        wrapped = _cache_first(self._orig(calls, missing=True))  # type: ignore[arg-type]
+
+        assert wrapped(repo_id="r", filename="voices/af_sky.pt") == "/cache/voices/af_sky.pt"
+        assert len(calls) == 2
+        assert calls[0]["local_files_only"] is True
+        assert "local_files_only" not in calls[1]  # second try may hit the hub
+
+    def test_explicit_caller_options_pass_through_untouched(self) -> None:
+        """A caller that already asked for a refresh (or for strict offline) owns
+        the decision — we don't second-guess it with a cache-first probe."""
+        from slidesonnet.tts.kokoro import _cache_first
+
+        calls: list[dict[str, object]] = []
+        wrapped = _cache_first(self._orig(calls))  # type: ignore[arg-type]
+
+        wrapped(repo_id="r", filename="a", force_download=True)
+        wrapped(repo_id="r", filename="b", local_files_only=True)
+
+        assert calls == [
+            {"filename": "a", "force_download": True},
+            {"filename": "b", "local_files_only": True},
+        ]
+
+    def test_install_patches_kokoro_download_sites_once(self) -> None:
+        import kokoro.model
+        import kokoro.pipeline
+
+        from slidesonnet.tts.kokoro import _install_cache_first_downloads
+
+        originals = (kokoro.model.hf_hub_download, kokoro.pipeline.hf_hub_download)
+        try:
+            _install_cache_first_downloads()
+            patched = (kokoro.model.hf_hub_download, kokoro.pipeline.hf_hub_download)
+            assert all(getattr(fn, "_slidesonnet_cache_first", False) for fn in patched)
+
+            _install_cache_first_downloads()  # idempotent — no double wrapping
+            assert (kokoro.model.hf_hub_download, kokoro.pipeline.hf_hub_download) == patched
+        finally:
+            kokoro.model.hf_hub_download, kokoro.pipeline.hf_hub_download = originals
+
+    def test_refresh_env_var_restores_stock_behaviour(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import kokoro.model
+
+        from slidesonnet.tts.kokoro import _ENV_REFRESH, _install_cache_first_downloads
+
+        monkeypatch.setenv(_ENV_REFRESH, "1")
+        original = kokoro.model.hf_hub_download
+        try:
+            _install_cache_first_downloads()
+            assert kokoro.model.hf_hub_download is original
+        finally:
+            kokoro.model.hf_hub_download = original
+
+    @patch("slidesonnet.tts.kokoro._install_cache_first_downloads")
+    @patch("slidesonnet.tts.kokoro.KPipeline")
+    def test_building_a_pipeline_installs_the_wrapper(
+        self, mock_kp: MagicMock, mock_install: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_kp.return_value = _fake_pipeline([100])
+
+        KokoroTTS().synthesize("Hi", tmp_path / "out.wav")
+
+        mock_install.assert_called_once()

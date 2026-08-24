@@ -3,7 +3,8 @@
 Noticeably more natural than Piper while still ~2x real-time on CPU. Voices
 are named ``<lang><gender>_<name>`` (e.g. ``af_heart`` = American English
 female "heart"); the first letter is the KPipeline language code. The model
-(~330 MB) auto-downloads from the Hugging Face hub on first use.
+(~330 MB) auto-downloads from the Hugging Face hub on first use, and is
+resolved cache-first afterwards — see ``_cache_first``.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import os
 import tempfile
 import warnings
 import wave
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -37,8 +38,75 @@ except ImportError:
 # Module-level alias for test mocking via @patch
 KPipeline: type[_KPipelineType] | None = _KPipeline
 
+# huggingface_hub rides along with the kokoro extra, so it's as optional as kokoro
+# itself. Without it there are no downloads to intercept; FileNotFoundError (which
+# LocalEntryNotFoundError subclasses) keeps the except clause well-typed either way.
+_CacheMiss: type[BaseException]
+try:
+    from huggingface_hub.errors import LocalEntryNotFoundError as _LocalEntryNotFound
+
+    _CacheMiss = _LocalEntryNotFound
+except ImportError:  # pragma: no cover — no huggingface_hub, no cache to miss
+    _CacheMiss = FileNotFoundError
+
 _REPO_ID = "hexgrad/Kokoro-82M"
 _SAMPLE_RATE = 24_000
+
+# Set to 1 to opt out of cache-first resolution and let Kokoro revalidate its
+# model files against the hub (i.e. pick up a newly published revision).
+_ENV_REFRESH = "SLIDESONNET_KOKORO_REFRESH"
+
+
+def _cache_first(hf_hub_download: Callable[..., str]) -> Callable[..., str]:
+    """Wrap ``hf_hub_download`` so it looks in the local cache before the network.
+
+    Kokoro fetches three things by name — ``config.json``, the model weights, and
+    one ``voices/<voice>.pt`` per voice — and stock ``hf_hub_download`` revalidates
+    each against huggingface.co even when the file is already on disk. That HEAD
+    request is pure latency when the machine is online, and when it *isn't* (a
+    laptop asleep, a WSL network drop) huggingface_hub burns ~30 s on five backoff
+    retries before falling back to the very cache it started next to.
+
+    So we probe the cache first and only reach for the hub when the file genuinely
+    isn't there — a first run, or a voice this machine hasn't used yet. The cost is
+    that a new upstream revision isn't picked up on its own; set ``_ENV_REFRESH``
+    for that.
+    """
+
+    def download(*args: Any, **kwargs: Any) -> str:
+        # The caller already made the call themselves — don't second-guess it.
+        if kwargs.get("local_files_only") or kwargs.get("force_download"):
+            return hf_hub_download(*args, **kwargs)
+        try:
+            return hf_hub_download(*args, local_files_only=True, **kwargs)
+        except _CacheMiss:
+            logger.info("%s not cached locally — downloading from the hub", kwargs.get("filename"))
+            return hf_hub_download(*args, **kwargs)
+
+    download._slidesonnet_cache_first = True  # type: ignore[attr-defined]
+    return download
+
+
+def _install_cache_first_downloads() -> None:
+    """Point Kokoro's two download sites at :func:`_cache_first`. Idempotent.
+
+    Both modules do ``from huggingface_hub import hf_hub_download``, so they hold
+    their own references — patching the ``huggingface_hub`` attribute wouldn't
+    reach them. Installed permanently rather than scoped to a ``with`` block: the
+    editor synthesizes on background threads, and a restore racing another
+    thread's call is a worse failure than a wrapper that outlives one load.
+    """
+    if os.environ.get(_ENV_REFRESH) == "1":
+        return
+    try:
+        import kokoro.model
+        import kokoro.pipeline
+    except ImportError:  # pragma: no cover — no kokoro, no download sites to patch
+        return
+    for module in (kokoro.model, kokoro.pipeline):
+        current = module.hf_hub_download
+        if not getattr(current, "_slidesonnet_cache_first", False):
+            module.hf_hub_download = _cache_first(current)
 
 
 @contextlib.contextmanager
@@ -116,6 +184,7 @@ class KokoroTTS(TTSEngine):
                     "kokoro package not installed. Install with: pip install slidesonnet[kokoro]"
                 )
             logger.info("Loading Kokoro pipeline (lang '%s')...", lang_code)
+            _install_cache_first_downloads()
             with _quiet_torch_load_warnings():
                 self._pipelines[lang_code] = KPipeline(lang_code=lang_code, repo_id=_REPO_ID)
         return self._pipelines[lang_code]

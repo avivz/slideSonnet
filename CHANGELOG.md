@@ -54,6 +54,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   green "up to date" badge without a save.
 
 ### Fixed
+- **The preview player no longer plays a stale slide's audio.** Every preview
+  assembles to one fixed `track.wav`, busted with a counter that restarts at 1 on
+  each page load — and the media route was granting any `?v=` URL a year-long
+  `immutable` cache. So the first preview of a session got pinned in the browser
+  and replayed as the first preview of the *next* session: after a reload or a
+  deck switch, pressing play could sound a slide you had previewed earlier. The
+  track now uses a distinct one-shot `?t=` buster, and only a genuine
+  `<mtime>-<size>` content stamp can earn the immutable header.
+- **Kokoro resolves its model and voices from the local cache first.** A HEAD
+  revalidation against huggingface.co ran on every pipeline load, so an offline
+  or flaky network (a sleeping laptop, a WSL network drop) stalled startup for
+  ~30 s of backoff retries before falling back to the cache it started next to.
+  Cached files now load without touching the network; anything genuinely missing
+  still downloads. Set `SLIDESONNET_KOKORO_REFRESH=1` to pick up a new upstream
+  model revision.
 - **Opening a deck no longer re-rasterizes it.** `rasterize` cleared the page
   images and re-ran `pdftoppm` over the whole PDF every time, with no cache
   check — ~3.5 s of blocking work for a 49-slide deck. That was invisible when
