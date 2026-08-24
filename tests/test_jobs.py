@@ -168,7 +168,7 @@ def test_await_targets_blocks_until_done(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_failed_job_leaves_no_stuck_handle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def body() -> None:
-        queue, engine, _ = _make_queue(tmp_path, monkeypatch, engine=FailingEngine())
+        queue, _engine, _ = _make_queue(tmp_path, monkeypatch, engine=FailingEngine())
         queue.start()
         handles = queue.enqueue({("a", 0)})
         await queue.drain()

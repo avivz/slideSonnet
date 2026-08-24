@@ -37,8 +37,8 @@ dev = [
     "pytest-timeout",
     "playwright",
     "pytest-playwright",
-    "ruff",
-    "mypy",
+    "ruff>=0.16.4",
+    "mypy>=2.3.1",
 ]
 
 [project.urls]
@@ -60,6 +60,17 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+# BLE001/S110 — the editor's callbacks and the dev server deliberately absorb
+# whatever a handler throws. A NiceGUI callback that raises leaves the page
+# wedged with no way back, and several of these sites run under the in-process
+# test sim where the JS client and the rasterizer genuinely aren't there. Every
+# one of them is commented at the catch with what it tolerates and why.
+# SIM117 — nested `with` blocks in these modules *are* the DOM tree: collapsing
+# `with row: with column:` into one statement flattens the structure the layout
+# is expressing. Combined where it reads better, nested where nesting is data.
+"src/slidesonnet/gui/*" = ["BLE001", "S110", "SIM117"]
 
 [tool.mypy]
 strict = true

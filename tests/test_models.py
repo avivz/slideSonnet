@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from slidesonnet.models import (
@@ -33,7 +35,7 @@ class TestVoiceConfig:
 
 
 class TestResolveVoice:
-    VOICES: dict[str, VoiceConfig] = {
+    VOICES: ClassVar[dict[str, VoiceConfig]] = {
         "narrator": VoiceConfig(name="narrator", backend_voices={"kokoro": "af_bella"})
     }
 

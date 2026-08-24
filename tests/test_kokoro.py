@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
 import wave
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-import warnings
 
 from slidesonnet.exceptions import TTSError
 from slidesonnet.tts.kokoro import KokoroTTS, _quiet_torch_load_warnings
@@ -237,9 +236,8 @@ class TestWriteWav:
         out = tmp_path / "clip.wav"
         out.write_bytes(b"ORIGINAL-GOOD-AUDIO")
 
-        with patch("os.replace", side_effect=OSError("boom")):
-            with pytest.raises(OSError):
-                _write_wav(out, [0.5] * 1000)
+        with patch("os.replace", side_effect=OSError("boom")), pytest.raises(OSError):
+            _write_wav(out, [0.5] * 1000)
 
         # The existing file survived untouched, and no temp file was left behind.
         assert out.read_bytes() == b"ORIGINAL-GOOD-AUDIO"

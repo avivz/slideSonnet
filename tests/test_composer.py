@@ -492,7 +492,7 @@ def test_preview_vs_production_size(work_dir):
 
     # Verify resolution via ffprobe
     prev_info = _ffprobe_json(prev)
-    video_stream = [s for s in prev_info["streams"] if s["codec_type"] == "video"][0]
+    video_stream = next(s for s in prev_info["streams"] if s["codec_type"] == "video")
     assert video_stream["width"] == 960
     assert video_stream["height"] == 540
 

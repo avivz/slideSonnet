@@ -69,4 +69,4 @@ class TTSEngine(ABC):
         engine in the background when you pick it). A no-op for light engines,
         which have nothing to load; idempotent once warm.
         """
-        return None
+        return

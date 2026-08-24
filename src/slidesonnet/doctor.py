@@ -31,7 +31,7 @@ def _get_cli_version(
 ) -> str | None:
     """Run *cmd*, match *pattern* against output, return first capture group or None."""
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
         text = result.stderr if stderr else result.stdout
         first_line = text.strip().split("\n", 1)[0]
         m = re.search(pattern, first_line)

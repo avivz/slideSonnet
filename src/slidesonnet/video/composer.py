@@ -226,8 +226,7 @@ def concatenate_segments(segments: list[Path], output: Path) -> None:
     concat_file = output.parent / "concat_list.txt"
 
     with open(concat_file, "w") as f:
-        for seg in segments:
-            f.write(f"file '{seg.resolve()}'\n")
+        f.writelines(f"file '{seg.resolve()}'\n" for seg in segments)
 
     cmd = [
         "ffmpeg",

@@ -39,8 +39,8 @@ from pathlib import Path
 from typing import Any
 
 from slidesonnet.exceptions import ConfigError
-from slidesonnet.tts import BACKENDS
 from slidesonnet.models import LoggingConfig, TTSConfig, VideoConfig, VoiceConfig
+from slidesonnet.tts import BACKENDS
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
 
 logger = logging.getLogger(__name__)

@@ -14,10 +14,9 @@ from typing import TYPE_CHECKING, Literal
 
 from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, unique_real_ids
 from slidesonnet.diagnostics import Diagnostic
+from slidesonnet.models import Backend, ProgressFn
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
-
-from slidesonnet.models import Backend, ProgressFn
 
 if TYPE_CHECKING:
     from slidesonnet.audio.track import Cue
@@ -29,17 +28,17 @@ if TYPE_CHECKING:
 Engine = Backend
 
 __all__ = [
-    "sty_text",
-    "write_sty",
-    "scaffold_text",
-    "init_sidecar",
-    "check_deck",
-    "synthesize_deck",
     "ExportResult",
-    "export",
-    "write_subs",
     "Preview",
     "build_preview",
+    "check_deck",
+    "export",
+    "init_sidecar",
+    "scaffold_text",
+    "sty_text",
+    "synthesize_deck",
+    "write_sty",
+    "write_subs",
 ]
 
 
@@ -236,6 +235,8 @@ def export(
     from slidesonnet.audio.synth import (
         page_speech_clips,
         page_speech_durations,
+    )
+    from slidesonnet.audio.synth import (
         synthesize as _synth,
     )
     from slidesonnet.cache import audio_dir, render_dir
@@ -375,6 +376,8 @@ def build_preview(
     from slidesonnet.audio.synth import (
         page_speech_clips,
         page_speech_durations,
+    )
+    from slidesonnet.audio.synth import (
         synthesize as _synth,
     )
     from slidesonnet.cache import audio_dir, render_dir

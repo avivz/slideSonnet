@@ -16,14 +16,12 @@ from typing import Literal, cast
 
 from slidesonnet import api
 from slidesonnet.audio.synth import SpeechRef, _ref_targets, ref_cache_status
-from slidesonnet.hashing import audio_cache_path_or_alt
-from slidesonnet.timing import word_count
 from slidesonnet.audio.track import Cue
 from slidesonnet.cache import audio_dir, render_dir
 from slidesonnet.config import Config, default_config_path, load_config
 from slidesonnet.deck import (
-    default_sidecar_path,
     dedupe_page_ids,
+    default_sidecar_path,
     load_deck,
     relativize_voice_files,
     resolve_voice_files,
@@ -33,10 +31,12 @@ from slidesonnet.deck import (
 from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
 from slidesonnet.env import load_env
 from slidesonnet.exceptions import ConfigError
+from slidesonnet.hashing import audio_cache_path_or_alt
+from slidesonnet.models import Backend, ProgressFn, VoiceConfig, resolve_voice
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
-from slidesonnet.models import Backend, ProgressFn, VoiceConfig, resolve_voice
 from slidesonnet.pdf.reader import rasterize, read_page_ids
+from slidesonnet.timing import word_count
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
 logger = logging.getLogger(__name__)

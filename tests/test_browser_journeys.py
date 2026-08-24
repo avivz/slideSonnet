@@ -27,7 +27,8 @@ from playwright.sync_api import Locator, Page, expect
 
 from slidesonnet.cache import audio_dir
 from slidesonnet.hashing import text_hash
-from tests.conftest import prep_marked_deck as _prep, simple_narration
+from tests.conftest import prep_marked_deck as _prep
+from tests.conftest import simple_narration
 
 pytestmark = pytest.mark.browser
 

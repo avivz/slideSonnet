@@ -195,7 +195,7 @@ def parse_sidecar(text: str) -> list[PageNarration]:
     return parse_document(text).blocks
 
 
-def parse_document(text: str) -> NarrationDoc:  # noqa: C901
+def parse_document(text: str) -> NarrationDoc:
     """Parse sidecar *text* into blocks plus the deck-level voice preamble.
 
     Raises :class:`SidecarError` on content appearing before the first ``@``

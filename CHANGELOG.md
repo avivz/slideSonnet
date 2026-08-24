@@ -54,6 +54,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   green "up to date" badge without a save.
 
 ### Fixed
+- **A preview or a long action no longer crashes on app shutdown.** NiceGUI's
+  `run.io_bound` returns `None` when the app is going away; both call sites
+  dereferenced the result unconditionally, so quitting mid-build raised an
+  `AttributeError` out of the background task. Newer NiceGUI types the return as
+  optional, which is what surfaced it.
 - **The preview player no longer plays a stale slide's audio.** Every preview
   assembles to one fixed `track.wav`, busted with a counter that restarts at 1 on
   each page load — and the media route was granting any `?v=` URL a year-long

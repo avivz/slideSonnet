@@ -25,8 +25,8 @@ import pytest
 pytest.importorskip("numpy")
 pytest.importorskip("torch")
 
-from slidesonnet.exceptions import TTSError  # noqa: E402
-from slidesonnet.tts.qwen3 import Qwen3TTS  # noqa: E402
+from slidesonnet.exceptions import TTSError
+from slidesonnet.tts.qwen3 import Qwen3TTS
 
 
 @pytest.fixture
@@ -235,12 +235,11 @@ def test_cancellable_injects_stopping_criteria_then_restores(
     model = fake_qwen3.model
     original = model.model.talker.generate
     event = threading.Event()
-    with cancel_scope(event):
-        with _cancellable(model):
-            assert model.model.talker.generate is not original  # wrapped while active
-            model.model.talker.generate("ids")  # forwards with a stopping criterion
-            _, kwargs = original.call_args
-            assert "stopping_criteria" in kwargs
+    with cancel_scope(event), _cancellable(model):
+        assert model.model.talker.generate is not original  # wrapped while active
+        model.model.talker.generate("ids")  # forwards with a stopping criterion
+        _, kwargs = original.call_args
+        assert "stopping_criteria" in kwargs
     assert model.model.talker.generate is original  # restored on exit (event unset → no raise)
 
 

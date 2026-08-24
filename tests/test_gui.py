@@ -12,7 +12,8 @@ from nicegui import ui
 from nicegui.testing import User
 
 from slidesonnet import api
-from tests.conftest import prep_marked_deck as _prep, simple_narration
+from tests.conftest import prep_marked_deck as _prep
+from tests.conftest import simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -131,7 +132,7 @@ def test_single_slide_morph_disabled_yields_no_steps() -> None:
     block = PageNarration(slide_id="b", transition_out=Transition("wipeleft", 0.5))
     incoming = Transition("fade", 0.5)
     images = [Path("a.png"), Path("b.png"), Path("c.png")]
-    kwargs = dict(total=6.0, media_url=lambda p: p.name)
+    kwargs = {"total": 6.0, "media_url": lambda p: p.name}
 
     assert _single_slide_morph(block, incoming, 1, images, enabled=False, **kwargs) == []
     # default (enabled) still plays the slide's own in/out transitions
@@ -604,7 +605,7 @@ async def test_generate_and_preview(
     await user.should_see("Preview ready", retries=300)
 
 
-def _fake_preview(pdf: Path, cues: list[tuple[float, str]]) -> "api.Preview":
+def _fake_preview(pdf: Path, cues: list[tuple[float, str]]) -> api.Preview:
     """A ready-made Preview backed by the silence fixture (no TTS, no ffmpeg)."""
     from slidesonnet.cache import render_dir
 

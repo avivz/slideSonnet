@@ -14,12 +14,12 @@ from click.testing import CliRunner
 from slidesonnet.api import ExportResult
 from slidesonnet.clean import CleanResult
 from slidesonnet.cli import main
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.logging_setup import (
     _ConsoleFormatter,
     configure_console_logging,
     resolve_console_level,
 )
-from slidesonnet.exceptions import SlideSonnetError
 from tests.conftest import simple_narration
 
 FIXTURES = Path(__file__).parent / "fixtures"

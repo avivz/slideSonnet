@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from nicegui.events import KeyboardKey
 
 from slidesonnet.exceptions import ParserError

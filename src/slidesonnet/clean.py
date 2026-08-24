@@ -20,8 +20,8 @@ from slidesonnet.config import Config, load_config
 from slidesonnet.deck import load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
 from slidesonnet.models import VoiceConfig, resolve_voice
-from slidesonnet.tts import API_BACKENDS, AUTO_PRUNE_BACKENDS
 from slidesonnet.narration.model import Pace
+from slidesonnet.tts import API_BACKENDS, AUTO_PRUNE_BACKENDS
 from slidesonnet.tts.base import TTSEngine
 
 logger = logging.getLogger(__name__)

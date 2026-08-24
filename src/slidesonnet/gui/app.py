@@ -8,11 +8,11 @@ sample-accurate to the exported video.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import shutil
 import time
-import json
 from collections.abc import Callable, Coroutine, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -32,15 +32,15 @@ from slidesonnet.gui.launch import (
     launch_browser,
 )
 from slidesonnet.gui.library import DeckEntry, DeckRegistry, deck_token
-from slidesonnet.gui.theme import HEAD_MORPH, HEAD_RESIZE, apply_theme, wordmark
 from slidesonnet.gui.state import (
     EditorState,
     bracket_silences,
     cue_start,
     split_edge_silences,
 )
-from slidesonnet.narration import transitions as trans
+from slidesonnet.gui.theme import HEAD_MORPH, HEAD_RESIZE, apply_theme, wordmark
 from slidesonnet.models import Backend, VoiceConfig
+from slidesonnet.narration import transitions as trans
 from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
 from slidesonnet.tts import BACKENDS
@@ -504,7 +504,7 @@ class PaneLayout:
             )
             self.strip_split.value = strip_w
             self.console_split.value = console_w
-        for _key, (splitter, _d, cls) in self.panes.items():
+        for splitter, _d, cls in self.panes.values():
             if self.responsive.narrow:
                 splitter.classes(add=cls)
             else:
@@ -612,7 +612,7 @@ class PreviewPlayer:
             images = state.ensure_images()
         except Exception:
             images = []
-        url = lambda p: _media_url(state, p, cache_bust=True)  # noqa: E731
+        url = lambda p: _media_url(state, p, cache_bust=True)
         if whole_deck:
             steps = _morph_schedule(self.cues, state.deck, images, url)
         else:
@@ -756,6 +756,8 @@ class PreviewPlayer:
                 preview = await run.io_bound(build, _on_assemble)
             finally:
                 view.assembling = None
+            if preview is None:
+                return  # NiceGUI returns None when the app is shutting down
             with client:
                 if not self.playback.may_start(token):  # user pressed Stop while building
                     view.flash("Preview stopped", "info")
@@ -2105,7 +2107,10 @@ class EditorView:
         self.blocks.save_current()
         btn.props("loading")
         try:
-            self.flash(await run.io_bound(work), "positive")
+            done = await run.io_bound(work)
+            if done is None:
+                return  # NiceGUI returns None when the app is shutting down
+            self.flash(done, "positive")
         except NotImplementedError as exc:
             self.flash(str(exc), "warning")
         except Exception as exc:  # surface backend errors without crashing the UI
@@ -2240,7 +2245,7 @@ class EditorView:
         parts = [f"Generating {min(done + 1, total)}/{total}"]
         clip_fraction: float | None = None
         if running is not None and running.refs:
-            sid, si = sorted(running.refs)[0]
+            sid, si = min(running.refs)
             detail = sid
             if running.started_at is not None:
                 elapsed = max(0.0, time.monotonic() - running.started_at)

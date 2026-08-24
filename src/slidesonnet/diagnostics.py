@@ -6,6 +6,7 @@ auto/unnamed ids, un-narrated pages, orphan narration, and order drift.
 
 from __future__ import annotations
 
+import itertools
 from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
@@ -107,7 +108,7 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
 
     # Transition disagreement at a slide boundary (e.g. an LLM wrote both sides).
     by_id = {b.slide_id: b for b in blocks}
-    for earlier, later in zip(real_pages, real_pages[1:], strict=False):
+    for earlier, later in itertools.pairwise(real_pages):
         prev_block, next_block = by_id.get(earlier), by_id.get(later)
         if prev_block is None or next_block is None:
             continue

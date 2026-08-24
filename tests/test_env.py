@@ -10,7 +10,6 @@ import pytest
 from slidesonnet.env import load_env
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts import create_tts
-
 from tests.conftest import prep_marked_deck
 
 
@@ -72,7 +71,7 @@ def test_synthesize_path_anchors_dotenv_at_deck_dir(
     """The API synthesis path loads the deck-dir ``.env`` even when the cwd has
     no reachable ``.env`` — the user's failure mode (editor launched from a
     directory the repo ``.env`` doesn't sit under)."""
-    import slidesonnet.api as api
+    from slidesonnet import api
 
     pdf = prep_marked_deck(tmp_path)  # deck lives in tmp_path
     (tmp_path / ".env").write_text("SS_ENV_ANCHOR=from_deck_dir\n", encoding="utf-8")

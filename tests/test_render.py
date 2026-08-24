@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 import pytest
@@ -120,7 +121,7 @@ def test_subtitles_split_long_segment_proportionally() -> None:
     seg = tl.pages[0].speech_timings[0]
     assert entries[0].start == pytest.approx(seg.start)
     assert entries[-1].end == pytest.approx(seg.end)
-    for prev, nxt in zip(entries, entries[1:], strict=False):
+    for prev, nxt in itertools.pairwise(entries):
         assert prev.end == pytest.approx(nxt.start)
     # Each cue's span is proportional to its share of the chunk characters.
     total_chars = sum(len(e.text) for e in entries)

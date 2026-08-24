@@ -8,7 +8,6 @@ from slidesonnet.narration import transitions as T
 from slidesonnet.narration.format import parse_sidecar, serialize_block
 from slidesonnet.narration.model import PageNarration, Segment, Transition
 
-
 # --- xfade name resolution -------------------------------------------------
 
 

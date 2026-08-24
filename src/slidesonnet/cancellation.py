@@ -17,9 +17,9 @@ Inworld — fast enough not to need it) simply ignore the token.
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Iterator
 
 _cancel_token: ContextVar[threading.Event | None] = ContextVar("ss_cancel_token", default=None)
 

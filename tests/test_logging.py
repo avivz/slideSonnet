@@ -15,7 +15,6 @@ from slidesonnet.logging_setup import (
     resolve_console_level,
 )
 
-
 # ---- level resolution ----------------------------------------------------
 
 

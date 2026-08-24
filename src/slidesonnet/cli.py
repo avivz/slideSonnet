@@ -14,6 +14,7 @@ import click
 
 from slidesonnet import __version__
 from slidesonnet.diagnostics import Diagnostic, count_by_severity, has_errors
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.logging_setup import (
     ENV_LEVEL,
     attach_deck_file_logging,
@@ -21,7 +22,6 @@ from slidesonnet.logging_setup import (
     resolve_console_level,
 )
 from slidesonnet.tts import BACKENDS
-from slidesonnet.exceptions import SlideSonnetError
 
 logger = logging.getLogger(__name__)
 
