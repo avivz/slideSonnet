@@ -257,12 +257,14 @@ class TestCacheFirstDownloads:
 
     @staticmethod
     def _orig(recorder: list[dict[str, object]], *, missing: bool = False) -> object:
-        from huggingface_hub.errors import LocalEntryNotFoundError
+        # Raise the module's own cache-miss type rather than importing
+        # huggingface_hub: it ships with the kokoro extra, which CI doesn't install.
+        from slidesonnet.tts.kokoro import _CacheMiss
 
         def fake(repo_id: str, filename: str, **kwargs: object) -> str:
             recorder.append({"filename": filename, **kwargs})
             if missing and kwargs.get("local_files_only"):
-                raise LocalEntryNotFoundError("not cached")
+                raise _CacheMiss("not cached")
             return f"/cache/{filename}"
 
         return fake
@@ -304,6 +306,7 @@ class TestCacheFirstDownloads:
         ]
 
     def test_install_patches_kokoro_download_sites_once(self) -> None:
+        pytest.importorskip("kokoro")
         import kokoro.model
         import kokoro.pipeline
 
@@ -323,6 +326,7 @@ class TestCacheFirstDownloads:
     def test_refresh_env_var_restores_stock_behaviour(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        pytest.importorskip("kokoro")
         import kokoro.model
 
         from slidesonnet.tts.kokoro import _ENV_REFRESH, _install_cache_first_downloads

@@ -80,6 +80,7 @@ module = [
     "inworld_tts.*",
     "dotenv.*",
     "kokoro.*",
+    "huggingface_hub.*",
     "qwen_tts.*",
     "torch.*",
     "transformers.*",
