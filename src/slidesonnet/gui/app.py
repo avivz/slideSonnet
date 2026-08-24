@@ -245,6 +245,22 @@ def toggled_width(current: float, remembered: float, *, default: float) -> tuple
     return (remembered if remembered > 2.0 else default), remembered
 
 
+def _is_content_stamp(value: str | None) -> bool:
+    """True for a ``?v=<mtime_ns>-<size>`` stamp minted by :func:`_media_url`.
+
+    Checked by shape rather than by mere presence so that only a URL naming one
+    exact byte-for-byte render can earn the immutable cache header. A file that is
+    rewritten in place at a fixed path (the assembled preview track) can never
+    produce such a stamp, so it can never be pinned in the browser cache by
+    accident — the failure mode there is silent and confusing: audio from a slide
+    you previewed in an earlier session playing over the slide you're looking at.
+    """
+    if not value:
+        return False
+    mtime, _, size = value.partition("-")
+    return mtime.isdigit() and size.isdigit()
+
+
 def _media_url(state: EditorState, path: Path, *, cache_bust: bool = False) -> str:
     """URL for a render artifact under the deck's media dir.
 
@@ -378,12 +394,14 @@ def _serve_media(state: EditorState) -> None:
         if not filepath.is_relative_to(local_dir) or not filepath.is_file():
             raise HTTPException(status_code=404, detail="Not Found")
         response = get_range_response(filepath, request, chunk_size=nicegui_chunk_size)
-        # A versioned URL (?v=<mtime>-<size>, see _media_url) names one exact
-        # render, so it can be cached hard: without this the browser revalidates
-        # every filmstrip thumbnail on each deck switch — 49 round-trips for a
-        # deck whose images haven't moved. Unversioned URLs (the assembled
-        # track.wav, rewritten in place) must keep revalidating.
-        versioned = bool(request.query_params.get("v"))
+        # A content-stamped URL (?v=<mtime>-<size>, see _media_url) names one
+        # exact render, so it can be cached hard: without this the browser
+        # revalidates every filmstrip thumbnail on each deck switch — 49
+        # round-trips for a deck whose images haven't moved. Everything else —
+        # above all the assembled track.wav, which is rewritten in place at a
+        # fixed path and busted with a one-shot ?t= token — must keep
+        # revalidating, or the browser replays a stale slide's audio.
+        versioned = _is_content_stamp(request.query_params.get("v"))
         response.headers["Cache-Control"] = (
             "public, max-age=31536000, immutable" if versioned else "no-cache"
         )
@@ -749,8 +767,14 @@ class PreviewPlayer:
                 # browser starts there on load).
                 start_at = (cue_start(self.cues, state.current_id) or 0.0) if whole_deck else 0.0
                 # every preview renders to the same track path — vary the URL so
-                # the browser refetches instead of replaying the previous audio
-                src = f"{_media_url(state, preview.track)}?v={token}"
+                # the browser refetches instead of replaying the previous audio.
+                # Deliberately ``?t=`` and not ``?v=``: ``?v=`` means "content
+                # stamp, cache forever" (see _read_media), and this token is a
+                # per-page-load counter that restarts at 1 on every reload and
+                # deck switch — stamping the track with it would pin one session's
+                # first preview and replay it as the next session's, so you'd hear
+                # a different slide than the one on screen.
+                src = f"{_media_url(state, preview.track)}?t={token}"
                 if start_at > 0:
                     src = f"{src}#t={start_at}"
                 self.audio.set_source(src)

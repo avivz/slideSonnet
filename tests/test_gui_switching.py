@@ -309,3 +309,50 @@ def test_editor_registers_the_deck_it_opens(tmp_path: Path) -> None:
     registry.register(pdf)
     entry: Any = registry.resolve(deck_token(pdf))
     assert entry is not None and entry.pdf_path == pdf.resolve()
+
+
+async def test_assembled_track_is_never_cached_immutably(user: User, course: Path) -> None:
+    """The preview track is rewritten in place at one fixed path, and the player's
+    ``?v=`` buster is a per-page-load counter that restarts at 1 on every reload or
+    deck switch. Marking a ``?v=`` URL immutable therefore pins the *first* preview
+    of one session and replays it for the first preview of the next — you hear a
+    different slide than the one on screen. Only content-stamped page images may be
+    cached hard.
+    """
+    intro = course / "week01" / "intro.pdf"
+    await user.open(deck_url(deck_token(intro)))
+
+    from slidesonnet.cache import render_dir
+
+    root = render_dir(intro)
+    (root / "pages").mkdir(parents=True, exist_ok=True)
+    (root / "pages" / "page-1.png").write_bytes(b"png")
+    (root / "track.wav").write_bytes(b"wav")
+
+    track = await user.http_client.get(f"/ssmedia/{deck_token(intro)}/track.wav?v=1")
+    assert track.status_code == 200
+    assert "immutable" not in track.headers["cache-control"]
+
+    image = await user.http_client.get(f"/ssmedia/{deck_token(intro)}/pages/page-1.png?v=9-9")
+    assert image.status_code == 200
+    assert "immutable" in image.headers["cache-control"]
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("1737000000000000000-4096", True),  # a real _media_url stamp
+        ("1", False),  # the player's per-page-load counter — restarts every reload
+        ("42", False),
+        ("", False),
+        (None, False),
+        ("abc-4096", False),
+        ("1737000000000000000-", False),
+    ],
+)
+def test_only_a_real_content_stamp_earns_the_immutable_cache(
+    value: str | None, expected: bool
+) -> None:
+    from slidesonnet.gui.app import _is_content_stamp
+
+    assert _is_content_stamp(value) is expected
