@@ -188,7 +188,8 @@ slidesonnet export deck.pdf -o OUT.mp4
         [--engine kokoro]              [--silent]
         [--timing tts|estimate|fixed:N] [--wpm N]
         [--subtitles srt|vtt|both|none] [--sub-granularity segment|slide]
-slidesonnet subs   deck.pdf -o OUT.srt [--format srt|vtt] [--timing ...]
+slidesonnet subs   deck.pdf -o OUT.srt [--engine ...] [--format srt|vtt]
+        [--timing ...] [--allow-estimates]    # export already writes these
 slidesonnet edit   [deck.pdf|FOLDER] [--root DIR]   launch the editor
 slidesonnet clean  deck.pdf [--keep nothing|api|current|exact]
 slidesonnet doctor

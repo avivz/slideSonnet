@@ -8,6 +8,7 @@ check, synthesize TTS, export video, write subtitles — is scriptable from Pyth
 from __future__ import annotations
 
 import importlib.resources
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -19,10 +20,13 @@ from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
 
 if TYPE_CHECKING:
+    from slidesonnet.audio.synth import CachedDurations
     from slidesonnet.audio.track import Cue
     from slidesonnet.config import Config
     from slidesonnet.narration.model import Deck
     from slidesonnet.render import DeckTimeline
+
+logger = logging.getLogger(__name__)
 
 # Re-export of models.Backend, kept under the public name api.Engine.
 Engine = Backend
@@ -299,20 +303,36 @@ def write_subs(
     wpm: float = 150.0,
     sidecar_path: Path | None = None,
     config_path: Path | None = None,
+    engine: Engine | None = None,
+    allow_estimates: bool = False,
 ) -> Path:
-    """Write subtitles without rendering video (cached audio durations, else timing model)."""
+    """Write subtitles without rendering video, timed against the cached audio.
+
+    *engine* must name the engine whose audio this deck was rendered with — the
+    cache key embeds the backend, so subtitles asked of a different engine than
+    the video find nothing. Under ``timing="tts"`` any utterance without cached
+    audio raises :class:`SubtitleTimingError` rather than quietly standing in a
+    words-per-minute guess; pass *allow_estimates* (or ``timing="estimate"``) to
+    accept guessed times on purpose.
+    """
     from slidesonnet.audio.synth import cached_durations
     from slidesonnet.cache import audio_dir
+    from slidesonnet.exceptions import SubtitleTimingError
     from slidesonnet.render import build_timeline, subtitle_entries
     from slidesonnet.subtitles import format_srt, format_vtt
     from slidesonnet.timing import parse_timing
 
-    deck, config = _load(pdf_path, sidecar_path, config_path, None)
+    deck, config = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
     if mode.kind == "tts":
-        durations = cached_durations(deck, config, audio_dir(pdf_path), fallback_wpm=wpm)
+        cached = cached_durations(deck, config, audio_dir(pdf_path), fallback_wpm=wpm)
+        if cached.estimated:
+            message = _estimated_timing_message(cached, config.tts.backend, wpm)
+            if not allow_estimates:
+                raise SubtitleTimingError(message)
+            logger.warning("%s", message)
         timeline = build_timeline(
-            deck, mode, video=config.video, speech_durations_by_page=durations
+            deck, mode, video=config.video, speech_durations_by_page=cached.per_page
         )
     else:
         timeline = build_timeline(deck, mode, video=config.video)
@@ -321,6 +341,24 @@ def write_subs(
     text = format_srt(entries) if fmt == "srt" else format_vtt(entries)
     output.write_text(text, encoding="utf-8")
     return output
+
+
+def _estimated_timing_message(cached: CachedDurations, backend: str, wpm: float) -> str:
+    """Explain which lines have no audio, and the three ways out."""
+    # Several utterances can share a slide, so name distinct slides — and count
+    # the overflow against that same deduped list, not the raw utterances.
+    slides = list(dict.fromkeys(r.slide_id for r in cached.estimated))
+    shown = ", ".join(slides[:3])
+    more = f" (and {len(slides) - 3} more)" if len(slides) > 3 else ""
+    return (
+        f"{len(cached.estimated)} of {cached.total} narration lines have no generated audio for the "
+        f"'{backend}' voice, so their subtitle times would be guessed at {wpm:g} words per "
+        f"minute — and every cue after the first guess slides out of step with the video. "
+        f"Slides without audio: {shown}{more}. "
+        f"Either generate the narration first ('slidesonnet tts'), or point subs at the voice "
+        f"the video was made with ('--engine'), or ask for guessed times on purpose "
+        f"('--allow-estimates')."
+    )
 
 
 def _write_subtitle_files(

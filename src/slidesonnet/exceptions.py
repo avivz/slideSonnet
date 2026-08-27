@@ -31,3 +31,12 @@ class FFmpegError(SlideSonnetError):
 
 class RenderError(SlideSonnetError):
     """Track/video assembly was asked to render inconsistent inputs."""
+
+
+class SubtitleTimingError(SlideSonnetError):
+    """Subtitles were asked for real (tts) timing the cached audio can't supply.
+
+    Guessing a cue's length from its word count yields a file that looks correct
+    but drifts against the video, so the caller must either generate the audio,
+    name the engine that holds it, or ask for guessed times on purpose.
+    """

@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+- **`subs` no longer invents a timeline when it can't find the audio.** Each
+  voice keeps its own content-addressed cache (the filename embeds the backend
+  and its config hash), but `subs` had no `--engine` flag — so a deck rendered
+  with `export --engine inworld` and then re-subtitled with a plain `subs` looked
+  up kokoro-shaped keys, missed *every* utterance, and silently fell back to a
+  words-per-minute guess. A 150-wpm guess runs ~2 % short of real speech, so the
+  cues drifted ever earlier against the video (≈10 s by the end of an 8-minute
+  deck) in a file that looked perfectly well-formed. `subs` now takes
+  `--engine`, and under `--timing tts` it *refuses* to stand in guessed times,
+  naming how many lines have no audio and which slides they're on; pass
+  `--allow-estimates` (or `--timing estimate`) to opt into guesses on purpose.
+  `cached_durations` returns a `CachedDurations` reporting what it had to
+  estimate instead of blending guesses into the durations. Note that `export`
+  already writes matching subtitles from the very timeline it lays the video
+  out on — a recipe that runs `export` and then `subs` overwrites the good file
+  with an independently computed one, and `subs --help` now says so.
+
 ### Added
 - **Switch decks inside the editor — a deck library, a switcher palette, and
   next/previous-deck keys.** `slidesonnet edit` now opens on a **library** of every

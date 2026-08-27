@@ -171,8 +171,12 @@ def test_synthesize_reports_progress(tmp_path: Path, monkeypatch) -> None:  # ty
 def test_cached_durations_estimates_when_uncached(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
     # Nothing cached: "Hello there." is 2 words -> 2.0 s at 60 wpm; page b has no speech.
-    durations = synth_mod.cached_durations(_deck(), Config(), tmp_path, fallback_wpm=60.0)
-    assert durations == [[2.0], []]
+    cached = synth_mod.cached_durations(_deck(), Config(), tmp_path, fallback_wpm=60.0)
+    assert cached.per_page == [[2.0], []]
+    # ...and it says so, instead of passing the guess off as the real timeline.
+    assert [r.slide_id for r in cached.estimated] == ["a"]
+    assert cached.total == 1
+    assert cached.all_estimated is True
 
 
 def test_cached_durations_probes_cached_audio(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -180,5 +184,28 @@ def test_cached_durations_probes_cached_audio(tmp_path: Path, monkeypatch) -> No
     deck = _deck()
     synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)  # populate the cache
     monkeypatch.setattr(synth_mod, "get_duration", lambda path: 9.9)
-    durations = synth_mod.cached_durations(deck, Config(), tmp_path, fallback_wpm=60.0)
-    assert durations == [[9.9], []]  # real (probed) duration, not the wpm estimate
+    cached = synth_mod.cached_durations(deck, Config(), tmp_path, fallback_wpm=60.0)
+    assert cached.per_page == [[9.9], []]  # real (probed) duration, not the wpm estimate
+    assert cached.estimated == []
+    assert cached.all_estimated is False
+
+
+def test_cached_durations_flags_a_partial_cache(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """One utterance cached, one not: the estimated one must be named."""
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    deck = Deck(
+        pdf_path=Path("x.pdf"),
+        sidecar_path=Path("x.narration"),
+        pages=["a", "b"],
+        narration={
+            "a": PageNarration("a", [Segment.speech("Hello there.")]),
+            "b": PageNarration("b", [Segment.speech("Goodbye now.")]),
+        },
+    )
+    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_ids={"a"})
+    monkeypatch.setattr(synth_mod, "get_duration", lambda path: 9.9)
+    cached = synth_mod.cached_durations(deck, Config(), tmp_path, fallback_wpm=60.0)
+    assert cached.per_page == [[9.9], [2.0]]  # probed, then guessed
+    assert [r.slide_id for r in cached.estimated] == ["b"]
+    assert cached.total == 2
+    assert cached.all_estimated is False

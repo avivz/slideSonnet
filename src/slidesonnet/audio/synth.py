@@ -20,7 +20,12 @@ from slidesonnet.tts import create_tts
 from slidesonnet.tts.base import TTSEngine
 from slidesonnet.video.composer import get_duration
 
-__all__ = ["ProgressFn", "SpeechRef", "SynthResult"]  # ProgressFn re-exported for callers
+__all__ = [
+    "CachedDurations",
+    "ProgressFn",
+    "SpeechRef",
+    "SynthResult",
+]  # ProgressFn re-exported for callers
 
 
 @dataclass(frozen=True)
@@ -213,22 +218,48 @@ def page_speech_durations(
     return out
 
 
+@dataclass(frozen=True)
+class CachedDurations:
+    """Speech durations read from the cache, plus which ones had to be guessed.
+
+    ``per_page`` aligns to ``deck.pages`` (each entry aligned to that page's
+    speech segments). ``estimated`` holds the utterances with no cached audio —
+    their duration is a words/WPM guess, not the real timeline. Callers that
+    promised ``tts`` timing must not pass those off as exact: a guess is ~2 %
+    off per utterance, and the error accumulates into visible subtitle drift.
+    """
+
+    per_page: list[list[float]]
+    estimated: list[SpeechRef]
+    total: int
+
+    @property
+    def all_estimated(self) -> bool:
+        """True when the deck has speech and *none* of it was found in the cache."""
+        return self.total > 0 and len(self.estimated) == self.total
+
+
 def cached_durations(
     deck: Deck,
     config: Config,
     audio_dir: Path,
     *,
     fallback_wpm: float = 150.0,
-) -> list[list[float]]:
+) -> CachedDurations:
     """Per-page speech durations from the cache, estimating any uncached segment.
 
     Never synthesizes — used by ``subs`` so subtitle generation costs nothing.
+    The estimated utterances are reported alongside the durations rather than
+    blended in silently, because a cache lookup misses for mundane reasons (the
+    audio was rendered by a different engine, or never generated) and the
+    resulting timeline is fiction.
     """
     from slidesonnet.timing import estimate_speech_seconds
 
     engines: dict[float, TTSEngine] = {}
     refs = speech_refs(deck, config)
     by_page: dict[int, dict[int, float]] = {}
+    estimated: list[SpeechRef] = []
     for ref in refs:
         engine = engine_for_pace(config.tts, ref.pace, engines)
         target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
@@ -237,6 +268,7 @@ def cached_durations(
             dur = get_duration(cached)
         else:
             dur = estimate_speech_seconds(ref.text, fallback_wpm)
+            estimated.append(ref)
         by_page.setdefault(ref.page_index, {})[ref.speech_index] = dur
 
     out: list[list[float]] = []
@@ -244,7 +276,7 @@ def cached_durations(
         block = deck.page_narration(slide_id)
         page = by_page.get(page_index, {})
         out.append([page.get(i, 0.0) for i in range(len(block.speech_segments))])
-    return out
+    return CachedDurations(per_page=out, estimated=estimated, total=len(refs))
 
 
 def page_speech_clips(

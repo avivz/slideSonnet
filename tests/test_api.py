@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from slidesonnet import api
+from slidesonnet.exceptions import SubtitleTimingError
 from slidesonnet.tts.base import TTSEngine
 from tests.conftest import simple_narration
 
@@ -78,6 +79,24 @@ class _WritingEngine(_FakeEngine):
         return 1.0
 
 
+class _BackendNamedEngine(_FakeEngine):
+    """A fake that keys its cache by the *configured* backend, as real ones do."""
+
+    def __init__(self, backend: str) -> None:
+        self._backend = backend
+
+    def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"RIFFfake")
+        return 3.5
+
+    def name(self) -> str:
+        return self._backend
+
+    def cache_key(self) -> str:
+        return f"{self._backend}-fake"
+
+
 def _narrated_deck(tmp_path: Path) -> Path:
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())
@@ -118,16 +137,60 @@ def test_write_subs_estimate_mode(tmp_path: Path) -> None:
     assert "Hello world from the deck." in text
 
 
-def test_write_subs_tts_mode_estimates_uncached(
+def test_write_subs_tts_refuses_to_guess_uncached_timing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--timing tts`` means *the real audio*; with none cached it must not guess.
+
+    Silently falling back to words/WPM produced a subtitle file indistinguishable
+    from a correct one but ~2 % short, so cues drifted ever earlier against the
+    video. Refusing is the only outcome the caller can notice.
+    """
+    monkeypatch.setattr("slidesonnet.audio.synth.create_tts", lambda cfg: _FakeEngine())
+    pdf = _narrated_deck(tmp_path)
+    out = tmp_path / "marked.srt"
+    with pytest.raises(SubtitleTimingError) as exc:
+        api.write_subs(pdf, out, timing="tts")
+    assert "1 of 1" in str(exc.value)
+    assert not out.exists()  # no half-truth left on disk
+
+
+def test_write_subs_allow_estimates_writes_and_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr("slidesonnet.audio.synth.create_tts", lambda cfg: _FakeEngine())
     pdf = _narrated_deck(tmp_path)
     out = tmp_path / "marked.srt"
-    assert api.write_subs(pdf, out, timing="tts") == out
+    with caplog.at_level("WARNING"):
+        assert api.write_subs(pdf, out, timing="tts", allow_estimates=True) == out
     text = out.read_text(encoding="utf-8")
     assert "Hello world from the deck." in text
     assert "-->" in text
+    assert "1 of 1" in caplog.text  # the degradation is loud, not silent
+
+
+def test_write_subs_engine_override_finds_that_engines_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reported bug: audio rendered by one engine, subtitles asked of another.
+
+    Cache filenames embed the backend name and config hash, so a kokoro-keyed
+    lookup can never see an inworld-synthesized clip. Without ``engine=`` the
+    lookup misses every utterance; with it, the same cache resolves.
+    """
+    monkeypatch.setattr(
+        "slidesonnet.audio.synth.create_tts", lambda cfg: _BackendNamedEngine(cfg.backend)
+    )
+    monkeypatch.setattr("slidesonnet.audio.synth.get_duration", lambda path: 3.5)
+    pdf = _narrated_deck(tmp_path)
+    api.synthesize_deck(pdf, engine="inworld")  # what `export --engine inworld` leaves behind
+
+    with pytest.raises(SubtitleTimingError):
+        api.write_subs(pdf, tmp_path / "mismatched.srt", timing="tts")
+
+    out = tmp_path / "matched.srt"
+    assert api.write_subs(pdf, out, timing="tts", engine="inworld") == out
+    assert "00:00:03" in out.read_text(encoding="utf-8")  # the 3.5 s clip, not a guess
 
 
 def _timeline_for(pdf: Path) -> tuple[object, object]:

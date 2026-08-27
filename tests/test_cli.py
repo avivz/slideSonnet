@@ -348,6 +348,9 @@ def test_subs_passes_options_and_prints_path(
             "slide",
             "--timing",
             "estimate",
+            "--engine",
+            "inworld",
+            "--allow-estimates",
         ],
     )
     assert result.exit_code == 0
@@ -355,6 +358,10 @@ def test_subs_passes_options_and_prints_path(
     assert seen["fmt"] == "vtt"
     assert seen["sub_granularity"] == "slide"
     assert seen["timing"] == "estimate"
+    # subs must be able to name the engine the audio was rendered with (its cache
+    # key embeds the backend), and to opt back into guessed times explicitly.
+    assert seen["engine"] == "inworld"
+    assert seen["allow_estimates"] is True
 
 
 def test_subs_reports_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -94,6 +94,27 @@ def test_centered_transition_with_audio_muxes_track(tmp_path: Path) -> None:
     assert get_duration(out_wipe) == pytest.approx(get_duration(out_cut), abs=0.2)
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("kokoro") is None,
+    reason="kokoro not installed",
+)
+def test_export_and_subs_write_identical_subtitles(tmp_path: Path) -> None:
+    """`export` and a follow-up `subs` must agree byte-for-byte on a warm cache.
+
+    They reach the timeline by different routes — export from the synthesis
+    results it is about to concatenate, subs by re-resolving each clip from the
+    cache — and a recipe that runs both would otherwise overwrite the good file
+    with a disagreeing one.
+    """
+    pdf = _prep(tmp_path)
+    result = api.export(pdf, tmp_path / "out.mp4", engine="kokoro", subtitles="srt")
+    exported = result.subtitles[0].read_text(encoding="utf-8")
+
+    standalone = tmp_path / "standalone.srt"
+    api.write_subs(pdf, standalone, engine="kokoro")
+    assert standalone.read_text(encoding="utf-8") == exported
+
+
 def test_subs_estimate_no_render(tmp_path: Path) -> None:
     pdf = _prep(tmp_path)
     out = tmp_path / "out.srt"

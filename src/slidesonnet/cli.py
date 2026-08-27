@@ -107,7 +107,7 @@ def main(
       check   deck.pdf                     reconcile sidecar ids against the PDF
       tts     deck.pdf [--engine ...]      synthesize narration into the cache
       export  deck.pdf -o OUT.mp4          render the narrated (or silent) video
-      subs    deck.pdf -o OUT.srt          write subtitles without rendering video
+      subs    deck.pdf -o OUT.srt          subtitles alone (export already writes them)
       edit    deck.pdf                     launch the NiceGUI editor
       clean   deck.pdf [--keep ...]        prune the audio/render cache
       doctor                               check installed dependencies
@@ -305,6 +305,7 @@ def export(
     "-o", "--output", required=True, type=click.Path(path_type=Path), help="Output subtitle file"
 )
 @_NARRATION_OPT
+@_ENGINE_OPT
 @click.option(
     "--format", "fmt", type=click.Choice(["srt", "vtt"]), default="srt", show_default=True
 )
@@ -316,18 +317,32 @@ def export(
 )
 @click.option("--timing", default="tts", show_default=True, help="tts | estimate | fixed:N")
 @click.option("--wpm", default=150.0, show_default=True)
+@click.option(
+    "--allow-estimates",
+    is_flag=True,
+    help="Under --timing tts, guess times for lines with no generated audio "
+    "(they won't match the video)",
+)
 @click.pass_context
 def subs(
     ctx: click.Context,
     pdf: Path,
     output: Path,
     narration: Path | None,
+    engine: str | None,
     fmt: str,
     sub_granularity: str,
     timing: str,
     wpm: float,
+    allow_estimates: bool,
 ) -> None:
-    """Write subtitles without rendering video (cached audio durations, else timing model)."""
+    """Write subtitles without rendering video, timed against the generated audio.
+
+    Pass the same --engine the video was rendered with: each voice keeps its own
+    audio cache, so subtitles asked of a different one have nothing to measure.
+    Rendering with `export` already writes matching subtitles — prefer those over
+    re-deriving them here.
+    """
     from slidesonnet.api import write_subs
 
     _attach_deck_logging(ctx, pdf)
@@ -340,6 +355,8 @@ def subs(
             timing=timing,
             wpm=wpm,
             sidecar_path=narration,
+            engine=engine,  # type: ignore[arg-type]
+            allow_estimates=allow_estimates,
         )
     click.echo(str(path))
 
