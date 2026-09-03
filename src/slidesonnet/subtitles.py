@@ -107,10 +107,12 @@ def _split_at_midpoint(text: str, max_chars: int) -> list[str]:
 def _format_timestamp(seconds: float, *, sep: str) -> str:
     if seconds < 0:
         seconds = 0.0
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = round((seconds - int(seconds)) * 1000)
+    # Round to whole milliseconds FIRST, then split: rounding the fractional part on
+    # its own could yield 1000 ms and print an invalid "…,1000" stamp.
+    total_ms = round(seconds * 1000)
+    hours, rem = divmod(total_ms, 3_600_000)
+    minutes, rem = divmod(rem, 60_000)
+    secs, millis = divmod(rem, 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d}{sep}{millis:03d}"
 
 

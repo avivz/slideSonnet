@@ -117,3 +117,12 @@ def test_timestamp_hours_and_millis() -> None:
 def test_empty_entries() -> None:
     assert format_srt([]) == ""
     assert format_vtt([]).strip() == "WEBVTT"
+
+
+def test_format_timestamp_carries_rounded_millis_into_seconds() -> None:
+    """299.9996s used to render as 00:04:59,1000 — an invalid SRT stamp."""
+    from slidesonnet.subtitles import _format_timestamp
+
+    assert _format_timestamp(299.9996, sep=",") == "00:05:00,000"
+    assert _format_timestamp(3599.9995, sep=".") == "01:00:00.000"
+    assert _format_timestamp(1.2346, sep=",") == "00:00:01,235"
