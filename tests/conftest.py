@@ -103,6 +103,26 @@ class _GuardedInworld:
 
 
 @pytest.fixture(autouse=True)
+def _no_pool_env() -> Iterator[None]:
+    """Keep ``SLIDESONNET_AUDIO_DIR`` out of every test unless it sets it itself.
+
+    The CLI's ``--audio-dir`` writes the variable into ``os.environ`` for the
+    process (that's how every resolver sees it), so a CLI test would otherwise
+    leave a pool pinned for the tests collected after it — and a developer's
+    own shell export would silently redirect the suite's clips.
+    """
+    import os
+
+    from slidesonnet.cache import AUDIO_DIR_ENV
+
+    saved = os.environ.pop(AUDIO_DIR_ENV, None)
+    yield
+    os.environ.pop(AUDIO_DIR_ENV, None)
+    if saved is not None:
+        os.environ[AUDIO_DIR_ENV] = saved
+
+
+@pytest.fixture(autouse=True)
 def _no_real_inworld(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Make a real Inworld call impossible from any test.
 

@@ -179,3 +179,25 @@ def test_example_deck_pronunciation_is_wired(deck: str) -> None:
     """
     cfg = load_config(EXAMPLES / deck)
     assert cfg.pronunciation, f"{deck}: no pronunciation entries loaded"
+
+
+def test_cache_audio_dir_is_relative_to_the_toml(tmp_path: Path) -> None:
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[cache]\naudio_dir = "../shared-audio"\n', encoding="utf-8"
+    )
+    cfg = load_config(tmp_path / "deck.pdf")
+    assert cfg.audio_dir == (tmp_path / ".." / "shared-audio").resolve()
+
+
+def test_cache_audio_dir_expands_tilde(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[cache]\naudio_dir = "~/.cache/slidesonnet/aicode"\n', encoding="utf-8"
+    )
+    cfg = load_config(tmp_path / "deck.pdf")
+    assert cfg.audio_dir == tmp_path / ".cache" / "slidesonnet" / "aicode"
+
+
+def test_no_cache_table_means_no_pool(tmp_path: Path) -> None:
+    (tmp_path / "slidesonnet.toml").write_text("[video]\nfps = 30\n", encoding="utf-8")
+    assert load_config(tmp_path / "deck.pdf").audio_dir is None

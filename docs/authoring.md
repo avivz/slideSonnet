@@ -118,6 +118,11 @@ voice = "af_heart"
 [video]
 resolution = "1920x1080"
 fps = 24
+keep_scratch = false         # true: keep render intermediates after export (debugging);
+                             # same as `export --keep-scratch` for one run
+
+[cache]
+audio_dir = "~/.cache/slidesonnet/aicode"   # shared speech-clip pool (see below)
 
 [voices.narrator]            # named voice → per-backend voice id
 kokoro = "af_heart"
@@ -127,3 +132,37 @@ pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
 
 Place it next to the deck; it's auto-discovered. With no config, sensible defaults
 (Kokoro, 1080p) apply.
+
+### Sharing speech clips across checkouts (`[cache] audio_dir`)
+
+Synthesized clips are content-addressed (text + voice + engine settings), so one
+directory can safely serve every deck of a course — and every git worktree of
+it. By default clips live in `<deck dir>/.slidesonnet/audio/`, which a fresh
+worktree starts without, so it would re-synthesize (and, on Inworld, re-buy)
+lines the main checkout already has. Point every checkout at one **pool**
+instead. Where a deck's pool is comes from, first match wins:
+
+1. `slidesonnet --audio-dir DIR <command>` — for one run;
+2. `SLIDESONNET_AUDIO_DIR` — a shell export, or a `.env` beside the deck;
+3. `[cache] audio_dir` in `slidesonnet.toml` — `~` expands, a relative path is
+   relative to the toml;
+4. the default `<deck dir>/.slidesonnet/audio/`.
+
+Only the clips move; render scratch stays per deck. `slidesonnet pool status
+deck.pdf` shows which pool a deck resolves to and why. Switching loses nothing:
+the first time a deck is used with a pool, clips still in its old local cache
+are copied in, and `slidesonnet pool migrate --root <course> --apply` does the
+whole course in one go (copy into the pool, then remove the local folders; a dry
+run without `--apply`).
+
+Two things change once clips are shared:
+
+- **`slidesonnet clean deck.pdf` never touches the pool.** A clip this deck no
+  longer says may be one another deck still needs, so per-deck clean only
+  removes the deck's own render scratch, logs, and (after copying them into the
+  pool) any leftover local clips.
+- **`slidesonnet pool prune --root <course>` prunes the pool** with every deck
+  under the root in view: a clip is kept if *any* deck still uses it. It is a
+  dry run until you add `--apply`. Orphans from paid or slow engines (Inworld,
+  Qwen3) are moved to `<pool>/trash/`, not deleted — move one back to restore
+  it, or `--empty-trash` to let them go. Cheap Kokoro orphans are deleted.

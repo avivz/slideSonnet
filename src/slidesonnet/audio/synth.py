@@ -8,11 +8,12 @@ cache key, so pace changes invalidate correctly).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from slidesonnet.config import Config
-from slidesonnet.hashing import audio_cache_path_or_alt, audio_path
+from slidesonnet.hashing import audio_cache_path_or_alt, audio_path, parse_audio_filename
 from slidesonnet.models import ProgressFn, TTSConfig, resolve_voice
 from slidesonnet.narration.format import pace_to_speed
 from slidesonnet.narration.model import Deck, Pace
@@ -26,6 +27,9 @@ __all__ = [
     "SpeechRef",
     "SynthResult",
 ]  # ProgressFn re-exported for callers
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -130,7 +134,44 @@ def synthesize(
         if progress is not None:
             progress(ref.slide_id, i + 1, len(refs))
 
+    _record_index(audio_dir, deck, refs, results)
     return results
+
+
+def _record_index(
+    audio_dir: Path,
+    deck: Deck,
+    refs: list[SpeechRef],
+    results: dict[tuple[str, int], SynthResult],
+) -> None:
+    """Append (clip, deck) pairs the pool's advisory index doesn't have yet.
+
+    Purely descriptive — ``pool prune`` reads it to *describe* orphans (text
+    snippet, last deck), never to decide their fate. Appending only unseen
+    pairs keeps the file bounded by clips × decks. Any failure is logged and
+    swallowed: an index hiccup must never fail a synthesis.
+    """
+    from slidesonnet.pool import IndexRecord, append_index, load_index, snippet, today
+
+    try:
+        known = load_index(audio_dir)
+        deck_key = str(deck.pdf_path.resolve())
+        stamp = today()
+        fresh: list[IndexRecord] = []
+        for ref in refs:
+            result = results.get((ref.slide_id, ref.speech_index))
+            if result is None:
+                continue
+            name = result.path.name
+            entry = known.get(name)
+            if entry is not None and deck_key in entry.decks:
+                continue
+            parsed = parse_audio_filename(name)
+            backend = parsed[1] if parsed else ""
+            fresh.append(IndexRecord(name, snippet(ref.text), ref.voice, backend, deck_key, stamp))
+        append_index(audio_dir, fresh)
+    except Exception:  # pragma: no cover - defensive; the index is advisory
+        logger.warning("could not update the clip index in %s", audio_dir, exc_info=True)
 
 
 def _ref_targets(deck: Deck, config: Config, audio_dir: Path) -> list[tuple[SpeechRef, Path]]:

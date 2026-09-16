@@ -4,6 +4,14 @@ nothing — remove the entire .slidesonnet cache
 api     — keep cloud (paid, e.g. Inworld) audio, drop local Kokoro audio + renders
 current — keep audio for the current sidecar text (any engine), drop orphans + renders
 exact   — keep only audio matching the current text + active TTS config
+
+When the deck's clips live in a **shared pool** (``[cache] audio_dir`` or
+``SLIDESONNET_AUDIO_DIR``, see :mod:`slidesonnet.cache`), the audio levels above
+are meaningless for one deck: a clip this deck no longer says may be exactly the
+one another deck still needs. A per-deck clean then touches only the deck's own
+``.slidesonnet/`` (renders, logs, and any legacy local clips after copying them
+into the pool) and reports the pool it left alone. Pruning the pool itself is
+:mod:`slidesonnet.pool`'s job, which considers every deck at once.
 """
 
 from __future__ import annotations
@@ -15,7 +23,13 @@ from pathlib import Path
 from typing import Literal
 
 from slidesonnet.audio.synth import engine_for_pace
-from slidesonnet.cache import audio_dir, cache_root, render_dir
+from slidesonnet.cache import (
+    adopt_legacy_audio,
+    cache_root,
+    default_audio_dir,
+    render_dir,
+    resolve_audio_dir,
+)
 from slidesonnet.config import Config, load_config
 from slidesonnet.deck import load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
@@ -34,6 +48,8 @@ class CleanResult:
     removed_files: int = 0
     removed_bytes: int = 0
     kept_files: int = 0
+    #: The shared pool this clean deliberately did not touch (None = no pool).
+    pool: Path | None = None
 
     @property
     def removed_mb(self) -> float:
@@ -53,31 +69,60 @@ def _count_dir(path: Path) -> tuple[int, int]:
 
 
 def clean(pdf_path: Path, keep: KeepLevel = "api") -> CleanResult:
-    """Clean the deck's cache with the given preservation level."""
+    """Clean the deck's cache with the given preservation level.
+
+    With a shared pool configured, only the deck's own ``.slidesonnet/`` is
+    touched (see the module docstring) and the result names the pool.
+    """
     root = cache_root(pdf_path)
     if not root.exists():
         return CleanResult()
 
     files_before, bytes_before = _count_dir(root)
+    res = resolve_audio_dir(pdf_path, load_config(pdf_path))
 
     if keep == "nothing":
+        if res.shared:
+            adopt_legacy_audio(pdf_path, res.path)  # never lose a clip the pool lacks
         shutil.rmtree(root)
+    elif res.shared:
+        _remove_logs(pdf_path)
+        _remove_renders(pdf_path)
+        retire_legacy_audio(pdf_path, res.path)
     else:
         _remove_logs(pdf_path)
         _remove_renders(pdf_path)
         if keep == "api":
             _keep_api(pdf_path)
         elif keep == "current":
-            _keep_hashes(pdf_path, _current_text_hashes(pdf_path))
+            _keep_hashes(pdf_path, current_text_hashes(pdf_path))
         elif keep == "exact":
-            _keep_filenames(pdf_path, _current_filenames(pdf_path))
+            _keep_filenames(pdf_path, current_filenames(pdf_path))
 
     files_after, bytes_after = _count_dir(root)
     return CleanResult(
         removed_files=files_before - files_after,
         removed_bytes=bytes_before - bytes_after,
         kept_files=files_after,
+        pool=res.path if res.shared else None,
     )
+
+
+def retire_legacy_audio(pdf_path: Path, pool: Path) -> int:
+    """Move the deck-local clips into the pool: copy, then drop the local dir.
+
+    Adoption copies every recognizable clip that the pool lacks, so removing
+    the local dir afterwards loses nothing recognizable; unrecognized files
+    (never clips) go with it, as they would under any clean. Returns how many
+    clips the pool gained. Used by per-deck ``clean`` in pool mode and by
+    ``pool migrate`` for a whole course.
+    """
+    legacy = default_audio_dir(pdf_path)
+    if not legacy.is_dir():
+        return 0
+    adopted = adopt_legacy_audio(pdf_path, pool)
+    shutil.rmtree(legacy)
+    return adopted
 
 
 def prune_local_orphans(pdf_path: Path) -> CleanResult:
@@ -93,11 +138,15 @@ def prune_local_orphans(pdf_path: Path) -> CleanResult:
     unrecognized filenames are kept — an automatic, silent sweep should only
     delete clips it is certain it produced and that are trivial to remake.
     """
-    ad = audio_dir(pdf_path)
+    res = resolve_audio_dir(pdf_path, load_config(pdf_path))
+    if res.shared:
+        # Another deck on the pool may still say what this one just edited away.
+        return CleanResult(pool=res.path)
+    ad = res.path
     if not ad.exists():
         return CleanResult()
 
-    current = _current_text_hashes(pdf_path)
+    current = current_text_hashes(pdf_path)
     result = CleanResult()
     for f in ad.iterdir():
         if not f.is_file():
@@ -132,7 +181,7 @@ def _remove_renders(pdf_path: Path) -> None:
 
 
 def _keep_api(pdf_path: Path) -> None:
-    ad = audio_dir(pdf_path)
+    ad = default_audio_dir(pdf_path)
     if not ad.exists():
         return
     for f in ad.iterdir():
@@ -145,7 +194,7 @@ def _keep_api(pdf_path: Path) -> None:
 
 
 def _keep_hashes(pdf_path: Path, hashes: set[str]) -> None:
-    ad = audio_dir(pdf_path)
+    ad = default_audio_dir(pdf_path)
     if not ad.exists():
         return
     for f in ad.iterdir():
@@ -158,7 +207,7 @@ def _keep_hashes(pdf_path: Path, hashes: set[str]) -> None:
 
 
 def _keep_filenames(pdf_path: Path, filenames: set[str]) -> None:
-    ad = audio_dir(pdf_path)
+    ad = default_audio_dir(pdf_path)
     if not ad.exists():
         return
     for f in ad.iterdir():
@@ -192,7 +241,7 @@ def _speech_plan(
     return config, rows, voices
 
 
-def _current_text_hashes(pdf_path: Path) -> set[str]:
+def current_text_hashes(pdf_path: Path) -> set[str]:
     """text_hashes for current utterances across all backends (engine-agnostic).
 
     A named preset contributes every per-backend voice id it maps to (plus the
@@ -213,7 +262,7 @@ def _current_text_hashes(pdf_path: Path) -> set[str]:
     return hashes
 
 
-def _current_filenames(pdf_path: Path) -> set[str]:
+def current_filenames(pdf_path: Path) -> set[str]:
     """Expected audio filenames for the current text + active engine config.
 
     Mirrors the synthesis path: a paced utterance embeds its multiplied speed

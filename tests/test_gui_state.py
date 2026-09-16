@@ -1073,3 +1073,20 @@ def test_editing_one_block_leaves_the_other_raw(tmp_path: Path) -> None:
     assert "    text: Hello from slide a,\n      wrapped by hand.\n" in text
     # the comment above the edited block survives, the body is canonical
     assert "# slide b is the punchline\n@b\n  utterance:\n    text: Goodbye, rewritten.\n" in text
+
+
+def test_gui_export_keeps_render_scratch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The editor's preview player streams ``track.wav`` from the render dir, so
+    an export launched from the GUI must not delete it out from under playback."""
+    from slidesonnet.gui import state as state_mod
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    captured: dict[str, object] = {}
+
+    def fake_export(pdf: Path, output: Path, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(state_mod.api, "export", fake_export)
+    state.export(tmp_path / "out.mp4")
+    assert captured.get("keep_scratch") is True

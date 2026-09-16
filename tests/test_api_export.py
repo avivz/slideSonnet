@@ -142,3 +142,107 @@ def test_build_preview_only_id_restricts_synthesis_and_cues(
     preview = api.build_preview(pdf, only_id="euler-setup")
     assert pipeline["synth"][0]["only_ids"] == {"euler-setup"}
     assert [sid for _, sid in preview.cues] == ["euler-setup"]
+
+
+def test_export_leaves_an_unchanged_subtitle_file_untouched(
+    tmp_path: Path, pipeline: dict[str, Any]
+) -> None:
+    """A re-render whose narration didn't move must not rewrite the .srt/.vtt.
+
+    Downstream build graphs (make, watchers, rsync) key freshness on mtime; an
+    unconditional rewrite marks every derived artifact stale after a slide-only
+    re-render even though the subtitles are byte-identical.
+    """
+    import os
+
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    first = api.export(pdf, tmp_path / "a.mp4", subtitles="both")
+    old_stamp = 1_000_000_000  # well in the past, so a rewrite is unmistakable
+    for p in first.subtitles:
+        os.utime(p, (old_stamp, old_stamp))
+
+    again = api.export(pdf, tmp_path / "a.mp4", subtitles="both")
+    assert again.subtitles == first.subtitles  # still reported as outputs
+    for p in again.subtitles:
+        assert p.stat().st_mtime == old_stamp, f"{p.name} was rewritten with identical content"
+
+
+def test_export_rewrites_a_subtitle_file_whose_content_changed(
+    tmp_path: Path, pipeline: dict[str, Any]
+) -> None:
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    result = api.export(pdf, tmp_path / "a.mp4")
+    srt = result.subtitles[0]
+    srt.write_text("stale\n", encoding="utf-8")
+    api.export(pdf, tmp_path / "a.mp4")
+    assert srt.read_text(encoding="utf-8") != "stale\n"
+
+
+def _seed_scratch(pdf: Path) -> dict[str, Path]:
+    """Lay down every kind of render scratch an export leaves behind."""
+    from slidesonnet.cache import render_dir
+
+    rd = render_dir(pdf)
+    files = {
+        "page_wav": rd / "page-0001.wav",
+        "track": rd / "track.wav",
+        "manifest": rd / "track.cache.json",
+        "silence": rd / "silence" / "2.0000s.wav",
+        "segment": rd / "segments" / "seg-0001.mp4",
+        "silent_video": rd / "silent.mp4",
+        "page_png": rd / "pages" / "page-1.png",
+    }
+    for p in files.values():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"x")
+    return files
+
+
+def test_export_prunes_render_scratch_but_keeps_page_images(
+    tmp_path: Path, pipeline: dict[str, Any]
+) -> None:
+    """PCM page audio, the assembled track, silences, and per-slide clips exist
+    only to feed ffmpeg once; a successful export drops them (~10× the size of
+    the audio they came from). Page images stay — the editor filmstrip and the
+    next export reuse them."""
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    files = _seed_scratch(pdf)
+    api.export(pdf, tmp_path / "out.mp4")
+    assert files["page_png"].exists()
+    gone = {k for k, p in files.items() if not p.exists()}
+    assert gone == {"page_wav", "track", "manifest", "silence", "segment", "silent_video"}
+
+
+def test_export_keep_scratch_argument_preserves_everything(
+    tmp_path: Path, pipeline: dict[str, Any]
+) -> None:
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    files = _seed_scratch(pdf)
+    api.export(pdf, tmp_path / "out.mp4", keep_scratch=True)
+    assert all(p.exists() for p in files.values())
+
+
+def test_export_keep_scratch_config_key_preserves_everything(
+    tmp_path: Path, pipeline: dict[str, Any]
+) -> None:
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    (pdf.parent / "slidesonnet.toml").write_text("[video]\nkeep_scratch = true\n", encoding="utf-8")
+    files = _seed_scratch(pdf)
+    api.export(pdf, tmp_path / "out.mp4")
+    assert all(p.exists() for p in files.values())
+
+
+def test_export_leaves_scratch_when_compose_fails(
+    tmp_path: Path, pipeline: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed render keeps its intermediates for debugging."""
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    files = _seed_scratch(pdf)
+
+    def boom(*args: Any, **kwargs: Any) -> Path:
+        raise RuntimeError("ffmpeg exploded")
+
+    monkeypatch.setattr("slidesonnet.render.compose_video", boom)
+    with pytest.raises(RuntimeError):
+        api.export(pdf, tmp_path / "out.mp4")
+    assert all(p.exists() for p in files.values())

@@ -16,10 +16,14 @@ Example ``slidesonnet.toml``::
     [video]
     resolution = "1920x1080"
     fps = 24
+    keep_scratch = false   # true: keep render intermediates after export (debugging)
 
     [voices.narrator]
     kokoro = "af_heart"
     inworld = "Ashley"
+
+    [cache]
+    audio_dir = "~/.cache/slidesonnet/aicode"   # shared speech-clip pool (see cache.py)
 
     [logging]
     file = ".slidesonnet/slidesonnet.log"  # or false to disable the run log
@@ -59,6 +63,10 @@ class Config:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     pronunciation_files: list[Path] = field(default_factory=list)
     pronunciation: dict[str, str] = field(default_factory=dict)
+    #: ``[cache] audio_dir`` — a speech-clip pool shared by every deck (and every
+    #: checkout) pointed at it. ``None`` keeps clips under the deck's own
+    #: ``.slidesonnet/audio/``. The env var ``SLIDESONNET_AUDIO_DIR`` overrides it.
+    audio_dir: Path | None = None
 
     def apply_pronunciation(self, text: str) -> str:
         """Apply the merged pronunciation dictionary to *text*."""
@@ -92,6 +100,7 @@ def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
         voices=_parse_voices(raw.get("voices", {})),
         logging=_parse_logging(raw.get("logging", {}), cfg_dir),
         pronunciation_files=[cfg_dir / p for p in raw.get("pronunciation", [])],
+        audio_dir=_parse_cache(raw.get("cache", {}), cfg_dir),
     )
     # The Qwen3 voice prompt is a file path; resolve it relative to the config
     # so a deck stays portable (paths in the toml are relative to the toml).
@@ -140,10 +149,22 @@ def _parse_video(raw: dict[str, Any]) -> VideoConfig:
         ("preset", str),
         ("pre_silence", float),
         ("tail_seconds", float),
+        ("keep_scratch", bool),
     ):
         if key in raw:
             kwargs[key] = cast(raw[key])
     return VideoConfig(**kwargs)
+
+
+def _parse_cache(raw: dict[str, Any], cfg_dir: Path) -> Path | None:
+    """``[cache] audio_dir``: ``~`` expands; a relative path is relative to the toml."""
+    value = raw.get("audio_dir")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("slidesonnet.toml [cache]: audio_dir must be a non-empty path string")
+    path = Path(value).expanduser()
+    return (path if path.is_absolute() else cfg_dir / path).resolve()
 
 
 def _parse_logging(raw: dict[str, Any], cfg_dir: Path) -> LoggingConfig:

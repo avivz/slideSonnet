@@ -91,18 +91,30 @@ def build_page_audio(
     """Render one page's full audio (lead + segments + tail). Returns its duration."""
     pieces = page_pieces(timing, speech_clips)
     paths: list[Path] = []
-    for i, piece in enumerate(pieces):
+    for piece in pieces:
         if piece.kind == "speech":
             assert piece.path is not None
             paths.append(piece.path)
         else:
-            sil = silence_dir / f"{out_path.stem}_sil{i}.wav"
-            make_silence(piece.seconds, sil)
-            paths.append(sil)
+            paths.append(_shared_silence(piece.seconds, silence_dir))
     if not paths:  # empty page — emit a hair of silence so the stream exists
-        paths.append(make_silence(0.05, silence_dir / f"{out_path.stem}_empty.wav"))
+        paths.append(_shared_silence(0.05, silence_dir))
     concatenate_audio(paths, out_path)
     return get_duration(out_path)
+
+
+def _shared_silence(seconds: float, silence_dir: Path) -> Path:
+    """The one silence file for *seconds*, made on first use and reused after.
+
+    Named by duration rather than by page: a deck has only a handful of distinct
+    gap lengths, so one file per length replaces one per pause per page. The name
+    carries the same 4-decimal precision :func:`make_silence` hands ffmpeg, so
+    two durations that would render identically map to the same file.
+    """
+    path = silence_dir / f"{max(seconds, 0.001):.4f}s.wav"
+    if not path.exists():
+        make_silence(seconds, path)
+    return path
 
 
 def assemble_track(page_audios: list[Path], out_path: Path) -> float:

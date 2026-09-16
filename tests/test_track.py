@@ -134,6 +134,43 @@ class TestBuildPageAudio:
         assert paths[1] == clip  # lead silence, clip, pause, tail
         assert len(paths) == 4
 
+    def test_equal_silences_share_one_file_across_pages(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Silence is named by duration, not by page, and generated once.
+
+        A course's render scratch held ~2,900 per-page silence files with only
+        ten distinct contents. One file per distinct length is all ffmpeg needs.
+        """
+        clip = tmp_path / "clip.wav"
+        made: list[Path] = []
+
+        def fake_silence(seconds: float, path: Path) -> Path:
+            made.append(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"wav")
+            return path
+
+        concatenated: list[list[Path]] = []
+        monkeypatch.setattr("slidesonnet.audio.track.make_silence", fake_silence)
+        monkeypatch.setattr(
+            "slidesonnet.audio.track.concatenate_audio",
+            lambda paths, out: concatenated.append(list(paths)),
+        )
+        monkeypatch.setattr("slidesonnet.audio.track.get_duration", lambda p: 1.0)
+
+        sil = tmp_path / "sil"
+        timing = _timing([Segment.speech("Hi."), Segment.pause(2.0)], durations=[1.0], lead=0.3)
+        build_page_audio(timing, [clip], tmp_path / "page-0001.wav", silence_dir=sil)
+        build_page_audio(timing, [clip], tmp_path / "page-0002.wav", silence_dir=sil)
+
+        # Two pages, two distinct lengths (0.3 s lead, 2 s pause) → two files, made once each.
+        assert len(made) == 2
+        assert {p.parent for p in made} == {sil}
+        assert concatenated[0][0] == concatenated[1][0]  # same 0.3 s lead file on both pages
+        assert concatenated[0][2] == concatenated[1][2]  # same 2 s pause file on both pages
+        assert all("page" not in p.name for p in made)  # not positional
+
     def test_empty_page_emits_minimal_silence(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

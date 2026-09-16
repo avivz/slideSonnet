@@ -383,3 +383,61 @@ def test_keep_exact_missing_audio_dir_and_subdirs(tmp_path: Path) -> None:
     (sub / "stray.wav").write_bytes(b"s")
     clean(pdf, keep="exact")
     assert (sub / "stray.wav").exists()
+
+
+# ---- shared pool: per-deck clean never reaches into it -------------------------
+
+
+def _pooled_deck(tmp_path: Path) -> tuple[Path, Path]:
+    pdf = _seed(tmp_path)  # local audio + render dir seeded
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    (pool / "eeee.inworld.ffff.mp3").write_bytes(b"other deck's paid clip")
+    (tmp_path / "slidesonnet.toml").write_text(
+        f'[cache]\naudio_dir = "{pool.as_posix()}"\n', encoding="utf-8"
+    )
+    return pdf, pool
+
+
+def test_clean_in_pool_mode_touches_scratch_only_and_reports_the_pool(tmp_path: Path) -> None:
+    pdf, pool = _pooled_deck(tmp_path)
+    log = cache_root(pdf) / "slidesonnet.log"
+    log.write_text("log", encoding="utf-8")
+    result = clean(pdf, keep="current")  # would sweep a private cache; here it can't
+    assert result.pool == pool
+    assert (pool / "eeee.inworld.ffff.mp3").exists()
+    assert not render_dir(pdf).exists()
+    assert not log.exists()
+
+
+def test_clean_in_pool_mode_adopts_then_drops_the_legacy_local_audio(tmp_path: Path) -> None:
+    """Clips left in the old deck-local cache are moved into the pool on clean,
+    so nothing paid is lost and the duplicate stops taking space."""
+    pdf, pool = _pooled_deck(tmp_path)
+    clean(pdf, keep="api")
+    assert (pool / "cccc.inworld.dddd.mp3").exists()
+    assert (pool / "aaaa.kokoro.bbbb.wav").exists()
+    assert not audio_dir(pdf).exists()  # the pool
+    assert not (cache_root(pdf) / "audio").exists()  # the legacy local dir
+
+
+def test_clean_keep_nothing_in_pool_mode_removes_only_the_local_cache(tmp_path: Path) -> None:
+    pdf, pool = _pooled_deck(tmp_path)
+    result = clean(pdf, keep="nothing")
+    assert not cache_root(pdf).exists()
+    assert (pool / "eeee.inworld.ffff.mp3").exists()
+    assert result.pool == pool
+
+
+def test_prune_local_orphans_is_a_noop_in_pool_mode(tmp_path: Path) -> None:
+    pdf = _seed_deck(tmp_path)
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    orphan = pool / audio_filename("Some other deck's line.", "kokoro", "kokoro:am_echo")
+    orphan.write_bytes(b"a")
+    (tmp_path / "slidesonnet.toml").write_text(
+        f'[cache]\naudio_dir = "{pool.as_posix()}"\n', encoding="utf-8"
+    )
+    result = prune_local_orphans(pdf)
+    assert orphan.exists()
+    assert result.removed_files == 0

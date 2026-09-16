@@ -5,6 +5,54 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **A shared speech-clip pool (`[cache] audio_dir`, `SLIDESONNET_AUDIO_DIR`,
+  `--audio-dir`).** Clips are content-addressed, so one directory can serve
+  every deck of a course and every git worktree of it — but their *location*
+  was pinned to `<deck dir>/.slidesonnet/audio/`, so a fresh worktree started
+  empty and re-bought Inworld lines the main checkout already had. The pool can
+  now be set per run (`--audio-dir`), per shell/`.env` (the env var), or per
+  toml (`[cache] audio_dir`, `~` and toml-relative paths). Only clips move;
+  render scratch stays per deck. `slidesonnet pool status` shows which pool a
+  deck resolves to and why. Clips left in a deck's old local cache are copied
+  into the pool the first time the deck is used with it; `slidesonnet pool
+  migrate --root <course> --apply` moves a whole course's local caches in one
+  go (dry run without `--apply`).
+- **`slidesonnet pool prune`** — mark-and-sweep pruning of a pool against
+  *every* deck that uses it (`--root <course>`, repeatable, plus explicit decks):
+  a clip is kept if any deck still says its line. Dry run unless `--apply`.
+  Orphans from paid or slow engines (Inworld, Qwen3) are quarantined in
+  `<pool>/trash/` rather than deleted (`--empty-trash` for the second step); a
+  small advisory index (`<pool>/index.jsonl`, appended on synthesis) lets the
+  dry run say what each orphan said and which deck last used it, instead of a
+  bare hash. A deck that fails to load aborts the plan rather than counting as
+  "uses nothing".
+- **`export --keep-scratch` / `[video] keep_scratch`.** See *Changed*.
+
+### Changed
+- **Per-deck `clean` never reaches into a shared pool.** With a pool configured,
+  `clean deck.pdf` removes only the deck's own render scratch, logs, and leftover
+  local clips (after copying them into the pool), whatever `--keep` says, and
+  tells you so; `--keep nothing` deletes the deck's `.slidesonnet/` and nothing
+  else. The silent on-edit orphan sweep is likewise off in pool mode. Pruning a
+  shared pool is `pool prune`'s job — cleaning one deck's orphans out of a pool
+  would delete exactly the clips its neighbours still use.
+- **A successful `export` now deletes its render scratch.** The decoded per-page
+  PCM, the assembled `track.wav`, silence files, and per-slide MP4 segments
+  exist only to feed one ffmpeg run, and across a 33-deck course they had grown
+  to ~7 GB beside 640 MB of actual speech clips. Page images stay (the editor
+  filmstrip reuses them); cached clips are never touched. A failed export keeps
+  everything for debugging; `--keep-scratch` or `[video] keep_scratch = true`
+  keeps it always. An export launched from the editor keeps it too, since the
+  preview player streams that very `track.wav`.
+- **Silence files are shared per duration** (`silence/2.0000s.wav`) instead of
+  written once per pause per page — a course held ~2,900 of them with ten
+  distinct contents.
+- **`export` no longer rewrites a subtitle file whose bytes are unchanged.** A
+  slide-only re-render left the `.srt`/`.vtt` byte-identical but bumped its
+  mtime, which made every mtime-based freshness check downstream (make,
+  watchers, rsync) treat the subtitles as newer than what they came from.
+
 ### Fixed
 - **`subs` no longer invents a timeline when it can't find the audio.** Each
   voice keeps its own content-addressed cache (the filename embeds the backend

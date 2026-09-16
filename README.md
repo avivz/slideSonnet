@@ -188,12 +188,21 @@ slidesonnet export deck.pdf -o OUT.mp4
         [--engine kokoro]              [--silent]
         [--timing tts|estimate|fixed:N] [--wpm N]
         [--subtitles srt|vtt|both|none] [--sub-granularity segment|slide]
+        [--keep-scratch]               # keep render intermediates (debugging)
 slidesonnet subs   deck.pdf -o OUT.srt [--engine ...] [--format srt|vtt]
         [--timing ...] [--allow-estimates]    # export already writes these
 slidesonnet edit   [deck.pdf|FOLDER] [--root DIR]   launch the editor
-slidesonnet clean  deck.pdf [--keep nothing|api|current|exact]
+slidesonnet clean  deck.pdf [--keep nothing|api|current|exact]   # this deck's cache only
+slidesonnet pool   status  [deck.pdf]               which clip pool a deck uses, and why
+slidesonnet pool   migrate --root DIR [--apply]     move old local caches into the pool
+slidesonnet pool   prune   --root DIR [--apply] [--keep current|exact|api] [--empty-trash]
 slidesonnet doctor
 ```
+
+`--audio-dir DIR` before any command (or `SLIDESONNET_AUDIO_DIR`, or
+`[cache] audio_dir` in `slidesonnet.toml`) points it at a **shared speech-clip
+pool**, so every worktree of a course reuses the same synthesized audio instead
+of re-buying it. See the config section of the authoring guide.
 
 Every operation is also a typed Python function in `slidesonnet.api`
 (`init_sidecar`, `synthesize_deck`, `export`, `write_subs`, …) so an LLM/CI loop

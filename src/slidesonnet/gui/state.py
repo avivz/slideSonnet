@@ -17,7 +17,7 @@ from typing import Literal, cast
 from slidesonnet import api
 from slidesonnet.audio.synth import SpeechRef, _ref_targets, ref_cache_status
 from slidesonnet.audio.track import Cue
-from slidesonnet.cache import audio_dir, render_dir
+from slidesonnet.cache import adopt_legacy_audio, render_dir, resolve_audio_dir
 from slidesonnet.config import Config, default_config_path, load_config
 from slidesonnet.deck import (
     dedupe_page_ids,
@@ -122,6 +122,9 @@ class EditorState:
         load_env(self.pdf_path.parent)
         self.sidecar_path = sidecar_path or default_sidecar_path(self.pdf_path)
         self.config = load_config(self.pdf_path)
+        pool = resolve_audio_dir(self.pdf_path, self.config)
+        if pool.shared:  # migration on touch: old local clips join the pool
+            adopt_legacy_audio(self.pdf_path, pool.path)
         # The generation engine is chosen in the GUI (session-only, never written
         # to disk). None = fall back to the config default. See active_backend.
         self.selected_backend: Backend | None = None
@@ -451,6 +454,10 @@ class EditorState:
         """Engine names for the GUI picker: the installed ones plus the active one."""
         return sorted(set(available_backends()) | {self.active_backend})
 
+    def _audio_dir(self) -> Path:
+        """The deck's clip directory (the shared pool when one is configured)."""
+        return resolve_audio_dir(self.pdf_path, self._active_config()).path
+
     def _active_config(self) -> Config:
         """The config with its backend swapped to the session pick (else as loaded)."""
         if self.selected_backend is None:
@@ -615,7 +622,7 @@ class EditorState:
         """
         now = time.monotonic()
         if self._audio_scan is None or now - self._audio_scan[0] > _AUDIO_SCAN_TTL:
-            scan = ref_cache_status(self.deck, self._active_config(), audio_dir(self.pdf_path))
+            scan = ref_cache_status(self.deck, self._active_config(), self._audio_dir())
             self._audio_scan = (now, scan)
         return self._audio_scan[1]
 
@@ -628,7 +635,7 @@ class EditorState:
         under one engine mask the picked engine's missing audio, so ``enqueue`` skips
         every clip ("queued 0" despite N missing in the filmstrip).
         """
-        return (self.deck, self._active_config(), audio_dir(self.pdf_path))
+        return (self.deck, self._active_config(), self._audio_dir())
 
     def uncached_count(self, slide_id: str) -> int:
         """How many of *slide_id*'s speech segments a synthesis run would generate."""
@@ -670,7 +677,7 @@ class EditorState:
         if not current:
             return out
         cfg = self._active_config()
-        for ref, target in _ref_targets(self.deck, cfg, audio_dir(self.pdf_path)):
+        for ref, target in _ref_targets(self.deck, cfg, self._audio_dir()):
             if ref.slide_id != current:
                 continue
             path = audio_cache_path_or_alt(target)
@@ -790,12 +797,15 @@ class EditorState:
         )
 
     def export(self, output: Path, *, silent: bool = False) -> api.ExportResult:
+        # The preview player streams track.wav / page WAVs from the render dir;
+        # an export must not delete them from under an open preview.
         return api.export(
             self.pdf_path,
             output,
             sidecar_path=self.sidecar_path,
             silent=silent,
             engine=self.selected_backend,
+            keep_scratch=True,
         )
 
     # ---- per-slide status (filmstrip) -----------------------------------

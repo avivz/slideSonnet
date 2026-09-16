@@ -158,6 +158,21 @@ def check_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> list[Diag
     return sort_diagnostics(diags + voice_diags + trans_diags)
 
 
+def _audio_dir(pdf_path: Path, config: Config) -> Path:
+    """The deck's clip directory — a shared pool when one is configured.
+
+    Migration on touch: when a pool is in use, clips still sitting in the
+    deck's old local cache are copied in first, so a deck that predates the
+    pool setting never re-buys what it already had.
+    """
+    from slidesonnet.cache import adopt_legacy_audio, resolve_audio_dir
+
+    res = resolve_audio_dir(pdf_path, config)
+    if res.shared:
+        adopt_legacy_audio(pdf_path, res.path)
+    return res.path
+
+
 def _load(
     pdf_path: Path,
     sidecar_path: Path | None,
@@ -196,13 +211,12 @@ def synthesize_deck(
     ``force`` re-synthesizes the targeted segments even when already cached.
     """
     from slidesonnet.audio.synth import synthesize as _synth
-    from slidesonnet.cache import audio_dir
 
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
     results = _synth(
         deck,
         config,
-        audio_dir=audio_dir(pdf_path),
+        audio_dir=_audio_dir(pdf_path, config),
         only_ids=only_ids,
         only_segments=only_segments,
         force=force,
@@ -233,9 +247,16 @@ def export(
     wpm: float = 150.0,
     subtitles: Literal["srt", "vtt", "both", "none"] = "srt",
     sub_granularity: str = "segment",
+    keep_scratch: bool | None = None,
     progress: ProgressFn | None = None,
 ) -> ExportResult:
-    """Render the deck to a narrated (or silent) MP4 with optional subtitles."""
+    """Render the deck to a narrated (or silent) MP4 with optional subtitles.
+
+    On success the render intermediates (decoded page audio, assembled track,
+    per-slide clips) are deleted unless *keep_scratch* is true — or, when it is
+    ``None``, unless ``[video] keep_scratch`` is set in the config. A failed
+    render always leaves them for debugging.
+    """
     from slidesonnet.audio.synth import (
         page_speech_clips,
         page_speech_durations,
@@ -243,9 +264,14 @@ def export(
     from slidesonnet.audio.synth import (
         synthesize as _synth,
     )
-    from slidesonnet.cache import audio_dir, render_dir
+    from slidesonnet.cache import render_dir
     from slidesonnet.diagnostics import boundary_transition
-    from slidesonnet.render import build_timeline, compose_video, render_audio_track
+    from slidesonnet.render import (
+        build_timeline,
+        compose_video,
+        prune_render_scratch,
+        render_audio_track,
+    )
     from slidesonnet.timing import TimingMode, parse_timing
 
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
@@ -259,7 +285,7 @@ def export(
     page_audios: list[Path] | None = None
     audio_track: Path | None = None
     if audible:
-        results = _synth(deck, config, audio_dir=audio_dir(pdf_path), progress=progress)
+        results = _synth(deck, config, audio_dir=_audio_dir(pdf_path, config), progress=progress)
         timeline = build_timeline(
             deck,
             mode,
@@ -288,6 +314,9 @@ def export(
     )
 
     subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)
+    if not (config.video.keep_scratch if keep_scratch is None else keep_scratch):
+        freed = prune_render_scratch(rdir)
+        logger.debug("pruned %.1f MB of render scratch under %s", freed / 1e6, rdir)
     return ExportResult(
         video=output, subtitles=subs_paths, duration=timeline.total_duration, silent=not audible
     )
@@ -316,7 +345,6 @@ def write_subs(
     accept guessed times on purpose.
     """
     from slidesonnet.audio.synth import cached_durations
-    from slidesonnet.cache import audio_dir
     from slidesonnet.exceptions import SubtitleTimingError
     from slidesonnet.render import build_timeline, subtitle_entries
     from slidesonnet.subtitles import format_srt, format_vtt
@@ -325,7 +353,7 @@ def write_subs(
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
     if mode.kind == "tts":
-        cached = cached_durations(deck, config, audio_dir(pdf_path), fallback_wpm=wpm)
+        cached = cached_durations(deck, config, _audio_dir(pdf_path, config), fallback_wpm=wpm)
         if cached.estimated:
             message = _estimated_timing_message(cached, config.tts.backend, wpm)
             if not allow_estimates:
@@ -339,7 +367,7 @@ def write_subs(
 
     entries = subtitle_entries(deck, timeline, granularity=sub_granularity)
     text = format_srt(entries) if fmt == "srt" else format_vtt(entries)
-    output.write_text(text, encoding="utf-8")
+    _write_if_changed(output, text)
     return output
 
 
@@ -377,13 +405,30 @@ def _write_subtitle_files(
     out: list[Path] = []
     if which in {"srt", "both"}:
         p = video_output.with_suffix(".srt")
-        p.write_text(format_srt(entries), encoding="utf-8")
+        _write_if_changed(p, format_srt(entries))
         out.append(p)
     if which in {"vtt", "both"}:
         p = video_output.with_suffix(".vtt")
-        p.write_text(format_vtt(entries), encoding="utf-8")
+        _write_if_changed(p, format_vtt(entries))
         out.append(p)
     return out
+
+
+def _write_if_changed(path: Path, text: str) -> bool:
+    """Write *text* to *path* unless the file already holds exactly those bytes.
+
+    Subtitles come out byte-identical whenever the narration didn't move, and a
+    rewrite would only bump the mtime — which is what make-style build graphs,
+    file watchers, and rsync key freshness on. Returns whether a write happened.
+    """
+    data = text.encode("utf-8")
+    try:
+        if path.read_bytes() == data:
+            return False
+    except OSError:
+        pass
+    path.write_bytes(data)
+    return True
 
 
 def _images(pdf_path: Path, rdir: Path) -> list[Path]:
@@ -418,7 +463,7 @@ def build_preview(
     from slidesonnet.audio.synth import (
         synthesize as _synth,
     )
-    from slidesonnet.cache import audio_dir, render_dir
+    from slidesonnet.cache import render_dir
     from slidesonnet.render import build_timeline, render_audio_track
     from slidesonnet.timing import TimingMode
 
@@ -427,7 +472,7 @@ def build_preview(
         deck = deck.restricted_to(only_id)
     only_ids = {only_id} if only_id else None
     results = _synth(
-        deck, config, audio_dir=audio_dir(pdf_path), only_ids=only_ids, progress=progress
+        deck, config, audio_dir=_audio_dir(pdf_path, config), only_ids=only_ids, progress=progress
     )
     rdir = render_dir(pdf_path)
     timeline = build_timeline(

@@ -230,6 +230,47 @@ def render_audio_track(
     return track, page_audios
 
 
+#: Render-dir entries that exist only to feed one ffmpeg run. Everything else
+#: under the render dir (``pages/`` — the rasterized slides) is reused by the
+#: editor filmstrip and the next export, so it is not scratch.
+_SCRATCH_DIRS = ("silence", "segments")
+_SCRATCH_FILES = ("track.wav", "track.cache.json", "silent.mp4")
+_SCRATCH_GLOBS = ("page-*.wav",)
+
+
+def prune_render_scratch(render_dir: Path) -> int:
+    """Delete the intermediates a finished export no longer needs.
+
+    The decoded per-page PCM, the assembled ``track.wav``, the silence files,
+    and the per-slide MP4 segments together run to roughly ten times the size of
+    the speech clips they were built from, and re-deriving them costs seconds.
+    The page images stay. Returns the number of bytes freed.
+
+    The editor's whole-deck preview shares ``track.wav`` and the page WAVs (and
+    their fingerprint manifest) with export, so a preview after a pruning
+    export rebuilds them; an export launched *from* the editor keeps them so
+    the preview player isn't streaming a file that just vanished.
+    """
+    import shutil
+
+    freed = 0
+    if not render_dir.exists():
+        return 0
+    targets: list[Path] = [render_dir / f for f in _SCRATCH_FILES]
+    for pattern in _SCRATCH_GLOBS:
+        targets.extend(render_dir.glob(pattern))
+    for path in targets:
+        if path.is_file():
+            freed += path.stat().st_size
+            path.unlink()
+    for name in _SCRATCH_DIRS:
+        d = render_dir / name
+        if d.is_dir():
+            freed += sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
+            shutil.rmtree(d)
+    return freed
+
+
 def transition_morph_seconds(transitions: list[Transition], page_fulls: list[float]) -> list[float]:
     """Per-boundary morph durations, centered on the boundary and clamped to fit.
 

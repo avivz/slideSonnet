@@ -553,3 +553,144 @@ def test_doctor_exits_nonzero_when_core_missing(monkeypatch: pytest.MonkeyPatch)
     result = CliRunner().invoke(main, ["doctor"])
     assert result.exit_code == 1
     assert "Missing core dependencies" in result.output
+
+
+# ---- shared speech-clip pool ---------------------------------------------------
+
+
+def test_audio_dir_flag_pins_the_pool_for_the_subcommand(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.cache import AUDIO_DIR_ENV
+
+    monkeypatch.delenv(AUDIO_DIR_ENV, raising=False)
+    seen: dict[str, str | None] = {}
+    monkeypatch.setattr(
+        "slidesonnet.clean.clean",
+        lambda p, keep: seen.update(env=os.environ.get(AUDIO_DIR_ENV)) or CleanResult(),
+    )
+    pdf = _copy_pdf(tmp_path)
+    (tmp_path / ".slidesonnet").mkdir()
+    result = CliRunner().invoke(main, ["--audio-dir", str(tmp_path / "pool"), "clean", str(pdf)])
+    assert result.exit_code == 0, result.output
+    assert seen["env"] == str((tmp_path / "pool").resolve())
+
+
+def test_clean_says_when_a_pool_was_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _copy_pdf(tmp_path)
+    (tmp_path / ".slidesonnet").mkdir()
+    monkeypatch.setattr(
+        "slidesonnet.clean.clean",
+        lambda p, keep: CleanResult(removed_files=1, removed_bytes=10, pool=tmp_path / "pool"),
+    )
+    result = CliRunner().invoke(main, ["clean", str(pdf), "--keep", "current"])
+    assert result.exit_code == 0, result.output
+    assert "pool" in result.output and "pool prune" in result.output
+
+
+def test_pool_status_reports_where_the_pool_comes_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.cache import AUDIO_DIR_ENV
+
+    monkeypatch.delenv(AUDIO_DIR_ENV, raising=False)
+    pdf = _copy_pdf(tmp_path)
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    (pool / "aaaa.inworld.bbbb.mp3").write_bytes(b"12345")
+    (tmp_path / "slidesonnet.toml").write_text(
+        f'[cache]\naudio_dir = "{pool.as_posix()}"\n', encoding="utf-8"
+    )
+    result = CliRunner().invoke(main, ["pool", "status", str(pdf)])
+    assert result.exit_code == 0, result.output
+    assert str(pool) in result.output
+    assert "slidesonnet.toml" in result.output  # how it was chosen
+    assert "inworld" in result.output
+
+
+def test_pool_prune_is_a_dry_run_unless_applied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.cache import AUDIO_DIR_ENV
+    from slidesonnet.hashing import audio_filename
+
+    monkeypatch.delenv(AUDIO_DIR_ENV, raising=False)
+    course = tmp_path / "course"
+    deck_dir = course / "01"
+    deck_dir.mkdir(parents=True)
+    pdf = deck_dir / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    (deck_dir / "marked.narration").write_text(
+        simple_narration("@intro-title\nHello.\n"), encoding="utf-8"
+    )
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    (course / "slidesonnet.toml").write_text(f'[cache]\naudio_dir = "{pool.as_posix()}"\n')
+    (deck_dir / "slidesonnet.toml").write_text(f'[cache]\naudio_dir = "{pool.as_posix()}"\n')
+    orphan = pool / audio_filename("Nobody says this.", "inworld", "k")
+    orphan.write_bytes(b"paid")
+
+    dry = CliRunner().invoke(main, ["pool", "prune", "--root", str(course)])
+    assert dry.exit_code == 0, dry.output
+    assert orphan.exists()
+    assert "--apply" in dry.output
+
+    applied = CliRunner().invoke(main, ["pool", "prune", "--root", str(course), "--apply"])
+    assert applied.exit_code == 0, applied.output
+    assert not orphan.exists()
+    assert (pool / "trash" / orphan.name).exists()
+    assert "trash" in applied.output
+
+
+def test_pool_prune_needs_roots_or_decks(tmp_path: Path) -> None:
+    result = CliRunner().invoke(main, ["pool", "prune"])
+    assert result.exit_code != 0
+    assert "--root" in result.output
+
+
+def test_pool_migrate_moves_local_caches_into_the_pool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.cache import AUDIO_DIR_ENV
+
+    monkeypatch.delenv(AUDIO_DIR_ENV, raising=False)
+    course = tmp_path / "course"
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    for name in ("01", "02"):
+        d = course / name
+        d.mkdir(parents=True)
+        (d / "marked.pdf").write_bytes(MARKED.read_bytes())
+        (d / "marked.narration").write_text(simple_narration("@intro-title\nHello.\n"))
+        (d / "slidesonnet.toml").write_text(f'[cache]\naudio_dir = "{pool.as_posix()}"\n')
+        local = d / ".slidesonnet" / "audio"
+        local.mkdir(parents=True)
+        (local / f"{name}aa.inworld.bbbb.mp3").write_bytes(b"paid")
+    (pool / "01aa.inworld.bbbb.mp3").write_bytes(b"already")  # pool already has deck 01's clip
+
+    dry = CliRunner().invoke(main, ["pool", "migrate", "--root", str(course)])
+    assert dry.exit_code == 0, dry.output
+    assert "1 clip(s) to copy" in dry.output and "1 already in pool" in dry.output
+    assert (course / "02" / ".slidesonnet" / "audio").exists()
+
+    applied = CliRunner().invoke(main, ["pool", "migrate", "--root", str(course), "--apply"])
+    assert applied.exit_code == 0, applied.output
+    assert (pool / "02aa.inworld.bbbb.mp3").read_bytes() == b"paid"
+    assert (pool / "01aa.inworld.bbbb.mp3").read_bytes() == b"already"  # never overwritten
+    assert not (course / "01" / ".slidesonnet" / "audio").exists()
+    assert not (course / "02" / ".slidesonnet" / "audio").exists()
+    assert "Copied 1 clip(s)" in applied.output
+
+
+def test_pool_migrate_leaves_decks_without_a_pool_alone(tmp_path: Path) -> None:
+    pdf = _copy_pdf(tmp_path)
+    (tmp_path / "marked.narration").write_text(simple_narration("@intro-title\nHello.\n"))
+    local = tmp_path / ".slidesonnet" / "audio"
+    local.mkdir(parents=True)
+    (local / "aaaa.kokoro.bbbb.wav").write_bytes(b"x")
+    result = CliRunner().invoke(main, ["pool", "migrate", str(pdf), "--apply"])
+    assert result.exit_code == 0, result.output
+    assert "no pool configured" in result.output
+    assert (local / "aaaa.kokoro.bbbb.wav").exists()
