@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -164,7 +165,7 @@ def test_render_audio_track_orchestration(tmp_path: Path, monkeypatch: pytest.Mo
 def test_render_audio_track_reports_assembly_progress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The assembly emits ('assemble', done, total) per page plus the final concat,
+    """The assembly emits ('assemble', done, total, '') per page plus the final concat,
     so the editor can show a progress bar instead of a blind spinner."""
     tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
     monkeypatch.setattr(
@@ -183,7 +184,7 @@ def test_render_audio_track_reports_assembly_progress(
         tl,
         clips,
         render_dir=render_dir,
-        progress=lambda label, done, total: ticks.append((label, done, total)),
+        progress=lambda phase, done, total, label: ticks.append((phase, done, total)),
     )
 
     total = len(tl.pages) + 1  # one tick per page, plus the final concat
@@ -287,7 +288,7 @@ def test_compose_video_silent_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     ) -> None:
         silent_calls.append((image, output, duration, resolution, fps, crf, preset))
 
-    def fake_concat(segments: list[Path], output: Path) -> None:
+    def fake_concat(segments: list[Path], output: Path, **kw: object) -> None:
         concat_calls.append((segments, output))
 
     monkeypatch.setattr("slidesonnet.render.compose_silent_segment", fake_silent)
@@ -343,11 +344,11 @@ def test_compose_video_with_audio_sizes_silent_segments_and_muxes_track(
     )
     monkeypatch.setattr(
         "slidesonnet.render.concatenate_segments",
-        lambda segments, output: concat_calls.append((segments, output)),
+        lambda segments, output, **kw: concat_calls.append((segments, output)),
     )
     monkeypatch.setattr(
         "slidesonnet.video.composer.mux_audio",
-        lambda video, audio, output: mux_calls.append((video, audio, output)),
+        lambda video, audio, output, **kw: mux_calls.append((video, audio, output)),
     )
     monkeypatch.setattr(
         "slidesonnet.video.composer.get_duration",
@@ -406,7 +407,7 @@ def test_compose_video_centers_transition_and_preserves_total(
     )
     monkeypatch.setattr(
         "slidesonnet.render.concatenate_segments",
-        lambda segments, output: concat_calls.append((segments, output)),
+        lambda segments, output, **kw: concat_calls.append((segments, output)),
     )
 
     def fake_trans(
@@ -483,3 +484,62 @@ def test_page_pieces_clear_error_when_speech_clip_missing() -> None:
     )
     with pytest.raises(RenderError, match="lonely"):
         page_pieces(timing, [])
+
+
+def test_compose_video_reports_every_clip_then_the_ffmpeg_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each still segment and morph clip is a 'video' step; the final concat and
+    mux report seconds of output as ffmpeg writes them, so the long tail of the
+    render is never a silent wait."""
+    from slidesonnet.narration.model import Transition
+
+    deck = Deck(
+        pdf_path=Path("x.pdf"),
+        sidecar_path=Path("x.narration"),
+        pages=["a", "b"],
+        narration={
+            "a": PageNarration("a", [Segment.speech("x")]),
+            "b": PageNarration("b", [Segment.speech("y")]),
+        },
+    )
+    tl = build_timeline(
+        deck, TimingMode("fixed", fixed_seconds=4), video=VideoConfig(pre_silence=0, tail_seconds=0)
+    )
+    monkeypatch.setattr("slidesonnet.render.compose_silent_segment", lambda *a, **kw: None)
+    monkeypatch.setattr("slidesonnet.video.composer.compose_transition_clip", lambda *a, **kw: None)
+    monkeypatch.setattr("slidesonnet.video.composer.get_duration", lambda path: 4.0)
+
+    def fake_ffmpeg_pass(*args: object, on_time: Any = None) -> None:
+        for t in (2.5, 8.0):
+            on_time(t)
+
+    monkeypatch.setattr("slidesonnet.render.concatenate_segments", fake_ffmpeg_pass)
+    monkeypatch.setattr("slidesonnet.video.composer.mux_audio", fake_ffmpeg_pass)
+
+    ticks: list[tuple[str, int, int, str]] = []
+    compose_video(
+        tl,
+        [tmp_path / "a.png", tmp_path / "b.png"],
+        tmp_path / "deck.mp4",
+        config=Config(),
+        page_audios=[tmp_path / "a.wav", tmp_path / "b.wav"],
+        render_dir=tmp_path / "r",
+        transitions=[Transition("wipeleft", 1.0)],
+        audio_track=tmp_path / "track.wav",
+        progress=lambda *t: ticks.append(t),
+    )
+
+    assert [t for t in ticks if t[0] == "video"] == [
+        ("video", 0, 3, ""),
+        ("video", 1, 3, "a"),
+        ("video", 2, 3, "a → b"),
+        ("video", 3, 3, "b"),
+    ]
+    for phase in ("concat", "mux"):
+        assert [t for t in ticks if t[0] == phase] == [
+            (phase, 0, 8, ""),
+            (phase, 2, 8, ""),
+            (phase, 8, 8, ""),
+            (phase, 8, 8, ""),
+        ]

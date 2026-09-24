@@ -158,14 +158,14 @@ def test_page_speech_clips_alignment(tmp_path: Path, monkeypatch) -> None:  # ty
 
 def test_synthesize_reports_progress(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
-    calls: list[tuple[str, int, int]] = []
+    calls: list[tuple[str, int, int, str]] = []
     synth_mod.synthesize(
         _deck(),
         Config(),
         audio_dir=tmp_path,
-        progress=lambda sid, done, total: calls.append((sid, done, total)),
+        progress=lambda phase, done, total, label: calls.append((phase, done, total, label)),
     )
-    assert calls == [("a", 1, 1)]  # one speech segment in the whole deck
+    assert calls == [("tts", 1, 1, "a")]  # one speech segment in the whole deck
 
 
 def test_cached_durations_estimates_when_uncached(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

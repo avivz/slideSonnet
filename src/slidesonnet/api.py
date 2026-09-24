@@ -18,6 +18,7 @@ from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.models import Backend, ProgressFn
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
+from slidesonnet.progress import EXPORT_PHASES, SILENT_EXPORT_PHASES
 
 if TYPE_CHECKING:
     from slidesonnet.audio.synth import CachedDurations
@@ -235,6 +236,23 @@ class ExportResult:
     silent: bool = False
 
 
+def export_phases(
+    *, silent: bool = False, timing: str = "tts", wpm: float = 150.0
+) -> tuple[str, ...]:
+    """The progress phases :func:`export` reports for these options, in order.
+
+    Only a ``tts``-timed, non-silent export has speech to synthesize, assemble,
+    and mux; everything else renders the video and concatenates it. Hand the
+    result to :class:`slidesonnet.progress.RunProgress` to get one overall
+    percentage across the whole export.
+    """
+    from slidesonnet.timing import parse_timing
+
+    if not silent and parse_timing(timing, wpm=wpm).kind == "tts":
+        return EXPORT_PHASES
+    return SILENT_EXPORT_PHASES
+
+
 def export(
     pdf_path: Path,
     output: Path,
@@ -277,7 +295,7 @@ def export(
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
 
-    audible = (not silent) and mode.kind == "tts"
+    audible = export_phases(silent=silent, timing=timing, wpm=wpm) == EXPORT_PHASES
     if silent and mode.kind == "tts":
         mode = TimingMode("estimate", wpm=wpm)  # tts is meaningless without audio
 
@@ -293,7 +311,7 @@ def export(
             speech_durations_by_page=page_speech_durations(deck, results),
         )
         audio_track, page_audios = render_audio_track(
-            timeline, page_speech_clips(deck, results), render_dir=rdir
+            timeline, page_speech_clips(deck, results), render_dir=rdir, progress=progress
         )
     else:
         timeline = build_timeline(deck, mode, video=config.video)
@@ -311,6 +329,7 @@ def export(
         render_dir=rdir,
         transitions=boundaries,
         audio_track=audio_track,
+        progress=progress,
     )
 
     subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)

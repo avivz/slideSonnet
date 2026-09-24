@@ -13,8 +13,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-#: Progress callback for long-running pipeline stages: (slide_id, done, total).
-ProgressFn = Callable[[str, int, int], None]
+#: Progress callback for long-running pipeline stages: ``(phase, done, total, label)``.
+#: *phase* names the stage (``"tts"``, ``"assemble"``, ``"video"``, ``"concat"``,
+#: ``"mux"``); ``done``/``total`` count within that phase (seconds of output for
+#: the final ffmpeg passes); *label* is what was just finished, e.g. a slide id,
+#: or ``""``. :class:`slidesonnet.progress.RunProgress` turns these into one
+#: overall percentage.
+ProgressFn = Callable[[str, int, int, str], None]
 
 
 # The typed source of backend names. mypy can't derive a Literal from the

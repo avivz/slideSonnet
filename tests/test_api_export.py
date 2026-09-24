@@ -21,7 +21,7 @@ from tests.conftest import prep_marked_deck as _prep
 @pytest.fixture
 def pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     """Stub synthesis/compose/rasterize; record what the api orchestrates."""
-    calls: dict[str, Any] = {"synth": [], "compose": [], "track": []}
+    calls: dict[str, Any] = {"synth": [], "compose": [], "track": [], "track_progress": []}
 
     def fake_synth(deck: Any, config: Any, *, audio_dir: Path, **kwargs: Any) -> dict[Any, Any]:
         calls["synth"].append(kwargs)
@@ -37,6 +37,7 @@ def pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         timeline: Any, clips: Any, *, render_dir: Path, progress: Any = None
     ) -> tuple[Path, list[Path]]:
         calls["track"].append(timeline)
+        calls["track_progress"].append(progress)
         return tmp_path / "track.wav", [tmp_path / "p.wav" for _ in timeline.pages]
 
     def fake_compose(
@@ -49,9 +50,11 @@ def pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         render_dir: Path,
         transitions: Any = None,
         audio_track: Any = None,
+        progress: Any = None,
     ) -> Path:
         calls["compose"].append(
             {
+                "progress": progress,
                 "output": output,
                 "page_audios": page_audios,
                 "transitions": transitions,
@@ -246,3 +249,24 @@ def test_export_leaves_scratch_when_compose_fails(
     with pytest.raises(RuntimeError):
         api.export(pdf, tmp_path / "out.mp4")
     assert all(p.exists() for p in files.values())
+
+
+def test_export_threads_progress_through_every_phase(
+    tmp_path: Path, pipeline: dict[str, Any]
+) -> None:
+    """TTS, audio assembly and the video render all report to the same callback."""
+    pdf = _prep(tmp_path, "@intro-title\nHello there.\n")
+
+    def cb(phase: str, done: int, total: int, label: str) -> None:
+        return None
+
+    api.export(pdf, tmp_path / "out.mp4", progress=cb)
+    assert pipeline["synth"][0]["progress"] is cb
+    assert pipeline["track_progress"] == [cb]
+    assert pipeline["compose"][0]["progress"] is cb
+
+
+def test_export_phases_follow_the_audio_mode() -> None:
+    assert api.export_phases() == ("tts", "assemble", "video", "concat", "mux")
+    assert api.export_phases(silent=True) == ("video", "concat")
+    assert api.export_phases(timing="fixed:3") == ("video", "concat")

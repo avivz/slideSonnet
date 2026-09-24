@@ -744,10 +744,10 @@ class PreviewPlayer:
                 view.jobs.enqueue(needed, allow_paid=True)
             await view.jobs.await_targets(needed)
 
-            def _on_assemble(label: str, done: int, total: int) -> None:
+            def _on_assemble(phase: str, done: int, total: int, label: str) -> None:
                 # Runs in the io_bound worker thread; just record the counts. The
                 # 0.5s progress timer (on the event loop) reads and renders them.
-                if label == "assemble":
+                if phase == "assemble":
                     view.assembling = (done, total)
 
             build = state.preview_deck if whole_deck else state.preview_current

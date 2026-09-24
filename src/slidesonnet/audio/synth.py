@@ -132,7 +132,7 @@ def synthesize(
             result = SynthResult(path=target, duration=duration, from_cache=False)
         results[(ref.slide_id, ref.speech_index)] = result
         if progress is not None:
-            progress(ref.slide_id, i + 1, len(refs))
+            progress("tts", i + 1, len(refs), ref.slide_id)
 
     _record_index(audio_dir, deck, refs, results)
     return results

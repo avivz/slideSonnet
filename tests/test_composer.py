@@ -17,6 +17,7 @@ from slidesonnet.video.composer import (
     concatenate_segments,
     concatenate_segments_xfade,
     get_duration,
+    mux_audio,
 )
 
 
@@ -691,7 +692,7 @@ class TestConcatenateSegmentsMocked:
         # Capture concat file contents before cleanup
         written_content: list[str] = []
 
-        def capture_and_run(cmd: list[str]) -> None:
+        def capture_and_run(cmd: list[str], **kw: object) -> None:
             if concat_file.exists():
                 written_content.append(concat_file.read_text())
 
@@ -702,6 +703,39 @@ class TestConcatenateSegmentsMocked:
         assert len(written_content) == 1
         for seg in segs:
             assert str(seg.resolve()) in written_content[0]
+
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_forwards_output_time_reports(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        seen: list[float] = []
+        concatenate_segments([tmp_path / "a.mp4"], tmp_path / "out.mp4", on_time=seen.append)
+        assert mock_ffmpeg.call_args.kwargs["on_time"] == seen.append
+
+
+class TestRunFfmpegMocked:
+    """_run_ffmpeg streams progress only when someone is listening."""
+
+    @patch("slidesonnet.video.composer.run_tool_with_progress")
+    @patch("slidesonnet.video.composer.run_tool")
+    def test_plain_run_without_listener(self, plain: MagicMock, streaming: MagicMock) -> None:
+        _run_ffmpeg(["ffmpeg", "-i", "x"])
+        plain.assert_called_once()
+        streaming.assert_not_called()
+
+    @patch("slidesonnet.video.composer.run_tool_with_progress")
+    @patch("slidesonnet.video.composer.run_tool")
+    def test_streaming_run_with_listener(self, plain: MagicMock, streaming: MagicMock) -> None:
+        seen: list[float] = []
+        _run_ffmpeg(["ffmpeg", "-i", "x"], on_time=seen.append)
+        plain.assert_not_called()
+        assert streaming.call_args.kwargs["on_time"] == seen.append
+
+
+class TestMuxAudioMocked:
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_forwards_output_time_reports(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        seen: list[float] = []
+        mux_audio(tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4", on_time=seen.append)
+        assert mock_ffmpeg.call_args.kwargs["on_time"] == seen.append
 
 
 class TestGetDurationMocked:

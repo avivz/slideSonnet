@@ -28,8 +28,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   bare hash. A deck that fails to load aborts the plan rather than counting as
   "uses nothing".
 - **`export --keep-scratch` / `[video] keep_scratch`.** See *Changed*.
+- **Export progress covers the whole run.** `export` used to print `[i/n]`
+  lines during TTS and then nothing until the video was built. It now reports
+  every phase — synthesis, audio assembly, each slide and morph clip, and the
+  final ffmpeg concat and mux as seconds of output written — as one overall
+  percentage that never goes backwards, prefixed with the elapsed time, and
+  ends with a timing line (`Timing: tts 0:04 · assemble 0:03 · video 1:07 ·
+  concat 0:01 · mux 0:11 · total 1:29`). The lines go to stderr in a fixed
+  format, `[01:42 37%] 3/5 video 7/23 · step2-zeros` (elapsed, overall
+  percent, phase 3 of 5, count within it, what just finished), that a wrapper
+  can follow with one regex: `slidesonnet.progress.LINE_PATTERN` for the
+  overall percent, `PHASE_PATTERN` for a phase-aware progress bar. `--quiet`
+  hides them. Phases get equal shares of the percentage for now.
 
 ### Changed
+- **`ProgressFn` is now `(phase, done, total, label)`** (was `(slide_id, done,
+  total)`, with `"assemble"` sometimes standing in for the slide id). API
+  callers passing `progress=` to `synthesize_deck`, `export`, or
+  `build_preview` need the extra argument. New `api.export_phases()` lists the
+  phases an export will report, for `slidesonnet.progress.RunProgress`.
+- **Kokoro's `words count mismatch` warnings are hidden** from the console;
+  the phonemizer emits one for nearly every line, burying real warnings.
+  `--verbose` still shows them.
 - **Per-deck `clean` never reaches into a shared pool.** With a pool configured,
   `clean deck.pdf` removes only the deck's own render scratch, logs, and leftover
   local clips (after copying them into the pool), whatever `--keep` says, and

@@ -54,6 +54,27 @@ class _ConsoleFormatter(logging.Formatter):
         return record.getMessage()
 
 
+class _LibraryNoiseFilter(logging.Filter):
+    """Hide third-party warnings that fire on nearly every line of normal use.
+
+    Kokoro's phonemizer warns ``words count mismatch on 100.0% of the lines`` for
+    almost every clip it speaks, which buries the warnings that matter. They
+    still show with ``--verbose``.
+    """
+
+    def __init__(self, handler: logging.Handler) -> None:
+        super().__init__()
+        self._handler = handler
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if self._handler.level <= logging.DEBUG:
+            return True
+        return not (
+            record.name.startswith("phonemizer")
+            and str(record.msg).startswith("words count mismatch")
+        )
+
+
 def resolve_console_level(
     *, quiet: bool = False, verbose: bool = False, env: str | None = None
 ) -> int:
@@ -85,6 +106,7 @@ def configure_console_logging(level: int) -> None:
         handler = logging.StreamHandler()
         handler.set_name(_CONSOLE_HANDLER_NAME)
         handler.setFormatter(_ConsoleFormatter())
+        handler.addFilter(_LibraryNoiseFilter(handler))
         root.addHandler(handler)
     handler.setLevel(level)
     # Third-party loggers (no explicit level) inherit root; keep them as quiet as

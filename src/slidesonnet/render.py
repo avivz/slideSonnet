@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -180,7 +181,7 @@ def render_audio_track(
     unchanged deck does no ffmpeg work at all. Returns ``(track_path,
     page_audio_paths)``.
 
-    *progress*, if given, is called ``("assemble", done, total)`` after each page
+    *progress*, if given, is called ``("assemble", done, total, "")`` after each page
     WAV is materialized and once more after the final concat (``total`` = page
     count + 1) — the whole-deck preview is otherwise a blind wait while ffmpeg
     builds a long track.
@@ -210,7 +211,7 @@ def render_audio_track(
         new_pages[out.name] = fp
         page_audios.append(out)
         if progress is not None:
-            progress("assemble", i + 1, total_steps)
+            progress("assemble", i + 1, total_steps, "")
 
     track = render_dir / "track.wav"
     track_fp = hashlib.sha256(
@@ -219,7 +220,7 @@ def render_audio_track(
     if not (track.exists() and old.get("track") == track_fp):
         assemble_track(page_audios, track)
     if progress is not None:
-        progress("assemble", total_steps, total_steps)
+        progress("assemble", total_steps, total_steps, "")
 
     try:
         manifest_path.write_text(
@@ -312,6 +313,7 @@ def compose_video(
     render_dir: Path,
     transitions: list[Transition] | None = None,
     audio_track: Path | None = None,
+    progress: ProgressFn | None = None,
 ) -> Path:
     """Compose page images into the final MP4, with centered-overlay transitions.
 
@@ -327,6 +329,10 @@ def compose_video(
     back-to-back exactly as before. *audio_track* is required to carry sound;
     without it (or for a silent render where *page_audios* is None) the result is
     a silent video.
+
+    *progress*, if given, gets a ``"video"`` step per still segment and morph
+    clip (labelled with the slide id, or ``"a → b"`` for a morph), then
+    ``"concat"`` and ``"mux"`` in whole seconds of output as ffmpeg writes them.
     """
     # Lazy module-qualified import so tests can patch get_duration at source.
     from slidesonnet.video import composer
@@ -354,6 +360,23 @@ def compose_video(
         for i in range(n - 1)
     ]
 
+    total_s = max(1, round(sum(fulls)))  # the ffmpeg passes count seconds of output
+
+    def report(phase: str, done: int, total: int, label: str = "") -> None:
+        if progress is not None:
+            progress(phase, done, total, label)
+
+    def ffmpeg_pass(phase: str) -> Callable[[float], None] | None:
+        """Announce an ffmpeg pass and return the listener that follows it."""
+        if progress is None:
+            return None
+        report(phase, 0, total_s)
+        return lambda t: report(phase, min(total_s, int(t)), total_s)
+
+    clip_count = n + sum(x is not None for x in xnames)
+    clips_done = 0
+    report("video", 0, clip_count)
+
     pieces: list[Path] = []
     for i, page in enumerate(timeline.pages):
         s_i = morph[i - 1] / 2 if i > 0 else 0.0  # trimmed at the start by the incoming morph
@@ -370,6 +393,8 @@ def compose_video(
             preset=v.preset,
         )
         pieces.append(seg)
+        clips_done += 1
+        report("video", clips_done, clip_count, page.slide_id)
         xname = xnames[i] if i < n - 1 else None
         if xname is not None:
             tclip = seg_dir / f"trans-{i + 1:04d}.mp4"
@@ -385,12 +410,22 @@ def compose_video(
                 preset=v.preset,
             )
             pieces.append(tclip)
+            clips_done += 1
+            report(
+                "video",
+                clips_done,
+                clip_count,
+                f"{page.slide_id} → {timeline.pages[i + 1].slide_id}",
+            )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     if page_audios is None or audio_track is None:
-        concatenate_segments(pieces, output)
+        concatenate_segments(pieces, output, on_time=ffmpeg_pass("concat"))
+        report("concat", total_s, total_s)
     else:
         silent_video = render_dir / "silent.mp4"
-        concatenate_segments(pieces, silent_video)
-        composer.mux_audio(silent_video, audio_track, output)
+        concatenate_segments(pieces, silent_video, on_time=ffmpeg_pass("concat"))
+        report("concat", total_s, total_s)
+        composer.mux_audio(silent_video, audio_track, output, on_time=ffmpeg_pass("mux"))
+        report("mux", total_s, total_s)
     return output

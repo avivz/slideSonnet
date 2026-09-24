@@ -22,6 +22,7 @@ from slidesonnet.logging_setup import (
     configure_console_logging,
     resolve_console_level,
 )
+from slidesonnet.progress import RunProgress
 from slidesonnet.tts import BACKENDS
 
 logger = logging.getLogger(__name__)
@@ -237,8 +238,9 @@ _ENGINE_OPT = click.option(
 )
 
 
-def _progress(slide_id: str, done: int, total: int) -> None:
-    logger.info("  [%d/%d] %s", done, total, slide_id)
+def _run_progress(phases: tuple[str, ...]) -> RunProgress:
+    """Progress lines for a CLI run, logged at INFO so ``--quiet`` hides them."""
+    return RunProgress(phases, emit=logger.info)
 
 
 @main.command()
@@ -260,7 +262,7 @@ def tts(
             sidecar_path=narration,
             engine=engine,  # type: ignore[arg-type]
             only_ids=set(ids) or None,
-            progress=_progress,
+            progress=_run_progress(("tts",)),
         )
     click.echo(f"Synthesized {n} new clip(s); rest from cache.")
 
@@ -312,9 +314,11 @@ def export(
 ) -> None:
     """Render the narrated (or silent) video with optional subtitles."""
     from slidesonnet.api import export as run_export
+    from slidesonnet.api import export_phases
 
     _attach_deck_logging(ctx, pdf)
     with _cli_errors():
+        progress = _run_progress(export_phases(silent=silent, timing=timing, wpm=wpm))
         result = run_export(
             pdf,
             output,
@@ -326,8 +330,9 @@ def export(
             subtitles=subtitles,  # type: ignore[arg-type]
             sub_granularity=sub_granularity,
             keep_scratch=True if keep_scratch else None,
-            progress=_progress,
+            progress=progress,
         )
+    logger.info(progress.summary())
     kind = "silent " if result.silent else ""
     extras = f" + {', '.join(p.name for p in result.subtitles)}" if result.subtitles else ""
     click.echo(f"Built {output.name} ({kind}{result.duration:.1f}s){extras}")

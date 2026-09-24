@@ -60,6 +60,44 @@ def test_configure_console_is_idempotent() -> None:
     assert consoles[0].level == logging.DEBUG
 
 
+def _console_shows(record: logging.LogRecord) -> bool:
+    (console,) = [
+        h for h in logging.root.handlers if getattr(h, "name", "") == "slidesonnet-console"
+    ]
+    return console.filter(record) is not False and record.levelno >= console.level
+
+
+def _mismatch() -> logging.LogRecord:
+    """The warning Kokoro's phonemizer emits for nearly every line it speaks."""
+    return logging.LogRecord(
+        "phonemizer",
+        logging.WARNING,
+        __file__,
+        1,
+        "words count mismatch on %s%% of the lines (%s/%s)",
+        (100.0, 1, 1),
+        None,
+    )
+
+
+def test_console_hides_phonemizer_word_count_noise() -> None:
+    configure_console_logging(logging.INFO)
+    assert not _console_shows(_mismatch())
+
+
+def test_console_shows_phonemizer_noise_when_verbose() -> None:
+    configure_console_logging(logging.DEBUG)
+    assert _console_shows(_mismatch())
+
+
+def test_console_keeps_other_phonemizer_warnings() -> None:
+    configure_console_logging(logging.INFO)
+    other = logging.LogRecord(
+        "phonemizer", logging.WARNING, __file__, 1, "espeak not found", None, None
+    )
+    assert _console_shows(other)
+
+
 # ---- file handler --------------------------------------------------------
 
 

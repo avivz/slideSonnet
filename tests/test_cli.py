@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -209,19 +210,19 @@ def test_tts_progress_logs_slide_ids(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     def fake_synthesize_deck(pdf: Path, **kwargs: Any) -> int:
-        kwargs["progress"]("intro-title", 1, 2)
+        kwargs["progress"]("tts", 1, 2, "intro-title")
         return 1
 
     monkeypatch.setattr("slidesonnet.api.synthesize_deck", fake_synthesize_deck)
     with caplog.at_level(logging.INFO, logger="slidesonnet.cli"):
         result = CliRunner().invoke(main, ["tts", str(_copy_pdf(tmp_path))])
     assert result.exit_code == 0
-    assert "[1/2] intro-title" in caplog.text
+    assert re.search(r"\[00:00 50%\] 1/1 tts 1/2 · intro-title", caplog.text)
 
 
 def test_tts_writes_run_log_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_synthesize_deck(pdf: Path, **kwargs: Any) -> int:
-        kwargs["progress"]("intro-title", 1, 1)
+        kwargs["progress"]("tts", 1, 1, "intro-title")
         return 1
 
     monkeypatch.setattr("slidesonnet.api.synthesize_deck", fake_synthesize_deck)
@@ -243,7 +244,7 @@ def test_no_log_file_skips_run_log(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
 def test_log_file_override_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_synthesize_deck(pdf: Path, **kwargs: Any) -> int:
-        kwargs["progress"]("intro-title", 1, 1)
+        kwargs["progress"]("tts", 1, 1, "intro-title")
         return 1
 
     monkeypatch.setattr("slidesonnet.api.synthesize_deck", fake_synthesize_deck)
@@ -310,6 +311,45 @@ def test_export_silent_reports_silent_no_subs(
     assert result.exit_code == 0
     assert "Built deck.mp4 (silent 5.0s)" in result.output
     assert "+" not in result.output
+
+
+def test_export_prints_overall_progress_and_timing_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Every phase feeds one overall percentage, and the run ends with a timing line."""
+
+    def fake_export(pdf: Path, output: Path, **kwargs: Any) -> ExportResult:
+        kwargs["progress"]("tts", 1, 1, "intro-title")
+        kwargs["progress"]("video", 1, 2, "intro-title")
+        kwargs["progress"]("mux", 10, 10, "")
+        return ExportResult(video=output, subtitles=[], duration=10.0, silent=False)
+
+    monkeypatch.setattr("slidesonnet.api.export", fake_export)
+    out = tmp_path / "deck.mp4"
+    with caplog.at_level(logging.INFO, logger="slidesonnet.cli"):
+        result = CliRunner().invoke(main, ["export", str(_copy_pdf(tmp_path)), "-o", str(out)])
+    assert result.exit_code == 0
+    assert re.search(r"\[00:00 20%\] 1/5 tts 1/1 · intro-title", caplog.text)
+    assert re.search(r"\[00:00 50%\] 3/5 video 1/2 · intro-title", caplog.text)
+    assert re.search(r"\[00:00 100%\] 5/5 mux 10/10s", caplog.text)
+    assert "Timing: tts " in caplog.text
+
+
+def test_silent_export_plans_only_the_video_phases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def fake_export(pdf: Path, output: Path, **kwargs: Any) -> ExportResult:
+        kwargs["progress"]("video", 2, 2, "")
+        return ExportResult(video=output, subtitles=[], duration=5.0, silent=True)
+
+    monkeypatch.setattr("slidesonnet.api.export", fake_export)
+    out = tmp_path / "deck.mp4"
+    with caplog.at_level(logging.INFO, logger="slidesonnet.cli"):
+        result = CliRunner().invoke(
+            main, ["export", str(_copy_pdf(tmp_path)), "-o", str(out), "--silent"]
+        )
+    assert result.exit_code == 0
+    assert "[00:00 50%] 1/2 video 2/2" in caplog.text  # video is half of (video, concat)
 
 
 def test_export_reports_value_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

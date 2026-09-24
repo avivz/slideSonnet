@@ -6,10 +6,11 @@ import json
 import logging
 import shutil
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 from slidesonnet.exceptions import FFmpegError
-from slidesonnet.proc import run_tool
+from slidesonnet.proc import run_tool, run_tool_with_progress
 
 logger = logging.getLogger(__name__)
 
@@ -219,8 +220,13 @@ def compose_transition_clip(
     _run_ffmpeg(cmd)
 
 
-def concatenate_segments(segments: list[Path], output: Path) -> None:
-    """Concatenate video segments into a single video using ffmpeg concat demuxer."""
+def concatenate_segments(
+    segments: list[Path], output: Path, *, on_time: Callable[[float], None] | None = None
+) -> None:
+    """Concatenate video segments into a single video using ffmpeg concat demuxer.
+
+    *on_time*, if given, is called with seconds of output written as ffmpeg runs.
+    """
     logger.debug("concatenate: %d segments → %s", len(segments), output.name)
     output.parent.mkdir(parents=True, exist_ok=True)
     concat_file = output.parent / "concat_list.txt"
@@ -242,7 +248,7 @@ def concatenate_segments(segments: list[Path], output: Path) -> None:
         str(output),
     ]
     try:
-        _run_ffmpeg(cmd)
+        _run_ffmpeg(cmd, on_time=on_time)
     finally:
         concat_file.unlink(missing_ok=True)
 
@@ -393,14 +399,17 @@ def concatenate_segments_xfade(
     _run_ffmpeg(cmd)
 
 
-def mux_audio(video: Path, audio: Path, output: Path) -> None:
+def mux_audio(
+    video: Path, audio: Path, output: Path, *, on_time: Callable[[float], None] | None = None
+) -> None:
     """Replace *video*'s audio with *audio*, copying the video stream (no re-encode).
 
     Used by :func:`render.compose_video` for animated transitions: the video is
     assembled silent (still segments + centered morph clips) and the single
     continuous deck track is laid over it here, so a morph centered on a slide
     boundary plays over whatever audio is there (silence *or* speech) without
-    changing the deck's total duration.
+    changing the deck's total duration. *on_time*, if given, is called with
+    seconds of output written as ffmpeg runs.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     logger.debug("mux: %s + %s → %s", video.name, audio.name, output.name)
@@ -424,7 +433,7 @@ def mux_audio(video: Path, audio: Path, output: Path) -> None:
         "-shortest",
         str(output),
     ]
-    _run_ffmpeg(cmd)
+    _run_ffmpeg(cmd, on_time=on_time)
 
 
 def concatenate_audio(audio_paths: list[Path], output: Path) -> None:
@@ -586,6 +595,15 @@ def _parse_duration(value: str, media_path: Path) -> float:
         ) from e
 
 
-def _run_ffmpeg(cmd: list[str]) -> None:
-    """Run an ffmpeg command, handling errors."""
-    run_tool(cmd, error_cls=FFmpegError, install_hint="ffmpeg", fail_message="ffmpeg failed")
+def _run_ffmpeg(cmd: list[str], *, on_time: Callable[[float], None] | None = None) -> None:
+    """Run an ffmpeg command, handling errors; stream output time to *on_time* if given."""
+    if on_time is None:
+        run_tool(cmd, error_cls=FFmpegError, install_hint="ffmpeg", fail_message="ffmpeg failed")
+    else:
+        run_tool_with_progress(
+            cmd,
+            on_time=on_time,
+            error_cls=FFmpegError,
+            install_hint="ffmpeg",
+            fail_message="ffmpeg failed",
+        )

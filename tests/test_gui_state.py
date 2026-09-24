@@ -35,7 +35,7 @@ def test_preview_forwards_progress_to_build_preview(
 
     monkeypatch.setattr("slidesonnet.gui.state.api.build_preview", fake_build_preview)
 
-    def cb(label: str, done: int, total: int) -> None:
+    def cb(phase: str, done: int, total: int, label: str) -> None:
         return None
 
     state.preview_deck(cb)
