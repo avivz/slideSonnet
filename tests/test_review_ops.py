@@ -193,3 +193,61 @@ def test_status_on_final_build_pauses_comparison(tmp_path: Path) -> None:
     write_pdf(pdf, ["a"], final=True)
     status = ops.status(pdf)
     assert status.final_build and status.changes == [] and status.unfiled == []
+
+
+def test_claiming_a_slide_later_moves_it_out_of_unrequested(deck: Path) -> None:
+    ops.status(deck)
+    mine = ops.comment(deck, ["a"], "shorten", author="author")
+    _edit_page(deck, 1)  # agent edits @b before declaring it...
+    stray = ops.file_unrequested(deck)  # ...and the editor files it first
+    assert stray is not None
+    ops.reply(deck, mine, "Shortened; also touched @b.", add_slides=["b"])
+    state = ops.load(deck)
+    assert stray not in state.conversations  # nothing left in it: gone
+    assert state.conversations[mine].slides == ["a", "b"]
+    assert ops.status(deck).unfiled == []
+    assert state.next_id() != stray  # its id is never reused
+
+
+def test_claiming_keeps_the_rest_of_an_unrequested_conversation(deck: Path) -> None:
+    ops.status(deck)
+    _edit_page(deck, 1)
+    _edit_page(deck, 2)
+    stray = ops.file_unrequested(deck)
+    assert stray is not None
+    ops.comment(deck, ["b"], "Tightened @b.")
+    assert ops.load(deck).conversations[stray].slides == ["c"]
+
+
+def test_an_unrequested_conversation_you_answered_keeps_its_slides(deck: Path) -> None:
+    ops.status(deck)
+    _edit_page(deck, 1)
+    stray = ops.file_unrequested(deck)
+    assert stray is not None
+    ops.reply(deck, stray, "Why did this change?", author="author")
+    ops.comment(deck, ["b"], "It was me.")
+    assert ops.load(deck).conversations[stray].slides == ["b"]
+
+
+def test_clear_does_not_resurrect_a_retired_unrequested_conversation(deck: Path) -> None:
+    ops.status(deck)
+    mine = ops.comment(deck, ["a"], "shorten", author="author")
+    _edit_page(deck, 1)
+    stray = ops.file_unrequested(deck)
+    ops.reply(deck, mine, "Done; touched @b too.", add_slides=["b"])
+    ops.accept(deck, mine)
+    ops.clear(deck)
+    assert stray not in ops.load(deck).conversations
+
+
+def test_clear_keeps_a_partly_claimed_unrequested_conversation_as_it_was(deck: Path) -> None:
+    ops.status(deck)
+    mine = ops.comment(deck, ["a"], "shorten", author="author")
+    _edit_page(deck, 1)
+    _edit_page(deck, 2)
+    stray = ops.file_unrequested(deck)
+    assert stray is not None
+    ops.reply(deck, mine, "Done; touched @b too.", add_slides=["b"])
+    ops.accept(deck, mine)
+    ops.clear(deck)
+    assert ops.load(deck).conversations[stray].slides == ["c"]

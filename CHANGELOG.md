@@ -20,7 +20,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   for the agent, accepted, or changed without a conversation; `N` jumps to the
   next one waiting for you. Changes that arrive with no conversation (a
   recompile, an outside edit) are filed into their own conversation, with a
-  warning when many slides changed at once; your own narration edits are noted
+  warning when many slides changed at once — and move out of it when the agent
+  declares them afterwards (until you reply there); your own narration edits are noted
   in the slide's open conversation so the agent sees them.
 - **Export checks the deck is final.** `export` (and the editor's Export
   button) refuses a plain build — no page numbers — and a deck with review

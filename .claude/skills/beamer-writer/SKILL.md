@@ -262,7 +262,9 @@ file at the same time).
    - a request from chat, or your own initiative: open one —
      `slidesonnet review comment deck.pdf @x @y -m "What I'm changing and why"`
    Slides that change without a conversation are filed as *unrequested* and
-   flagged to the author.
+   flagged to the author. Declaring a slide after recompiling still works — it
+   moves out of the unrequested conversation (unless the author already
+   replied there) — but declaring first spares the author the false alarm.
 4. **Edit, then recompile normally** (`latexmk -pdf deck.tex` — a plain build).
    Never rename a slide id: a rename shows up as one slide deleted and another
    added.

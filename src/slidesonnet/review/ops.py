@@ -9,7 +9,7 @@ Deck sources (``.tex``, ``.narration``) are never touched.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from slidesonnet.deck import dedupe_page_ids
@@ -282,6 +282,21 @@ class ClearResult:
     order_adopted: bool = False
 
 
+def _pin_slides(rec: Record, state: ReviewState) -> Record:
+    """Make a kept record carry its conversation's current slides (on ``open`` only).
+
+    Slides can leave a conversation through another one's records (see
+    ``log._claim``); once those are compacted away, the conversation must still
+    replay to the same slides.
+    """
+    conv = state.conversations.get(rec.conv) if rec.conv else None
+    if conv is None or conv.is_deck:
+        return rec
+    if rec.kind == "open":
+        return replace(rec, slides=tuple(conv.slides))
+    return replace(rec, slides=()) if rec.slides else rec
+
+
 def clear(pdf_path: Path) -> ClearResult:
     """Drop closed conversations and advance the base for their slides.
 
@@ -305,9 +320,11 @@ def clear(pdf_path: Path) -> ClearResult:
     moved = {c.slide_id for c in current.changes if c.moved}
     adopt = not (moved & open_slides)
     base_mod.advance(pdf_path, set(advance), adopt_order=adopt)
-    drop = {c.id for c in closed}
+    drop = {c.id for c in closed} | state.retired
     path = review_path(pdf_path)
-    records = [r for r in read_records(path) if r.conv not in drop]
+    records = [
+        _pin_slides(r, state) for r in read_records(path) if r.conv is None or r.conv not in drop
+    ]
     write_records(path, records, lock_path=_lock(pdf_path))
     return ClearResult(
         cleared=[c.id for c in closed], advanced=advance, skipped=skipped, order_adopted=adopt

@@ -215,13 +215,40 @@ class Conversation:
 class ReviewState:
     conversations: dict[str, Conversation]
     sends: int = 0  # how many ``send`` records — the ``review wait`` cursor
+    retired: set[str] = field(default_factory=set)  # emptied unrequested conversations
 
     def next_id(self) -> str:
-        numbers = [int(cid[1:]) for cid in self.conversations if re.fullmatch(r"c\d+", cid)]
+        ids = [*self.conversations, *self.retired]
+        numbers = [int(cid[1:]) for cid in ids if re.fullmatch(r"c\d+", cid)]
         return f"c{max(numbers, default=0) + 1}"
 
     def slide_conversations(self) -> list[Conversation]:
         return [c for c in self.conversations.values() if not c.is_deck]
+
+
+def _untouched_unrequested(conv: Conversation) -> bool:
+    """Filed automatically and still only system notes — nobody has taken it up."""
+    return (
+        conv.origin == "unrequested"
+        and conv.status == "open"
+        and all(m.author == "system" for m in conv.messages)
+    )
+
+
+def _claim(state: ReviewState, claimer: Conversation, slide_id: str) -> None:
+    """*slide_id* joined *claimer*: take it out of untouched unrequested conversations.
+
+    The agent may recompile before declaring a slide, and the editor files the
+    change as unrequested in between; declaring it afterwards should land in
+    the same place as declaring it first.
+    """
+    for conv in list(state.conversations.values()):
+        if conv is claimer or slide_id not in conv.slides or not _untouched_unrequested(conv):
+            continue
+        conv.slides.remove(slide_id)
+        if not conv.slides:
+            del state.conversations[conv.id]
+            state.retired.add(conv.id)
 
 
 def replay(records: list[Record]) -> ReviewState:
@@ -243,6 +270,8 @@ def replay(records: list[Record]) -> ReviewState:
         for sid in rec.slides:
             if sid not in conv.slides and not conv.is_deck:
                 conv.slides.append(sid)
+            if conv.origin != "unrequested" and not conv.is_deck:
+                _claim(state, conv, sid)
         if rec.text:
             conv.messages.append(Message(author=rec.author, at=rec.at, text=rec.text))
         if rec.kind == "accept" and not conv.is_deck:
