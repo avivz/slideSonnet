@@ -41,7 +41,7 @@ from slidesonnet.narration.format import (
     serialize_body,
 )
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
-from slidesonnet.pdf.reader import rasterize, read_page_ids
+from slidesonnet.pdf.reader import open_render, read_page_ids, render_page_range
 from slidesonnet.timing import word_count
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
@@ -135,7 +135,7 @@ class EditorState:
         # to disk). None = fall back to the config default. See active_backend.
         self.selected_backend: Backend | None = None
         self.index = 0
-        self._images: list[Path] | None = None
+        self._pages: dict[int, Path] | None = None  # rendered page images, by index
         # (pdf (mtime, size) stamp, deduped page ids, dedupe diagnostics)
         self._page_cache: tuple[tuple[float, int], list[str], list[Diagnostic]] | None = None
         self._audio_scan: tuple[float, list[tuple[SpeechRef, bool]]] | None = None
@@ -206,7 +206,7 @@ class EditorState:
             # Keep showing the last good deck; the next tick retries.
             return False
         if current[str(self.pdf_path)] != self._stamps[str(self.pdf_path)]:
-            self._images = None  # page images are stale; re-rasterize on demand
+            self._pages = None  # page images are stale; render the new build
         self._stamps = current
         self.config = config
         self.deck, self.diagnostics = deck, diagnostics
@@ -225,18 +225,46 @@ class EditorState:
         }
         return {labels[key] for key, stamp in current.items() if stamp != self._stamps[key]}
 
-    def ensure_images(self) -> list[Path]:
-        """Page images for this deck, rendering them only when they're missing.
+    def _page_map(self) -> dict[int, Path]:
+        if self._pages is None:
+            self._pages = open_render(
+                self.pdf_path, render_dir(self.pdf_path) / "pages", page_count=self.page_count
+            )
+        return self._pages
 
-        ``reuse`` matters most when switching decks: a state is built per deck
-        open, and re-running pdftoppm over an unchanged 49-page deck costs ~3.5 s
-        of blocking work every time. A recompile still re-renders — the stamp
-        carries the PDF's mtime and size — and :meth:`poll_sources` drops the
-        memo so the new build is picked up.
+    def page_images(self) -> list[Path | None]:
+        """Each page's image if it's rendered yet — never renders (cheap).
+
+        The editor opens a deck at once and fills the rest in the background
+        (:meth:`render_pages`, nearest the current slide first); a reopened,
+        unchanged deck reuses what's on disk, and a recompile starts over.
         """
-        if self._images is None:
-            self._images = rasterize(self.pdf_path, render_dir(self.pdf_path) / "pages", reuse=True)
-        return self._images
+        pages = self._page_map()
+        return [pages.get(i) for i in range(self.page_count)]
+
+    def next_missing(self, *, near: int) -> int | None:
+        """The unrendered page closest to *near* (ties: the later one), or None."""
+        pages = self._page_map()
+        missing = [i for i in range(self.page_count) if i not in pages]
+        return min(missing, key=lambda i: (abs(i - near), -i)) if missing else None
+
+    def render_pages(self, first: int, last: int) -> None:
+        """Render pages *first*..*last* (0-based, inclusive). Blocking: run off the loop."""
+        pages = self._page_map()
+        out = render_dir(self.pdf_path) / "pages"
+        pages.update(render_page_range(self.pdf_path, out, first, last))
+
+    def ensure_images(self) -> list[Path]:
+        """Every page image, rendering whatever is still missing (blocking)."""
+        while (i := self.next_missing(near=0)) is not None:
+            last = i
+            while last + 1 < self.page_count and last + 1 not in self._page_map():
+                last += 1
+            before = len(self._page_map())
+            self.render_pages(i, last)
+            if len(self._page_map()) == before:  # pdftoppm wrote nothing: don't spin
+                break
+        return [p for p in self.page_images() if p is not None]
 
     # ---- navigation ----------------------------------------------------
     @property
@@ -261,7 +289,8 @@ class EditorState:
         self.go(self.index - 1)
 
     def current_image(self) -> Path | None:
-        images = self.ensure_images()
+        """This slide's image, if it's rendered yet (see :meth:`page_images`)."""
+        images = self.page_images()
         return images[self.index] if self.index < len(images) else None
 
     # ---- editing -------------------------------------------------------

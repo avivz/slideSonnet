@@ -12,10 +12,12 @@ import pytest
 from slidesonnet.exceptions import ParserError
 from slidesonnet.pdf.reader import (
     cached_pages,
+    open_render,
     page_aspect,
     page_count,
     rasterize,
     read_page_ids,
+    render_page_range,
     write_render_stamp,
 )
 
@@ -231,3 +233,45 @@ def test_plain_marker_detected(tmp_path: Path) -> None:
     assert is_plain_build(plain) and not is_final_build(plain)
     assert not is_plain_build(legacy) and not is_final_build(legacy)
     assert read_page_ids(plain) == ["a"]
+
+
+# ---- rendering page by page (the editor opens before the strip is ready) ----
+
+
+def _fake_pdftoppm(monkeypatch: pytest.MonkeyPatch, calls: list[list[str]]) -> None:
+    """Stand in for pdftoppm: write the -f..-l pages it was asked for."""
+
+    def run(cmd: list[str], **_kw: object) -> None:
+        calls.append(cmd)
+        first, last = int(cmd[cmd.index("-f") + 1]), int(cmd[cmd.index("-l") + 1])
+        for n in range(first, last + 1):
+            Path(f"{cmd[-1]}-{n:02d}.png").write_bytes(b"\x89PNG")
+
+    monkeypatch.setattr("slidesonnet.pdf.reader.run_tool", run)
+
+
+def test_open_render_starts_empty_and_keeps_what_was_rendered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    _fake_pdftoppm(monkeypatch, calls)
+    pdf, pages = _pdf(tmp_path), tmp_path / "pages"
+    assert open_render(pdf, pages, page_count=12) == {}
+    got = render_page_range(pdf, pages, 3, 4)
+    assert sorted(got) == [3, 4] and got[3].name == "page-04.png"
+    assert [c[c.index("-f") + 1 : c.index("-l") + 2] for c in calls] == [["4", "-l", "5"]]
+    assert sorted(open_render(pdf, pages, page_count=12)) == [3, 4]  # reopened: kept
+    assert cached_pages(pdf, pages) is None  # partial: not a complete render
+
+
+def test_open_render_drops_pages_of_an_older_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_pdftoppm(monkeypatch, [])
+    pdf, pages = _pdf(tmp_path), tmp_path / "pages"
+    open_render(pdf, pages, page_count=3)
+    render_page_range(pdf, pages, 0, 2)
+    assert cached_pages(pdf, pages) is not None  # all pages: a complete render
+    pdf.write_bytes(b"%PDF-1.4\nrecompiled, different size\n")
+    assert open_render(pdf, pages, page_count=3) == {}
+    assert not list(pages.glob("page-*.png"))

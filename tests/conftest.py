@@ -156,23 +156,23 @@ def _stub_page_rasterize(
     if request.node.get_closest_marker("integration") or request.node.get_closest_marker("browser"):
         yield
         return
+    if request.node.module.__name__.endswith("test_pdf_reader"):
+        yield  # the reader's own tests stub (or need) the real pdftoppm call
+        return
 
-    from slidesonnet.cache import render_dir
-    from slidesonnet.gui.state import EditorState
+    from slidesonnet.pdf.reader import page_count
 
-    def fake_ensure_images(self: EditorState) -> list[Path]:
-        if self._images is None:
-            out = render_dir(self.pdf_path) / "pages"
-            out.mkdir(parents=True, exist_ok=True)
-            images: list[Path] = []
-            for i in range(len(self.deck.pages)):
-                page = out / f"page-{i + 1}.png"
-                page.write_bytes(_TINY_PNG)
-                images.append(page)
-            self._images = images
-        return self._images
+    def fake_pdftoppm(cmd: list[str], **_kw: object) -> None:
+        """Write a stub PNG per requested page, named as pdftoppm would."""
+        pdf, prefix = Path(cmd[-2]), cmd[-1]
+        total = page_count(pdf)
+        first = int(cmd[cmd.index("-f") + 1]) if "-f" in cmd else 1
+        last = int(cmd[cmd.index("-l") + 1]) if "-l" in cmd else total
+        width = len(str(total))
+        for n in range(first, last + 1):
+            Path(f"{prefix}-{n:0{width}d}.png").write_bytes(_TINY_PNG)
 
-    monkeypatch.setattr(EditorState, "ensure_images", fake_ensure_images)
+    monkeypatch.setattr("slidesonnet.pdf.reader.run_tool", fake_pdftoppm)
     yield
 
 

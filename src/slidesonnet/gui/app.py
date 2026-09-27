@@ -112,6 +112,7 @@ DEFAULT_VOICE_OPTION = "__default__"
 
 _STAGE_RESERVE = 680.0  # stage minimum (620px content) + its padding + separators
 _STRIP_MAX = 400.0
+_PAGES_PER_RENDER = 4  # background page renders: pages per pdftoppm run
 _CONSOLE_MAX = 520.0
 
 
@@ -1553,6 +1554,9 @@ class EditorView:
         self.busy = False  # one action (synth/export/preview build) at a time
         self._flash_token = 0  # keeps an old fade timer from wiping a newer message
         self.thumb_cards: list[tuple[Any, Any, Any]] = []  # (card, dot, audio-missing badge)
+        self.thumb_slots: list[Any] = []  # each thumb's image holder, filled as pages render
+        self._page_render_running = False
+        self._page_render_again = False  # asked for while running: go round once more
         self._auto_build_timers: dict[str, Any] = {}  # per-slide debounce timers
         # (done, total) while the whole-deck preview track is being assembled, else
         # None. Written from the io_bound worker thread, polled by the progress
@@ -1844,6 +1848,7 @@ class EditorView:
         )
         self.jobs.start()
         self.client.on_disconnect(self.jobs.stop)
+        ui.timer(0.05, self.render_pages_in_background, once=True)  # once the page is up
 
         # --- event wiring -----------------------------------------------------
         # NiceGUI's `args` filter only reaches top-level event keys, so a real
@@ -1880,7 +1885,8 @@ class EditorView:
         ui.on("ss_resize", self.layout.on_resize)
         ui.keyboard(on_key=self._on_key)
 
-        self.review.compute()  # once, up front: the first render shows the comparison
+        if not self.state.review.active:
+            self.review.compute()  # cheap with review off; on, render() compares in the background
         self.render()
         self.layout.sync_toggles()
         if self.auto_build_active():  # deck opened with auto-build already on: fill it
@@ -2001,23 +2007,27 @@ class EditorView:
 
     # ---- filmstrip -----------------------------------------------------
     def build_strip(self) -> None:
-        """(Re)build the filmstrip; thumbnails degrade to id tiles without pdftoppm."""
+        """(Re)build the filmstrip at once: rendered pages show, the rest fill in.
+
+        Page images render in the background (:meth:`render_pages_in_background`),
+        so opening a deck never waits on pdftoppm; without pdftoppm the tiles
+        keep showing the slide id.
+        """
         state = self.state
-        images: list[Path] = []
+        images: list[Path | None] = [None] * state.page_count
         try:
-            images = state.ensure_images()
+            images = state.page_images()
         except Exception as exc:
-            logger.warning("thumbnail render failed: %s", exc)
+            logger.warning("page images unavailable: %s", exc)
         self.thumb_cards.clear()
+        self.thumb_slots.clear()
         self.review.reset_thumbs()
         self.strip_col.clear()
         with self.strip_col:
             for i, sid in enumerate(state.deck.pages):
                 with ui.element("div").classes("ss-thumb").mark(f"thumb-{i}") as card:
-                    if i < len(images):
-                        ui.image(_media_url(state, images[i], cache_bust=True)).classes("w-full")
-                    else:
-                        ui.label(sid or f"page {i + 1}").classes("ss-thumb-fallback ss-mono")
+                    with ui.element("div").classes("ss-thumb-slot") as slot:
+                        self._thumb_content(i, sid, images[i] if i < len(images) else None)
                     dot = ui.element("div").classes("ss-dot")
                     audio_badge = ui.icon("graphic_eq").classes("ss-thumb-audio hidden")
                     audio_badge.mark(f"thumb-audio-{i}")
@@ -2026,6 +2036,80 @@ class EditorView:
                     self.review.decorate_thumb(i)
                 card.on("click", lambda _e=None, i=i: self.jump(i))
                 self.thumb_cards.append((card, dot, audio_badge))
+                self.thumb_slots.append(slot)
+
+    def _thumb_content(self, i: int, sid: str, image: Path | None) -> None:
+        if image is not None:
+            ui.image(_media_url(self.state, image, cache_bust=True)).classes("w-full").mark(
+                f"thumb-img-{i}"
+            )
+        else:
+            ui.label(sid or f"page {i + 1}").classes("ss-thumb-fallback ss-mono")
+
+    def _fill_thumb(self, i: int, image: Path | None) -> None:
+        if image is None or i >= len(self.thumb_slots) or i >= self.state.page_count:
+            return
+        slot = self.thumb_slots[i]
+        slot.clear()
+        with slot:
+            self._thumb_content(i, self.state.deck.pages[i], image)
+
+    def render_pages_in_background(self) -> None:
+        """Start filling in missing page images (or re-check, if already running)."""
+        if self._page_render_running:
+            self._page_render_again = True  # e.g. a recompile mid-render
+            return
+        self._page_render_running = True
+        self._page_task(self._render_missing_pages())
+
+    async def _render_missing_pages(self) -> None:
+        """Render missing pages nearest the current slide first, a few per pdftoppm run.
+
+        The current slide goes alone (it's what you're looking at); the rest go in
+        small runs so a jump elsewhere is picked up within a fraction of a second.
+        """
+        try:
+            while not self.strip_col.is_deleted:
+                self._page_render_again = False
+                state = self.state
+                first = state.next_missing(near=state.index)
+                if first is None:
+                    return
+                images = state.page_images()
+                last = first
+                if first != state.index:
+                    while (
+                        last + 1 < state.page_count
+                        and last - first < _PAGES_PER_RENDER - 1
+                        and images[last + 1] is None
+                        and last + 1 != state.index
+                    ):
+                        last += 1
+                try:
+                    await run.io_bound(state.render_pages, first, last)
+                except Exception as exc:  # no pdftoppm, or a half-written PDF
+                    logger.warning("page render failed: %s", exc)
+                    return
+                if state is not self.state or self.strip_col.is_deleted:
+                    return
+                images = state.page_images()
+                if first >= len(images) or images[first] is None:
+                    if self._page_render_again:
+                        continue  # the deck changed under us — start on the new build
+                    return  # pdftoppm wrote nothing: stop rather than spin
+                for i in range(first, min(last + 1, len(images))):
+                    self._fill_thumb(i, images[i])
+                if first <= state.index <= last:
+                    self._show_current_image()
+        finally:
+            self._page_render_running = False
+
+    def _show_current_image(self) -> None:
+        img = self.state.current_image()
+        if img is not None:
+            self.slide_img.set_source(_media_url(self.state, img, cache_bust=True))
+        else:
+            self.slide_img.set_source("")  # not rendered yet — don't show another slide
 
     def _scroll_strip(self) -> None:
         card = self.thumb_cards[self.state.index][0]
@@ -2114,11 +2198,11 @@ class EditorView:
         self.add_line_btn.set_enabled(editable)
         self.add_pause_btn.set_enabled(editable)
         try:
-            img = state.current_image()
-            if img is not None:
-                self.slide_img.set_source(_media_url(state, img, cache_bust=True))
-        except Exception as exc:  # rasterize may fail without pdftoppm
-            logger.warning("image render failed: %s", exc)
+            self._show_current_image()
+        except Exception as exc:
+            logger.warning("page image unavailable: %s", exc)
+        if state.current_image() is None:
+            self.render_pages_in_background()  # a jump to an unrendered slide: it goes next
         ungenerated = state.ungenerated_ids()
         for i, (card, dot, audio_badge) in enumerate(self.thumb_cards):
             if i >= len(state.deck.pages):
@@ -2764,11 +2848,8 @@ class EditorView:
         # mid-build; an in-GUI edit already does this via replace_block.
         if self.player.playback.loaded_key is not None:
             self.player.stop_playback()
-        try:
-            await run.io_bound(state.ensure_images)  # rasterize off the event loop
-        except Exception:
-            pass  # build_strip degrades to id tiles
         self.build_strip()
+        self.render_pages_in_background()
         # A PDF/config-only recompile leaves the narration untouched on disk, so
         # rebuilding the block editor would only revert whatever the user is
         # mid-typing. Refresh everything *but* the editor — unless our own slide

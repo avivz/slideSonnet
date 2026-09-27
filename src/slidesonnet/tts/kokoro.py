@@ -27,16 +27,30 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from kokoro import KPipeline as _KPipelineType
 
-_KPipeline: type[_KPipelineType] | None
-try:
-    from kokoro import KPipeline as _KPipelineImport
 
-    _KPipeline = _KPipelineImport
-except ImportError:
-    _KPipeline = None
+class _Unloaded:
+    """Placeholder until the first synthesis: importing kokoro pulls in torch (seconds),
+    and the editor creates engines on every deck open just to name cache files."""
 
-# Module-level alias for test mocking via @patch
-KPipeline: type[_KPipelineType] | None = _KPipeline
+
+_UNLOADED = _Unloaded()
+
+# Module-level alias for test mocking via @patch; resolved by _kpipeline().
+KPipeline: type[_KPipelineType] | None | _Unloaded = _UNLOADED
+
+
+def _kpipeline() -> type[_KPipelineType] | None:
+    """The KPipeline class (imported on first use), or None if kokoro isn't installed."""
+    global KPipeline
+    if isinstance(KPipeline, _Unloaded):
+        try:
+            from kokoro import KPipeline as _KPipelineImport
+
+            KPipeline = _KPipelineImport
+        except ImportError:
+            KPipeline = None
+    return None if isinstance(KPipeline, _Unloaded) else KPipeline
+
 
 # huggingface_hub rides along with the kokoro extra, so it's as optional as kokoro
 # itself. Without it there are no downloads to intercept; FileNotFoundError (which
@@ -179,14 +193,15 @@ class KokoroTTS(TTSEngine):
         """Get (or lazily create) the KPipeline for *voice*'s language."""
         lang_code = voice[0]  # Kokoro convention: voice prefix is the language
         if lang_code not in self._pipelines:
-            if KPipeline is None:
+            pipeline_cls = _kpipeline()
+            if pipeline_cls is None:
                 raise TTSError(
                     "kokoro package not installed. Install with: pip install slidesonnet[kokoro]"
                 )
             logger.info("Loading Kokoro pipeline (lang '%s')...", lang_code)
             _install_cache_first_downloads()
             with _quiet_torch_load_warnings():
-                self._pipelines[lang_code] = KPipeline(lang_code=lang_code, repo_id=_REPO_ID)
+                self._pipelines[lang_code] = pipeline_cls(lang_code=lang_code, repo_id=_REPO_ID)
         return self._pipelines[lang_code]
 
     def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:

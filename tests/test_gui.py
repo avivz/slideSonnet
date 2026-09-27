@@ -1347,6 +1347,7 @@ async def test_slide_image_refetches_after_recompile(
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     await user.should_see("Slide 1 / 3")
+    await user.should_see(marker="thumb-img-2", retries=100)  # background render done
     img = next(iter(user.find(marker="stage-img").elements))
     before = str(img.props.get("src"))
 
@@ -1354,6 +1355,7 @@ async def test_slide_image_refetches_after_recompile(
     later = time.time() + 5
     os.utime(pdf, (later, later))
     await user.should_see("Deck files changed on disk — reloaded", retries=300)
+    await user.should_see(marker="thumb-img-1", retries=100)  # the new build rendered
 
     after = str(img.props.get("src"))
     assert before != after  # cache-busted → the browser refetches the fresh image
@@ -1938,3 +1940,45 @@ async def test_paid_confirm_names_the_session_engine_not_disk_default(
     sel.set_value("inworld")  # session pick: a paid engine while disk config is kokoro
     user.find(marker="gen-missing").click()
     await user.should_see("inworld will spend API credits")  # the engine that bills, not kokoro
+
+
+async def test_deck_opens_before_its_pages_render(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opening never waits on a whole-deck pdftoppm: pages render in the
+    background, one small run at a time, the current slide first."""
+    from slidesonnet.pdf import reader
+
+    calls: list[list[str]] = []
+    stub = reader.run_tool  # conftest's stub pdftoppm
+
+    def spy(cmd: list[str], **kw: object) -> None:
+        calls.append(cmd)
+        stub(cmd, **kw)
+
+    monkeypatch.setattr(reader, "run_tool", spy)
+    pdf = _prep(tmp_path)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Slide 1 / 6")
+    for i in range(6):
+        await user.should_see(marker=f"thumb-img-{i}", retries=100)
+    assert calls and all("-f" in c for c in calls)  # never the whole deck in one go
+    assert calls[0][calls[0].index("-f") + 1 : calls[0].index("-l") + 2] == ["1", "-l", "1"]
+
+
+async def test_reopening_reuses_rendered_pages(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path)
+    from slidesonnet.gui.state import EditorState
+
+    EditorState(pdf).ensure_images()  # a previous session rendered everything
+    from slidesonnet.pdf import reader
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(reader, "run_tool", lambda cmd, **kw: calls.append(cmd))
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see(marker="thumb-img-5")
+    assert calls == []

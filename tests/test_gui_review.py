@@ -43,6 +43,8 @@ def _textarea(user: User, marker: str) -> ui.textarea:
 async def _open(user: User, pdf: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
+    # The deck opens at once; with review on, the comparison lands just after.
+    await user.should_not_see("Comparing…", retries=300)
 
 
 async def test_start_review_from_the_editor(
@@ -251,3 +253,24 @@ async def test_closed_conversations_are_hidden_until_asked_for(
     await user.should_see(marker=f"conv-row-{live}")
     await user.should_not_see("Old business.")
     await user.should_not_see(marker=f"conv-row-{done}")
+
+
+async def test_deck_opens_without_waiting_for_the_comparison(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Comparing rasterizes every page; the editor mustn't wait on it to open."""
+    import slidesonnet.gui.review as review_mod
+
+    real = review_mod.capture_pages
+
+    def slow(*args: object, **kwargs: object) -> object:
+        time.sleep(0.5)
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(review_mod, "capture_pages", slow)
+    pdf = _deck(tmp_path, ["a", "b"])
+    ops.start(pdf)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Comparing…")  # the page is up while the comparison runs
+    await user.should_not_see("Comparing…", retries=300)

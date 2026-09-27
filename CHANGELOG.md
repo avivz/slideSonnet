@@ -82,6 +82,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   hides them. Phases get equal shares of the percentage for now.
 
 ### Changed
+- **Decks open at once.** The editor no longer waits for pdftoppm to render
+  every page: the current slide renders first, the filmstrip fills in around it
+  in the background (nearest pages first, following you if you jump), and pages
+  already rendered for this build are reused. Opening also stopped loading the
+  Kokoro model's libraries (torch) just to name cache files — they load on the
+  first synthesis — and a deck under review compares in the background
+  ("Comparing…") instead of before the page appears. A cold open of a 22-slide
+  deck went from ~11 s to ~1 s.
 - **Automatic audio pruning keeps the clips of the review base.** While a
   slide is under review its old narration is still compared and played, so its
   audio counts as in use until the base moves on (`review clear`).

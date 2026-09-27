@@ -653,12 +653,51 @@ def test_non_block_save_also_refuses_on_external_change(tmp_path: Path) -> None:
     assert "@gone" in sidecar.read_text(encoding="utf-8")
 
 
-def test_pdf_change_invalidates_image_cache(tmp_path: Path) -> None:
+def _fake_pdftoppm(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def run(cmd: list[str], **_kw: object) -> None:
+        calls.append(cmd)
+        first, last = int(cmd[cmd.index("-f") + 1]), int(cmd[cmd.index("-l") + 1])
+        for n in range(first, last + 1):
+            Path(f"{cmd[-1]}-{n:02d}.png").write_bytes(b"\x89PNG")
+
+    monkeypatch.setattr("slidesonnet.pdf.reader.run_tool", run)
+    return calls
+
+
+def test_page_images_never_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _fake_pdftoppm(monkeypatch)
     state = _state(tmp_path)
-    state._images = [tmp_path / "fake.png"]  # primed cache
+    assert state.page_images() == [None] * state.page_count  # cheap: just what exists
+    assert state.current_image() is None
+    assert calls == []
+
+
+def test_render_pages_fills_in_and_next_missing_prefers_nearby(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_pdftoppm(monkeypatch)
+    state = _state(tmp_path)
+    assert state.page_count >= 3
+    state.render_pages(1, 1)
+    assert state.page_images()[1] is not None and state.page_images()[0] is None
+    assert state.next_missing(near=1) in (0, 2)
+    state.go(1)
+    assert state.current_image() is not None
+    assert len(state.ensure_images()) == state.page_count  # the rest, on demand
+    assert state.next_missing(near=0) is None
+
+
+def test_pdf_change_invalidates_image_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_pdftoppm(monkeypatch)
+    state = _state(tmp_path)
+    state.render_pages(0, 0)
     _bump_mtime(tmp_path / "marked.pdf")
     assert state.poll_sources() is True
-    assert state._images is None
+    assert state.page_images()[0] is None  # the new build starts over
 
 
 def test_config_change_reloads_config(tmp_path: Path) -> None:
