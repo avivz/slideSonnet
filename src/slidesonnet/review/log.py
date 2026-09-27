@@ -320,6 +320,13 @@ def append(path: Path, *records: Record, lock_path: Path | None = None) -> None:
             fh.write((FORMAT_HEADER + "\n" if new else "") + payload)
 
 
+def ensure_file(path: Path, *, lock_path: Path | None = None) -> None:
+    """Create an empty log (just the format header) if *path* doesn't exist."""
+    with locked(lock_path or default_lock_path(path)):
+        if not path.exists():
+            path.write_text(FORMAT_HEADER + "\n", encoding="utf-8")
+
+
 def write_records(path: Path, records: list[Record], *, lock_path: Path | None = None) -> None:
     """Replace the whole log (compaction) atomically, under the lock."""
     payload = FORMAT_HEADER + "\n" + "".join(serialize_record(r) for r in records)

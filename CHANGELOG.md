@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Review tools in the editor.** "Start review" (or `slidesonnet review
+  snapshot`) makes the deck as it is now the base. From then on the console
+  shows the Deck conversation (instructions not about one slide), this slide's
+  conversations with Reply / Accept / Reopen, a note box that opens a new one,
+  and all conversations (click one to show only its slides). **Send** tells a
+  waiting agent there's work (optionally automatic after each note); **Clear
+  accepted** makes accepted changes the new base. A changed slide shows its
+  base version beside the current one (`D` toggles before-only) and a word diff
+  of its narration; slides that were added, removed, or moved bring up a
+  *before* strip in the old order. Filmstrip badges mark slides waiting for you,
+  for the agent, accepted, or changed without a conversation; `N` jumps to the
+  next one waiting for you. Changes that arrive with no conversation (a
+  recompile, an outside edit) are filed into their own conversation, with a
+  warning when many slides changed at once; your own narration edits are noted
+  in the slide's open conversation so the agent sees them.
 - **Export checks the deck is final.** `export` (and the editor's Export
   button) refuses a plain build — no page numbers — and a deck with review
   conversations still open, listing each reason. `--draft` (or "Export draft"

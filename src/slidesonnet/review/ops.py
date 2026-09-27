@@ -23,6 +23,7 @@ from slidesonnet.review.log import (
     Record,
     ReviewState,
     append,
+    ensure_file,
     now,
     read_records,
     replay,
@@ -44,6 +45,19 @@ def _lock(pdf_path: Path) -> Path:
 
 def _append(pdf_path: Path, *records: Record) -> None:
     append(review_path(pdf_path), *records, lock_path=_lock(pdf_path))
+
+
+def is_active(pdf_path: Path) -> bool:
+    """Review mode is on while ``<deck>.review`` exists."""
+    return review_path(pdf_path).exists()
+
+
+def start(pdf_path: Path) -> DeckVersion:
+    """Enter review mode: take the base from the deck as it is now and create
+    ``<deck>.review``. Changes from here on are compared against this base."""
+    version = base_mod.snapshot(pdf_path)
+    ensure_file(review_path(pdf_path), lock_path=_lock(pdf_path))
+    return version
 
 
 def load(pdf_path: Path) -> ReviewState:
@@ -178,6 +192,25 @@ def send(pdf_path: Path, *, author: Author = "author") -> None:
 # ---- automatic filing ------------------------------------------------------------
 
 
+def open_unrequested(pdf_path: Path, slide_ids: list[str]) -> str:
+    """Open a system conversation filing *slide_ids* as unrequested changes."""
+    conv_id = load(pdf_path).next_id()
+    note = f"Changed at {now()[11:16]} without a conversation."
+    _append(
+        pdf_path,
+        Record(
+            "open",
+            conv_id,
+            now(),
+            "system",
+            slides=tuple(slide_ids),
+            origin="unrequested",
+            text=note,
+        ),
+    )
+    return conv_id
+
+
 def file_unrequested(pdf_path: Path) -> str | None:
     """File every changed slide that's in no conversation into a new one.
 
@@ -187,21 +220,7 @@ def file_unrequested(pdf_path: Path) -> str | None:
     current = status(pdf_path)
     if not current.unfiled:
         return None
-    conv_id = current.state.next_id()
-    note = f"Changed at {now()[11:16]} without a conversation."
-    _append(
-        pdf_path,
-        Record(
-            "open",
-            conv_id,
-            now(),
-            "system",
-            slides=tuple(current.unfiled),
-            origin="unrequested",
-            text=note,
-        ),
-    )
-    return conv_id
+    return open_unrequested(pdf_path, current.unfiled)
 
 
 def note_author_edit(pdf_path: Path, slide_id: str) -> None:

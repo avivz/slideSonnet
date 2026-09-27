@@ -33,6 +33,7 @@ from slidesonnet.gui.launch import (
     launch_browser,
 )
 from slidesonnet.gui.library import DeckEntry, DeckRegistry, deck_token
+from slidesonnet.gui.review_panel import ReviewPanel
 from slidesonnet.gui.state import (
     EditorState,
     bracket_silences,
@@ -44,6 +45,7 @@ from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration import transitions as trans
 from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
+from slidesonnet.review.base import base_dir
 from slidesonnet.tts import BACKENDS
 
 logger = logging.getLogger(__name__)
@@ -262,6 +264,14 @@ def _is_content_stamp(value: str | None) -> bool:
     return mtime.isdigit() and size.isdigit()
 
 
+_BASE_PREFIX = "_base/"
+
+
+def _base_media_url(state: EditorState, path: Path) -> str:
+    """URL for a review-base page image (named by its pixel hash, so immutable)."""
+    return f"{_MEDIA_URL}/{deck_token(state.pdf_path)}/{_BASE_PREFIX}{path.name}?v=0-{path.stem}"
+
+
 def _media_url(state: EditorState, path: Path, *, cache_bust: bool = False) -> str:
     """URL for a render artifact under the deck's media dir.
 
@@ -391,6 +401,9 @@ def _serve_media(state: EditorState) -> None:
         if entry is None:  # unknown deck: never touch the filesystem for it
             raise HTTPException(status_code=404, detail="Not Found")
         local_dir = render_dir(entry.pdf_path).resolve()
+        if filename.startswith(_BASE_PREFIX):  # review base page images
+            local_dir = (base_dir(entry.pdf_path) / "pages").resolve()
+            filename = filename.removeprefix(_BASE_PREFIX)
         filepath = (local_dir / filename).resolve()
         if not filepath.is_relative_to(local_dir) or not filepath.is_file():
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1532,6 +1545,10 @@ class EditorView:
         # None. Written from the io_bound worker thread, polled by the progress
         # timer — a plain tuple write is atomic, so no lock is needed.
         self.assembling: tuple[int, int] | None = None
+        self.review = ReviewPanel(self)
+
+    def base_media_url(self, path: Path) -> str:
+        return _base_media_url(self.state, path)
 
     def build(self) -> None:
         """Build the widget tree, attach the components, and wire all events."""
@@ -1571,7 +1588,9 @@ class EditorView:
                 ui.label("Slides").classes("ss-section")
                 collapse_strip = ui.button(icon="chevron_left").props("flat round dense size=sm")
                 collapse_strip.mark("collapse-strip").tooltip("Collapse filmstrip")
-            self.strip_col = ui.column().classes("ss-strip gap-2")
+            with ui.row().classes("ss-strips no-wrap gap-0 w-full"):
+                self.review.build_before_strip()
+                self.strip_col = ui.column().classes("ss-strip gap-2")
 
         self.build_strip()
 
@@ -1600,6 +1619,7 @@ class EditorView:
                         ui.element("div").classes("ss-stage-view") as stage_view,
                     ):
                         self.stage_view = stage_view
+                        self.review.build_stage()
                         self.slide_img = (
                             ui.image()
                             .classes("ss-stage-img")
@@ -1627,6 +1647,7 @@ class EditorView:
                             )
                             self.add_pause_btn.props("flat dense no-caps").mark("add-pause")
                             self.add_pause_btn.tooltip("Add a silent pause")
+                        self.review.build_diff_box()
                         blocks_col = ui.column().classes("ss-blocks no-wrap gap-2 w-full")
                     with ui.row().classes("w-full items-center no-wrap gap-1"):
                         prev_btn = ui.button(icon="chevron_left").props("flat round dense")
@@ -1695,6 +1716,7 @@ class EditorView:
                 tray_box = ui.column().classes("w-full gap-1")
                 tray_box.mark("orphan-tray")
                 tray_box.visible = False
+                self.review.build_console()
                 ui.space()
                 ui.label("Engine").classes("ss-section")
                 self.engine_select = (
@@ -1809,6 +1831,7 @@ class EditorView:
         export_btn.on_click(lambda: self._on_export(export_btn))
 
         ui.timer(SOURCE_POLL_INTERVAL_S, self._poll_sources)
+        ui.timer(SOURCE_POLL_INTERVAL_S, self.review.poll)
         ui.timer(0.5, self._render_gen_progress)  # live elapsed/estimate while generating
 
         strip_toggle.on_click(lambda: self.layout.toggle("strip"))
@@ -1820,6 +1843,7 @@ class EditorView:
         ui.on("ss_resize", self.layout.on_resize)
         ui.keyboard(on_key=self._on_key)
 
+        self.review.compute()  # once, up front: the first render shows the comparison
         self.render()
         self.layout.sync_toggles()
         if self.auto_build_active():  # deck opened with auto-build already on: fill it
@@ -1948,6 +1972,7 @@ class EditorView:
         except Exception as exc:
             logger.warning("thumbnail render failed: %s", exc)
         self.thumb_cards.clear()
+        self.review.reset_thumbs()
         self.strip_col.clear()
         with self.strip_col:
             for i, sid in enumerate(state.deck.pages):
@@ -1961,6 +1986,7 @@ class EditorView:
                     audio_badge.mark(f"thumb-audio-{i}")
                     audio_badge.tooltip("Some audio on this slide isn't generated yet")
                     ui.label(str(i + 1)).classes("ss-thumb-num")
+                    self.review.decorate_thumb(i)
                 card.on("click", lambda _e=None, i=i: self.jump(i))
                 self.thumb_cards.append((card, dot, audio_badge))
 
@@ -2073,8 +2099,20 @@ class EditorView:
         self._render_diagnostics()
         self._render_audio_status()
         self.tray.render()
+        self._sync_review()
         self.player.sync_transport()
         self.blocks.sync_gen_buttons()
+
+    def _sync_review(self) -> None:
+        """Recompute review status if that's cheap (PDF unchanged), else in the
+        background — then redraw the review tools."""
+        if not self.state.review.active or self.state.review.pages_fresh():
+            self.review.compute()  # cheap: nothing to compare, or pages cached
+            self.review.sync()
+        else:
+            self.review.sync()
+            if not self.review.refreshing:
+                self._page_task(self.review.refresh())
 
     def _render_diagnostics(self) -> None:
         self.diag_box.clear()
@@ -2137,6 +2175,14 @@ class EditorView:
         if e.modifiers.ctrl and str(e.key).lower() == "k":
             self._page_task(self.open_switcher())
             return
+        key = str(e.key).lower()
+        if not (e.modifiers.ctrl or e.modifiers.meta or e.modifiers.shift):
+            if key == "d":  # review: base version full-size / side by side
+                self.review.toggle_before_only()
+                return
+            if key == "n":  # review: next slide waiting for you
+                self.review.next_your_turn()
+                return
         delta = nav_direction(e.key)
         if delta:
             self.go(delta)
@@ -2701,6 +2747,8 @@ class EditorView:
         if self.auto_build_active():
             self._sweep_auto_build()
         self.flash("Deck files changed on disk — reloaded", "info")
+        if changes & {"pdf", "sidecar"}:
+            await self.review.after_reload()
 
 
 def build_editor(

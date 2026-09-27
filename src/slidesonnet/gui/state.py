@@ -31,9 +31,15 @@ from slidesonnet.deck import (
 from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
 from slidesonnet.env import load_env
 from slidesonnet.exceptions import ConfigError, NarrationChangedOnDisk
+from slidesonnet.gui.review import ReviewModel
 from slidesonnet.hashing import audio_cache_path_or_alt
 from slidesonnet.models import Backend, ProgressFn, VoiceConfig, resolve_voice
-from slidesonnet.narration.format import SidecarError, serialize_body
+from slidesonnet.narration.format import (
+    SidecarError,
+    parse_sidecar,
+    serialize_block,
+    serialize_body,
+)
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.timing import word_count
@@ -137,6 +143,7 @@ class EditorState:
         # changes (keyed on (deck identity, backend) so it tracks the engine pick)
         self._voice_diags: tuple[tuple[int, str], list[Diagnostic]] | None = None
         self.source_error: str | None = None
+        self.review = ReviewModel(self.pdf_path)
         self.reload()
         self._stamps = self._source_stamps()
 
@@ -385,10 +392,31 @@ class EditorState:
                 # mid-write on the other side: at least drop our stale copy
                 self.reload()
             raise NarrationChangedOnDisk(lost_text)
+        edited = self._blocks_changed_on_save()
         save_deck(self.deck)
         self.reload()
         self._stamps[str(self.sidecar_path)] = _stat_stamp(self.sidecar_path)
+        self._note_review_edits(edited)
         self._prune_stale_audio()
+
+    def _blocks_changed_on_save(self) -> set[str]:
+        """Slide ids whose narration block this save changes (vs the file on disk)."""
+        try:
+            text = self.sidecar_path.read_text(encoding="utf-8")
+            before = {b.slide_id: serialize_block(b) for b in parse_sidecar(text)}
+        except (OSError, SidecarError):
+            before = {}
+        after = {sid: serialize_block(b) for sid, b in self.deck.narration.items()}
+        return {sid for sid in before.keys() | after.keys() if before.get(sid) != after.get(sid)}
+
+    def _note_review_edits(self, slide_ids: set[str]) -> None:
+        """Under review, file the author's own narration edits (best-effort)."""
+        if not slide_ids:
+            return
+        try:
+            self.review.note_edits(slide_ids)
+        except Exception:  # pragma: no cover - defensive: never break a save
+            logger.warning("Could not note review edits for %s", self.pdf_path, exc_info=True)
 
     def _prune_stale_audio(self) -> None:
         """Reclaim local clips orphaned by this edit (cheap to regenerate).

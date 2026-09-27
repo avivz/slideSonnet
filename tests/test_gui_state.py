@@ -1123,3 +1123,23 @@ def test_gui_export_keeps_render_scratch(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setattr(state_mod.api, "export", fake_export)
     state.export(tmp_path / "out.mp4")
     assert captured.get("keep_scratch") is True
+
+
+def test_own_narration_save_is_noted_in_review(tmp_path: Path) -> None:
+    """Under review, the author's own edit is filed (not left for the next
+    recompile to flag as an unrequested change)."""
+    from slidesonnet.review import ops
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    state.review.start()
+    state.replace_block(parse_segments("My own rewrite."))
+    convs = ops.load(state.pdf_path).slide_conversations()
+    assert [(c.origin, c.slides) for c in convs] == [("author-edits", ["intro-title"])]
+
+
+def test_saves_outside_review_touch_nothing(tmp_path: Path) -> None:
+    from slidesonnet.review import ops
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    state.replace_block(parse_segments("Edited."))
+    assert not ops.review_path(state.pdf_path).exists()

@@ -71,12 +71,16 @@ def review() -> None:
 @review.command("snapshot")
 @_PDF
 def snapshot_cmd(pdf: Path) -> None:
-    """Reset the base to the deck as it is now (every slide, and the order)."""
-    from slidesonnet.review.base import snapshot
+    """Start review (or restart it): the base becomes the deck as it is now.
+
+    Creates <deck>.review if needed — the editor then shows review tools and
+    files changes nobody asked for into their own conversation.
+    """
+    from slidesonnet.review import ops
 
     with _errors():
-        version = snapshot(pdf)
-    click.echo(f"Base taken: {len(version.order)} slides.")
+        version = ops.start(pdf)
+    click.echo(f"Base taken: {len(version.order)} slides. Review is on.")
 
 
 @review.command("status")
