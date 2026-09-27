@@ -16,7 +16,7 @@ import fitz
 import pytest
 
 from slidesonnet import api
-from slidesonnet.pdf.reader import is_final_build, read_page_ids
+from slidesonnet.pdf.reader import is_final_build, is_plain_build, read_page_ids
 
 pytestmark = pytest.mark.integration
 
@@ -72,7 +72,7 @@ def _word_boxes(pdf: Path) -> list[list[tuple[float, float, str]]]:
             [
                 (round(w[0], 2), round(w[1], 2), w[4])
                 for w in page.get_text("words")
-                if not w[4].startswith("SSID:") and w[4] != "SSFINAL"
+                if not w[4].startswith("SSID:") and w[4] not in ("SSFINAL", "SSPLAIN")
             ]
             for page in doc
         ]
@@ -108,6 +108,6 @@ def test_final_build_has_same_layout_plus_decorations(builds: dict[str, Path]) -
 
 
 def test_build_kind_is_detectable(builds: dict[str, Path]) -> None:
-    assert is_final_build(builds["plain"]) is False
-    assert is_final_build(builds["final"]) is True
+    assert is_final_build(builds["plain"]) is False and is_plain_build(builds["plain"])
+    assert is_final_build(builds["final"]) is True and not is_plain_build(builds["final"])
     assert read_page_ids(builds["final"]) == ["one", "two", "three"]

@@ -6,6 +6,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Export checks the deck is final.** `export` (and the editor's Export
+  button) refuses a plain build — no page numbers — and a deck with review
+  conversations still open, listing each reason. `--draft` (or "Export draft"
+  in the editor) renders anyway, to `<name>.draft.mp4`. PDFs from an older
+  `slidesonnet.sty` carry no build marker and export as before.
 - **Review conversations (`slidesonnet review …`).** A loop for reviewing
   an agent's changes slide by slide. The *base* — the last-cleared version of
   every slide (page image, page text, narration, order) — is taken
@@ -55,6 +60,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   hides them. Phases get equal shares of the percentage for now.
 
 ### Changed
+- **Automatic audio pruning keeps the clips of the review base.** While a
+  slide is under review its old narration is still compared and played, so its
+  audio counts as in use until the base moves on (`review clear`).
 - **`slidesonnet.sty`: an ordinary compile is now a *plain* build.** Page
   numbers, the headline (navigation), and metropolis progress bars are drawn
   invisibly — keeping their space, so the layout is identical — because they

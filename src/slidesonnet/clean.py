@@ -34,7 +34,8 @@ from slidesonnet.config import Config, load_config
 from slidesonnet.deck import load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
 from slidesonnet.models import VoiceConfig, resolve_voice
-from slidesonnet.narration.model import Pace
+from slidesonnet.narration.format import parse_sidecar
+from slidesonnet.narration.model import Pace, PageNarration
 from slidesonnet.tts import API_BACKENDS, AUTO_PRUNE_BACKENDS
 from slidesonnet.tts.base import TTSEngine
 
@@ -215,6 +216,22 @@ def _keep_filenames(pdf_path: Path, filenames: set[str]) -> None:
             f.unlink()
 
 
+def _review_base_blocks(pdf_path: Path) -> list[PageNarration]:
+    """Narration held by the review base — still compared (and played) against
+    the current text, so its clips count as in use until the base moves on."""
+    from slidesonnet.review.base import load_base
+
+    base = load_base(pdf_path)
+    if base is None:
+        return []
+    return [
+        block
+        for slide in base.slides.values()
+        if slide.narration
+        for block in parse_sidecar(slide.narration)
+    ]
+
+
 def _speech_plan(
     pdf_path: Path,
 ) -> tuple[Config, list[tuple[str, str | None, Pace | None]], dict[str, VoiceConfig]]:
@@ -233,7 +250,7 @@ def _speech_plan(
     deck, _ = load_deck(pdf_path)
     voices = {**config.voices, **deck.voices}
     rows: list[tuple[str, str | None, Pace | None]] = []
-    for block in deck.narration.values():
+    for block in [*deck.narration.values(), *_review_base_blocks(pdf_path)]:
         for seg in block.speech_segments:
             rows.append(
                 (config.apply_pronunciation(seg.text), seg.voice or deck.default_voice, seg.pace)

@@ -220,3 +220,14 @@ def test_final_build_detected_and_ids_unaffected(tmp_path: Path) -> None:
     pdf = write_pdf(tmp_path / "d.pdf", ["a", "b"], final=True)
     assert is_final_build(pdf) is True
     assert read_page_ids(pdf) == ["a", "b"]  # the marker never leaks into the id
+
+
+def test_plain_marker_detected(tmp_path: Path) -> None:
+    from slidesonnet.pdf.reader import is_final_build, is_plain_build
+    from tests.conftest import write_pdf
+
+    plain = write_pdf(tmp_path / "p.pdf", ["a"], plain=True)
+    legacy = write_pdf(tmp_path / "l.pdf", ["a"])  # an older .sty: no build marker
+    assert is_plain_build(plain) and not is_final_build(plain)
+    assert not is_plain_build(legacy) and not is_final_build(legacy)
+    assert read_page_ids(plain) == ["a"]

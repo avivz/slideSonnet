@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Literal
 
 from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, unique_real_ids
 from slidesonnet.diagnostics import Diagnostic
+from slidesonnet.exceptions import ExportRefused
 from slidesonnet.models import Backend, ProgressFn
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
@@ -253,6 +254,37 @@ def export_phases(
     return SILENT_EXPORT_PHASES
 
 
+def draft_output(output: Path) -> Path:
+    """``deck.mp4`` → ``deck.draft.mp4`` (unchanged if it already says draft)."""
+    if output.stem.endswith(".draft"):
+        return output
+    return output.with_name(f"{output.stem}.draft{output.suffix}")
+
+
+def export_blockers(pdf_path: Path) -> list[str]:
+    """Why *pdf_path* isn't ready for a final video; empty when it is.
+
+    A plain build hides page numbers and progress bars; open review
+    conversations about slides mean changes still await a verdict (the deck
+    conversation never counts). A PDF from an older ``slidesonnet.sty`` carries
+    no build marker and isn't held back.
+    """
+    from slidesonnet.pdf.reader import is_plain_build
+    from slidesonnet.review.ops import open_slide_conversations
+
+    reasons: list[str] = []
+    if is_plain_build(pdf_path):
+        reasons.append(
+            f"{pdf_path.name} is a plain build (page numbers and progress bars hidden) — "
+            "compile it as a final build: latexmk -pdf -usepretex='\\def\\ssfinal{}' ..."
+        )
+    open_convs = open_slide_conversations(pdf_path)
+    if open_convs:
+        ids = ", ".join(c.id for c in open_convs)
+        reasons.append(f"{len(open_convs)} review conversation(s) still open: {ids}")
+    return reasons
+
+
 def export(
     pdf_path: Path,
     output: Path,
@@ -267,8 +299,13 @@ def export(
     sub_granularity: str = "segment",
     keep_scratch: bool | None = None,
     progress: ProgressFn | None = None,
+    draft: bool = False,
 ) -> ExportResult:
     """Render the deck to a narrated (or silent) MP4 with optional subtitles.
+
+    Refuses (:class:`ExportRefused`) when :func:`export_blockers` finds the deck
+    unready for a final video — a plain build, or open review conversations. A
+    *draft* skips that check and writes ``<name>.draft.mp4`` instead of *output*.
 
     On success the render intermediates (decoded page audio, assembled track,
     per-slide clips) are deleted unless *keep_scratch* is true — or, when it is
@@ -292,6 +329,12 @@ def export(
     )
     from slidesonnet.timing import TimingMode, parse_timing
 
+    if draft:
+        output = draft_output(output)
+    else:
+        reasons = export_blockers(pdf_path)
+        if reasons:
+            raise ExportRefused(reasons)
     deck, config = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
 

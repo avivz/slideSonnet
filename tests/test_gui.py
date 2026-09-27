@@ -536,6 +536,33 @@ async def test_save_after_external_sidecar_edit_keeps_theirs_and_offers_mine(
     assert "My unsaved words." not in sidecar.read_text(encoding="utf-8")
 
 
+async def test_export_when_not_ready_offers_a_draft(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Open review conversations block the final video; the editor says why
+    and offers a draft instead of failing with an error."""
+    from slidesonnet.review import ops
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n")
+    ops.comment(pdf, ["intro-title"], "reword this", author="author")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    drafts: list[bool] = []
+    monkeypatch.setattr(
+        "slidesonnet.gui.state.EditorState.export",
+        lambda self, out, *, silent=False, draft=False: (
+            drafts.append(draft)
+            or api.ExportResult(video=out, subtitles=[], duration=1.0, silent=False)
+        ),
+    )
+    await user.open("/")
+    user.find(marker="export").click()
+    await user.should_see("Not ready for the final video")
+    await user.should_see("c1")
+    user.find(marker="export-draft").click()
+    await user.should_see("Exported", retries=100)
+    assert drafts == [True]
+
+
 async def test_diagnostics_visible(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

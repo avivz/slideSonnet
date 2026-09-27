@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _SSID_RE = re.compile(r"SSID:(\S+)")
 _FINAL_MARKER = "SSFINAL"
+_PLAIN_MARKER = "SSPLAIN"
 
 
 def read_page_ids(pdf_path: Path) -> list[str]:
@@ -49,12 +50,26 @@ def is_final_build(pdf_path: Path) -> bool:
     only in a final build, which it stamps with an invisible ``SSFINAL`` marker
     next to each page's ``SSID``. The first page decides.
     """
+    return _build_marker(pdf_path) == _FINAL_MARKER
+
+
+def is_plain_build(pdf_path: Path) -> bool:
+    """True when *pdf_path* is a plain build from the current ``slidesonnet.sty``.
+
+    Plain builds are stamped ``SSPLAIN``; a PDF from an older ``.sty`` carries
+    neither marker and is neither plain nor final.
+    """
+    return _build_marker(pdf_path) == _PLAIN_MARKER
+
+
+def _build_marker(pdf_path: Path) -> str | None:
     if not pdf_path.exists():
         raise ParserError(f"PDF not found: {pdf_path}")
     with fitz.open(pdf_path) as doc:
         if doc.page_count == 0:
-            return False
-        return _FINAL_MARKER in doc[0].get_text().split()
+            return None
+        words = doc[0].get_text().split()
+    return next((w for w in words if w in (_FINAL_MARKER, _PLAIN_MARKER)), None)
 
 
 def page_count(pdf_path: Path) -> int:

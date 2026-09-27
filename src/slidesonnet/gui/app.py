@@ -1742,7 +1742,7 @@ class EditorView:
                     "Makes only the clips that don't exist yet — finished audio is left untouched"
                 )
                 export_btn = ui.button("Export video", icon="movie").classes("w-full ss-export")
-                export_btn.props("unelevated no-caps color=primary")
+                export_btn.props("unelevated no-caps color=primary").mark("export")
 
         # --- footer: engine · sidecar · status flash · hints ---
         with ui.footer().classes("ss-footer no-wrap"):
@@ -1806,7 +1806,7 @@ class EditorView:
         speed_btn.on_click(lambda: self.player.cycle_speed())
         gen_all_btn = self.gen_all_btn
         gen_all_btn.on_click(self.enqueue_missing)
-        export_btn.on_click(lambda: self.run_action(export_btn, self._export_work))
+        export_btn.on_click(lambda: self._on_export(export_btn))
 
         ui.timer(SOURCE_POLL_INTERVAL_S, self._poll_sources)
         ui.timer(0.5, self._render_gen_progress)  # live elapsed/estimate while generating
@@ -2606,10 +2606,31 @@ class EditorView:
             self.jobs.enqueue(targets)
             self.render_side()
 
-    def _export_work(self) -> str:
+    def _export_work(self, *, draft: bool = False) -> str:
         out = self.state.pdf_path.with_suffix(".mp4")
-        result = self.state.export(out)
-        return f"Exported {out.name} ({result.duration:.1f}s)"
+        result = self.state.export(out, draft=draft)
+        return f"Exported {result.video.name} ({result.duration:.1f}s)"
+
+    async def _on_export(self, btn: Any) -> None:
+        """Export the final video — or, when the deck isn't ready, say why and
+        offer a draft (a plain build, or review conversations still open)."""
+        if self.busy:
+            return
+        reasons = await run.io_bound(self.state.export_blockers)
+        if not reasons:
+            await self.run_action(btn, self._export_work)
+            return
+        with ui.dialog() as dialog, ui.card():
+            ui.label("Not ready for the final video").classes("text-bold")
+            for reason in reasons:
+                ui.label(f"• {reason}")
+            ui.label("You can still export a draft (saved as a separate .draft.mp4 file).")
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat no-caps")
+                draft = ui.button("Export draft", on_click=lambda: dialog.submit(True))
+                draft.props("no-caps").mark("export-draft")
+        if await dialog:
+            await self.run_action(btn, lambda: self._export_work(draft=True))
 
     async def confirm_paid_synth(self, count: int, action_label: str = "Generate & play") -> bool:
         """Popup gate before any paid synthesis. Returns True only on explicit OK.

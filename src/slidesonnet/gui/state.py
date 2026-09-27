@@ -807,7 +807,13 @@ class EditorState:
             progress=progress,
         )
 
-    def export(self, output: Path, *, silent: bool = False) -> api.ExportResult:
+    def export_blockers(self) -> list[str]:
+        """Why the deck isn't ready for a final video (see api.export_blockers)."""
+        return api.export_blockers(self.pdf_path)
+
+    def export(
+        self, output: Path, *, silent: bool = False, draft: bool = False
+    ) -> api.ExportResult:
         # The preview player streams track.wav / page WAVs from the render dir;
         # an export must not delete them from under an open preview.
         return api.export(
@@ -817,6 +823,7 @@ class EditorState:
             silent=silent,
             engine=self.selected_backend,
             keep_scratch=True,
+            draft=draft,
         )
 
     # ---- per-slide status (filmstrip) -----------------------------------

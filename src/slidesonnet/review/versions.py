@@ -22,7 +22,7 @@ from slidesonnet.narration.format import serialize_block
 DIFF_DPI = 150
 
 _MARKER_PREFIX = "SSID:"
-_FINAL_MARKER = "SSFINAL"
+_BUILD_MARKERS = frozenset({"SSFINAL", "SSPLAIN"})
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,9 @@ def page_text(page: fitz.Page) -> str:
     """The page's visible text, one line per text line, markers removed."""
     lines = []
     for line in page.get_text().splitlines():
-        words = [w for w in line.split() if not w.startswith(_MARKER_PREFIX) and w != _FINAL_MARKER]
+        words = [
+            w for w in line.split() if not w.startswith(_MARKER_PREFIX) and w not in _BUILD_MARKERS
+        ]
         if words:
             lines.append(" ".join(words))
     return "\n".join(lines)

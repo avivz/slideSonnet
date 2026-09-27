@@ -58,3 +58,19 @@ class NarrationChangedOnDisk(SlideSonnetError):
 
 class ReviewError(SlideSonnetError):
     """A review operation can't proceed (bad conversation id, final build, …)."""
+
+
+class ExportRefused(SlideSonnetError):
+    """The deck isn't ready for a final video (plain build, or review still open).
+
+    ``reasons`` lists every blocker in user terms; exporting a draft
+    (``--draft``) bypasses the check.
+    """
+
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__(
+            "Not ready for the final video:\n"
+            + "\n".join(f"  - {r}" for r in reasons)
+            + "\nExport a draft instead with --draft (writes <name>.draft.mp4)."
+        )
+        self.reasons = reasons

@@ -38,8 +38,9 @@
 %     pdflatex "\def\ssfinal{}\input{deck}"
 %     latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex
 %
-%   A final build stamps an invisible "SSFINAL" marker so slideSonnet can tell
-%   the two apart (review comparisons pause on it; export expects it).
+%   Each build stamps an invisible "SSPLAIN" or "SSFINAL" marker so slideSonnet
+%   can tell them apart (review comparisons pause on a final build; export
+%   refuses a plain one unless asked for a draft).
 
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{slidesonnet}[2026/06/09 slideSonnet slide-id markers]
@@ -61,11 +62,12 @@
 \def\ssid@set#1{\expandafter\gdef\csname ssid@page@\the\c@page\endcsname{#1}}
 
 % Invisible-but-extractable marker text (PDF text rendering mode 3).
-% A final build appends " SSFINAL" (after a space, so the id stays one token).
+% After a space (so the id stays one token): " SSFINAL" in a final build,
+% " SSPLAIN" in a plain one — so slideSonnet knows which it's reading.
 \def\ssid@marker#1{%
   \begin{tikzpicture}[remember picture,overlay]
     \node[anchor=south west,inner sep=0pt,font=\tiny] at (current page.south west)
-      {\pdfliteral{3 Tr}SSID:#1\ifss@final\space SSFINAL\fi\pdfliteral{0 Tr}};
+      {\pdfliteral{3 Tr}SSID:#1\space\ifss@final SSFINAL\else SSPLAIN\fi\pdfliteral{0 Tr}};
   \end{tikzpicture}%
 }
 
