@@ -204,3 +204,19 @@ def test_rasterize_reuse_skips_a_second_render(tmp_path: Path) -> None:
 def test_rasterize_without_reuse_always_renders(tmp_path: Path) -> None:
     rasterize(MARKED, tmp_path, dpi=72)
     assert cached_pages(MARKED, tmp_path, dpi=72) is not None  # stamp still written
+
+
+def test_plain_build_is_not_final(tmp_path: Path) -> None:
+    from slidesonnet.pdf.reader import is_final_build
+    from tests.conftest import write_pdf
+
+    assert is_final_build(write_pdf(tmp_path / "d.pdf", ["a", "b"])) is False
+
+
+def test_final_build_detected_and_ids_unaffected(tmp_path: Path) -> None:
+    from slidesonnet.pdf.reader import is_final_build
+    from tests.conftest import write_pdf
+
+    pdf = write_pdf(tmp_path / "d.pdf", ["a", "b"], final=True)
+    assert is_final_build(pdf) is True
+    assert read_page_ids(pdf) == ["a", "b"]  # the marker never leaks into the id

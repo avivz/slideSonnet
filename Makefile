@@ -37,11 +37,12 @@ typecheck:
 
 # --- Demos: compile the Beamer PDF, then render with Kokoro ---
 # Each example ships a committed PDF, so rendering works without recompiling;
-# these targets recompile from source for a from-scratch rebuild.
+# these targets recompile from source for a from-scratch rebuild — as *final*
+# builds (\ssfinal), so page numbers and progress bars appear in the video.
 
 examples/basel-problem/basel-problem.pdf: examples/basel-problem/basel-problem.tex
 	$(SLIDESONNET) sty -o examples/basel-problem/slidesonnet.sty
-	cd examples/basel-problem && latexmk -pdf -interaction=nonstopmode basel-problem.tex
+	cd examples/basel-problem && latexmk -pdf -interaction=nonstopmode -usepretex='\def\ssfinal{}' basel-problem.tex
 
 basel: examples/basel-problem/basel-problem.pdf
 	$(SLIDESONNET) export examples/basel-problem/basel-problem.pdf \
@@ -52,7 +53,7 @@ check-basel:
 
 examples/showcase/showcase.pdf: examples/showcase/showcase.tex
 	$(SLIDESONNET) sty -o examples/showcase/slidesonnet.sty
-	cd examples/showcase && latexmk -pdf -interaction=nonstopmode showcase.tex
+	cd examples/showcase && latexmk -pdf -interaction=nonstopmode -usepretex='\def\ssfinal{}' showcase.tex
 
 showcase: examples/showcase/showcase.pdf
 	$(SLIDESONNET) export examples/showcase/showcase.pdf \

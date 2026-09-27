@@ -21,6 +21,7 @@ from slidesonnet.proc import run_tool
 logger = logging.getLogger(__name__)
 
 _SSID_RE = re.compile(r"SSID:(\S+)")
+_FINAL_MARKER = "SSFINAL"
 
 
 def read_page_ids(pdf_path: Path) -> list[str]:
@@ -38,6 +39,22 @@ def read_page_ids(pdf_path: Path) -> list[str]:
             match = _SSID_RE.search(page.get_text())
             ids.append(match.group(1) if match else "")
     return ids
+
+
+def is_final_build(pdf_path: Path) -> bool:
+    """True when *pdf_path* was compiled as a final build (``\\ssfinal``).
+
+    ``slidesonnet.sty`` hides position-dependent decorations (page numbers,
+    navigation, progress bars) in an ordinary *plain* compile and shows them
+    only in a final build, which it stamps with an invisible ``SSFINAL`` marker
+    next to each page's ``SSID``. The first page decides.
+    """
+    if not pdf_path.exists():
+        raise ParserError(f"PDF not found: {pdf_path}")
+    with fitz.open(pdf_path) as doc:
+        if doc.page_count == 0:
+            return False
+        return _FINAL_MARKER in doc[0].get_text().split()
 
 
 def page_count(pdf_path: Path) -> int:

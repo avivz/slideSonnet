@@ -26,6 +26,20 @@
 % The marker is rendered with PDF text rendering mode 3 (invisible — the same
 % mechanism OCR text layers use): it never shows on screen or in print, on any
 % background, yet is reliably recovered from the text layer.
+%
+% Plain vs final builds:
+%   Position-dependent decorations — the footline (page numbers), the headline
+%   (navigation dots), and metropolis progress bars — change on every slide when
+%   one is inserted or deleted. So an ordinary compile is a *plain* build: those
+%   decorations are drawn invisibly but keep their space, so the layout is the
+%   same as the final build and nothing collides with them when they reappear.
+%   A *final* build shows them:
+%
+%     pdflatex "\def\ssfinal{}\input{deck}"
+%     latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex
+%
+%   A final build stamps an invisible "SSFINAL" marker so slideSonnet can tell
+%   the two apart (review comparisons pause on it; export expects it).
 
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesPackage{slidesonnet}[2026/06/09 slideSonnet slide-id markers]
@@ -33,6 +47,9 @@
 \RequirePackage{tikz}
 
 \makeatletter
+
+\newif\ifss@final
+\ifdefined\ssfinal \ss@finaltrue \fi
 
 % \ssid<step>{id}  -> set id on the matching overlay step(s)
 % \ssid{id}        -> set id for a non-overlay frame's single page
@@ -44,10 +61,11 @@
 \def\ssid@set#1{\expandafter\gdef\csname ssid@page@\the\c@page\endcsname{#1}}
 
 % Invisible-but-extractable marker text (PDF text rendering mode 3).
+% A final build appends " SSFINAL" (after a space, so the id stays one token).
 \def\ssid@marker#1{%
   \begin{tikzpicture}[remember picture,overlay]
     \node[anchor=south west,inner sep=0pt,font=\tiny] at (current page.south west)
-      {\pdfliteral{3 Tr}SSID:#1\pdfliteral{0 Tr}};
+      {\pdfliteral{3 Tr}SSID:#1\ifss@final\space SSFINAL\fi\pdfliteral{0 Tr}};
   \end{tikzpicture}%
 }
 
@@ -56,6 +74,49 @@
   \@ifundefined{ssid@page@\the\c@page}%
     {\ssid@marker{auto-p\the\c@page-s\the\beamer@slideinframe}}%
     {\ssid@marker{\csname ssid@page@\the\c@page\endcsname}}%
+}
+
+% ---- plain build: keep decorations' space, draw nothing ---------------------
+% Typeset the template into a scratch box, then emit an empty box with the same
+% width, height, and depth — Beamer sizes the text area from these templates.
+\long\def\ss@ghostbox#1{%
+  \setbox\z@=\vbox{#1}%
+  \setbox\tw@=\vbox to \ht\z@{\vss}%
+  \dp\tw@=\dp\z@ \wd\tw@=\wd\z@
+  \box\tw@}
+\def\ss@ghosttemplate#1{%
+  \ifbeamertemplateempty{#1}{}{%
+    \expandafter\let\csname ss@orig@#1\expandafter\endcsname
+      \csname beamer@@tmpl@#1\endcsname
+    \expandafter\def\csname beamer@@tmpl@#1\endcsname
+      {\ss@ghostbox{\csname ss@orig@#1\endcsname}}}}
+
+% metropolis progress bars (frametitle/head/foot, and the section page): the
+% theme's own templates with the fills removed — same boxes, same spacing
+% (a generic ghost box would swallow the template's leading \nointerlineskip).
+\def\ss@hidemetropolisbars{%
+  \ifdefined\metropolis@progressinheadfoot@linewidth
+    \setbeamertemplate{progress bar in head/foot}{%
+      \nointerlineskip
+      \begin{beamercolorbox}[wd=\paperwidth]{progress bar in head/foot}%
+        \begin{tikzpicture}%
+          \path (0,0) rectangle (\paperwidth, \metropolis@progressinheadfoot@linewidth);%
+        \end{tikzpicture}%
+      \end{beamercolorbox}}%
+  \fi
+  \ifdefined\metropolis@progressonsectionpage@linewidth
+    \setbeamertemplate{progress bar in section page}{%
+      \begin{tikzpicture}%
+        \path (0,0) rectangle (\textwidth, \metropolis@progressonsectionpage@linewidth);%
+      \end{tikzpicture}}%
+  \fi}
+
+\AtBeginDocument{%
+  \ifss@final\else
+    \ss@ghosttemplate{footline}%
+    \ss@ghosttemplate{headline}%
+    \ss@hidemetropolisbars
+  \fi
 }
 
 \makeatother

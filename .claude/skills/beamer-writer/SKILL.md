@@ -144,7 +144,10 @@ pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
    `\ssid` on every page (per step on overlay frames). Start with a title frame,
    end with a closing frame.
 4. **Compile** — `slidesonnet sty` (drops `slidesonnet.sty`), then
-   `latexmk -pdf deck.tex`. Fix any errors before finishing.
+   `latexmk -pdf deck.tex`. Fix any errors before finishing. This is a *plain*
+   build (page numbers/progress bars hidden, space kept) — the default while
+   iterating. Only for the final video or distributing the slides, compile a
+   final build: `latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex`.
 5. **Scaffold + write narration** — `slidesonnet init deck.pdf`, then fill in
    each `@id` block as natural speech.
 6. **Reconcile** — `slidesonnet check deck.pdf` must report no errors (fix

@@ -250,12 +250,13 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 PdfFactory = Callable[[Path, list[str]], Path]
 
 
-def write_pdf(path: Path, ids: list[str]) -> Path:
+def write_pdf(path: Path, ids: list[str], *, final: bool = False) -> Path:
     """Write a PDF with one page per id, each stamped with an invisible SSID marker.
 
     An empty-string id yields an unmarked page — the same shape a missing
     ``\\ssid`` produces. This lets tests fabricate "recompiled" decks with
-    added/renamed/removed slides without running LaTeX.
+    added/renamed/removed slides without running LaTeX. *final* stamps the
+    ``SSFINAL`` marker a ``\\ssfinal`` build carries.
     """
     doc = fitz.open()
     for slide_id in ids:
@@ -263,7 +264,8 @@ def write_pdf(path: Path, ids: list[str]) -> Path:
         page.insert_text((20, 280), "page body", fontsize=10)
         if slide_id:
             # render_mode=3 = invisible text, matching slidesonnet.sty's stamping
-            page.insert_text((20, 20), f"SSID:{slide_id}", fontsize=4, render_mode=3)
+            marker = f"SSID:{slide_id} SSFINAL" if final else f"SSID:{slide_id}"
+            page.insert_text((20, 20), marker, fontsize=4, render_mode=3)
     doc.save(path)
     doc.close()
     return path

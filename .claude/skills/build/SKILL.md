@@ -111,7 +111,8 @@ dependency is missing.
 **From a marked Beamer source to a video:**
 ```bash
 slidesonnet sty                              # drop the macro
-latexmk -pdf deck.tex                         # compile (your job)
+latexmk -pdf deck.tex                         # compile (your job) — plain build
+latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex   # final build (page numbers) for the video
 slidesonnet init  deck.pdf                    # scaffold narration
 # ...write deck.narration...
 slidesonnet check deck.pdf                     # reconcile ids

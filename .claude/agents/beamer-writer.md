@@ -30,7 +30,9 @@ Produce a compilable Beamer `.tex` whose every emitted page carries a unique
    `\ssid` on every page: `\ssid{id}` on a plain frame, `\ssid<step>{id}` for
    each overlay step. Ids are short, kebab-case, unique.
 4. **Compile** — run `slidesonnet sty` then `latexmk -pdf <deck>.tex`; fix any
-   errors before finishing.
+   errors before finishing. That's a plain build (decorations hidden); use
+   `latexmk -pdf -usepretex='\def\ssfinal{}' <deck>.tex` only for the final
+   video or distribution.
 5. **Write narration** — `slidesonnet init <deck>.pdf` to scaffold, then fill in
    each `@id` block as natural spoken text (`:voice`/`:pace` directives and
    `[pause N]` as needed).

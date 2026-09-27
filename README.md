@@ -68,8 +68,11 @@ slidesonnet`. To hack on slideSonnet itself instead, see
 slidesonnet sty                      # writes slidesonnet.sty
 
 # 2. In your .tex: \usepackage{slidesonnet} and \ssid{...} on every frame,
-#    then compile however you like:
+#    then compile however you like (a plain build: page numbers and
+#    progress bars hidden while you iterate):
 latexmk -pdf deck.tex
+#    ...and for the final video, a final build that shows them:
+#    latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex
 
 # 3. Scaffold the narration sidecar from the PDF's slide-ids
 slidesonnet init deck.pdf            # writes deck.narration

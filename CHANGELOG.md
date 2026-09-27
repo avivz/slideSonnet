@@ -42,6 +42,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   hides them. Phases get equal shares of the percentage for now.
 
 ### Changed
+- **`slidesonnet.sty`: an ordinary compile is now a *plain* build.** Page
+  numbers, the headline (navigation), and metropolis progress bars are drawn
+  invisibly — keeping their space, so the layout is identical — because they
+  change on every slide when one is inserted or deleted, which would make
+  slide-by-slide comparisons useless. A *final* build shows them:
+  `latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex`. Final builds carry an
+  invisible `SSFINAL` marker (`slidesonnet.pdf.reader.is_final_build`).
+  **After upgrading, re-run `slidesonnet sty` and compile your final video with
+  `\ssfinal`, or the page numbers disappear from it.**
 - **`ProgressFn` is now `(phase, done, total, label)`** (was `(slide_id, done,
   total)`, with `"assemble"` sometimes standing in for the slide id). API
   callers passing `progress=` to `synthesize_deck`, `export`, or
