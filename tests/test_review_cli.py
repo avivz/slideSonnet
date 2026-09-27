@@ -71,8 +71,10 @@ def test_list_filters(deck: Path) -> None:
     _run("accept", str(deck), "c2")
     mine = json.loads(_run("list", str(deck), "--json", "--mine"))
     assert [c["id"] for c in mine["conversations"]] == ["c1"]  # agent's turn, open
-    open_ = json.loads(_run("list", str(deck), "--json", "--open"))
-    assert "c2" not in [c["id"] for c in open_["conversations"]]
+    default = json.loads(_run("list", str(deck), "--json"))
+    assert "c2" not in [c["id"] for c in default["conversations"]]  # closed: hidden
+    every = json.loads(_run("list", str(deck), "--json", "--all"))
+    assert "c2" in [c["id"] for c in every["conversations"]]
 
 
 def test_deck_conversation(deck: Path) -> None:

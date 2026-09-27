@@ -67,6 +67,7 @@ class ReviewPanel:
         self.status: EditorReviewStatus | None = None
         self.filter_conv: str | None = None
         self.before_only = False  # D: show the base version full-size
+        self.show_closed = False  # accepted conversations stay out of the way
         self.badges: list[Any] = []
         self._log_stamp: tuple[float, int] | None = None
         self._refreshing = False
@@ -204,6 +205,13 @@ class ReviewPanel:
                 clear.props("flat dense no-caps size=sm").mark("review-clear")
                 clear.set_enabled(bool(closed))
                 clear.tooltip("Make accepted changes the new starting point")
+            if closed or self.show_closed:
+                show = ui.checkbox(
+                    f"Show closed ({len(closed)})",
+                    value=self.show_closed,
+                    on_change=lambda e: self._set_show_closed(bool(e.value)),
+                )
+                show.props("dense size=xs").classes("ss-diag").mark("review-show-closed")
             if st is not None and st.final_build:
                 ui.label("Final build — comparison paused until the next normal compile.").classes(
                     "ss-diag ss-diag-warn"
@@ -278,7 +286,12 @@ class ReviewPanel:
                 text += " — " + ", ".join(detail)
             ui.label(f"Changed: {text}").classes("ss-diag ss-diag-warn")
         convs = sorted(
-            self.model.conversations_for(st, sid), key=lambda c: (c.status != "open", c.id)
+            (
+                c
+                for c in self.model.conversations_for(st, sid)
+                if c.status == "open" or self.show_closed
+            ),
+            key=lambda c: (c.status != "open", c.id),
         )
         for conv in convs:
             with ui.column().classes("w-full gap-1 ss-conv"):
@@ -311,7 +324,11 @@ class ReviewPanel:
         )
 
     def _draw_list(self, st: EditorReviewStatus) -> None:
-        convs = st.state.slide_conversations()
+        convs = [
+            c
+            for c in st.state.slide_conversations()
+            if c.status == "open" or self.show_closed or c.id == self.filter_conv
+        ]
         if not convs:
             return
         with ui.row().classes("w-full items-center no-wrap"):
@@ -454,6 +471,10 @@ class ReviewPanel:
         if self._write(self.model.start):
             self.view.flash("Review started — changes are compared from here", "positive")
             self._after_write()
+
+    def _set_show_closed(self, value: bool) -> None:
+        self.show_closed = value
+        self.sync()
 
     def _accept(self, cid: str) -> None:
         if self._write(lambda: self.model.accept(cid)):

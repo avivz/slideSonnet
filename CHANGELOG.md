@@ -11,7 +11,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   **Review** tab (beside **Audio**, badged when something on this slide waits
   for you) shows the Deck conversation (instructions not about one slide), this
   slide's conversations with Reply / Accept / Reopen, a note box that opens a
-  new one, and all conversations (click one to show only its slides). A note
+  new one, and all conversations (click one to show only its slides);
+  accepted ones stay hidden unless you tick **Show closed**. A note
   goes out with Enter (Shift+Enter for a new line) or **Send**, and wakes an
   agent blocked in `review wait`; **Clear accepted** makes accepted changes the
   new base. A changed slide shows its
@@ -37,7 +38,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   (new, edited, moved, deleted — matched by slide id) and which conversation
   each belongs to. A slide whose page LaTeX re-lays out by a hair when a
   neighbour moves still counts as unchanged. Conversations live in an append-only, human-readable
-  `<deck>.review` next to the deck: `comment` opens one about some slides,
+  `<deck>.review` next to the deck: `list` shows the open ones (`--all`
+  adds accepted, `--mine` just the agent's turn), `comment` opens one about some slides,
   `reply` answers (`-m` or a plain argument; can `--add-slides`), `accept` closes it (tentatively
   accepted), `reopen`, and `clear` drops closed ones and moves their slides'
   base forward. `deck` is a permanent deck-wide conversation for instructions

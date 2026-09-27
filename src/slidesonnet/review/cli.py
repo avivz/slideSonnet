@@ -154,17 +154,16 @@ def status_cmd(pdf: Path, as_json: bool) -> None:
 @review.command("list")
 @_PDF
 @_JSON
-@click.option("--open", "only_open", is_flag=True, help="Only open conversations")
 @click.option("--mine", is_flag=True, help="Only open conversations where it's the agent's turn")
-@click.option("--all", "show_all", is_flag=True, help="Include closed conversations (default)")
-def list_cmd(pdf: Path, as_json: bool, only_open: bool, mine: bool, show_all: bool) -> None:
-    """Conversations with their messages (JSON adds each slide's page text)."""
+@click.option("--all", "show_all", is_flag=True, help="Include closed (accepted) conversations")
+def list_cmd(pdf: Path, as_json: bool, mine: bool, show_all: bool) -> None:
+    """Open conversations with their messages (JSON adds each slide's page text)."""
     from slidesonnet.review import ops
 
     with _errors():
         st = ops.status(pdf)
     convs = list(st.state.conversations.values())
-    if only_open or mine:
+    if not show_all or mine:
         convs = [c for c in convs if c.status == "open"]
     if mine:
         convs = [c for c in convs if c.turn == "agent"]

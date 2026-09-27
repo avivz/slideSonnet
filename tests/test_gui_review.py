@@ -98,8 +98,11 @@ async def test_reply_and_accept(
     await user.should_see("Also the title.")
     assert ops.load(pdf).conversations[cid].turn == "agent"
     user.find(marker=f"accept-{cid}").click()
-    await user.should_see(marker=f"reopen-{cid}")
+    await user.should_not_see(marker=f"reopen-{cid}")  # closed ones are hidden by default
     assert ops.load(pdf).conversations[cid].status == "closed"
+    user.find(marker="review-show-closed").click()
+    await user.should_see(marker=f"reopen-{cid}")
+    await user.should_see(marker=f"conv-row-{cid}")
 
 
 async def test_sending_a_note_also_releases_wait(
@@ -233,3 +236,18 @@ async def test_review_tab_badges_what_waits_for_you(
     assert badge.visible and badge.text == "1"
     user.find(marker="console-tab-review").click()
     await user.should_see("Done.")
+
+
+async def test_closed_conversations_are_hidden_until_asked_for(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _deck(tmp_path, ["a", "b"])
+    ops.start(pdf)
+    done = ops.comment(pdf, ["a"], "Old business.", author="author")
+    ops.accept(pdf, done)
+    live = ops.comment(pdf, ["a"], "Still open.", author="author")
+    await _open(user, pdf, monkeypatch)
+    await user.should_see("Still open.")
+    await user.should_see(marker=f"conv-row-{live}")
+    await user.should_not_see("Old business.")
+    await user.should_not_see(marker=f"conv-row-{done}")
