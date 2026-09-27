@@ -54,3 +54,7 @@ class NarrationChangedOnDisk(SlideSonnetError):
     def __init__(self, lost_text: str | None = None) -> None:
         super().__init__("The narration file changed on disk; your change was not saved.")
         self.lost_text = lost_text
+
+
+class ReviewError(SlideSonnetError):
+    """A review operation can't proceed (bad conversation id, final build, …)."""

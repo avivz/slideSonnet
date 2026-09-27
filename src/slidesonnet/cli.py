@@ -129,6 +129,7 @@ def main(
       edit    deck.pdf                     launch the NiceGUI editor
       clean   deck.pdf [--keep ...]        prune the deck's own audio/render cache
       pool    status | migrate | prune     inspect / fill / prune a shared clip pool
+      review  status | comment | reply ...  review agent changes slide by slide
       doctor                               check installed dependencies
     """
     try:
@@ -834,3 +835,12 @@ def doctor() -> None:
 
     if not print_report(run_all_checks()):
         raise SystemExit(1)
+
+
+def _register_review() -> None:
+    from slidesonnet.review.cli import review
+
+    main.add_command(review)
+
+
+_register_review()

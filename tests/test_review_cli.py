@@ -1,0 +1,115 @@
+"""``slidesonnet review …`` — the command line the agent (and you) drive review with."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import fitz
+import pytest
+from click.testing import CliRunner
+
+from slidesonnet.cli import main
+from slidesonnet.review import ops
+from tests.conftest import simple_narration, write_pdf
+
+
+@pytest.fixture
+def deck(tmp_path: Path) -> Path:
+    pdf = write_pdf(tmp_path / "deck.pdf", ["intro", "proof"])
+    (tmp_path / "deck.narration").write_text(simple_narration("@intro\nHello.\n"), encoding="utf-8")
+    return pdf
+
+
+def _run(*args: str) -> str:
+    result = CliRunner().invoke(main, ["--no-log-file", "review", *args], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    return result.output
+
+
+def _fail(*args: str) -> str:
+    result = CliRunner().invoke(main, ["--no-log-file", "review", *args])
+    assert result.exit_code != 0
+    return result.output
+
+
+def test_snapshot_then_clean_status(deck: Path) -> None:
+    assert "2 slides" in _run("snapshot", str(deck))
+    out = _run("status", str(deck))
+    assert "No changes" in out
+
+
+def test_comment_reply_list_json(deck: Path) -> None:
+    out = _run("comment", str(deck), "@proof", "-m", "Too wordy.", "--as", "author")
+    assert "c1" in out
+    _run("reply", str(deck), "c1", "Shortened.", "--add-slides", "@intro")
+    data = json.loads(_run("list", str(deck), "--json"))
+    conv = next(c for c in data["conversations"] if c["id"] == "c1")
+    assert conv["slides"] == ["proof", "intro"]
+    assert conv["turn"] == "author"
+    assert [m["author"] for m in conv["messages"]] == ["author", "agent"]
+    assert "page body" in conv["pages"]["proof"]["current_text"]
+
+
+def test_status_json_reports_changes_and_unfiled(deck: Path) -> None:
+    _run("snapshot", str(deck))
+    doc = fitz.open(deck)
+    doc[1].insert_text((20, 150), "An edit", fontsize=14)
+    doc.saveIncr()
+    doc.close()
+    data = json.loads(_run("status", str(deck), "--json"))
+    (change,) = data["changes"]
+    assert change["id"] == "proof" and change["kinds"] == ["edited"] and change["image"]
+    assert data["unfiled"] == ["proof"]
+    assert data["final_build"] is False
+
+
+def test_list_filters(deck: Path) -> None:
+    _run("comment", str(deck), "@proof", "-m", "one", "--as", "author")
+    _run("comment", str(deck), "@intro", "-m", "two", "--as", "author")
+    _run("reply", str(deck), "c2", "done")
+    _run("accept", str(deck), "c2")
+    mine = json.loads(_run("list", str(deck), "--json", "--mine"))
+    assert [c["id"] for c in mine["conversations"]] == ["c1"]  # agent's turn, open
+    open_ = json.loads(_run("list", str(deck), "--json", "--open"))
+    assert "c2" not in [c["id"] for c in open_["conversations"]]
+
+
+def test_deck_conversation(deck: Path) -> None:
+    _run("reply", str(deck), "deck", "Publish these.", "--as", "author")
+    _run("reply", str(deck), "deck", "Done.")
+    out = _run("list", str(deck))
+    assert "Publish these." in out and "Done." in out
+
+
+def test_accept_reopen_clear(deck: Path) -> None:
+    _run("comment", str(deck), "@proof", "-m", "x", "--as", "author")
+    _run("accept", str(deck), "c1")
+    assert "Cleared 1" in _run("clear", str(deck))
+    assert ops.load(deck).slide_conversations() == []
+
+
+def test_show_base(deck: Path) -> None:
+    _run("snapshot", str(deck))
+    data = json.loads(_run("show", str(deck), "@intro", "--base", "--json"))
+    assert "Hello." in data["narration"]
+    assert Path(data["image"]).exists()
+
+
+def test_send_and_wait(deck: Path) -> None:
+    _run("comment", str(deck), "@proof", "-m", "x", "--as", "author")
+    _run("send", str(deck))
+    data = json.loads(_run("wait", str(deck), "--since", "0", "--json", "--timeout", "1"))
+    assert data["cursor"] == 1 and [c["id"] for c in data["awaiting_agent"]] == ["c1"]
+
+
+def test_wait_timeout_exits_nonzero(deck: Path) -> None:
+    result = CliRunner().invoke(
+        main, ["--no-log-file", "review", "wait", str(deck), "--since", "0", "--timeout", "0.1"]
+    )
+    assert result.exit_code == 2
+
+
+def test_errors_are_clean(deck: Path) -> None:
+    assert "no conversation" in _fail("reply", str(deck), "c7", "hi")
+    assert "no slide" in _fail("comment", str(deck), "@nope", "-m", "hi")

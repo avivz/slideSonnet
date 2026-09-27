@@ -6,6 +6,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Review conversations (`slidesonnet review …`).** A loop for reviewing
+  an agent's changes slide by slide. The *base* — the last-cleared version of
+  every slide (page image, page text, narration, order) — is taken
+  automatically on first use; `review status` lists slides that differ from it
+  (new, edited, moved, deleted — matched by slide id) and which conversation
+  each belongs to. Conversations live in an append-only, human-readable
+  `<deck>.review` next to the deck: `comment` opens one about some slides,
+  `reply` answers (and can `--add-slides`), `accept` closes it (tentatively
+  accepted), `reopen`, and `clear` drops closed ones and moves their slides'
+  base forward. `deck` is a permanent deck-wide conversation for instructions
+  like "publish these". `send` / `wait --since N` let an agent block until you
+  hand over a batch. Every write is a locked append, so the editor and an
+  agent can write at the same time.
 - **A shared speech-clip pool (`[cache] audio_dir`, `SLIDESONNET_AUDIO_DIR`,
   `--audio-dir`).** Clips are content-addressed, so one directory can serve
   every deck of a course and every git worktree of it — but their *location*
