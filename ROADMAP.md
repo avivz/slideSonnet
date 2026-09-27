@@ -35,7 +35,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    builds (`\ssfinal` for final), the base + diff by slide id, `<deck>.review`
    conversations + the `slidesonnet review` CLI (incl. the `deck` conversation
    and agent-opened conversations), the export check (`--draft`), and the editor
-   review tools (Start review, Send/auto-send, Clear accepted, per-slide threads
+   review tools (Start review, Review tab, Enter-to-send, Clear accepted, per-slide threads
    with Reply/Accept/Reopen, conversation filter, badges, before/after `D`,
    narration word diff, before strip, automatic filing + many-slides warning,
    `N` = next waiting). *Left before merge:* open a demo deck in the real

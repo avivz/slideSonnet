@@ -282,3 +282,14 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;opac
 .ss-conv-row{font-size:12px;cursor:pointer;padding:2px 4px;border-radius:4px}
 .ss-conv-row:hover{background:var(--ss-raised)}
 .ss-conv-row.ss-active{outline:1px solid var(--ss-accent)}
+/* compare view: the stage may use its full width, not the height-derived cap */
+.ss-stage:has(.ss-stage-view.ss-compare){padding-left:10px;padding-right:10px}
+.ss-stage-inner:has(.ss-stage-view.ss-compare){width:100%}
+/* console: Audio | Review tabs */
+.ss-console-tabs .q-tab{min-height:28px;padding:0 10px}
+.ss-console-tabs .q-tab__label{font-size:12px}
+.ss-tab-badge{font-size:10px;margin-left:6px;background:var(--ss-accent) !important;
+  color:#111 !important}
+.ss-console-panels{flex:1 1 auto;background:transparent}
+.ss-console-panel.q-tab-panel{padding:0;display:flex;flex-direction:column;
+  min-height:calc(100vh - 150px)}

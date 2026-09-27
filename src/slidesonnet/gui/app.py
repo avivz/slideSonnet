@@ -1691,93 +1691,117 @@ class EditorView:
                         time_label = ui.label("").classes("ss-mono ss-time")
 
             with console_split.after, ui.column().classes("ss-console gap-3 no-wrap"):
+                # Two tabs keep review apart from the speech tools: Audio | Review.
                 with ui.row().classes("w-full items-center justify-between no-wrap"):
-                    ui.label("Checks · this slide").classes("ss-section")
+                    with (
+                        ui.tabs()
+                        .props("dense no-caps inline-label align=left")
+                        .classes("ss-console-tabs") as console_tabs
+                    ):
+                        audio_tab = ui.tab("audio", label="Audio")
+                        audio_tab.mark("console-tab-audio")
+                        with ui.tab("review", label="Review") as review_tab:
+                            self.review.build_tab_badge()
+                        review_tab.mark("console-tab-review")
                     collapse_console = ui.button(icon="chevron_right").props(
                         "flat round dense size=sm"
                     )
                     collapse_console.mark("collapse-console").tooltip("Collapse console")
-                self.diag_box = ui.column().classes("w-full gap-1")
-                ui.label("Audio · this slide").classes("ss-section")
-                self.audio_status = ui.label().classes("ss-diag ss-diag-info")
-                # Background-generation progress: a deck-wide count bar (A), an
-                # estimated within-clip bar (C), and an elapsed/estimate line (B).
-                # The ✕ beside the bar cancels every queued/running clip at once.
-                with ui.row().classes("w-full items-center no-wrap gap-1"):
-                    self.gen_bar = (
-                        ui.linear_progress(value=0.0, show_value=False)
-                        .props("rounded size=8px")
-                        .classes("grow")
-                    )
-                    self.gen_bar.mark("gen-progress")
-                    self.gen_cancel_btn = ui.button(
-                        icon="close", on_click=self.cancel_all_generation
-                    )
-                    self.gen_cancel_btn.props("flat round dense size=xs color=grey-6")
-                    self.gen_cancel_btn.mark("gen-cancel").tooltip("Cancel all generation")
-                self.gen_clip_bar = (
-                    ui.linear_progress(value=0.0, show_value=False)
-                    .props("rounded size=4px instant-feedback")
-                    .classes("w-full")
-                )
-                self.gen_status = ui.label().classes("ss-diag ss-diag-info ss-mono")
-                self.gen_status.mark("gen-progress-status")
-                self.gen_bar.visible = False
-                self.gen_cancel_btn.visible = False
-                self.gen_clip_bar.visible = False
-                self.gen_status.visible = False
-                tray_box = ui.column().classes("w-full gap-1")
-                tray_box.mark("orphan-tray")
-                tray_box.visible = False
-                self.review.build_console()
-                ui.space()
-                ui.label("Engine").classes("ss-section")
-                self.engine_select = (
-                    ui.select(state.backend_options(), value=state.active_backend)
-                    .props("dense outlined")
-                    .classes("w-full ss-mono")
-                )
-                self.engine_select.mark("engine-select")
-                self.engine_select.tooltip(
-                    "Generate / preview / export with this engine — for this session only "
-                    "(not saved to the deck)"
-                )
-                self.engine_select.on_value_change(lambda e: self._on_engine_change(str(e.value)))
-                self.voices_btn = ui.button("Voices…", icon="record_voice_over").classes("w-full")
-                self.voices_btn.props("flat no-caps dense").mark("edit-voices")
-                self.voices_btn.tooltip(
-                    "Name voices and map each to a per-engine voice — saved in the deck, "
-                    "so the same script narrates under any engine"
-                )
-                self.voices_btn.on_click(self.open_voices_dialog)
-                auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
-                auto_build.props("dense").mark("auto-build")
-                # Always start a session with auto-generate off, even if a previous
-                # session left it on — generation is opt-in each time you open the deck.
-                app.storage.general["auto_build"] = False
-                auto_build.bind_value(app.storage.general, "auto_build")
-                self.auto_build = auto_build
-                self._sync_auto_build_gate()
-                auto_build.on_value_change(lambda e: self._on_auto_build_toggle(bool(e.value)))
-                single_trans = ui.checkbox("Play transitions in single-slide preview")
-                single_trans.props("dense").mark("single-slide-transitions")
-                single_trans.tooltip(
-                    "When on, playing one slide animates its in/out transitions; "
-                    "off (default) plays just that slide's narration"
-                )
-                # Off each session — proofing one slide's audio shouldn't morph by
-                # default; the whole-deck preview always plays transitions regardless.
-                app.storage.general["single_slide_transitions"] = False
-                single_trans.bind_value(app.storage.general, "single_slide_transitions")
-                self.gen_all_btn = ui.button("Generate missing", icon="library_music").classes(
-                    "w-full"
-                )
-                self.gen_all_btn.props("flat no-caps").mark("gen-missing")
-                self.gen_all_btn.tooltip(
-                    "Makes only the clips that don't exist yet — finished audio is left untouched"
-                )
-                export_btn = ui.button("Export video", icon="movie").classes("w-full ss-export")
-                export_btn.props("unelevated no-caps color=primary").mark("export")
+                with ui.tab_panels(console_tabs, value=audio_tab).classes(
+                    "w-full ss-console-panels"
+                ):
+                    with ui.tab_panel(audio_tab).classes("ss-console-panel gap-3"):
+                        ui.label("Checks · this slide").classes("ss-section")
+                        self.diag_box = ui.column().classes("w-full gap-1")
+                        ui.label("Audio · this slide").classes("ss-section")
+                        self.audio_status = ui.label().classes("ss-diag ss-diag-info")
+                        # Background-generation progress: a deck-wide count bar (A), an
+                        # estimated within-clip bar (C), and an elapsed/estimate line (B).
+                        # The ✕ beside the bar cancels every queued/running clip at once.
+                        with ui.row().classes("w-full items-center no-wrap gap-1"):
+                            self.gen_bar = (
+                                ui.linear_progress(value=0.0, show_value=False)
+                                .props("rounded size=8px")
+                                .classes("grow")
+                            )
+                            self.gen_bar.mark("gen-progress")
+                            self.gen_cancel_btn = ui.button(
+                                icon="close", on_click=self.cancel_all_generation
+                            )
+                            self.gen_cancel_btn.props("flat round dense size=xs color=grey-6")
+                            self.gen_cancel_btn.mark("gen-cancel").tooltip("Cancel all generation")
+                        self.gen_clip_bar = (
+                            ui.linear_progress(value=0.0, show_value=False)
+                            .props("rounded size=4px instant-feedback")
+                            .classes("w-full")
+                        )
+                        self.gen_status = ui.label().classes("ss-diag ss-diag-info ss-mono")
+                        self.gen_status.mark("gen-progress-status")
+                        self.gen_bar.visible = False
+                        self.gen_cancel_btn.visible = False
+                        self.gen_clip_bar.visible = False
+                        self.gen_status.visible = False
+                        tray_box = ui.column().classes("w-full gap-1")
+                        tray_box.mark("orphan-tray")
+                        tray_box.visible = False
+                        ui.space()
+                        ui.label("Engine").classes("ss-section")
+                        self.engine_select = (
+                            ui.select(state.backend_options(), value=state.active_backend)
+                            .props("dense outlined")
+                            .classes("w-full ss-mono")
+                        )
+                        self.engine_select.mark("engine-select")
+                        self.engine_select.tooltip(
+                            "Generate / preview / export with this engine — for this session only "
+                            "(not saved to the deck)"
+                        )
+                        self.engine_select.on_value_change(
+                            lambda e: self._on_engine_change(str(e.value))
+                        )
+                        self.voices_btn = ui.button("Voices…", icon="record_voice_over").classes(
+                            "w-full"
+                        )
+                        self.voices_btn.props("flat no-caps dense").mark("edit-voices")
+                        self.voices_btn.tooltip(
+                            "Name voices and map each to a per-engine voice — saved in the deck, "
+                            "so the same script narrates under any engine"
+                        )
+                        self.voices_btn.on_click(self.open_voices_dialog)
+                        auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
+                        auto_build.props("dense").mark("auto-build")
+                        # Always start a session with auto-generate off, even if a previous
+                        # session left it on — generation is opt-in each time you open the deck.
+                        app.storage.general["auto_build"] = False
+                        auto_build.bind_value(app.storage.general, "auto_build")
+                        self.auto_build = auto_build
+                        self._sync_auto_build_gate()
+                        auto_build.on_value_change(
+                            lambda e: self._on_auto_build_toggle(bool(e.value))
+                        )
+                        single_trans = ui.checkbox("Play transitions in single-slide preview")
+                        single_trans.props("dense").mark("single-slide-transitions")
+                        single_trans.tooltip(
+                            "When on, playing one slide animates its in/out transitions; "
+                            "off (default) plays just that slide's narration"
+                        )
+                        # Off each session — proofing one slide's audio shouldn't morph by
+                        # default; the whole-deck preview always plays transitions regardless.
+                        app.storage.general["single_slide_transitions"] = False
+                        single_trans.bind_value(app.storage.general, "single_slide_transitions")
+                        self.gen_all_btn = ui.button(
+                            "Generate missing", icon="library_music"
+                        ).classes("w-full")
+                        self.gen_all_btn.props("flat no-caps").mark("gen-missing")
+                        self.gen_all_btn.tooltip(
+                            "Makes only the clips that don't exist yet — finished audio is left untouched"
+                        )
+                        export_btn = ui.button("Export video", icon="movie").classes(
+                            "w-full ss-export"
+                        )
+                        export_btn.props("unelevated no-caps color=primary").mark("export")
+                    with ui.tab_panel(review_tab).classes("ss-console-panel gap-3"):
+                        self.review.build_console()
 
         # --- footer: engine · sidecar · status flash · hints ---
         with ui.footer().classes("ss-footer no-wrap"):

@@ -102,14 +102,28 @@ async def test_reply_and_accept(
     assert ops.load(pdf).conversations[cid].status == "closed"
 
 
-async def test_send_releases_wait(
+async def test_sending_a_note_also_releases_wait(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pdf = _deck(tmp_path, ["a"])
     ops.start(pdf)
     await _open(user, pdf, monkeypatch)
-    user.find(marker="review-send").click()
-    await user.should_see("Sent")
+    user.find(marker="slide-note").type("Too wordy.")
+    user.find(marker="slide-note-add").click()
+    await user.should_see("Too wordy.")
+    assert ops.load(pdf).sends == 1  # a waiting agent wakes up
+    await user.should_not_see(marker="review-send")  # no separate Send step
+
+
+async def test_enter_sends_the_note(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _deck(tmp_path, ["a"])
+    ops.start(pdf)
+    await _open(user, pdf, monkeypatch)
+    user.find(marker="deck-note").type("Publish these.").trigger("keydown.enter")
+    await user.should_see("Publish these.")
+    assert ops.load(pdf).conversations["deck"].messages[-1].text == "Publish these."
     assert ops.load(pdf).sends == 1
 
 
@@ -205,3 +219,17 @@ async def test_conversation_filter_hides_other_slides(
     user.find(marker="conv-filter-clear").click()
     await user.should_see(marker="thumb-0")
     await user.should_see(marker="thumb-2")
+
+
+async def test_review_tab_badges_what_waits_for_you(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _deck(tmp_path, ["a", "b"])
+    ops.start(pdf)
+    cid = ops.comment(pdf, ["a"], "Shorten.", author="author")
+    ops.reply(pdf, cid, "Done.")
+    await _open(user, pdf, monkeypatch)
+    badge = next(iter(user.find(marker="console-tab-review-badge").elements))
+    assert badge.visible and badge.text == "1"
+    user.find(marker="console-tab-review").click()
+    await user.should_see("Done.")

@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nicegui import app, run, ui
+from nicegui import run, ui
 
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.gui.review import EditorReviewStatus
@@ -34,9 +34,6 @@ logger = logging.getLogger(__name__)
 
 #: A reload that files more unrequested slides than this raises a warning.
 MASS_EDIT_THRESHOLD = 5
-#: With auto-send on, Send fires this long after the last note.
-AUTO_SEND_DELAY_S = 10.0
-_AUTO_SEND_KEY = "review_auto_send"
 
 _BADGE_CLASSES = "ss-rv-your-turn ss-rv-agent-turn ss-rv-closed ss-rv-unfiled"
 _BADGE_TEXT = {
@@ -72,7 +69,6 @@ class ReviewPanel:
         self.before_only = False  # D: show the base version full-size
         self.badges: list[Any] = []
         self._log_stamp: tuple[float, int] | None = None
-        self._auto_send_timer: Any = None
         self._refreshing = False
 
     @property
@@ -85,7 +81,14 @@ class ReviewPanel:
 
     # ---- building ------------------------------------------------------------
     def build_console(self) -> None:
+        """Called inside the console's Review tab."""
         self.box = ui.column().classes("w-full gap-2 ss-review").mark("review-panel")
+
+    def build_tab_badge(self) -> None:
+        """Called inside the Review tab: how many conversations here wait for you."""
+        self.tab_badge = ui.badge("").props("rounded").classes("ss-tab-badge")
+        self.tab_badge.mark("console-tab-review-badge")
+        self.tab_badge.visible = False
 
     def build_stage(self) -> None:
         """Called inside the stage view, before the current slide image."""
@@ -171,6 +174,7 @@ class ReviewPanel:
     def sync(self) -> None:
         """Redraw everything review-related from the current status."""
         self._sync_console()
+        self._sync_tab_badge()
         self._sync_strip()
         self._sync_stage()
 
@@ -191,9 +195,6 @@ class ReviewPanel:
             with ui.row().classes("w-full items-center no-wrap gap-1"):
                 ui.label("Review").classes("ss-section")
                 ui.space()
-                send = ui.button("Send", icon="send", on_click=self._send)
-                send.props("flat dense no-caps size=sm").mark("review-send")
-                send.tooltip("Let the agent know there's something to do")
                 closed = [
                     c
                     for c in (st.state.slide_conversations() if st else [])
@@ -203,17 +204,6 @@ class ReviewPanel:
                 clear.props("flat dense no-caps size=sm").mark("review-clear")
                 clear.set_enabled(bool(closed))
                 clear.tooltip("Make accepted changes the new starting point")
-            auto = (
-                ui.checkbox(
-                    "Send automatically after each note",
-                    value=bool(app.storage.general.get(_AUTO_SEND_KEY, False)),
-                    on_change=lambda e: app.storage.general.__setitem__(_AUTO_SEND_KEY, e.value),
-                )
-                .props("dense size=xs")
-                .classes("ss-diag")
-                .mark("review-autosend")
-            )
-            del auto
             if st is not None and st.final_build:
                 ui.label("Final build — comparison paused until the next normal compile.").classes(
                     "ss-diag ss-diag-warn"
@@ -225,6 +215,19 @@ class ReviewPanel:
             self._draw_this_slide(st)
             self._draw_list(st)
 
+    def _sync_tab_badge(self) -> None:
+        st = self.status
+        sid = self.view.state.current_id
+        waiting = 0
+        if self.model.active and st is not None and sid:
+            waiting = sum(
+                1
+                for c in self.model.conversations_for(st, sid)
+                if c.status == "open" and c.turn == "author"
+            )
+        self.tab_badge.set_text(str(waiting))
+        self.tab_badge.visible = waiting > 0
+
     def _messages(self, conv: Conversation) -> None:
         for msg in conv.messages:
             with ui.column().classes(f"ss-msg ss-msg-{msg.author} gap-0 w-full"):
@@ -232,10 +235,19 @@ class ReviewPanel:
                 ui.label(msg.text).classes("ss-msg-text")
 
     def _note_box(self, marker: str, placeholder: str, on_add: Any) -> None:
+        """A note field: Enter (or the Send button) sends it; Shift+Enter is a new line."""
         area = ui.textarea(placeholder=placeholder).props("dense outlined autogrow")
         area.classes("w-full ss-note").mark(marker)
-        add = ui.button("Add", on_click=lambda: on_add(area))
-        add.props("flat dense no-caps size=sm").mark(f"{marker}-add")
+
+        def on_enter(e: Any) -> None:
+            if isinstance(e.args, dict) and e.args.get("shiftKey"):
+                return
+            on_add(area)
+
+        area.on("keydown.enter", on_enter, args=["shiftKey"])
+        send = ui.button("Send", icon="send", on_click=lambda: on_add(area))
+        send.props("flat dense no-caps size=sm").mark(f"{marker}-add")
+        send.tooltip("Send to the agent (Enter)")
 
     def _draw_deck(self, st: EditorReviewStatus) -> None:
         deck = st.state.conversations["deck"]
@@ -423,36 +435,24 @@ class ReviewPanel:
             return False
         return True
 
-    def _after_write(self, *, schedule_send: bool = False) -> None:
+    def _after_write(self) -> None:
         self.compute()
         self._log_stamp = self.model.log_stamp()
         self.sync()
-        if schedule_send and app.storage.general.get(_AUTO_SEND_KEY, False):
-            if self._auto_send_timer is not None:
-                self._auto_send_timer.cancel()
-            with self.view.flash_label:  # a slot that outlives panel redraws
-                self._auto_send_timer = ui.timer(
-                    AUTO_SEND_DELAY_S, lambda: self._send(auto=True), once=True
-                )
 
     def _add(self, area: Any, write: Any) -> None:
         text = str(area.value or "").strip()
         if not text:
             return
         self.view.blocks.save_current()  # the agent should see the saved narration
-        if self._write(lambda: write(text)):
-            self._after_write(schedule_send=True)
+        # Every note wakes a waiting agent (`review wait`) — sending *is* the handover.
+        if self._write(lambda: write(text)) and self._write(self.model.send):
+            self._after_write()
 
     def _start(self) -> None:
         self.view.blocks.save_current()
         if self._write(self.model.start):
             self.view.flash("Review started — changes are compared from here", "positive")
-            self._after_write()
-
-    def _send(self, *, auto: bool = False) -> None:
-        self._auto_send_timer = None
-        if self._write(self.model.send):
-            self.view.flash("Sent — the agent can pick it up" if not auto else "Sent", "info")
             self._after_write()
 
     def _accept(self, cid: str) -> None:

@@ -7,12 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - **Review tools in the editor.** "Start review" (or `slidesonnet review
-  snapshot`) makes the deck as it is now the base. From then on the console
-  shows the Deck conversation (instructions not about one slide), this slide's
-  conversations with Reply / Accept / Reopen, a note box that opens a new one,
-  and all conversations (click one to show only its slides). **Send** tells a
-  waiting agent there's work (optionally automatic after each note); **Clear
-  accepted** makes accepted changes the new base. A changed slide shows its
+  snapshot`) makes the deck as it is now the base. From then on the console's
+  **Review** tab (beside **Audio**, badged when something on this slide waits
+  for you) shows the Deck conversation (instructions not about one slide), this
+  slide's conversations with Reply / Accept / Reopen, a note box that opens a
+  new one, and all conversations (click one to show only its slides). A note
+  goes out with Enter (Shift+Enter for a new line) or **Send**, and wakes an
+  agent blocked in `review wait`; **Clear accepted** makes accepted changes the
+  new base. A changed slide shows its
   base version beside the current one (`D` toggles before-only) and a word diff
   of its narration; slides that were added, removed, or moved bring up a
   *before* strip in the old order (the filmstrip pane widens to fit both;
