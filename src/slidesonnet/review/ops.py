@@ -93,7 +93,7 @@ def status(pdf_path: Path) -> ReviewStatus:
         return ReviewStatus(state=state, final_build=True, base=base_mod.load_base(pdf_path))
     base = ensure_base(pdf_path)
     assert base is not None  # a plain build always yields one
-    current = capture(pdf_path)
+    current = capture(pdf_path, reference=base_mod.reference_images(pdf_path))
     changes = diff_versions(base, current)
     filed = {sid for c in state.slide_conversations() for sid in c.slides}
     unfiled = [c.slide_id for c in changes if c.slide_id not in filed]

@@ -460,6 +460,19 @@ class PaneLayout:
             "console": (console_split, 264.0, "ss-overlay-right"),
         }
         self.window_px = 0.0
+        self.strip_doubled = False
+
+    def double_strip(self, double: bool) -> None:
+        """Give the filmstrip pane twice the room while review's before strip shows."""
+        if double == self.strip_doubled:
+            return
+        self.strip_doubled = double
+        current = float(self.strip_split.value or 0.0)
+        if current <= 2.0:  # collapsed: widen/narrow what it reopens to
+            self.remembered["strip"] *= 2.0 if double else 0.5
+            return
+        self.strip_split.value = min(_STRIP_MAX, current * 2.0) if double else current / 2.0
+        self.apply_limits()
 
     def sync_toggles(self) -> None:
         for splitter, btn in (

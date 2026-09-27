@@ -103,7 +103,13 @@ class ReviewModel:
         stamp = _stamp(self.pdf_path)
         if self._pages is None or self._pages[0] != stamp:
             final = is_final_build(self.pdf_path)
-            pages = PageCapture(order=(), pages={}) if final else capture_pages(self.pdf_path)
+            pages = (
+                PageCapture(order=(), pages={})
+                if final
+                else capture_pages(
+                    self.pdf_path, reference=base_mod.reference_images(self.pdf_path)
+                )
+            )
             self._pages = (stamp, pages, final)
         return self._pages[1], self._pages[2]
 

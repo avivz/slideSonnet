@@ -170,6 +170,25 @@ async def test_before_strip_appears_when_order_changes(
     await _open(user, pdf, monkeypatch)
     await user.should_see(marker="before-strip")
     await user.should_see(marker="before-thumb-b")
+    moved = next(iter(user.find(marker="before-thumb-b").elements))
+    assert "ss-moved" in moved.classes
+    split = next(iter(user.find(marker="split-strip").elements))
+    assert split.value == 300  # two strips side by side get twice the room
+
+
+async def test_strip_narrows_again_when_order_is_restored(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _deck(tmp_path, ["a", "b", "c"])
+    ops.start(pdf)
+    write_pdf(pdf, ["a", "c", "b"], plain=True)
+    await _open(user, pdf, monkeypatch)
+    await user.should_see(marker="before-strip")
+    write_pdf(pdf, ["a", "b", "c"], plain=True)
+    _bump(pdf)
+    await user.should_not_see(marker="before-strip", retries=300)
+    split = next(iter(user.find(marker="split-strip").elements))
+    assert split.value == 150
 
 
 async def test_conversation_filter_hides_other_slides(

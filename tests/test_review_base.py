@@ -113,3 +113,33 @@ def test_unreferenced_images_are_pruned(tmp_path: Path) -> None:
     new = base_mod.base_image(pdf, "a")
     assert old is not None and new is not None and old != new
     assert not old.exists()
+
+
+def _math_deck(path: Path, *, dy: float = 0.0, extra: str = "") -> Path:
+    """One slide of formula-like text; *dy* nudges it down (LaTeX re-layout jitter)."""
+    doc = fitz.open()
+    page = doc.new_page(width=400, height=300)
+    page.insert_text((31.3, 121.7 + dy), "(1 - a1 x2)(1 - a2 x2) = 1 - (a1 + a2) x2" + extra)
+    rule = fitz.Rect(40.2, 140.3 + dy, 90.2, 140.7 + dy)  # a fraction bar
+    page.draw_rect(rule, color=None, fill=(0, 0, 0), width=0)
+    page.insert_text((20, 20), "SSID:m SSPLAIN", fontsize=4, render_mode=3)
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def test_subpixel_relayout_keeps_the_base_image(tmp_path: Path) -> None:
+    pdf = _math_deck(tmp_path / "deck.pdf")
+    base = base_mod.snapshot(pdf)
+    _math_deck(pdf, dy=0.052)  # moving a frame nudged its content by 0.052pt
+    assert capture(pdf).slides["m"].image_hash != base.slides["m"].image_hash  # exact differs
+    refs = base_mod.reference_images(pdf)
+    assert capture(pdf, reference=refs).slides["m"].image_hash == base.slides["m"].image_hash
+
+
+def test_a_one_character_edit_is_still_a_change(tmp_path: Path) -> None:
+    pdf = _math_deck(tmp_path / "deck.pdf")
+    base = base_mod.snapshot(pdf)
+    _math_deck(pdf, extra=".")
+    refs = base_mod.reference_images(pdf)
+    assert capture(pdf, reference=refs).slides["m"].image_hash != base.slides["m"].image_hash

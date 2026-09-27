@@ -253,14 +253,19 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;opac
 .ss-before-cap{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
   color:var(--ss-dim)}
 .ss-before-thumb.ss-deleted{opacity:.45;border-style:dashed}
+.ss-before-thumb.ss-moved{border-left:3px solid var(--ss-warn)}
 .ss-thumb-review{position:absolute;top:3px;right:18px;font-size:11px;font-weight:700;
   line-height:14px;padding:0 4px;border-radius:4px;background:rgba(20,17,15,.85)}
 .ss-rv-your-turn{color:var(--ss-accent)}
 .ss-rv-agent-turn{color:var(--ss-dim)}
 .ss-rv-closed{color:var(--ss-ok)}
 .ss-rv-unfiled{color:var(--ss-warn)}
-.ss-before{flex:1 1 0;min-width:0;height:100%}
-.ss-stage-view.ss-compare{gap:10px}
+.ss-before{flex:1 1 0;min-width:0;height:100%;position:relative}
+/* compare: both images top-aligned in equal boxes, so they line up; the caption
+   sits in the strip above the before image instead of taking its height. */
+.ss-stage-view.ss-compare{gap:10px;padding-top:18px}
+.ss-stage-view.ss-compare .ss-stage-img img{object-position:50% 0 !important}
+.ss-before>.ss-before-cap{position:absolute;top:-17px;left:0;right:0;text-align:center}
 .ss-stage-view.ss-compare>.ss-stage-img{flex:1 1 0;min-width:0}
 .ss-stage-view.ss-before-only>.ss-stage-img{display:none}
 .ss-narr-diff{font-size:13px;line-height:1.5;padding:6px 8px;border:1px solid var(--ss-line);

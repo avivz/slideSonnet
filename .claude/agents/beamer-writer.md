@@ -82,7 +82,7 @@ file at the same time).
    The `deck` conversation holds deck-wide instructions ("publish these").
 3. **Declare before you change.** Before editing and recompiling, put every
    slide you're about to touch into a conversation:
-   - answering one: `slidesonnet review reply deck.pdf c3 --add-slides @x "…"`
+   - answering one: `slidesonnet review reply deck.pdf c3 --add-slides @x -m "…"`
    - a request from chat, or your own initiative: open one —
      `slidesonnet review comment deck.pdf @x @y -m "What I'm changing and why"`
    Slides that change without a conversation are filed as *unrequested* and

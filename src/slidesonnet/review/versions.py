@@ -4,7 +4,11 @@ A version is captured from the PDF + sidecar on disk. Two versions — the store
 base and the current files — are compared slide by slide (see
 :mod:`slidesonnet.review.diff`). Page images are compared by a hash of their
 decoded pixels at a fixed resolution, so a recompile that changes nothing
-visible (timestamps, PDF object ids) hashes the same.
+visible (timestamps, PDF object ids) hashes the same. LaTeX also re-lays a
+frame out by a few hundredths of a point when its neighbours change (moving a
+frame is enough), which flips anti-aliased pixels; a capture given the base's
+images therefore keeps the base hash for a page that only differs that way
+(see :func:`same_picture`).
 """
 
 from __future__ import annotations
@@ -15,6 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import fitz  # PyMuPDF
+import numpy as np
+from numpy.typing import NDArray
 
 from slidesonnet.deck import dedupe_page_ids, load_deck
 from slidesonnet.narration.format import serialize_block
@@ -23,6 +29,12 @@ from slidesonnet.pdf.reader import read_page_ids
 
 #: Raster resolution for pixel hashes and stored base images.
 DIFF_DPI = 150
+
+#: Two renders are the same picture when every pixel of each has a match within
+#: this many levels (0–255, per channel) somewhere in the other's 3×3
+#: neighbourhood. Sub-pixel re-layout stays under ~40; the smallest real edit
+#: (a period, one subscript digit) scores ~225.
+_SAME_PICTURE_TOLERANCE = 80
 
 _MARKER_PREFIX = "SSID:"
 _BUILD_MARKERS = frozenset({"SSFINAL", "SSPLAIN"})
@@ -77,6 +89,41 @@ def pixel_hash(pix: fitz.Pixmap) -> str:
     return digest.hexdigest()[:24]
 
 
+def _pixels(pix: fitz.Pixmap) -> NDArray[np.int16]:
+    rgb = pix if pix.n == 3 and not pix.alpha else fitz.Pixmap(fitz.csRGB, pix, 0)
+    return np.frombuffer(rgb.samples, np.uint8).reshape(rgb.height, rgb.width, 3).astype(np.int16)
+
+
+def _nearest_miss(a: NDArray[np.int16], b: NDArray[np.int16]) -> NDArray[np.int16]:
+    """Per pixel of *a*: the smallest difference to a pixel of *b* within one step."""
+    h, w, _ = a.shape
+    padded = np.pad(b, ((1, 1), (1, 1), (0, 0)), mode="edge")
+    best: NDArray[np.int16] | None = None
+    for dy in (0, 1, 2):
+        for dx in (0, 1, 2):
+            diff = np.abs(a - padded[dy : dy + h, dx : dx + w]).max(axis=2)
+            best = diff if best is None else np.minimum(best, diff)
+    assert best is not None
+    return best
+
+
+def same_picture(a: fitz.Pixmap, b: fitz.Pixmap) -> bool:
+    """True when *a* and *b* differ only by sub-pixel re-layout (see module doc)."""
+    pa, pb = _pixels(a), _pixels(b)
+    if pa.shape != pb.shape:
+        return False
+    worst = max(int(_nearest_miss(pa, pb).max()), int(_nearest_miss(pb, pa).max()))
+    return worst <= _SAME_PICTURE_TOLERANCE
+
+
+def _canonical_hash(pix: fitz.Pixmap, reference: Path | None) -> str:
+    """*pix*'s hash — or the reference image's, when they're the same picture."""
+    digest = pixel_hash(pix)
+    if reference is None or reference.stem == digest or not reference.exists():
+        return digest
+    return reference.stem if same_picture(pix, fitz.Pixmap(str(reference))) else digest
+
+
 @dataclass(frozen=True)
 class PageCapture:
     """The PDF half of a version: slide order plus each page's hash and text."""
@@ -85,12 +132,20 @@ class PageCapture:
     pages: dict[str, tuple[str, str]]  # slide id -> (pixel hash, visible text)
 
 
-def capture_pages(pdf_path: Path, *, images_dir: Path | None = None) -> PageCapture:
+def capture_pages(
+    pdf_path: Path,
+    *,
+    images_dir: Path | None = None,
+    reference: Mapping[str, Path] | None = None,
+) -> PageCapture:
     """Hash and read every page with a diffable id (the expensive half).
 
     With *images_dir*, each page image is also written there as ``<hash>.png``
-    (skipped when that file already exists).
+    (skipped when that file already exists). *reference* maps slide ids to the
+    base's ``<hash>.png`` images: a page that is the same picture as its
+    reference takes the reference's hash.
     """
+    reference = reference or {}
     ids, _diags = dedupe_page_ids(read_page_ids(pdf_path))
     if images_dir is not None:
         images_dir.mkdir(parents=True, exist_ok=True)
@@ -102,7 +157,7 @@ def capture_pages(pdf_path: Path, *, images_dir: Path | None = None) -> PageCapt
                 continue
             page = doc[index]
             pix = _render(page)
-            digest = pixel_hash(pix)
+            digest = _canonical_hash(pix, reference.get(slide_id))
             if images_dir is not None:
                 target = images_dir / f"{digest}.png"
                 if not target.exists():
@@ -127,12 +182,16 @@ def combine(pages: PageCapture, narration: Mapping[str, PageNarration]) -> DeckV
 
 
 def capture(
-    pdf_path: Path, *, sidecar_path: Path | None = None, images_dir: Path | None = None
+    pdf_path: Path,
+    *,
+    sidecar_path: Path | None = None,
+    images_dir: Path | None = None,
+    reference: Mapping[str, Path] | None = None,
 ) -> DeckVersion:
     """Capture the current version of the deck at *pdf_path*.
 
-    With *images_dir*, each slide's page image is also written there as
-    ``<hash>.png`` (skipped when that file already exists).
+    *images_dir* and *reference* are as for :func:`capture_pages`.
     """
     deck, _diags = load_deck(pdf_path, sidecar_path=sidecar_path)
-    return combine(capture_pages(deck.pdf_path, images_dir=images_dir), deck.narration)
+    pages = capture_pages(deck.pdf_path, images_dir=images_dir, reference=reference)
+    return combine(pages, deck.narration)

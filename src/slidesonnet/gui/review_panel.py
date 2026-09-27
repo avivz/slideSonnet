@@ -346,6 +346,9 @@ class ReviewPanel:
         st = self.status
         structural = st is not None and any(c.new or c.deleted or c.moved for c in st.changes)
         self.before_strip.visible = bool(structural)
+        layout = getattr(self.view, "layout", None)
+        if layout is not None:
+            layout.double_strip(bool(structural))
         self.before_strip.clear()
         if not structural or st is None or st.base is None:
             return
@@ -353,11 +356,15 @@ class ReviewPanel:
         with self.before_strip:
             ui.label("Before").classes("ss-before-cap")
             deleted = {c.slide_id for c in st.changes if c.deleted}
+            moved = {c.slide_id for c in st.changes if c.moved}
+            active = None
             for n, sid in enumerate(st.base.order):
                 image = self.model.base_image(sid)
                 classes = "ss-thumb ss-before-thumb"
                 if sid in deleted:
                     classes += " ss-deleted"
+                if sid in moved:
+                    classes += " ss-moved"
                 if sid == state.current_id:
                     classes += " ss-active"
                 with ui.element("div").classes(classes).mark(f"before-thumb-{sid}") as card:
@@ -367,6 +374,16 @@ class ReviewPanel:
                         ui.label(sid).classes("ss-thumb-fallback ss-mono")
                     ui.label(str(n + 1)).classes("ss-thumb-num")
                 card.on("click", lambda _e=None, sid=sid: self._jump_to(sid))
+                if sid == state.current_id:
+                    active = card
+        if active is not None:
+            try:  # best-effort; no JS client in tests
+                ui.run_javascript(
+                    f"document.getElementById('c{active.id}')"
+                    "?.scrollIntoView({block: 'nearest', behavior: 'smooth'})"
+                )
+            except Exception:
+                pass
 
     def _sync_stage(self) -> None:
         state = self.view.state

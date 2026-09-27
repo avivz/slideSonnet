@@ -72,6 +72,15 @@ def _prune_images(pdf_path: Path, version: DeckVersion) -> None:
                 png.unlink(missing_ok=True)
 
 
+def reference_images(pdf_path: Path) -> dict[str, Path]:
+    """Slide id -> the base's stored page image, for a tolerant capture."""
+    base = load_base(pdf_path)
+    if base is None:
+        return {}
+    pages = _pages_dir(pdf_path)
+    return {sid: pages / f"{v.image_hash}.png" for sid, v in base.slides.items()}
+
+
 def _require_plain(pdf_path: Path) -> None:
     if is_final_build(pdf_path):
         raise ReviewError(
@@ -106,7 +115,12 @@ def advance(
     base = load_base(pdf_path)
     if base is None:
         raise ReviewError("no review base yet — take one with `slidesonnet review snapshot`")
-    current = capture(pdf_path, sidecar_path=sidecar_path, images_dir=_pages_dir(pdf_path))
+    current = capture(
+        pdf_path,
+        sidecar_path=sidecar_path,
+        images_dir=_pages_dir(pdf_path),
+        reference=reference_images(pdf_path),
+    )
     slides = dict(base.slides)
     for sid in slide_ids:
         if sid in current.slides:

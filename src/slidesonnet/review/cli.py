@@ -204,6 +204,11 @@ def comment_cmd(pdf: Path, slides: tuple[str, ...], text: str, author: str | Non
     """Open a conversation about SLIDES (e.g. @euler-trick @euler-result)."""
     from slidesonnet.review import ops
 
+    if any(s.lstrip("@") == "deck" for s in slides):
+        raise click.UsageError(
+            "the deck conversation always exists — write to it with "
+            '`slidesonnet review reply <pdf> deck -m "…"`'
+        )
     with _errors():
         cid = ops.comment(pdf, list(slides), text, author=cast(Author, author or "agent"))
     click.echo(cid)
@@ -212,7 +217,8 @@ def comment_cmd(pdf: Path, slides: tuple[str, ...], text: str, author: str | Non
 @review.command("reply")
 @_PDF
 @click.argument("conversation")
-@click.argument("text")
+@click.argument("text", required=False)
+@click.option("-m", "--text", "text_opt", help="The message (or give it as TEXT)")
 @click.option(
     "--add-slides",
     multiple=True,
@@ -220,15 +226,23 @@ def comment_cmd(pdf: Path, slides: tuple[str, ...], text: str, author: str | Non
 )
 @_AS
 def reply_cmd(
-    pdf: Path, conversation: str, text: str, add_slides: tuple[str, ...], author: str | None
+    pdf: Path,
+    conversation: str,
+    text: str | None,
+    text_opt: str | None,
+    add_slides: tuple[str, ...],
+    author: str | None,
 ) -> None:
     """Add a message to CONVERSATION ("deck" = the deck-wide conversation)."""
     from slidesonnet.review import ops
 
+    message = text_opt if text_opt is not None else text
+    if not message:
+        raise click.UsageError("give the message as TEXT or with -m")
     slides = [s for group in add_slides for s in group.split()]
     with _errors():
         ops.reply(
-            pdf, conversation, text, author=cast(Author, author or "agent"), add_slides=slides
+            pdf, conversation, message, author=cast(Author, author or "agent"), add_slides=slides
         )
 
 

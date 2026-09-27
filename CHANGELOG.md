@@ -15,7 +15,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   accepted** makes accepted changes the new base. A changed slide shows its
   base version beside the current one (`D` toggles before-only) and a word diff
   of its narration; slides that were added, removed, or moved bring up a
-  *before* strip in the old order. Filmstrip badges mark slides waiting for you,
+  *before* strip in the old order (the filmstrip pane widens to fit both;
+  moved slides are marked). Filmstrip badges mark slides waiting for you,
   for the agent, accepted, or changed without a conversation; `N` jumps to the
   next one waiting for you. Changes that arrive with no conversation (a
   recompile, an outside edit) are filed into their own conversation, with a
@@ -31,9 +32,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   every slide (page image, page text, narration, order) — is taken
   automatically on first use; `review status` lists slides that differ from it
   (new, edited, moved, deleted — matched by slide id) and which conversation
-  each belongs to. Conversations live in an append-only, human-readable
+  each belongs to. A slide whose page LaTeX re-lays out by a hair when a
+  neighbour moves still counts as unchanged. Conversations live in an append-only, human-readable
   `<deck>.review` next to the deck: `comment` opens one about some slides,
-  `reply` answers (and can `--add-slides`), `accept` closes it (tentatively
+  `reply` answers (`-m` or a plain argument; can `--add-slides`), `accept` closes it (tentatively
   accepted), `reopen`, and `clear` drops closed ones and moves their slides'
   base forward. `deck` is a permanent deck-wide conversation for instructions
   like "publish these". `send` / `wait --since N` let an agent block until you
