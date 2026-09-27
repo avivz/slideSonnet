@@ -513,6 +513,29 @@ async def test_ctrl_s_saves_the_field_being_typed(
     assert "Fresh words, mid-edit." in sidecar
 
 
+async def test_save_after_external_sidecar_edit_keeps_theirs_and_offers_mine(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent rewrote the narration between polls; saving must not clobber it.
+    The editor keeps the file's version and shows the unsaved text to copy."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nOld words.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(simple_narration("@intro-title\nThe agent's words.\n"), encoding="utf-8")
+    later = time.time() + 5
+    os.utime(sidecar, (later, later))
+
+    user.find(ui.textarea).clear().type("My unsaved words.")
+    user.find(marker="utext-0").trigger("keydown.ctrl.s.prevent")
+
+    await user.should_see("changed on disk")
+    await user.should_see("My unsaved words.")  # offered back for copying
+    user.find(marker="conflict-copy")  # a copy button is there
+    assert "The agent's words." in sidecar.read_text(encoding="utf-8")
+    assert "My unsaved words." not in sidecar.read_text(encoding="utf-8")
+
+
 async def test_diagnostics_visible(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

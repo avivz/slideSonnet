@@ -74,6 +74,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   watchers, rsync) treat the subtitles as newer than what they came from.
 
 ### Fixed
+- **Saving in the editor no longer undoes an edit made to the narration file
+  by someone else.** The editor only noticed outside changes on its next check,
+  so an agent's rewrite that landed in between was silently overwritten by the
+  editor's older copy on the next save. The editor now checks first: if the
+  file changed, it keeps the file's version, shows it, and offers your unsaved
+  text in a dialog with a Copy button.
 - **`subs` no longer invents a timeline when it can't find the audio.** Each
   voice keeps its own content-addressed cache (the filename embeds the backend
   and its config hash), but `subs` had no `--engine` flag — so a deck rendered

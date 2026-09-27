@@ -30,10 +30,10 @@ from slidesonnet.deck import (
 )
 from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
 from slidesonnet.env import load_env
-from slidesonnet.exceptions import ConfigError
+from slidesonnet.exceptions import ConfigError, NarrationChangedOnDisk
 from slidesonnet.hashing import audio_cache_path_or_alt
 from slidesonnet.models import Backend, ProgressFn, VoiceConfig, resolve_voice
-from slidesonnet.narration.format import SidecarError
+from slidesonnet.narration.format import SidecarError, serialize_body
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import rasterize, read_page_ids
 from slidesonnet.timing import word_count
@@ -365,15 +365,26 @@ class EditorState:
 
         if not changed:
             return False  # a no-op blur/save: don't reload, flash, or revoke the track
-        self._write_and_reload()
+        self._write_and_reload(lost_text=serialize_body(new_cur))
         return True
 
-    def _write_and_reload(self) -> None:
+    def _write_and_reload(self, *, lost_text: str | None = None) -> None:
         """Persist the deck, re-run diagnostics, and absorb our own sidecar write.
 
         Only the sidecar baseline is refreshed — refreshing the others here
         would mask a PDF/config change that landed since the last poll.
+
+        If the sidecar changed on disk since we last loaded it (an agent edited
+        it between polls), writing our in-memory copy would silently undo that
+        edit. Ours loses instead: reload from disk and raise
+        :class:`NarrationChangedOnDisk` carrying *lost_text* for the user.
         """
+        key = str(self.sidecar_path)
+        if _stat_stamp(self.sidecar_path) != self._stamps[key]:
+            if not self.poll_sources():
+                # mid-write on the other side: at least drop our stale copy
+                self.reload()
+            raise NarrationChangedOnDisk(lost_text)
         save_deck(self.deck)
         self.reload()
         self._stamps[str(self.sidecar_path)] = _stat_stamp(self.sidecar_path)

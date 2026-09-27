@@ -24,6 +24,7 @@ from nicegui.events import KeyEventArguments
 from slidesonnet.audio.track import Cue
 from slidesonnet.cache import render_dir
 from slidesonnet.diagnostics import boundary_transition
+from slidesonnet.exceptions import NarrationChangedOnDisk
 from slidesonnet.gui.jobs import JobQueue
 from slidesonnet.gui.launch import (
     app_invocation,
@@ -1239,7 +1240,12 @@ class BlockEditor:
     def _apply_structure(self, segs: list[Segment], tin: Transition, tout: Transition) -> None:
         """Commit an add/delete/move — the loaded track no longer matches the deck."""
         slide_id = self.view.state.current_id
-        if self.view.state.replace_block(segs, transition_in=tin, transition_out=tout):
+        try:
+            changed = self.view.state.replace_block(segs, transition_in=tin, transition_out=tout)
+        except NarrationChangedOnDisk as exc:
+            self.view.narration_conflict(exc)
+            return
+        if changed:
             self.view.player.stop_playback()
             # a structural commit flushes any typed-but-unblurred utterance, so it
             # must schedule auto-build too — otherwise text saved this way (type a
@@ -1282,7 +1288,12 @@ class BlockEditor:
             return False  # nothing built (e.g. unmarked page)
         segs, tin, tout = self.collect()
         slide_id = self.view.state.current_id
-        changed = self.view.state.replace_block(segs, transition_in=tin, transition_out=tout)
+        try:
+            changed = self.view.state.replace_block(segs, transition_in=tin, transition_out=tout)
+        except NarrationChangedOnDisk as exc:
+            self._dirty_speech.clear()  # the reloaded text is what's on screen now
+            self.view.narration_conflict(exc)
+            return False
         if changed:
             # The dirty flags mean "unsaved text the cached clip no longer
             # matches". Saving settles that question: from here the cache flags
@@ -1421,6 +1432,9 @@ class OrphanTray:
         except ValueError as exc:
             view.flash(str(exc), "warning")
             return
+        except NarrationChangedOnDisk as exc:
+            view.narration_conflict(exc)
+            return
         view.flash(f"Appended '@{orphan_id}' to '{target}'", "positive")
         view.render()
 
@@ -1441,6 +1455,9 @@ class OrphanTray:
                     view.state.attach_orphan(orphan_id, str(target.value))
                 except ValueError as exc:
                     view.flash(str(exc), "warning")
+                    return
+                except NarrationChangedOnDisk as exc:
+                    view.narration_conflict(exc)
                     return
                 view.flash(f"Narration attached to '{target.value}'", "positive")
                 view.render()
@@ -1464,6 +1481,9 @@ class OrphanTray:
                     view.state.delete_orphan(orphan_id)
                 except ValueError as exc:
                     view.flash(str(exc), "warning")
+                    return
+                except NarrationChangedOnDisk as exc:
+                    view.narration_conflict(exc)
                     return
                 view.flash(f"Deleted narration '@{orphan_id}'", "info")
                 view.render()
@@ -1972,6 +1992,39 @@ class EditorView:
         linger = 8.0 if kind in ("warning", "negative") else 4.0
         with self.flash_label:  # park the timer in a slot that outlives any card rebuild
             ui.timer(linger, _fade, once=True)
+
+    def narration_conflict(self, exc: NarrationChangedOnDisk) -> None:
+        """A save was refused because the narration file changed on disk.
+
+        The other writer (usually an agent) wins; show its version and hand the
+        user's unsaved text back in a dialog so it can be copied, not lost.
+        """
+        self.render()  # the state already reloaded from disk; show that version
+        with self.flash_label:  # a slot that outlives the card rebuild above
+            with ui.dialog() as dialog, ui.card().classes("ss-conflict"):
+                ui.label("The narration file changed on disk while you were editing").classes(
+                    "text-bold"
+                )
+                ui.label(
+                    "Probably the agent. Your change wasn't saved, "
+                    "and the latest version is now shown."
+                )
+                if exc.lost_text:
+                    ui.label("Your unsaved text:")
+                    ui.label(exc.lost_text).classes("ss-orphan-text").mark("conflict-text")
+                with ui.row().classes("w-full justify-end"):
+                    if exc.lost_text:
+                        lost = exc.lost_text
+                        copy = ui.button("Copy my text", icon="content_copy")
+                        copy.props("flat no-caps").mark("conflict-copy")
+                        copy.on_click(lambda: self._copy_lost(lost))
+                    ui.button("Close", on_click=dialog.close).props("no-caps")
+        dialog.open()
+        self.flash("Narration changed on disk — your change wasn't saved", "warning")
+
+    def _copy_lost(self, text: str) -> None:
+        ui.clipboard.write(text)
+        self.flash("Copied your text", "info")
 
     def show_saved_flash(self) -> None:
         self.saved_flash.classes(remove="opacity-0")
@@ -2495,7 +2548,12 @@ class EditorView:
                 default = renames[default]
             elif default is None and state.deck.default_voice in renames:
                 default = renames[state.deck.default_voice]
-            changed = state.edit_voices(new_map, default, renames=renames)
+            try:
+                changed = state.edit_voices(new_map, default, renames=renames)
+            except NarrationChangedOnDisk as exc:
+                dialog.close()
+                self.narration_conflict(exc)
+                return
             dialog.close()
             if changed:
                 self.render()  # voice pickers, placeholders, unmapped warnings relight

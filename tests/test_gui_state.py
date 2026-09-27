@@ -620,6 +620,39 @@ def test_own_save_does_not_trigger_reload(tmp_path: Path) -> None:
     assert state.poll_sources() is False
 
 
+def test_save_refuses_when_sidecar_changed_under_us(tmp_path: Path) -> None:
+    """An agent rewrote the sidecar between the editor's polls: saving the
+    editor's stale in-memory deck would silently undo the agent's edit. The
+    editor's edit loses instead — reloaded from disk, the lost text handed back."""
+    from slidesonnet.exceptions import NarrationChangedOnDisk
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(simple_narration("@intro-title\nAgent's rewrite.\n"), encoding="utf-8")
+    _bump_mtime(sidecar)
+
+    with pytest.raises(NarrationChangedOnDisk) as info:
+        state.replace_block(parse_segments("Typed in the editor."))
+
+    assert "Typed in the editor." in (info.value.lost_text or "")
+    assert "Agent's rewrite." in sidecar.read_text(encoding="utf-8")  # disk untouched
+    assert "Agent's rewrite." in serialize_body(state.current_block)  # editor reloaded
+    assert state.poll_sources() is False  # the reload absorbed the new baseline
+
+
+def test_non_block_save_also_refuses_on_external_change(tmp_path: Path) -> None:
+    from slidesonnet.exceptions import NarrationChangedOnDisk
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n\n@gone\nOrphan.\n")
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(simple_narration("@intro-title\nNew.\n\n@gone\nOrphan.\n"), encoding="utf-8")
+    _bump_mtime(sidecar)
+    with pytest.raises(NarrationChangedOnDisk) as info:
+        state.delete_orphan("gone")
+    assert info.value.lost_text is None
+    assert "@gone" in sidecar.read_text(encoding="utf-8")
+
+
 def test_pdf_change_invalidates_image_cache(tmp_path: Path) -> None:
     state = _state(tmp_path)
     state._images = [tmp_path / "fake.png"]  # primed cache

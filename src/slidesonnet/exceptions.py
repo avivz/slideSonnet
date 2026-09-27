@@ -40,3 +40,17 @@ class SubtitleTimingError(SlideSonnetError):
     but drifts against the video, so the caller must either generate the audio,
     name the engine that holds it, or ask for guessed times on purpose.
     """
+
+
+class NarrationChangedOnDisk(SlideSonnetError):
+    """The sidecar changed on disk since the editor loaded it; the save was refused.
+
+    Saving would overwrite someone else's edit (typically an agent's) with the
+    editor's stale copy. The editor's change loses instead: the deck is reloaded
+    from disk and *lost_text* (when the change was narration text) is handed
+    back so the user can copy it before it's gone.
+    """
+
+    def __init__(self, lost_text: str | None = None) -> None:
+        super().__init__("The narration file changed on disk; your change was not saved.")
+        self.lost_text = lost_text
