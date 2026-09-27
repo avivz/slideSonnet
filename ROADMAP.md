@@ -360,6 +360,20 @@ agent does the work, human approves/verifies · **[human]** = needs the human
       generically and metropolis progress bars specifically; add other themes'
       position-dependent decorations as they're used. **[agent]**
 
+21. [ ] **Test tiers: a faster inner loop and a habit for the slow tier.**
+    *Story:* As the developer, I want day-to-day test runs to take seconds, and
+    the slow tiers to run at clear, remembered moments. *Acceptance examples:*
+    (a) `make test-changed` runs only the tests affected by the files changed
+    since the last run (pytest-testmon as a dev dependency), falling back to
+    `test-fast` when there's no testmon data; (b) `test_generation_target_helpers`
+    (~10 s, loads Kokoro) moves out of the fast tier into `integration`, and a
+    quick `--durations` pass moves any other multi-second unit test the same
+    way; (c) CLAUDE.md documents the cadence: while coding — the touched test
+    files + `make test-changed`/`test-fast`; before every push — `make
+    test-unit` (what CI runs); before a release tag and after touching the
+    `.sty`, export, or rendering — `make test` (integration). *Appetite:* an
+    hour or two. **[agent]**
+
 ## Later — before 1.0 final
 
 1. **Narration schema validation** (decided 2026-06-12): publish an EBNF
