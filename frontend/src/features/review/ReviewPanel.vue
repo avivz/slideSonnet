@@ -240,12 +240,24 @@ function time(at: string): string {
           <h3 class="box-title">New conversation about</h3>
           <span v-for="s in review.newSlides" :key="s" class="chip mono" :data-testid="`new-slide-${s}`">
             @{{ s }}
-            <button type="button" :aria-label="`Untag @${s}`" :data-testid="`new-slide-remove-${s}`" @click="review.unpick(s)">×</button>
+            <button
+              v-if="review.pickedByHand"
+              type="button"
+              :aria-label="`Untag @${s}`"
+              :data-testid="`new-slide-remove-${s}`"
+              @click="review.unpick(s)"
+            >
+              ×
+            </button>
           </span>
         </div>
-        <p class="hint small">
-          {{ review.newSlides.length ? 'Ctrl-click slides in the strip to tag more.' : 'Ctrl-click slides in the strip to tag them.' }}
+        <p v-if="review.pickedByHand" class="hint small">
+          Tagged slides stay as you move around. Ctrl-click in the strip to add or remove ·
+          <button class="linkish" type="button" data-testid="new-reset" @click="review.resetPicked()">
+            back to this slide
+          </button>
         </p>
+        <p v-else class="hint small">About the slide on screen. Ctrl-click slides in the strip to tag several.</p>
         <NoteBox
           v-if="review.newSlides.length"
           v-model="draft"
@@ -451,6 +463,17 @@ function time(at: string): string {
   border: 0;
   color: var(--dim);
   cursor: pointer;
+}
+.linkish {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  font-size: inherit;
+  cursor: pointer;
+}
+.linkish:hover {
+  text-decoration: underline;
 }
 .chip button:hover {
   color: var(--err);

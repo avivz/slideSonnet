@@ -41,7 +41,10 @@ export const useReviewStore = defineStore('review', () => {
   const chosen = computed(() => conversations.value.find((c) => c.id === filter.value) ?? null)
 
   // ---- a new conversation's slides ----------------------------------------------
-  /** Slides tagged by hand (Ctrl-click in the strip); until then, the one on screen. */
+  /**
+   * Slides tagged by hand (Ctrl-click in the strip) — they stay as you move
+   * around; with none tagged by hand, the slide on screen. Never empty.
+   */
   const picked = ref<string[]>([])
   const pickedByHand = ref(false)
   const newSlides = computed(() => (pickedByHand.value ? picked.value : subject.value ? [subject.value] : []))
@@ -54,11 +57,12 @@ export const useReviewStore = defineStore('review', () => {
     picked.value = picked.value.includes(slideId)
       ? picked.value.filter((s) => s !== slideId)
       : [...picked.value, slideId]
+    if (!picked.value.length) resetPicked() // the last one untagged: back to the slide on screen
   }
   function unpick(slideId: string): void {
-    if (!pickedByHand.value) picked.value = [...newSlides.value]
-    pickedByHand.value = true
+    if (!pickedByHand.value) return // the slide on screen is the only tag: it stays
     picked.value = picked.value.filter((s) => s !== slideId)
+    if (!picked.value.length) resetPicked()
   }
   function resetPicked(): void {
     picked.value = []

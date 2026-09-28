@@ -158,6 +158,23 @@ describe('review panel', () => {
     expect(review.newSlides).toEqual(['a']) // sent: back to the slide on screen
   })
 
+  it('always keeps a slide tagged: untagging the last goes back to the slide on screen', async () => {
+    const { editor, review } = await setup()
+    const w = mount(ReviewPanel, { attachTo: document.body })
+    await flushPromises()
+    expect(w.find('[data-testid="new-slide-remove-a"]').exists()).toBe(false) // the only tag: no ×
+    review.pick('b')
+    review.pick('b') // Ctrl-click b again: untagged
+    expect(review.newSlides).toEqual(['a'])
+    review.pick('a') // and a: nothing tagged by hand is left
+    editor.goToSlide('c')
+    expect(review.newSlides).toEqual(['c']) // follows the slide on screen again
+    review.pick('a')
+    await flushPromises()
+    await w.get('[data-testid="new-reset"]').trigger('click') // Back to this slide
+    expect(review.newSlides).toEqual(['c'])
+  })
+
   it('renames the chosen conversation', async () => {
     const { review, sent } = await setup()
     const w = mount(ReviewPanel, { attachTo: document.body })
