@@ -4,14 +4,25 @@ One place for the try/except dance every subprocess call was repeating, plus a
 timeout so a wedged tool can never hang an export or the editor's worker
 thread forever. :func:`run_tool_with_progress` is the streaming variant for the
 long ffmpeg passes, reporting how far the output has got as it runs.
+
+Both honour the active cancel token (:mod:`slidesonnet.cancellation`): when a
+backend job is cancelled, its running tool is killed and
+:class:`~slidesonnet.exceptions.GenerationCancelled` is raised, so a cancelled
+export never leaves ffmpeg running in the background.
 """
 
 from __future__ import annotations
 
+import contextlib
+import os
+import signal
 import subprocess
 import tempfile
 import threading
 from collections.abc import Callable
+
+from slidesonnet.cancellation import current_cancel
+from slidesonnet.exceptions import GenerationCancelled
 
 # Generous per-invocation ceiling: every call here is one slide's compose, one
 # clip's probe, or one rasterize — minutes-long is already pathological.
@@ -31,6 +42,9 @@ def run_tool(
     *install_hint* names the package to install when the binary is missing;
     *fail_message* prefixes the tool's stderr on a non-zero exit.
     """
+    cancel = current_cancel()
+    if cancel is not None:
+        return _run_cancellable(cmd, cancel, error_cls, install_hint, fail_message, timeout)
     try:
         return subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=timeout)
     except FileNotFoundError:
@@ -39,6 +53,63 @@ def run_tool(
         raise error_cls(f"{fail_message}: timed out after {int(timeout)}s") from e
     except subprocess.CalledProcessError as e:
         raise error_cls(f"{fail_message}:\n{e.stderr}") from e
+
+
+def _kill_group(proc: subprocess.Popen[str]) -> None:
+    """Kill *proc* and anything it spawned (it leads its own process group)."""
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(ProcessLookupError):
+        proc.kill()
+
+
+def _kill_on_cancel(proc: subprocess.Popen[str], cancel: threading.Event) -> threading.Event:
+    """Kill *proc* as soon as *cancel* is set; returns a flag telling whether it did."""
+    killed = threading.Event()
+
+    def watch() -> None:
+        while proc.poll() is None:
+            if cancel.wait(0.1):
+                killed.set()
+                _kill_group(proc)
+                return
+
+    threading.Thread(target=watch, daemon=True, name="ss-proc-cancel").start()
+    return killed
+
+
+def _run_cancellable(
+    cmd: list[str],
+    cancel: threading.Event,
+    error_cls: type[Exception],
+    install_hint: str,
+    fail_message: str,
+    timeout: float,
+) -> subprocess.CompletedProcess[str]:
+    if cancel.is_set():
+        raise GenerationCancelled(f"{cmd[0]} not started: the job was cancelled")
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,  # own process group, so a cancel reaches children too
+        )
+    except FileNotFoundError:
+        raise error_cls(f"'{cmd[0]}' not found. Install {install_hint}.") from None
+    killed = _kill_on_cancel(proc, cancel)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        _kill_group(proc)
+        proc.communicate()
+        raise error_cls(f"{fail_message}: timed out after {int(timeout)}s") from e
+    if killed.is_set():
+        raise GenerationCancelled(f"{cmd[0]} stopped: the job was cancelled")
+    if proc.returncode != 0:
+        raise error_cls(f"{fail_message}:\n{err}")
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
 
 
 def parse_progress_seconds(line: str) -> float | None:
@@ -76,14 +147,18 @@ def run_tool_with_progress(
     full = [cmd[0], "-progress", "pipe:1", "-nostats", *cmd[1:]]
     with tempfile.TemporaryFile(mode="w+") as err:
         try:
-            proc = subprocess.Popen(full, stdout=subprocess.PIPE, stderr=err, text=True)
+            proc = subprocess.Popen(
+                full, stdout=subprocess.PIPE, stderr=err, text=True, start_new_session=True
+            )
         except FileNotFoundError:
             raise error_cls(f"'{cmd[0]}' not found. Install {install_hint}.") from None
         timed_out = threading.Event()
+        cancel = current_cancel()
+        killed = _kill_on_cancel(proc, cancel) if cancel is not None else threading.Event()
 
         def _kill() -> None:
             timed_out.set()
-            proc.kill()
+            _kill_group(proc)
 
         watchdog = threading.Timer(timeout, _kill)
         watchdog.start()
@@ -97,8 +172,10 @@ def run_tool_with_progress(
         finally:
             watchdog.cancel()
             if proc.poll() is None:  # on_time raised: don't leave ffmpeg running
-                proc.kill()
+                _kill_group(proc)
                 proc.wait()
+        if killed.is_set():
+            raise GenerationCancelled(f"{cmd[0]} stopped: the job was cancelled")
         if timed_out.is_set():
             raise error_cls(f"{fail_message}: timed out after {int(timeout)}s")
         if returncode != 0:

@@ -20,15 +20,12 @@ from slidesonnet.audio.track import Cue
 from slidesonnet.cache import adopt_legacy_audio, render_dir, resolve_audio_dir
 from slidesonnet.config import Config, default_config_path, load_config
 from slidesonnet.deck import (
-    dedupe_page_ids,
     default_sidecar_path,
     load_deck,
     relativize_voice_files,
     resolve_voice_files,
-    save_deck,
-    unique_real_ids,
 )
-from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
+from slidesonnet.diagnostics import Diagnostic, voice_diagnostics
 from slidesonnet.env import load_env
 from slidesonnet.exceptions import ConfigError, NarrationChangedOnDisk
 from slidesonnet.gui.review import ReviewModel
@@ -36,12 +33,15 @@ from slidesonnet.hashing import audio_cache_path_or_alt
 from slidesonnet.models import Backend, ProgressFn, VoiceConfig, resolve_voice
 from slidesonnet.narration.format import (
     SidecarError,
-    parse_sidecar,
     serialize_block,
     serialize_body,
 )
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
-from slidesonnet.pdf.reader import open_render, read_page_ids, render_page_range
+from slidesonnet.pdf.reader import open_render, render_page_range
+from slidesonnet.server import editing
+from slidesonnet.server.decks import RevisionConflict, deck_service
+from slidesonnet.server.engines import engine_lock
+from slidesonnet.server.previews import PreviewArtifact, build_preview_artifact
 from slidesonnet.timing import word_count
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
@@ -127,6 +127,9 @@ class EditorState:
         # than through api._load (the synthesis path already anchors there too).
         load_env(self.pdf_path.parent)
         self.sidecar_path = sidecar_path or default_sidecar_path(self.pdf_path)
+        #: The deck's shared service: every tab and API request writes through it.
+        self.service = deck_service(self.pdf_path, self.sidecar_path)
+        self._narration_rev = ""  # the sidecar revision the in-memory deck was read at
         self.config = load_config(self.pdf_path)
         pool = resolve_audio_dir(self.pdf_path, self.config)
         if pool.shared:  # migration on touch: old local clips join the pool
@@ -136,8 +139,6 @@ class EditorState:
         self.selected_backend: Backend | None = None
         self.index = 0
         self._pages: dict[int, Path] | None = None  # rendered page images, by index
-        # (pdf (mtime, size) stamp, deduped page ids, dedupe diagnostics)
-        self._page_cache: tuple[tuple[float, int], list[str], list[Diagnostic]] | None = None
         self._audio_scan: tuple[float, list[tuple[SpeechRef, bool]]] | None = None
         # voice-unmapped diagnostics, recomputed when the deck or active engine
         # changes (keyed on (deck identity, backend) so it tracks the engine pick)
@@ -149,6 +150,9 @@ class EditorState:
 
     # ---- loading -------------------------------------------------------
     def reload(self) -> None:
+        # The revision is read *before* the file: if the sidecar changes in
+        # between, the next write conflicts (safe) rather than overwriting it.
+        self._narration_rev = self.service.narration_revision()
         self.deck, self.diagnostics = load_deck(
             self.pdf_path, sidecar_path=self.sidecar_path, pages=self._read_pages_cached()
         )
@@ -160,12 +164,7 @@ class EditorState:
         Every commit saves and reloads; without this, each text-field blur
         re-opens the PDF and walks every page — a visible stall on big decks.
         """
-        stamp = _stat_stamp(self.pdf_path)
-        if self._page_cache is None or self._page_cache[0] != stamp:
-            ids, diags = dedupe_page_ids(read_page_ids(self.pdf_path))
-            self._page_cache = (stamp, ids, diags)
-        _, ids, diags = self._page_cache
-        return list(ids), list(diags)
+        return self.service.page_ids()
 
     # ---- source watching -------------------------------------------------
     def _source_stamps(self) -> dict[str, tuple[float, int]]:
@@ -190,6 +189,7 @@ class EditorState:
         if current == self._stamps:
             return False
         try:
+            narration_rev = self.service.narration_revision()
             config = load_config(self.pdf_path)
             deck, diagnostics = load_deck(
                 self.pdf_path, sidecar_path=self.sidecar_path, pages=self._read_pages_cached()
@@ -210,6 +210,7 @@ class EditorState:
         self._stamps = current
         self.config = config
         self.deck, self.diagnostics = deck, diagnostics
+        self._narration_rev = narration_rev
         self.source_error = None
         self._audio_scan = None
         self.go(self.index)  # clamp in case the deck shrank
@@ -294,29 +295,11 @@ class EditorState:
         return images[self.index] if self.index < len(images) else None
 
     # ---- editing -------------------------------------------------------
-    def _next_page_id(self) -> str | None:
-        nxt = self.index + 1
-        return self.deck.pages[nxt] if nxt < self.page_count else None
-
-    def _prev_page_id(self) -> str | None:
-        prv = self.index - 1
-        return self.deck.pages[prv] if prv >= 0 else None
-
     @property
     def incoming_transition(self) -> Transition:
-        """The effective transition *entering* the current slide.
-
-        A boundary is one transition shared by two slides; it lives canonically on
-        the earlier slide's ``transition_out`` (see
-        :func:`diagnostics.boundary_transition`). So a slide's incoming transition
-        is its boundary with the previous slide — they are the same thing, and the
-        editor shows them as such. The first slide has no previous, so its own
-        ``transition_in`` stands alone as the deck-open animation.
-        """
-        prev_id = self._prev_page_id()
-        if prev_id is None:
-            return self.current_block.transition_in
-        return boundary_transition(self.deck.page_narration(prev_id), self.current_block)
+        """The effective transition *entering* the current slide (see
+        :func:`slidesonnet.server.editing.incoming_transition`)."""
+        return editing.incoming_transition(self.deck, self.current_id)
 
     def block_differs(
         self, segments: list[Segment], *, transition_in: Transition, transition_out: Transition
@@ -325,13 +308,13 @@ class EditorState:
 
         Read-only — lets the editor tell an unsaved draft from untouched cards.
         """
-        cur = self.current_block
-        if transition_in != self.incoming_transition:
-            return True
-        edited = cur.with_content(
-            segments, transition_in=cur.transition_in, transition_out=transition_out
+        return editing.block_differs(
+            self.deck,
+            self.current_id,
+            segments,
+            transition_in=transition_in,
+            transition_out=transition_out,
         )
-        return edited != cur
 
     def current_baseline(self) -> tuple[str, Transition]:
         """What the current slide's editor was built from: its block + incoming boundary.
@@ -340,33 +323,6 @@ class EditorState:
         """
         return serialize_block(self.current_block), self.incoming_transition
 
-    def _set_transition_out(self, slide_id: str, tr: Transition) -> bool:
-        """Set *slide_id*'s ``transition_out`` (dropping an emptied block); changed?"""
-        old = self.deck.narration.get(slide_id)
-        base = old if old is not None else PageNarration(slide_id=slide_id)
-        if base.transition_out == tr:
-            return False
-        new = base.with_content(base.segments, transition_out=tr)
-        if new.is_empty:
-            if old is None:
-                return False
-            self.deck.narration.pop(slide_id)
-        else:
-            self.deck.narration[slide_id] = new
-        return True
-
-    def _clear_transition_in(self, slide_id: str) -> bool:
-        """Reset *slide_id*'s ``transition_in`` to a cut (dropping an emptied block)."""
-        old = self.deck.narration.get(slide_id)
-        if old is None or old.transition_in.kind == "cut":
-            return False
-        new = old.with_content(old.segments, transition_in=Transition())
-        if new.is_empty:
-            self.deck.narration.pop(slide_id)
-        else:
-            self.deck.narration[slide_id] = new
-        return True
-
     def replace_block(
         self,
         segments: list[Segment],
@@ -374,155 +330,75 @@ class EditorState:
         transition_in: Transition | None = None,
         transition_out: Transition | None = None,
     ) -> bool:
-        """Replace the current slide's block wholesale, then persist; False if unsafe.
+        """Replace the current slide's block wholesale, then persist; False if unchanged.
 
-        Unsafe: the page has no slide-id to key the block ("@" would corrupt the
-        sidecar grammar). A block that ends up empty (no segments, plain cuts) is
-        dropped from the sidecar entirely.
-
-        A boundary is only ever stored on the earlier slide's ``transition_out``,
-        so the two transition controls stay consistent: *transition_in* is the
-        boundary with the previous slide — a real change to it is written to that
-        slide's ``transition_out`` (and this slide's own ``transition_in`` cleared),
-        and a non-cut *transition_out* clears the *next* slide's ``transition_in``.
-        The first slide keeps its own ``transition_in`` (the deck-open animation).
+        Also False when the page has no slide-id to key the block ("@" would
+        corrupt the sidecar grammar). The boundary-ownership rules live in
+        :func:`slidesonnet.server.editing.apply_block_edit`.
         """
         if not self.current_id:
             return False
-        tin = transition_in or Transition()
-        tout = transition_out or Transition()
-        cur_id = self.current_id
-        prev_id = self._prev_page_id()
-        nxt_id = self._next_page_id()
-
-        changed = False
-        # The incoming transition belongs to the boundary with the previous slide.
-        # Only move it (onto that slide's out, clearing ours) when it actually
-        # changed — a plain blur/navigation must not rewrite the sidecar.
-        if prev_id is not None and tin != self.incoming_transition:
-            changed |= self._set_transition_out(prev_id, tin)
-            own_in = Transition()
-        elif prev_id is None:
-            own_in = tin  # first slide: its own deck-open transition
-        else:
-            own_in = self.current_block.transition_in  # unchanged: leave it in place
-
-        cur = self.deck.narration.get(cur_id)
-        cur_base = cur if cur is not None else PageNarration(slide_id=cur_id)
-        new_cur = cur_base.with_content(segments, transition_in=own_in, transition_out=tout)
-        if new_cur.is_empty:
-            if cur is not None:
-                self.deck.narration.pop(cur_id)
-                changed = True
-        elif cur != new_cur:
-            self.deck.narration[cur_id] = new_cur
-            changed = True
-
-        if tout.kind != "cut" and nxt_id is not None:
-            changed |= self._clear_transition_in(nxt_id)
-
+        try:
+            changed = editing.apply_block_edit(
+                self.deck,
+                self.current_id,
+                segments,
+                transition_in=transition_in,
+                transition_out=transition_out,
+            )
+        except editing.EditError:
+            return False
         if not changed:
             return False  # a no-op blur/save: don't reload, flash, or revoke the track
-        self._write_and_reload(lost_text=serialize_body(new_cur))
+        block = self.deck.narration.get(self.current_id)
+        self._write_and_reload(lost_text=serialize_body(block) if block is not None else "")
         return True
 
     def _write_and_reload(self, *, lost_text: str | None = None) -> None:
-        """Persist the deck, re-run diagnostics, and absorb our own sidecar write.
+        """Persist the deck through its :class:`DeckService`, then re-run diagnostics.
+
+        The write is checked against the narration revision this state loaded.
+        If the sidecar changed on disk since (an agent edited it between polls),
+        writing our in-memory copy would silently undo that edit. Ours loses
+        instead: reload from disk and raise :class:`NarrationChangedOnDisk`
+        carrying *lost_text* for the user.
 
         Only the sidecar baseline is refreshed — refreshing the others here
         would mask a PDF/config change that landed since the last poll.
-
-        If the sidecar changed on disk since we last loaded it (an agent edited
-        it between polls), writing our in-memory copy would silently undo that
-        edit. Ours loses instead: reload from disk and raise
-        :class:`NarrationChangedOnDisk` carrying *lost_text* for the user.
         """
-        key = str(self.sidecar_path)
-        if _stat_stamp(self.sidecar_path) != self._stamps[key]:
+        try:
+            result = self.service.write(self.deck, expected_revision=self._narration_rev)
+        except RevisionConflict:
             if not self.poll_sources():
                 # mid-write on the other side: at least drop our stale copy
                 self.reload()
-            raise NarrationChangedOnDisk(lost_text)
-        edited = self._blocks_changed_on_save()
-        save_deck(self.deck)
+            raise NarrationChangedOnDisk(lost_text) from None
         self.reload()
+        self._narration_rev = result.revision
         self._stamps[str(self.sidecar_path)] = _stat_stamp(self.sidecar_path)
-        self._note_review_edits(edited)
-        self._prune_stale_audio()
-
-    def _blocks_changed_on_save(self) -> set[str]:
-        """Slide ids whose narration block this save changes (vs the file on disk)."""
-        try:
-            text = self.sidecar_path.read_text(encoding="utf-8")
-            before = {b.slide_id: serialize_block(b) for b in parse_sidecar(text)}
-        except (OSError, SidecarError):
-            before = {}
-        after = {sid: serialize_block(b) for sid, b in self.deck.narration.items()}
-        return {sid for sid in before.keys() | after.keys() if before.get(sid) != after.get(sid)}
-
-    def _note_review_edits(self, slide_ids: set[str]) -> None:
-        """Under review, file the author's own narration edits (best-effort)."""
-        if not slide_ids:
-            return
-        try:
-            self.review.note_edits(slide_ids)
-        except Exception:  # pragma: no cover - defensive: never break a save
-            logger.warning("Could not note review edits for %s", self.pdf_path, exc_info=True)
-
-    def _prune_stale_audio(self) -> None:
-        """Reclaim local clips orphaned by this edit (cheap to regenerate).
-
-        Best-effort: a sweep failure must never cost the user their saved edit,
-        so any error is logged and swallowed. Paid audio is left untouched.
-        """
-        try:
-            from slidesonnet.clean import prune_local_orphans
-
-            prune_local_orphans(self.pdf_path)
-        except Exception:  # pragma: no cover - defensive: never break a save
-            logger.warning("Could not prune stale audio for %s", self.pdf_path, exc_info=True)
 
     # ---- unattached narration (slide dropped/renamed by a recompile) -------
     def orphan_blocks(self) -> list[PageNarration]:
         """Narration blocks whose slide-id matches no PDF page (sidecar order)."""
-        on_page = set(self.deck.pages)
-        return [b for sid, b in self.deck.narration.items() if sid not in on_page]
+        return editing.orphan_blocks(self.deck)
 
     def unnarrated_pages(self) -> list[str]:
         """Page ids an orphan could attach to (no narration yet), in page order."""
-        return [sid for sid in unique_real_ids(self.deck.pages) if not self.has_narration(sid)]
+        return editing.unnarrated_pages(self.deck)
 
     def attach_orphan(self, orphan_id: str, target_id: str) -> None:
         """Move an orphan block's narration onto the page *target_id* and save."""
-        if target_id not in self.deck.pages:
-            raise ValueError(f"'{target_id}' is not a page in the deck")
-        if self.has_narration(target_id):
-            raise ValueError(f"slide '{target_id}' already has narration")
-        block = self.deck.narration.pop(orphan_id)
-        self.deck.narration[target_id] = block.rekeyed(target_id)
+        editing.attach_orphan(self.deck, orphan_id, target_id)
         self._write_and_reload()
 
     def append_orphan_to_current(self, orphan_id: str) -> None:
-        """Append an orphan block's segments onto the current slide, then save.
-
-        Unlike :meth:`attach_orphan` (which targets an *empty* slide), this
-        merges the orphan's utterances/pauses after whatever the current slide
-        already has — the way to fold dropped narration back into a live slide.
-        """
-        if not self.current_id:
-            raise ValueError("this page has no slide-id to append to")
-        if orphan_id not in self.deck.narration:
-            raise ValueError(f"no narration block '{orphan_id}'")
-        orphan = self.deck.narration.pop(orphan_id)
-        target = self.current_block
-        self.deck.narration[self.current_id] = target.with_content(
-            [*target.segments, *orphan.segments]
-        )
+        """Append an orphan block's segments onto the current slide, then save."""
+        editing.append_orphan(self.deck, orphan_id, self.current_id)
         self._write_and_reload()
 
     def delete_orphan(self, orphan_id: str) -> None:
         """Drop an orphan block (and its text) from the sidecar."""
-        self.deck.narration.pop(orphan_id, None)
+        editing.delete_orphan(self.deck, orphan_id)
         self._write_and_reload()
 
     # ---- engine selection (GUI, session-only) -----------------------------
@@ -635,38 +511,10 @@ class EditorState:
         is *not* a rename — its references are left as-is, surfacing as unmapped.
         """
         resolved = resolve_voice_files(voices, self.sidecar_path.resolve().parent)
-        default_voice = default_voice or None
-        active_renames = {old: new for old, new in (renames or {}).items() if old != new}
-        if (
-            not active_renames
-            and resolved == self.deck.voices
-            and default_voice == self.deck.default_voice
-        ):
+        if not editing.edit_voices(self.deck, resolved, default_voice, renames=renames):
             return False
-        if active_renames:
-            self._apply_voice_renames(active_renames)
-        self.deck.voices = resolved
-        self.deck.default_voice = default_voice
-        self.deck.preamble_source = None  # regenerate the preamble from the edited map
         self._write_and_reload()
         return True
-
-    def _apply_voice_renames(self, renames: dict[str, str]) -> None:
-        """Rewrite utterance ``voice:`` references for renamed voices, in place.
-
-        Each speech segment whose ``voice`` is a renamed old name is rebuilt with
-        the new name (``Segment`` is frozen). The block's segments are replaced so
-        the save re-serializes it canonically with the new reference. (``default-
-        voice`` is rewritten by the caller via the new ``default_voice`` argument.)
-        """
-        for block in self.deck.narration.values():
-            new_segments = [
-                replace(seg, voice=renames[seg.voice])
-                if seg.is_speech and seg.voice in renames
-                else seg
-                for seg in block.segments
-            ]
-            block.segments = new_segments
 
     # ---- synthesis cost ---------------------------------------------------
     @property
@@ -786,24 +634,26 @@ class EditorState:
     # fresh at action time, so a stale (possibly paid) cached backend is never run.
     def synth_current(self, *, force: bool = False) -> int:
         self._audio_scan = None
-        return api.synthesize_deck(
-            self.pdf_path,
-            sidecar_path=self.sidecar_path,
-            only_ids={self.current_id},
-            force=force,
-            engine=self.selected_backend,
-        )
+        with engine_lock(self.active_backend):
+            return api.synthesize_deck(
+                self.pdf_path,
+                sidecar_path=self.sidecar_path,
+                only_ids={self.current_id},
+                force=force,
+                engine=self.selected_backend,
+            )
 
     def synth_segment(self, speech_index: int, *, force: bool = False) -> int:
         """Synthesize one speech segment of the current slide (by speech index)."""
         self._audio_scan = None
-        return api.synthesize_deck(
-            self.pdf_path,
-            sidecar_path=self.sidecar_path,
-            only_segments={(self.current_id, speech_index)},
-            force=force,
-            engine=self.selected_backend,
-        )
+        with engine_lock(self.active_backend):
+            return api.synthesize_deck(
+                self.pdf_path,
+                sidecar_path=self.sidecar_path,
+                only_segments={(self.current_id, speech_index)},
+                force=force,
+                engine=self.selected_backend,
+            )
 
     def synth_targets(self, targets: set[tuple[str, int]], *, force: bool = False) -> int:
         """Synthesize specific ``(slide_id, speech_index)`` segments — the worker's call.
@@ -812,13 +662,14 @@ class EditorState:
         live config edit takes effect. UI-free: the background queue drives this.
         """
         self._audio_scan = None
-        return api.synthesize_deck(
-            self.pdf_path,
-            sidecar_path=self.sidecar_path,
-            only_segments=set(targets),
-            force=force,
-            engine=self.selected_backend,
-        )
+        with engine_lock(self.active_backend):
+            return api.synthesize_deck(
+                self.pdf_path,
+                sidecar_path=self.sidecar_path,
+                only_segments=set(targets),
+                force=force,
+                engine=self.selected_backend,
+            )
 
     def targets_for_slide(
         self, slide_id: str, *, exclude_speech: int | None = None
@@ -863,27 +714,23 @@ class EditorState:
 
     def synth_all(self) -> int:
         self._audio_scan = None
-        return api.synthesize_deck(
-            self.pdf_path, sidecar_path=self.sidecar_path, engine=self.selected_backend
-        )
+        with engine_lock(self.active_backend):
+            return api.synthesize_deck(
+                self.pdf_path, sidecar_path=self.sidecar_path, engine=self.selected_backend
+            )
 
-    def preview_current(self, progress: ProgressFn | None = None) -> api.Preview:
+    def preview_artifact(
+        self, slide_id: str | None, progress: ProgressFn | None = None
+    ) -> PreviewArtifact:
+        """Build (or reuse) the immutable preview track for one slide or the deck.
+
+        Blocking: run off the loop. Each distinct build gets its own
+        content-addressed file, so a newer preview never rewrites an older one's
+        audio under its URL.
+        """
         self._audio_scan = None  # building a preview synthesizes missing clips
-        return api.build_preview(
-            self.pdf_path,
-            sidecar_path=self.sidecar_path,
-            only_id=self.current_id,
-            engine=self.selected_backend,
-            progress=progress,
-        )
-
-    def preview_deck(self, progress: ProgressFn | None = None) -> api.Preview:
-        self._audio_scan = None
-        return api.build_preview(
-            self.pdf_path,
-            sidecar_path=self.sidecar_path,
-            engine=self.selected_backend,
-            progress=progress,
+        return build_preview_artifact(
+            self.service, slide_id=slide_id, engine=self.selected_backend, progress=progress
         )
 
     def export_blockers(self) -> list[str]:
@@ -893,17 +740,19 @@ class EditorState:
     def export(
         self, output: Path, *, silent: bool = False, draft: bool = False
     ) -> api.ExportResult:
-        # The preview player streams track.wav / page WAVs from the render dir;
-        # an export must not delete them from under an open preview.
-        return api.export(
-            self.pdf_path,
-            output,
-            sidecar_path=self.sidecar_path,
-            silent=silent,
-            engine=self.selected_backend,
-            keep_scratch=True,
-            draft=draft,
-        )
+        # The preview player streams page WAVs from the render dir; an export
+        # must not delete them from under an open preview. It shares the render
+        # dir with preview builds, so it takes the same lock.
+        with self.service.render_lock, engine_lock(self.active_backend):
+            return api.export(
+                self.pdf_path,
+                output,
+                sidecar_path=self.sidecar_path,
+                silent=silent,
+                engine=self.selected_backend,
+                keep_scratch=True,
+                draft=draft,
+            )
 
     # ---- per-slide status (filmstrip) -----------------------------------
     def has_narration(self, slide_id: str) -> bool:

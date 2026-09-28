@@ -26,6 +26,36 @@ Frontend-facing tests today: **~330 of ~1,090** (`test_gui.py` 83,
 `test_gui_review_model.py` 7). The rest (narration format, render, TTS, review
 ops, CLI, clean, pool, …) are domain tests and are untouched by the migration.
 
+## Progress by phase
+
+Boxes below are checked only when the **Vue** frontend has the behavior. Test
+moves that happen earlier are recorded here, so the mapping stays auditable.
+
+### Phase 1 — services and API (`migration/phase-1`)
+
+New tests (all CI tier, no NiceGUI): `test_server_api.py` (22),
+`test_server_jobs.py` (9), `test_server_media.py` (12),
+`test_server_previews.py` (4), `test_server_revisions.py` (4), plus
+`test_proc.py` cancellation (2).
+
+Moved or removed:
+
+| Test(s) | Now | Why |
+|---|---|---|
+| `test_gui.py::test_morph_schedule_*` (2), `test_single_slide_morph_*` (3) | `test_server_previews.py` (2 tests) | the schedule is server code now; merged into two tables |
+| `test_gui.py::test_replaying_preview_reloads_the_new_track` | dropped | pinned the `?t=` refetch workaround for B4; every build is its own immutable file now (`test_server_api.py::test_previews_are_immutable_per_build_*`, `test_server_previews.py::test_published_tracks_are_immutable_*`) |
+| `test_gui_switching.py::test_each_deck_serves_its_own_page_images`, `test_media_route_refuses_*` (2), `test_assembled_track_is_never_cached_immutably`, `test_only_a_real_content_stamp_*` | `test_server_media.py`, `test_server_api.py::test_media_refuses_*` | the media route is plain FastAPI; tested without the in-process NiceGUI server |
+| `test_gui_state.py::test_reload_reuses_page_ids_when_pdf_unchanged` | rewritten in place | revisions are content hashes: a touch without a content change no longer re-reads the PDF |
+
+Bugs closed: **B3** (the orphaned-audio sweep left the save path — a save on
+the basel demo went from ~15 ms to ~4.5 ms; the sweep grows with the audio
+folder, so large decks gain more) and **B4** (content-addressed preview
+tracks). New along the way: jobs can be cancelled for real — a cancelled job
+kills its running ffmpeg/pdftoppm (tools run in their own process group) — and
+every synthesis path takes a per-engine lock, always after the deck's render
+lock, so the editor queue, API jobs, previews, and export never drive one
+model from two threads.
+
 ## How to read the Tests column
 
 - **keep** — UI-free logic (`gui/state.py`, `gui/library.py`, `gui/jobs.py`,

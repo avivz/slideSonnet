@@ -250,7 +250,8 @@ def prune_render_scratch(render_dir: Path) -> int:
     The editor's whole-deck preview shares ``track.wav`` and the page WAVs (and
     their fingerprint manifest) with export, so a preview after a pruning
     export rebuilds them; an export launched *from* the editor keeps them so
-    the preview player isn't streaming a file that just vanished.
+    the next preview reuses them. (What the preview player streams is a copy
+    under ``previews/``, which this never touches.)
     """
     import shutil
 

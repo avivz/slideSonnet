@@ -136,6 +136,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   watchers, rsync) treat the subtitles as newer than what they came from.
 
 ### Fixed
+- **A preview always plays its own audio.** Every preview used to be written to
+  the same file, so starting a second preview (or reopening the editor) could
+  play the previous slide's audio. Each preview now gets its own file.
+- **Saving is quicker.** Tidying up audio that an edit made obsolete now happens
+  a moment after the save instead of during it, so typing and moving between
+  slides no longer wait on it.
+- **Exports keep going if you close the tab.** An export started in the editor
+  now runs in the background of the editor process; leaving the page doesn't
+  stop it.
+- **Narration saves can't be half-written.** The narration file is replaced in
+  one step, so a program watching it never reads a partly saved file.
 - **Typing is no longer lost when the narration file changes on disk.** If an
   agent (or another program) edited the narration file while you were typing,
   the editor reloaded and your unsaved text vanished. Now an edit to a

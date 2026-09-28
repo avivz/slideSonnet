@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from slidesonnet.atomic import atomic_write_text
 from slidesonnet.diagnostics import Diagnostic, diagnose, sort_diagnostics
 from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.format import parse_document, serialize_sidecar
@@ -216,8 +217,8 @@ def load_deck(
     return deck, diags
 
 
-def save_deck(deck: Deck, *, header: str | None = None) -> None:
-    """Serialize *deck*'s narration to its sidecar, in PDF page order.
+def sidecar_text(deck: Deck, *, header: str | None = None) -> str:
+    """The sidecar text :func:`save_deck` would write for *deck*, in PDF page order.
 
     Empty placeholder blocks are skipped: a page with no narration is left out
     of the sidecar entirely (a bare ``@id`` header would otherwise read back as
@@ -235,16 +236,22 @@ def save_deck(deck: Deck, *, header: str | None = None) -> None:
     # (``preamble_source`` is None, i.e. the voice map was edited) — otherwise the
     # original relative preamble is re-emitted verbatim.
     voices = relativize_voice_files(deck.voices, deck.sidecar_path.resolve().parent)
-    deck.sidecar_path.write_text(
-        serialize_sidecar(
-            blocks,
-            header=header,
-            voices=voices,
-            default_voice=deck.default_voice,
-            preamble_source=deck.preamble_source,
-        ),
-        encoding="utf-8",
+    return serialize_sidecar(
+        blocks,
+        header=header,
+        voices=voices,
+        default_voice=deck.default_voice,
+        preamble_source=deck.preamble_source,
     )
+
+
+def save_deck(deck: Deck, *, header: str | None = None) -> None:
+    """Serialize *deck*'s narration to its sidecar, atomically (see :func:`sidecar_text`).
+
+    The file is replaced in one rename, so a watcher (the editor's poll, an
+    agent) never reads a truncated sidecar mid-save.
+    """
+    atomic_write_text(deck.sidecar_path, sidecar_text(deck, header=header))
 
 
 def unique_real_ids(pages: list[str]) -> list[str]:
