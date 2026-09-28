@@ -69,6 +69,10 @@ class ReviewPanel:
         self.before_only = False  # D: show the base version full-size
         self.show_closed = False  # accepted conversations stay out of the way
         self.badges: list[Any] = []
+        self.moved_marks: list[Any] = []
+        self.removed_cards: dict[str, Any] = {}  # removed slide id -> its strip tile
+        self._built_layout: dict[int, list[str]] = {}  # removed slides the strip shows
+        self.viewing_removed: str | None = None  # a removed slide shown on the stage
         self._log_stamp: tuple[float, int] | None = None
         self._refreshing = False
 
@@ -95,7 +99,7 @@ class ReviewPanel:
         """Called inside the stage view, before the current slide image."""
         with ui.column().classes("ss-before gap-0 hidden").mark("stage-before-box") as col:
             self.before_col = col
-            ui.label("Before").classes("ss-before-cap")
+            self.before_cap = ui.label("Before").classes("ss-before-cap")
             self.before_img = (
                 ui.image().classes("ss-stage-img").props('fit="contain" no-spinner')
             ).mark("stage-before")
@@ -105,18 +109,122 @@ class ReviewPanel:
         self.diff_box = ui.html("").classes("ss-narr-diff w-full").mark("narration-diff")
         self.diff_box.visible = False
 
-    def build_before_strip(self) -> None:
-        self.before_strip = ui.column().classes("ss-strip ss-before-strip gap-2")
-        self.before_strip.mark("before-strip")
-        self.before_strip.visible = False
-
     def decorate_thumb(self, index: int) -> None:
-        """Add the review badge to the thumb being built (inside its card)."""
+        """Add the review badge and moved mark to the thumb being built (inside its card)."""
         badge = ui.label("").classes("ss-thumb-review hidden").mark(f"thumb-review-{index}")
         self.badges.append(badge)
+        moved = ui.label("↕").classes("ss-thumb-moved hidden").mark(f"thumb-moved-{index}")
+        self.moved_marks.append(moved)
 
     def reset_thumbs(self) -> None:
         self.badges.clear()
+        self.moved_marks.clear()
+        self.removed_cards.clear()
+
+    # ---- removed slides in the strip -------------------------------------------
+    def removed_after(self) -> dict[int, list[str]]:
+        """For building the strip: removed slides by the index they follow (-1: first)."""
+        self._built_layout = self._removed_layout()
+        return self._built_layout
+
+    def _removed_layout(self) -> dict[int, list[str]]:
+        """One filmstrip, in the current order: a slide that's gone sits right after
+        the slide that preceded it in the base order (the nearest one still here)."""
+        st = self.status
+        layout: dict[int, list[str]] = {}
+        if st is not None and st.base is not None:
+            pages = self.view.state.deck.pages
+            position = {sid: i for i, sid in enumerate(pages)}
+            gone = {c.slide_id for c in st.changes if c.deleted}
+            anchor = -1
+            for sid in st.base.order:
+                if sid in position:
+                    anchor = position[sid]
+                elif sid in gone:
+                    layout.setdefault(anchor, []).append(sid)
+        return layout
+
+    def build_removed_thumb(self, sid: str) -> None:
+        """A faded tile for a removed slide (its base image); click to look at it."""
+        image = self.model.base_image(sid)
+        with (
+            ui.element("div")
+            .classes("ss-thumb ss-removed-thumb")
+            .mark(f"removed-thumb-{sid}") as card
+        ):
+            with ui.element("div").classes("ss-thumb-slot"):
+                if image is not None:
+                    ui.image(self.view.base_media_url(image)).classes("w-full")
+                else:
+                    ui.label(sid).classes("ss-thumb-fallback ss-mono")
+            ui.label("removed").classes("ss-thumb-removed-cap")
+        card.props('title="Removed since the base — click to see it"')
+        card.on("click", lambda _e=None, sid=sid: self._removed_click(sid))
+        self.removed_cards[sid] = card
+
+    def _removed_click(self, sid: str) -> None:
+        self.leave_filter_for(sid)
+        self.view_removed(sid)
+
+    def view_removed(self, sid: str) -> None:
+        """Show a removed slide's base version on the stage (and its conversations)."""
+        self.view.blocks.save_current()
+        self.viewing_removed = sid
+        self.sync()
+
+    def leave_removed(self) -> None:
+        self.viewing_removed = None
+
+    # ---- the chosen conversation: dims the rest, arrows stay inside ------------
+    def _scope(self) -> set[str] | None:
+        st = self.status
+        if st is None or self.filter_conv is None:
+            return None
+        conv = st.state.conversations.get(self.filter_conv)
+        return set(conv.slides) if conv is not None else None
+
+    def leave_filter_for(self, sid: str) -> None:
+        """Clicking a slide outside the chosen conversation leaves that view."""
+        scope = self._scope()
+        if scope is not None and sid not in scope:
+            self.filter_conv = None
+
+    def _strip_order(self) -> list[tuple[str, int]]:
+        """(slide id, current index or -1 for removed) in filmstrip order."""
+        pages = self.view.state.deck.pages
+        order: list[tuple[str, int]] = [(sid, -1) for sid in self._built_layout.get(-1, [])]
+        for i, sid in enumerate(pages):
+            order.append((sid, i))
+            order += [(gone, -1) for gone in self._built_layout.get(i, [])]
+        return order
+
+    def step(self, delta: int) -> bool:
+        """Arrow keys: through the chosen conversation's slides, or off a removed one.
+
+        Returns False when there's nothing special to do (plain slide stepping).
+        """
+        scope = self._scope()
+        if scope is None and self.viewing_removed is None:
+            return False
+        order = self._strip_order()
+        here = self.viewing_removed or self.view.state.current_id
+        pos = next((k for k, (sid, _i) in enumerate(order) if sid == here), None)
+        if pos is None:
+            return False
+        k = pos + delta
+        while 0 <= k < len(order):
+            sid, index = order[k]
+            if scope is None and index >= 0:
+                self.view.jump(index)
+                return True
+            if scope is not None and sid in scope:
+                if index >= 0:
+                    self.view.jump(index)
+                else:
+                    self.view_removed(sid)
+                return True
+            k += delta
+        return True  # at the end of the conversation (or strip): stay put
 
     # ---- status --------------------------------------------------------------
     def compute(self) -> None:
@@ -270,7 +378,7 @@ class ReviewPanel:
             )
 
     def _draw_this_slide(self, st: EditorReviewStatus) -> None:
-        sid = self.view.state.current_id
+        sid = self.viewing_removed or self.view.state.current_id
         if not sid:
             return
         ui.label("This slide").classes("ss-section")
@@ -347,12 +455,13 @@ class ReviewPanel:
     def _sync_strip(self) -> None:
         state = self.view.state
         st = self.status
-        scope: set[str] | None = None
-        if st is not None and self.filter_conv is not None:
-            conv = st.state.conversations.get(self.filter_conv)
-            scope = set(conv.slides) if conv is not None else None
-            if conv is None:
-                self.filter_conv = None
+        if self._removed_layout() != self._built_layout:
+            self.view.build_strip()  # removed slides came or went: re-lay the strip
+            self.view.render_side()  # the rebuilt thumbs need their dots and highlight
+        if self.filter_conv is not None and self._scope() is None:
+            self.filter_conv = None  # its conversation is gone (cleared)
+        scope = self._scope()
+        moved = {c.slide_id: c.base_index for c in (st.changes if st else []) if c.moved}
         for i, badge in enumerate(self.badges):
             if i >= len(state.deck.pages):
                 break
@@ -366,60 +475,40 @@ class ReviewPanel:
                 badge.classes(add=f"ss-rv-{kind}")
                 # a title attribute, not .tooltip(): that adds a child per redraw
                 badge.props(f'title="{_BADGE_TIP[kind]}"')
+            if i < len(self.moved_marks):
+                mark = self.moved_marks[i]
+                if sid in moved:
+                    was = moved[sid]
+                    mark.classes(remove="hidden")
+                    tip = f"Moved — was slide {was + 1}" if was is not None else "Moved"
+                    mark.props(f'title="{tip}"')
+                else:
+                    mark.classes(add="hidden")
             if i < len(self.view.thumb_cards):
                 card = self.view.thumb_cards[i][0]
-                card.visible = scope is None or sid in scope
-        self._sync_before_strip()
-
-    def _sync_before_strip(self) -> None:
-        st = self.status
-        structural = st is not None and any(c.new or c.deleted or c.moved for c in st.changes)
-        self.before_strip.visible = bool(structural)
-        layout = getattr(self.view, "layout", None)
-        if layout is not None:
-            layout.double_strip(bool(structural))
-        self.before_strip.clear()
-        if not structural or st is None or st.base is None:
-            return
-        state = self.view.state
-        with self.before_strip:
-            ui.label("Before").classes("ss-before-cap")
-            deleted = {c.slide_id for c in st.changes if c.deleted}
-            moved = {c.slide_id for c in st.changes if c.moved}
-            active = None
-            for n, sid in enumerate(st.base.order):
-                image = self.model.base_image(sid)
-                classes = "ss-thumb ss-before-thumb"
-                if sid in deleted:
-                    classes += " ss-deleted"
-                if sid in moved:
-                    classes += " ss-moved"
-                if sid == state.current_id:
-                    classes += " ss-active"
-                with ui.element("div").classes(classes).mark(f"before-thumb-{sid}") as card:
-                    if image is not None:
-                        ui.image(self.view.base_media_url(image)).classes("w-full")
-                    else:
-                        ui.label(sid).classes("ss-thumb-fallback ss-mono")
-                    ui.label(str(n + 1)).classes("ss-thumb-num")
-                card.on("click", lambda _e=None, sid=sid: self._jump_to(sid))
-                if sid == state.current_id:
-                    active = card
-        if active is not None:
-            try:  # best-effort; no JS client in tests
-                ui.run_javascript(
-                    f"document.getElementById('c{active.id}')"
-                    "?.scrollIntoView({block: 'nearest', behavior: 'smooth'})"
-                )
-            except Exception:
-                pass
+                dim = scope is not None and sid not in scope
+                card.classes(add="ss-dimmed") if dim else card.classes(remove="ss-dimmed")
+                if self.viewing_removed is not None:
+                    card.classes(remove="ss-active")
+        for sid, card in self.removed_cards.items():
+            dim = scope is not None and sid not in scope
+            card.classes(add="ss-dimmed") if dim else card.classes(remove="ss-dimmed")
+            if sid == self.viewing_removed:
+                card.classes(add="ss-active")
+            else:
+                card.classes(remove="ss-active")
 
     def _sync_stage(self) -> None:
         state = self.view.state
         st = self.status
-        sid = state.current_id
+        removed = self.viewing_removed
+        sid = removed or state.current_id
         change = self.model.change_for(st, sid) if (st is not None and sid) else None
         image = self.model.base_image(sid) if change is not None and change.image else None
+        if removed is not None:
+            image = self.model.base_image(removed)
+            self.view.id_label.set_text(f"{removed} (removed)")
+        self.before_cap.set_text("Removed" if removed is not None else "Before")
         compare = image is not None
         self.before_img.visible = compare
         if compare and image is not None:
@@ -429,7 +518,11 @@ class ReviewPanel:
             self.before_col.classes(add="hidden")
         self.view.stage_view.classes(
             remove="ss-compare ss-before-only",
-            add=("ss-compare" + (" ss-before-only" if self.before_only else "")) if compare else "",
+            add=(
+                ("ss-compare" + (" ss-before-only" if self.before_only or removed else ""))
+                if compare
+                else ""
+            ),
         )
         if change is not None and change.narration and sid:
             parts = []
@@ -517,8 +610,8 @@ class ReviewPanel:
         pages = self.view.state.deck.pages
         if sid in pages:
             self.view.jump(pages.index(sid))
-        else:
-            self.view.flash(f"@{sid} was deleted — it's only in the before version", "info")
+        elif sid in self.removed_cards:
+            self.view_removed(sid)
 
     def toggle_before_only(self) -> None:
         self.before_only = not self.before_only

@@ -180,50 +180,63 @@ async def test_recompile_files_unrequested_changes(
     assert conv.origin == "unrequested" and conv.slides == ["b"]
 
 
-async def test_before_strip_appears_when_order_changes(
+async def test_one_strip_in_current_order_marks_moved_slides(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pdf = _deck(tmp_path, ["a", "b", "c"])
     ops.start(pdf)
     write_pdf(pdf, ["a", "c", "b"], plain=True)  # b moved after c
     await _open(user, pdf, monkeypatch)
-    await user.should_see(marker="before-strip")
-    await user.should_see(marker="before-thumb-b")
-    moved = next(iter(user.find(marker="before-thumb-b").elements))
-    assert "ss-moved" in moved.classes
-    split = next(iter(user.find(marker="split-strip").elements))
-    assert split.value == 300  # two strips side by side get twice the room
+    await user.should_not_see(marker="before-strip")  # no second strip any more
+    moved = next(iter(user.find(marker="thumb-moved-2").elements))  # b is now third
+    assert "hidden" not in moved.classes
+    assert "was slide 2" in str(moved.props.get("title"))
+    still = next(iter(user.find(marker="thumb-moved-0").elements))
+    assert "hidden" in still.classes
 
 
-async def test_strip_narrows_again_when_order_is_restored(
+async def test_removed_slide_sits_after_its_old_predecessor(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     pdf = _deck(tmp_path, ["a", "b", "c"])
     ops.start(pdf)
-    write_pdf(pdf, ["a", "c", "b"], plain=True)
+    write_pdf(pdf, ["a", "c"], plain=True)  # b removed
     await _open(user, pdf, monkeypatch)
-    await user.should_see(marker="before-strip")
-    write_pdf(pdf, ["a", "b", "c"], plain=True)
-    _bump(pdf)
-    await user.should_not_see(marker="before-strip", retries=300)
-    split = next(iter(user.find(marker="split-strip").elements))
-    assert split.value == 150
+    strip = [el for el in user.find(marker="removed-thumb-b").elements] + [
+        el for el in user.find(marker="thumb-0").elements
+    ]
+    removed, first = strip[0], strip[1]
+    parent = first.parent_slot.children  # type: ignore[union-attr]
+    assert parent.index(removed) == parent.index(first) + 1  # right after @a
+    user.find(marker="removed-thumb-b").click()
+    await user.should_see("b (removed)")
+    before = next(iter(user.find(marker="stage-before").elements))
+    assert before.visible
+    user.find("Next").click()  # arrows leave the removed slide, onward from it
+    await user.should_see("Slide 2 / 2")
 
 
-async def test_conversation_filter_hides_other_slides(
+async def test_conversation_dims_the_rest_and_arrows_stay_inside(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    pdf = _deck(tmp_path, ["a", "b", "c"])
+    pdf = _deck(tmp_path, ["a", "b", "c", "d"])
     ops.start(pdf)
-    cid = ops.comment(pdf, ["b"], "x", author="author")
+    cid = ops.comment(pdf, ["b", "d"], "x", author="author")
     await _open(user, pdf, monkeypatch)
+
+    def dimmed(i: int) -> bool:
+        return "ss-dimmed" in next(iter(user.find(marker=f"thumb-{i}").elements)).classes
+
     user.find(marker=f"conv-row-{cid}").click()
-    await user.should_not_see(marker="thumb-0")
-    await user.should_see(marker="thumb-1")
-    await user.should_not_see(marker="thumb-2")
-    user.find(marker="conv-filter-clear").click()
-    await user.should_see(marker="thumb-0")
-    await user.should_see(marker="thumb-2")
+    await user.should_see("Slide 2 / 4")  # jumped to its first slide
+    assert [dimmed(i) for i in range(4)] == [True, False, True, False]
+    user.find("Next").click()
+    await user.should_see("Slide 4 / 4")  # skipped c: not in the conversation
+    user.find("Next").click()
+    await user.should_see("Slide 4 / 4")  # the end of the conversation: stay
+    user.find(marker="thumb-0").click()  # a greyed-out slide leaves the view
+    await user.should_see("Slide 1 / 4")
+    assert not any(dimmed(i) for i in range(4))
 
 
 async def test_review_tab_badges_what_waits_for_you(

@@ -461,19 +461,6 @@ class PaneLayout:
             "console": (console_split, 264.0, "ss-overlay-right"),
         }
         self.window_px = 0.0
-        self.strip_doubled = False
-
-    def double_strip(self, double: bool) -> None:
-        """Give the filmstrip pane twice the room while review's before strip shows."""
-        if double == self.strip_doubled:
-            return
-        self.strip_doubled = double
-        current = float(self.strip_split.value or 0.0)
-        if current <= 2.0:  # collapsed: widen/narrow what it reopens to
-            self.remembered["strip"] *= 2.0 if double else 0.5
-            return
-        self.strip_split.value = min(_STRIP_MAX, current * 2.0) if double else current / 2.0
-        self.apply_limits()
 
     def sync_toggles(self) -> None:
         for splitter, btn in (
@@ -1606,7 +1593,6 @@ class EditorView:
                 collapse_strip = ui.button(icon="chevron_left").props("flat round dense size=sm")
                 collapse_strip.mark("collapse-strip").tooltip("Collapse filmstrip")
             with ui.row().classes("ss-strips no-wrap gap-0 w-full"):
-                self.review.build_before_strip()
                 self.strip_col = ui.column().classes("ss-strip gap-2")
 
         self.build_strip()
@@ -2023,7 +2009,10 @@ class EditorView:
         self.thumb_slots.clear()
         self.review.reset_thumbs()
         self.strip_col.clear()
+        ghosts = self.review.removed_after()  # removed slides, after their old predecessor
         with self.strip_col:
+            for sid in ghosts.get(-1, []):
+                self.review.build_removed_thumb(sid)
             for i, sid in enumerate(state.deck.pages):
                 with ui.element("div").classes("ss-thumb").mark(f"thumb-{i}") as card:
                     with ui.element("div").classes("ss-thumb-slot") as slot:
@@ -2034,9 +2023,16 @@ class EditorView:
                     audio_badge.tooltip("Some audio on this slide isn't generated yet")
                     ui.label(str(i + 1)).classes("ss-thumb-num")
                     self.review.decorate_thumb(i)
-                card.on("click", lambda _e=None, i=i: self.jump(i))
+                card.on("click", lambda _e=None, i=i: self._thumb_click(i))
                 self.thumb_cards.append((card, dot, audio_badge))
                 self.thumb_slots.append(slot)
+                for gone in ghosts.get(i, []):
+                    self.review.build_removed_thumb(gone)
+
+    def _thumb_click(self, index: int) -> None:
+        """A greyed-out thumb (outside the chosen conversation) leaves that view."""
+        self.review.leave_filter_for(self.state.deck.pages[index])
+        self.jump(index)
 
     def _thumb_content(self, i: int, sid: str, image: Path | None) -> None:
         if image is not None:
@@ -2269,6 +2265,7 @@ class EditorView:
     # ---- navigation (each saves first) ----
     def jump(self, index: int) -> None:
         self.blocks.save_current()
+        self.review.leave_removed()
         state = self.state
         moved = max(0, min(index, state.page_count - 1)) != state.index
         state.go(index)
@@ -2282,6 +2279,8 @@ class EditorView:
         self.render()
 
     def go(self, delta: int) -> None:
+        if self.review.step(delta):  # within a conversation, or off a removed slide
+            return
         self.jump(self.state.index + delta)
 
     def _on_key(self, e: KeyEventArguments) -> None:

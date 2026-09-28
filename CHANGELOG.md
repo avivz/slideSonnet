@@ -11,15 +11,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   **Review** tab (beside **Audio**, badged when something on this slide waits
   for you) shows the Deck conversation (instructions not about one slide), this
   slide's conversations with Reply / Accept / Reopen, a note box that opens a
-  new one, and all conversations (click one to show only its slides);
+  new one, and all conversations (click one to grey out the other slides — ←/→ then
+  step only through its slides; click a greyed slide to leave);
   accepted ones stay hidden unless you tick **Show closed**. A note
   goes out with Enter (Shift+Enter for a new line) or **Send**, and wakes an
   agent blocked in `review wait`; **Clear accepted** makes accepted changes the
   new base. A changed slide shows its
   base version beside the current one (`D` toggles before-only) and a word diff
-  of its narration; slides that were added, removed, or moved bring up a
-  *before* strip in the old order (the filmstrip pane widens to fit both;
-  moved slides are marked). Filmstrip badges mark slides waiting for you,
+  of its narration. The filmstrip stays in the current order: a moved slide
+  is marked ↕ ("was slide N"), and a removed one appears as a faded tile right
+  after the slide that preceded it — click it to see it and its conversations. Filmstrip badges mark slides waiting for you,
   for the agent, accepted, or changed without a conversation; `N` jumps to the
   next one waiting for you. Changes that arrive with no conversation (a
   recompile, an outside edit) are filed into their own conversation, with a
