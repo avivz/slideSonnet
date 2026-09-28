@@ -86,7 +86,9 @@ file at the same time).
    - a request from chat, or your own initiative: open one —
      `slidesonnet review comment deck.pdf @x @y -m "What I'm changing and why"`
    Slides that change without a conversation are filed as *unrequested* and
-   flagged to the author. Declaring a slide after recompiling still works — it
+   flagged to the author. A **new** slide can be declared by the id you're about
+   to give it — it's noted as "not in the PDF yet" and `review status` lists it
+   until the compile lands (so a typo shows up). Declaring a slide after recompiling still works — it
    moves out of the unrequested conversation (unless the author already
    replied there) — but declaring first spares the author the false alarm.
 4. **Edit, then recompile normally** (`latexmk -pdf deck.tex` — a plain build).

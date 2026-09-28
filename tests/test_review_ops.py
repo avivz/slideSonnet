@@ -61,8 +61,6 @@ def test_reply_validation(deck: Path) -> None:
     with pytest.raises(ReviewError, match="no conversation"):
         ops.reply(deck, "c9", "hi")
     cid = ops.comment(deck, ["a"], "x")
-    with pytest.raises(ReviewError, match="no slide"):
-        ops.reply(deck, cid, "hi", add_slides=["typo"])
     with pytest.raises(ReviewError, match="deck conversation"):
         ops.reply(deck, DECK, "hi", add_slides=["a"])
     ops.accept(deck, cid)
@@ -251,3 +249,21 @@ def test_clear_keeps_a_partly_claimed_unrequested_conversation_as_it_was(deck: P
     ops.accept(deck, mine)
     ops.clear(deck)
     assert ops.load(deck).conversations[stray].slides == ["c"]
+
+
+def test_a_slide_can_be_declared_before_it_is_compiled(deck: Path) -> None:
+    """The agent declares first, then compiles: a new id isn't in the PDF yet."""
+    ops.status(deck)
+    cid = ops.comment(deck, ["a"], "shorten", author="author")
+    ops.reply(deck, cid, "Splitting @a; the second half is @a-part2.", add_slides=["a-part2"])
+    assert ops.status(deck).pending == {"a-part2": [cid]}  # declared, not compiled yet
+    write_pdf(deck, ["a", "a-part2", "b", "c"])  # the compile lands
+    st = ops.status(deck)
+    assert st.pending == {}
+    assert "a-part2" in {c.slide_id for c in st.changes if c.new}
+    assert st.unfiled == []  # already filed: it was declared
+
+
+def test_not_in_deck_names_ids_the_pdf_lacks(deck: Path) -> None:
+    ops.status(deck)
+    assert ops.not_in_deck(deck, ["a", "typo"]) == ["typo"]

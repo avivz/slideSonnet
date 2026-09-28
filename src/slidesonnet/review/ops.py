@@ -74,6 +74,9 @@ class ReviewStatus:
     state: ReviewState
     changes: list[SlideChange] = field(default_factory=list)
     unfiled: list[str] = field(default_factory=list)  # changed, in no conversation
+    # declared in an open conversation but in neither the base nor the PDF yet
+    # (a slide the agent is about to compile, or a typo): slide id -> conversations
+    pending: dict[str, list[str]] = field(default_factory=dict)
     final_build: bool = False  # comparison paused: the PDF is a final build
     base: DeckVersion | None = None
     current: DeckVersion | None = None
@@ -97,7 +100,21 @@ def status(pdf_path: Path) -> ReviewStatus:
     changes = diff_versions(base, current)
     filed = {sid for c in state.slide_conversations() for sid in c.slides}
     unfiled = [c.slide_id for c in changes if c.slide_id not in filed]
-    return ReviewStatus(state=state, changes=changes, unfiled=unfiled, base=base, current=current)
+    pending: dict[str, list[str]] = {}
+    for conv in state.slide_conversations():
+        if conv.status != "open":
+            continue
+        for sid in conv.slides:
+            if sid not in base.slides and sid not in current.slides:
+                pending.setdefault(sid, []).append(conv.id)
+    return ReviewStatus(
+        state=state,
+        changes=changes,
+        unfiled=unfiled,
+        pending=pending,
+        base=base,
+        current=current,
+    )
 
 
 def open_slide_conversations(pdf_path: Path) -> list[Conversation]:
@@ -117,10 +134,19 @@ def _known_ids(pdf_path: Path) -> set[str]:
     return ids
 
 
-def _check_slides(pdf_path: Path, slide_ids: list[str]) -> None:
-    unknown = [s for s in slide_ids if s not in _known_ids(pdf_path)]
-    if unknown:
-        raise ReviewError("no slide " + ", ".join(f"@{s}" for s in unknown) + " in this deck")
+def not_in_deck(pdf_path: Path, slide_ids: list[str]) -> list[str]:
+    """The ids in *slide_ids* that are in neither the base nor the compiled PDF.
+
+    Declaring them is allowed — the agent declares a new slide, then compiles —
+    so callers only point them out; ``status`` keeps listing them as pending.
+    """
+    known = _known_ids(pdf_path)
+    return [s.removeprefix("@") for s in slide_ids if s.removeprefix("@") not in known]
+
+
+def _check_slides(slide_ids: list[str]) -> None:
+    if any(not s.strip() for s in slide_ids):
+        raise ReviewError("empty slide id")
 
 
 def _conversation(state: ReviewState, conv_id: str) -> Conversation:
@@ -138,7 +164,7 @@ def comment(pdf_path: Path, slide_ids: list[str], text: str, *, author: Author =
             "a conversation needs at least one slide — for the whole deck, "
             "write in the deck conversation instead"
         )
-    _check_slides(pdf_path, slide_ids)
+    _check_slides(slide_ids)
     ensure_base(pdf_path)
     conv_id = load(pdf_path).next_id()
     _append(pdf_path, Record("open", conv_id, now(), author, slides=tuple(slide_ids), text=text))
@@ -164,7 +190,7 @@ def reply(
     if conv.status == "closed":
         raise ReviewError(f"conversation {conv_id} is closed — reopen it first")
     if added:
-        _check_slides(pdf_path, added)
+        _check_slides(added)
     _append(pdf_path, Record("message", conv_id, now(), author, slides=tuple(added), text=text))
 
 

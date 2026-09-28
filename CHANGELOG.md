@@ -41,7 +41,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   neighbour moves still counts as unchanged. Conversations live in an append-only, human-readable
   `<deck>.review` next to the deck: `list` shows the open ones (`--all`
   adds accepted, `--mine` just the agent's turn), `comment` opens one about some slides,
-  `reply` answers (`-m` or a plain argument; can `--add-slides`), `accept` closes it (tentatively
+  `reply` answers (`-m` or a plain argument; can `--add-slides`, including a
+  new slide not compiled yet — `status` lists those as pending until it is), `accept` closes it (tentatively
   accepted), `reopen`, and `clear` drops closed ones and moves their slides'
   base forward. `deck` is a permanent deck-wide conversation for instructions
   like "publish these". `send` / `wait --since N` let an agent block until you

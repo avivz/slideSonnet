@@ -119,6 +119,7 @@ def status_cmd(pdf: Path, as_json: bool) -> None:
                         for c in st.changes
                     ],
                     "unfiled": st.unfiled,
+                    "pending": st.pending,
                     "conversations": [_conv_json(c) for c in st.state.conversations.values()],
                 },
                 indent=1,
@@ -142,6 +143,11 @@ def status_cmd(pdf: Path, as_json: bool) -> None:
             "Unfiled (changed, in no conversation): "
             + " ".join(f"@{s}" for s in st.unfiled)
             + "\n  → add them to the conversation they belong to: review reply … --add-slides"
+        )
+    if st.pending:
+        click.echo(
+            "Not in the PDF yet (declared — compile, or fix the id): "
+            + " ".join(f"@{sid} ({', '.join(cids)})" for sid, cids in st.pending.items())
         )
     convs = [c for c in st.state.conversations.values() if c.messages or not c.is_deck]
     if convs:
@@ -194,6 +200,15 @@ def list_cmd(pdf: Path, as_json: bool, mine: bool, show_all: bool) -> None:
             click.echo(f"   {msg.author} {msg.at[11:16]}: {msg.text}")
 
 
+def _note_uncompiled(slide_ids: list[str]) -> None:
+    if slide_ids:
+        click.echo(
+            "note: " + " ".join(f"@{s}" for s in slide_ids) + " not in the PDF yet — fine if "
+            "you're about to compile it; `review status` lists it until it appears",
+            err=True,  # stdout stays just the conversation id, for scripts
+        )
+
+
 @review.command("comment")
 @_PDF
 @click.argument("slides", nargs=-1, required=True)
@@ -210,6 +225,7 @@ def comment_cmd(pdf: Path, slides: tuple[str, ...], text: str, author: str | Non
         )
     with _errors():
         cid = ops.comment(pdf, list(slides), text, author=cast(Author, author or "agent"))
+        _note_uncompiled(ops.not_in_deck(pdf, list(slides)))
     click.echo(cid)
 
 
@@ -240,6 +256,7 @@ def reply_cmd(
         raise click.UsageError("give the message as TEXT or with -m")
     slides = [s for group in add_slides for s in group.split()]
     with _errors():
+        _note_uncompiled(ops.not_in_deck(pdf, slides))
         ops.reply(
             pdf, conversation, message, author=cast(Author, author or "agent"), add_slides=slides
         )

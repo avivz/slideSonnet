@@ -114,7 +114,6 @@ def test_wait_timeout_exits_nonzero(deck: Path) -> None:
 
 def test_errors_are_clean(deck: Path) -> None:
     assert "no conversation" in _fail("reply", str(deck), "c7", "hi")
-    assert "no slide" in _fail("comment", str(deck), "@nope", "-m", "hi")
 
 
 def test_reply_accepts_dash_m_like_comment(deck: Path) -> None:
@@ -132,3 +131,13 @@ def test_comment_on_deck_points_to_reply(deck: Path) -> None:
     _run("snapshot", str(deck))
     out = _fail("comment", str(deck), "deck", "-m", "Publish these.")
     assert "review reply" in out
+
+
+def test_declaring_an_uncompiled_slide_notes_it(deck: Path) -> None:
+    _run("snapshot", str(deck))
+    out = _run("comment", str(deck), "@proof", "@proof-2", "-m", "Splitting the proof.")
+    assert "@proof-2" in out and "not in the PDF yet" in out
+    status = _run("status", str(deck))
+    assert "Not in the PDF yet" in status and "@proof-2" in status
+    data = json.loads(_run("status", str(deck), "--json"))
+    assert data["pending"] == {"proof-2": ["c1"]}
