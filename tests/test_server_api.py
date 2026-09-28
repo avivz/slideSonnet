@@ -378,7 +378,7 @@ def test_export_explains_blockers_and_runs_a_draft(
     from slidesonnet import api as api_mod
 
     (tmp_path / "d").mkdir()
-    pdf = write_pdf(tmp_path / "d" / "d.pdf", ["intro"], plain=True)
+    write_pdf(tmp_path / "d" / "d.pdf", ["intro"], plain=True)
     (tmp_path / "d" / "d.narration").write_text(simple_narration("@intro\nHi.\n"), "utf-8")
     seen: dict[str, Any] = {}
 
