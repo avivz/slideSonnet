@@ -3,7 +3,7 @@
 // lines as plain running text, its pauses as small inline marks. It edits the
 // same per-slide drafts as the slide view (so saving, conflicts and autosave
 // are unchanged); clicking into a slide's words shows that slide above.
-import { nextTick, ref, watch, type Directive } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 
 import { useEditorStore } from '@/stores/editor'
 import { usePlayerStore } from '@/stores/player'
@@ -26,16 +26,6 @@ function spokenParts(slideId: string, seg: EditSeg): [string, string, string] | 
 }
 const root = ref<HTMLElement | null>(null)
 
-/** A text box as tall as its text. */
-const vGrow: Directive<HTMLTextAreaElement> = {
-  mounted: grow,
-  updated: grow,
-}
-function grow(el: HTMLTextAreaElement): void {
-  el.style.height = 'auto'
-  el.style.height = `${el.scrollHeight}px`
-}
-
 function enter(index: number): void {
   if (index !== editor.index) {
     review.leaveRemoved()
@@ -51,8 +41,8 @@ function onPause(slideId: string, seg: EditSeg, event: Event): void {
   editor.touch(slideId, { immediate: true })
 }
 /**
- * A slide's lines, each carrying the pauses that follow it (drawn at the end of
- * its last row, not on a row of their own); a pause before any line stands alone.
+ * A slide's lines, each carrying the pauses that follow it (drawn right after
+ * its last word, not on a row of their own); a pause before any line stands alone.
  */
 type Row =
   | { kind: 'line'; seg: EditSeg; j: number; pauses: { seg: EditSeg; j: number }[] }
@@ -130,17 +120,36 @@ function speechKey(slideId: string, seg: EditSeg): string | undefined {
             :data-speech="speechKey(page.slide_id, row.seg)"
             :data-testid="`script-line-${page.slide_id}-${row.j}`"
           >
-            <!-- the same text, drawn behind the box, marks the word being spoken
-                 (separate elements: formatting whitespace between them is dropped) -->
-            <div v-if="spokenParts(page.slide_id, row.seg)" class="mirror" aria-hidden="true">
-              <span>{{ spokenParts(page.slide_id, row.seg)?.[0] }}</span>
-              <mark>{{ spokenParts(page.slide_id, row.seg)?.[1] }}</mark>
-              <span>{{ spokenParts(page.slide_id, row.seg)?.[2] }}</span>
+            <!-- the same text, laid out beneath the box: it sizes the line, so
+                 the box on top wraps exactly as it does; it marks the word being
+                 spoken, and carries the pauses right after the last word -->
+            <div class="mirror" dir="auto">
+              <template v-if="spokenParts(page.slide_id, row.seg)">
+                <mark aria-hidden="true">{{ spokenParts(page.slide_id, row.seg)?.[1] }}</mark>
+                <span aria-hidden="true">{{ spokenParts(page.slide_id, row.seg)?.[2] }}</span>
+              </template>
+              <span v-else aria-hidden="true">{{ row.seg.text }}</span>
+              <!-- a trailing newline still takes its row -->
+              <span aria-hidden="true">{{ '\u200b' }}</span>
+              <span v-if="row.pauses.length" class="tail">
+                <label v-for="p in row.pauses" :key="p.seg.key" class="pause" title="Pause, in seconds">
+                  <span aria-hidden="true">⏸</span>
+                  <input
+                    class="secs"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    :aria-label="`Slide ${i + 1}, pause in seconds`"
+                    :value="p.seg.seconds.toFixed(1)"
+                    :data-testid="`script-pause-${page.slide_id}-${p.j}`"
+                    @focus="enter(i)"
+                    @change="onPause(page.slide_id, p.seg, $event)"
+                  />
+                </label>
+              </span>
             </div>
             <textarea
-              v-grow
               class="line"
-              :class="{ 'has-pause': row.pauses.length > 0 }"
               dir="auto"
               rows="1"
               placeholder="Spoken words…"
@@ -150,22 +159,6 @@ function speechKey(slideId: string, seg: EditSeg): string | undefined {
               @focus="enter(i)"
               @input="onText(page.slide_id, row.seg, $event)"
             ></textarea>
-            <span v-if="row.pauses.length" class="tail">
-              <label v-for="p in row.pauses" :key="p.seg.key" class="pause" title="Pause, in seconds">
-                <span aria-hidden="true">⏸</span>
-                <input
-                  class="secs"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  :aria-label="`Slide ${i + 1}, pause in seconds`"
-                  :value="p.seg.seconds.toFixed(1)"
-                  :data-testid="`script-pause-${page.slide_id}-${p.j}`"
-                  @focus="enter(i)"
-                  @change="onPause(page.slide_id, p.seg, $event)"
-                />
-              </label>
-            </span>
           </div>
           <label v-else class="pause" title="Pause, in seconds">
             <span aria-hidden="true">⏸</span>
@@ -256,43 +249,47 @@ function speechKey(slideId: string, seg: EditSeg): string | undefined {
   flex: 1 1 100%;
   min-width: 0;
 }
+/* The mirror and the box over it must lay the text out identically. */
 .line,
 .mirror {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
   font-family: var(--font-mono);
   font-size: 15px;
   line-height: 1.45;
-  padding: 2px 0;
+  letter-spacing: normal;
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
 .mirror {
-  position: absolute;
-  inset: 0;
+  position: relative;
   color: transparent;
   pointer-events: none;
-}
-.line.has-pause {
-  padding-right: 64px; /* room for the pause at the end of the last row */
-}
-.tail {
-  position: absolute;
-  right: 0;
-  bottom: 2px;
-  z-index: 1;
-  display: inline-flex;
-  gap: var(--space-1);
 }
 .mirror mark {
   background: rgb(88 166 255 / 32%);
   border-radius: 3px;
   color: transparent;
 }
-.line {
+.tail {
   position: relative;
+  z-index: 1;
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  white-space: nowrap;
+  pointer-events: auto;
+  vertical-align: baseline;
+}
+.line {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   display: block;
   width: 100%;
-  min-height: 1.45em;
-  padding: 2px 0;
+  height: 100%;
   resize: none;
   overflow: hidden;
   background: transparent;

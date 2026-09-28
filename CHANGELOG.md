@@ -185,6 +185,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   interface is built.
 
 ### Fixed
+- **The script view marks a line all the way to its last word.** The mark was
+  drawn on a copy of the text that wrapped differently from the line itself (the
+  line kept room for its pause), so on a line of several rows it stopped short.
+  The copy now sizes the line, and a pause follows the last word instead of
+  sitting at the right edge.
 - **A recompiled PDF shows during playback.** A deck preview held the slide
   pictures from when it was built, so slides changed meanwhile showed their old
   look; the playing slide is now always drawn as it is now.
