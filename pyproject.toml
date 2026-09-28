@@ -78,9 +78,15 @@ module = [
     "torch.*",
     "transformers.*",
     "numpy.*",
-    "fitz.*",
+    "pymupdf.*",
 ]
 ignore_missing_imports = true
+
+# PyMuPDF's own hints are partial (Document(), Pixmap(), get_text() untyped):
+# treat it as untyped, as its old ``fitz`` name was.
+[[tool.mypy.overrides]]
+module = ["pymupdf", "pymupdf.*"]
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

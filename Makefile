@@ -51,7 +51,7 @@ lint-frontend: frontend-deps
 
 # Regenerate the TypeScript API types from the server's OpenAPI schema.
 api-types: frontend-deps
-	$(VENV)/python -m slidesonnet.server.openapi > $(FRONTEND)/openapi.json
+	$(VENV)/python -m slidesonnet.server.openapi $(FRONTEND)/openapi.json
 	cd $(FRONTEND) && npm run api-types
 
 # CI: fail when the committed API types no longer match the server.

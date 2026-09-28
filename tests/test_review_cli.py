@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import fitz
+import pymupdf
 import pytest
 from click.testing import CliRunner
 
@@ -53,7 +53,7 @@ def test_comment_reply_list_json(deck: Path) -> None:
 
 def test_status_json_reports_changes_and_unfiled(deck: Path) -> None:
     _run("snapshot", str(deck))
-    doc = fitz.open(deck)
+    doc = pymupdf.open(deck)
     doc[1].insert_text((20, 150), "An edit", fontsize=14)
     doc.saveIncr()
     doc.close()

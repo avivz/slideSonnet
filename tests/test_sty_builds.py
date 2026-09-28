@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import fitz
+import pymupdf
 import pytest
 
 from slidesonnet import api
@@ -60,14 +60,14 @@ def _compile(tmp: Path, name: str, *, insert: bool = False, final: bool = False)
     return tmp / f"{name}.pdf"
 
 
-def _pixmaps(pdf: Path) -> list[fitz.Pixmap]:
-    with fitz.open(pdf) as doc:
+def _pixmaps(pdf: Path) -> list[pymupdf.Pixmap]:
+    with pymupdf.open(pdf) as doc:
         return [page.get_pixmap(dpi=100) for page in doc]
 
 
 def _word_boxes(pdf: Path) -> list[list[tuple[float, float, str]]]:
     """(x0, y0, word) per page, minus the invisible markers."""
-    with fitz.open(pdf) as doc:
+    with pymupdf.open(pdf) as doc:
         return [
             [
                 (round(w[0], 2), round(w[1], 2), w[4])

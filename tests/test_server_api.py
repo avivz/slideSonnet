@@ -507,3 +507,16 @@ def test_the_editor_starts_on_inworld_unless_the_deck_chooses(
     (deck.parent / "slidesonnet.toml").write_text('[tts]\nbackend = "kokoro"\n', encoding="utf-8")
     snap = client.get(f"/api/v1/decks/{token}").json()
     assert (snap["engine"], snap["default_engine"]) == ("kokoro", "kokoro")
+
+
+def test_the_api_schema_is_written_to_its_file_not_through_stdout(tmp_path: Path) -> None:
+    """A library printing to stdout at import (PyMuPDF 1.28 warns about ``fitz``)
+    must not end up inside the schema the TypeScript types are generated from."""
+    import json
+
+    from slidesonnet.server import openapi
+
+    out = tmp_path / "openapi.json"
+    print("warning: some library chatter")
+    openapi.main([str(out)])
+    assert json.loads(out.read_text(encoding="utf-8"))["openapi"].startswith("3.")

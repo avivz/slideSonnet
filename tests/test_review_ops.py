@@ -6,7 +6,7 @@ import threading
 import time
 from pathlib import Path
 
-import fitz
+import pymupdf
 import pytest
 
 from slidesonnet.exceptions import ReviewError
@@ -24,7 +24,7 @@ def deck(tmp_path: Path) -> Path:
 
 
 def _edit_page(pdf: Path, index: int, body: str = "edited") -> None:
-    doc = fitz.open(pdf)
+    doc = pymupdf.open(pdf)
     doc[index].insert_text((20, 150), body, fontsize=14)
     doc.saveIncr()
     doc.close()

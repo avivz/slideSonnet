@@ -18,8 +18,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-import fitz  # PyMuPDF
 import numpy as np
+import pymupdf
 from numpy.typing import NDArray
 
 from slidesonnet.deck import dedupe_page_ids, load_deck
@@ -67,7 +67,7 @@ def is_diffable_id(slide_id: str) -> bool:
     return bool(slide_id) and not slide_id.startswith("auto-p")
 
 
-def page_text(page: fitz.Page) -> str:
+def page_text(page: pymupdf.Page) -> str:
     """The page's visible text, one line per text line, markers removed."""
     lines = []
     for line in page.get_text().splitlines():
@@ -79,18 +79,18 @@ def page_text(page: fitz.Page) -> str:
     return "\n".join(lines)
 
 
-def _render(page: fitz.Page) -> fitz.Pixmap:
+def _render(page: pymupdf.Page) -> pymupdf.Pixmap:
     return page.get_pixmap(dpi=DIFF_DPI, alpha=False)
 
 
-def pixel_hash(pix: fitz.Pixmap) -> str:
+def pixel_hash(pix: pymupdf.Pixmap) -> str:
     digest = hashlib.sha256(f"{pix.width}x{pix.height}x{pix.n}".encode())
     digest.update(pix.samples)
     return digest.hexdigest()[:24]
 
 
-def _pixels(pix: fitz.Pixmap) -> NDArray[np.int16]:
-    rgb = pix if pix.n == 3 and not pix.alpha else fitz.Pixmap(fitz.csRGB, pix, 0)
+def _pixels(pix: pymupdf.Pixmap) -> NDArray[np.int16]:
+    rgb = pix if pix.n == 3 and not pix.alpha else pymupdf.Pixmap(pymupdf.csRGB, pix, 0)
     return np.frombuffer(rgb.samples, np.uint8).reshape(rgb.height, rgb.width, 3).astype(np.int16)
 
 
@@ -107,7 +107,7 @@ def _nearest_miss(a: NDArray[np.int16], b: NDArray[np.int16]) -> NDArray[np.int1
     return best
 
 
-def same_picture(a: fitz.Pixmap, b: fitz.Pixmap) -> bool:
+def same_picture(a: pymupdf.Pixmap, b: pymupdf.Pixmap) -> bool:
     """True when *a* and *b* differ only by sub-pixel re-layout (see module doc)."""
     pa, pb = _pixels(a), _pixels(b)
     if pa.shape != pb.shape:
@@ -116,12 +116,12 @@ def same_picture(a: fitz.Pixmap, b: fitz.Pixmap) -> bool:
     return worst <= _SAME_PICTURE_TOLERANCE
 
 
-def _canonical_hash(pix: fitz.Pixmap, reference: Path | None) -> str:
+def _canonical_hash(pix: pymupdf.Pixmap, reference: Path | None) -> str:
     """*pix*'s hash — or the reference image's, when they're the same picture."""
     digest = pixel_hash(pix)
     if reference is None or reference.stem == digest or not reference.exists():
         return digest
-    return reference.stem if same_picture(pix, fitz.Pixmap(str(reference))) else digest
+    return reference.stem if same_picture(pix, pymupdf.Pixmap(str(reference))) else digest
 
 
 @dataclass(frozen=True)
@@ -151,7 +151,7 @@ def capture_pages(
         images_dir.mkdir(parents=True, exist_ok=True)
     order: list[str] = []
     pages: dict[str, tuple[str, str]] = {}
-    with fitz.open(pdf_path) as doc:
+    with pymupdf.open(pdf_path) as doc:
         for index, slide_id in enumerate(ids):
             if not is_diffable_id(slide_id) or slide_id in pages:
                 continue

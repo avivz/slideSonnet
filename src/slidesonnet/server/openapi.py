@@ -1,7 +1,9 @@
-"""Print the ``/api/v1`` OpenAPI schema — the source the frontend's TS types are generated from.
+"""Write the ``/api/v1`` OpenAPI schema — the source the frontend's TS types are generated from.
 
-``python -m slidesonnet.server.openapi > frontend/openapi.json`` (``make api-types``
+``python -m slidesonnet.server.openapi frontend/openapi.json`` (``make api-types``
 runs this and the TypeScript generator; CI fails when the committed copies drift).
+The file is written directly, never through stdout: a library printing at
+import time (PyMuPDF warns about its old ``fitz`` name) would corrupt it.
 """
 
 from __future__ import annotations
@@ -24,9 +26,13 @@ def api_schema() -> dict[str, Any]:
     return schema
 
 
-def main() -> None:
-    json.dump(api_schema(), sys.stdout, indent=2, sort_keys=True)
-    sys.stdout.write("\n")
+def main(argv: list[str] | None = None) -> None:
+    args = sys.argv[1:] if argv is None else argv
+    text = json.dumps(api_schema(), indent=2, sort_keys=True) + "\n"
+    if args:
+        Path(args[0]).write_text(text, encoding="utf-8")
+    else:
+        sys.stdout.write(text)
 
 
 if __name__ == "__main__":

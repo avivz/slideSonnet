@@ -13,7 +13,7 @@ import logging
 import re
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pymupdf
 
 from slidesonnet.exceptions import ParserError
 from slidesonnet.proc import run_tool
@@ -35,7 +35,7 @@ def read_page_ids(pdf_path: Path) -> list[str]:
     if not pdf_path.exists():
         raise ParserError(f"PDF not found: {pdf_path}")
     ids: list[str] = []
-    with fitz.open(pdf_path) as doc:
+    with pymupdf.open(pdf_path) as doc:
         for page in doc:
             match = _SSID_RE.search(page.get_text())
             ids.append(match.group(1) if match else "")
@@ -65,7 +65,7 @@ def is_plain_build(pdf_path: Path) -> bool:
 def _build_marker(pdf_path: Path) -> str | None:
     if not pdf_path.exists():
         raise ParserError(f"PDF not found: {pdf_path}")
-    with fitz.open(pdf_path) as doc:
+    with pymupdf.open(pdf_path) as doc:
         if doc.page_count == 0:
             return None
         words = doc[0].get_text().split()
@@ -76,7 +76,7 @@ def page_count(pdf_path: Path) -> int:
     """Return the number of pages in *pdf_path*."""
     if not pdf_path.exists():
         raise ParserError(f"PDF not found: {pdf_path}")
-    with fitz.open(pdf_path) as doc:
+    with pymupdf.open(pdf_path) as doc:
         return int(doc.page_count)
 
 
@@ -84,7 +84,7 @@ def page_aspect(pdf_path: Path) -> float:
     """Return the width/height ratio of the first page (e.g. 4:3 → 1.333)."""
     if not pdf_path.exists():
         raise ParserError(f"PDF not found: {pdf_path}")
-    with fitz.open(pdf_path) as doc:
+    with pymupdf.open(pdf_path) as doc:
         rect = doc[0].rect
         return float(rect.width / rect.height)
 

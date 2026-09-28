@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import fitz
+import pymupdf
 import pytest
 
 from slidesonnet.exceptions import ReviewError
@@ -22,7 +22,7 @@ def _deck(tmp_path: Path, ids: list[str], narration: str = "", **kw: bool) -> Pa
 
 def _retext(pdf: Path, index: int, body: str) -> None:
     """Draw extra visible text on one page (an 'edit' to that slide)."""
-    doc = fitz.open(pdf)
+    doc = pymupdf.open(pdf)
     doc[index].insert_text((20, 150), body, fontsize=14)
     doc.saveIncr()
     doc.close()
@@ -117,10 +117,10 @@ def test_unreferenced_images_are_pruned(tmp_path: Path) -> None:
 
 def _math_deck(path: Path, *, dy: float = 0.0, extra: str = "") -> Path:
     """One slide of formula-like text; *dy* nudges it down (LaTeX re-layout jitter)."""
-    doc = fitz.open()
+    doc = pymupdf.open()
     page = doc.new_page(width=400, height=300)
     page.insert_text((31.3, 121.7 + dy), "(1 - a1 x2)(1 - a2 x2) = 1 - (a1 + a2) x2" + extra)
-    rule = fitz.Rect(40.2, 140.3 + dy, 90.2, 140.7 + dy)  # a fraction bar
+    rule = pymupdf.Rect(40.2, 140.3 + dy, 90.2, 140.7 + dy)  # a fraction bar
     page.draw_rect(rule, color=None, fill=(0, 0, 0), width=0)
     page.insert_text((20, 20), "SSID:m SSPLAIN", fontsize=4, render_mode=3)
     doc.save(path)

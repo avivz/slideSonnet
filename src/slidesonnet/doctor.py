@@ -134,7 +134,7 @@ def _check_python_package(dist: str, import_name: str, hint: str, context: str) 
 
 def check_pymupdf() -> CheckResult:
     return _check_python_package(
-        "PyMuPDF", "fitz", "pip install pymupdf", "PDF slide-id extraction"
+        "PyMuPDF", "pymupdf", "pip install pymupdf", "PDF slide-id extraction"
     )
 
 

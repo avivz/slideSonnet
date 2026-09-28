@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-import fitz
+import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
@@ -46,7 +46,7 @@ def _cmd(c: TestClient, token: str, **body: object) -> dict:  # type: ignore[typ
 
 
 def _edit_page(pdf: Path, index: int) -> None:
-    doc = fitz.open(pdf)
+    doc = pymupdf.open(pdf)
     doc[index].insert_text((20, 150), "edited", fontsize=14)
     doc.saveIncr()
     doc.close()

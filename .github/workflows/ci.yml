@@ -83,7 +83,7 @@ jobs:
       - name: API types match the server (regenerate, then diff)
         run: |
           pip install -e ..
-          python -m slidesonnet.server.openapi > openapi.json
+          python -m slidesonnet.server.openapi openapi.json
           npm run api-types
           git diff --exit-code -- openapi.json src/api/schema.d.ts
 

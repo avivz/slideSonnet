@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-import fitz  # type: ignore[import-untyped]
+import pymupdf  # type: ignore[import-untyped]
 import pytest
 
 from slidesonnet.tts.base import TTSEngine
@@ -237,7 +237,7 @@ def write_pdf(path: Path, ids: list[str], *, final: bool = False, plain: bool = 
     ``SSFINAL`` marker a ``\\ssfinal`` build carries; *plain* the ``SSPLAIN``
     marker an ordinary compile with the current ``slidesonnet.sty`` carries.
     """
-    doc = fitz.open()
+    doc = pymupdf.open()
     for slide_id in ids:
         page = doc.new_page(width=400, height=300)  # 4:3, like the beamer fixture
         page.insert_text((20, 280), "page body", fontsize=10)

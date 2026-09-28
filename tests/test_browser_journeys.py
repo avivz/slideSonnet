@@ -265,7 +265,7 @@ def test_keyboard_deck_switching(page: Page, server: Server, tmp_path: Path) -> 
 @pytest.mark.timeout(120)
 def test_a_review_round_with_the_agent(page: Page, server: Server, tmp_path: Path) -> None:
     """Start, compare a changed slide, send a note, see the agent's reply arrive, accept."""
-    import fitz
+    import pymupdf
 
     from slidesonnet.review import ops
 
@@ -274,7 +274,7 @@ def test_a_review_round_with_the_agent(page: Page, server: Server, tmp_path: Pat
     tid(page, "console-tab-review").click()
     tid(page, "review-start").click()
     expect(tid(page, "review-clear")).to_be_visible()
-    doc = fitz.open(pdf)  # the author recompiles with slide 2 changed
+    doc = pymupdf.open(pdf)  # the author recompiles with slide 2 changed
     doc[1].insert_text((40, 200), "a new line on the slide", fontsize=16)
     doc.saveIncr()
     doc.close()

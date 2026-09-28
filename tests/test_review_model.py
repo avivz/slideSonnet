@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import fitz
+import pymupdf
 
 from slidesonnet.deck import load_deck
 from slidesonnet.review import ops
@@ -23,7 +23,7 @@ def _narr(pdf: Path) -> dict:  # type: ignore[type-arg]
 
 
 def _edit_page(pdf: Path, index: int) -> None:
-    doc = fitz.open(pdf)
+    doc = pymupdf.open(pdf)
     doc[index].insert_text((20, 150), "edited", fontsize=14)
     doc.saveIncr()
     doc.close()
