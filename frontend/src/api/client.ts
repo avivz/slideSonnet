@@ -32,6 +32,7 @@ export type ReviewCommand =
   | Schemas['ReviewComment']
   | Schemas['ReviewReply']
   | Schemas['ReviewAccept']
+  | Schemas['ReviewRetitle']
   | Schemas['ReviewReopen']
   | Schemas['ReviewClear']
   | Schemas['ReviewFileUnrequested']

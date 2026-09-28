@@ -1,17 +1,16 @@
 <script setup lang="ts">
-// The console's Review tab: the Deck conversation (instructions about the whole
-// deck), this slide's conversations (reply / accept / reopen, and a note box
-// that opens a new one), and every conversation (click one to focus on its
-// slides). Every note is sent to the agent at once.
-import { computed, reactive, ref } from 'vue'
+// The console's Review tab, organised around conversations: the list (choose
+// one to grey out the other slides and read it below; Accept right on its
+// row), the chosen conversation (messages, reply, rename, accept/reopen), and a
+// box that opens a new conversation about the slides tagged for it (the one on
+// screen, or several Ctrl-clicked in the strip). Every note goes to the agent at once.
+import { computed, nextTick, reactive, ref } from 'vue'
 
 import type { ConversationDTO } from '@/api/client'
-import { useEditorStore } from '@/stores/editor'
 import { useReviewStore } from '@/stores/review'
 
 import NoteBox from './NoteBox.vue'
 
-const editor = useEditorStore()
 const review = useReviewStore()
 
 const AUTHOR: Record<string, string> = { author: 'You', agent: 'Agent', system: 'Note' }
@@ -23,35 +22,43 @@ function turnLabel(c: ConversationDTO): string {
 function originLabel(c: ConversationDTO): string {
   return c.origin === 'unrequested' ? ' · unrequested' : c.origin === 'author-edits' ? ' · your edits' : ''
 }
+/** A conversation's name: its title, else its first words. */
+function nameOf(c: ConversationDTO): string {
+  if (c.is_deck) return 'Whole deck'
+  if (c.title) return c.title
+  const first = c.messages.find((m) => m.author !== 'system')?.text ?? ''
+  const words = first.split(/\s+/).filter(Boolean)
+  return words.length ? words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '') : 'untitled'
+}
 
-const subject = computed(() => review.subject)
-const change = computed(() => review.changes.get(subject.value) ?? null)
-const changeText = computed(() => {
-  const c = change.value
-  if (!c) return ''
-  const detail = [c.image ? 'slide' : '', c.narration ? 'narration' : ''].filter(Boolean)
-  let text = c.kinds.join(', ')
-  if (c.moved && c.base_index !== null) text += ` (was slide ${c.base_index + 1})`
-  if (detail.length) text += ' — ' + detail.join(', ')
-  return text
-})
-const here = computed(() =>
-  review
-    .conversationsFor(subject.value)
-    .filter((c) => c.status === 'open' || review.showClosed)
-    .sort((a, b) => Number(a.status !== 'open') - Number(b.status !== 'open') || a.id.localeCompare(b.id)),
-)
-const listed = computed(() =>
-  review.slideConversations.filter((c) => c.status === 'open' || review.showClosed),
-)
+/** The list: the whole-deck conversation first, then the rest (accepted ones when shown). */
+const listed = computed(() => [
+  ...(review.deckConversation ? [review.deckConversation] : []),
+  ...review.slideConversations.filter((c) => c.status === 'open' || review.showClosed),
+])
+const chosen = computed(() => review.chosen)
 const pendingHere = computed(() => Object.keys(review.data?.pending ?? {}))
 
-// Unsent notes stay with what they're about: moving to another slide (the
-// arrows, or playback following along) neither carries a note along nor loses it.
-const deckOpen = ref(false) // whole-deck notes are occasional: start folded away
-const deckCount = computed(() => review.deckConversation?.messages.length ?? 0)
-const slideNotes = reactive(new Map<string, string>())
+// unsent replies stay with their conversation; one draft for a new conversation
 const replies = reactive(new Map<string, string>())
+const draft = ref('')
+
+// ---- renaming ---------------------------------------------------------------
+const renaming = ref(false)
+const newTitle = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
+async function startRename(c: ConversationDTO): Promise<void> {
+  newTitle.value = c.title
+  renaming.value = true
+  await nextTick()
+  titleInput.value?.select()
+}
+async function finishRename(c: ConversationDTO, save: boolean): Promise<void> {
+  if (!renaming.value) return
+  renaming.value = false
+  const title = newTitle.value.trim()
+  if (save && title && title !== c.title) await review.command({ type: 'retitle', conversation: c.id, title })
+}
 
 async function resetComparison(): Promise<void> {
   const n = review.changes.size
@@ -79,124 +86,45 @@ function time(at: string): string {
 
     <template v-else>
       <header class="head">
-        <div class="row">
-          <h2 class="head-title">Review</h2>
-          <span class="spacer"></span>
-          <span v-if="review.comparing" class="dim-text small">comparing…</span>
-          <button
-            class="btn quiet small"
-            type="button"
-            :disabled="review.closedCount === 0"
-            title="Make accepted changes the new starting point"
-            data-testid="review-clear"
-            @click="review.command({ type: 'clear' })"
-          >
-            Clear accepted ({{ review.closedCount }})
-          </button>
-          <button
-            class="btn quiet small"
-            type="button"
-            :disabled="!review.changes.size"
-            title="Compare from the deck as it is now (e.g. after a recompile changed every slide). Conversations stay as they are."
-            data-testid="review-reset"
-            @click="resetComparison"
-          >
-            Reset comparison
-          </button>
-        </div>
-        <div class="row">
-          <label v-if="review.closedCount || review.showClosed" class="check small">
-            <input v-model="review.showClosed" type="checkbox" data-testid="review-show-closed" />
-            Show closed ({{ review.closedCount }})
-          </label>
-          <span class="spacer"></span>
-          <button
-            v-if="review.deckConversation"
-            class="btn quiet small"
-            type="button"
-            :aria-expanded="deckOpen"
-            data-testid="deck-toggle"
-            @click="deckOpen = !deckOpen"
-          >
-            {{ deckOpen ? '▾' : '▸' }} Note on the whole deck{{ deckCount ? ` (${deckCount})` : '' }}
-          </button>
-        </div>
-        <div v-if="deckOpen && review.deckConversation" class="deck">
-          <ul v-if="deckCount" class="messages">
-            <li v-for="(m, i) in review.deckConversation.messages" :key="i" :class="m.author">
-              <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
-              <span class="text" dir="auto">{{ m.text }}</span>
-            </li>
-          </ul>
-          <NoteBox
-            test-id="deck-note"
-            placeholder="Instructions for the agent about the whole deck…"
-            @send="(text) => review.command({ type: 'reply', conversation: 'deck', text })"
-          />
-        </div>
-        <p v-if="review.data.final_build" class="warn-text small">
-          Final build — comparison paused until the next normal compile.
-        </p>
-        <p v-if="pendingHere.length" class="warn-text small" data-testid="review-pending">
-          Not in the PDF yet: {{ pendingHere.map((s) => `@${s}`).join(', ') }} — compile, or fix the id.
-        </p>
+        <span v-if="review.comparing" class="dim-text small">comparing…</span>
+        <span class="spacer"></span>
+        <button
+          class="btn quiet small"
+          type="button"
+          :disabled="!review.changes.size"
+          title="Compare from the deck as it is now (e.g. after a recompile changed every slide). Conversations stay as they are."
+          data-testid="review-reset"
+          @click="resetComparison"
+        >
+          Reset comparison
+        </button>
+        <button
+          class="btn quiet small"
+          type="button"
+          :disabled="review.closedCount === 0"
+          title="Make accepted changes the new starting point"
+          data-testid="review-clear"
+          @click="review.command({ type: 'clear' })"
+        >
+          Clear accepted ({{ review.closedCount }})
+        </button>
       </header>
+      <p v-if="review.data.final_build" class="warn-text small">
+        Final build — comparison paused until the next normal compile.
+      </p>
+      <p v-if="pendingHere.length" class="warn-text small" data-testid="review-pending">
+        Not in the PDF yet: {{ pendingHere.map((s) => `@${s}`).join(', ') }} — compile, or fix the id.
+      </p>
 
-
-      <section v-if="subject" class="box slide">
-        <h3 class="box-title">
-          This slide <span class="mono">@{{ subject }}</span>
-          <span v-if="review.viewingRemoved" class="err-text"> · removed</span>
-        </h3>
-        <p v-if="change" class="warn-text small" data-testid="review-change">Changed: {{ changeText }}</p>
-        <article v-for="c in here" :key="c.id" class="conv" :data-testid="`conv-${c.id}`">
-          <header class="meta">{{ c.id }} · {{ turnLabel(c) }}{{ originLabel(c) }}</header>
-          <ul class="messages">
-            <li v-for="(m, i) in c.messages" :key="i" :class="m.author">
-              <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
-              <span class="text" dir="auto">{{ m.text }}</span>
-            </li>
-          </ul>
-          <template v-if="c.status === 'open'">
-            <NoteBox
-              :model-value="replies.get(c.id) ?? ''"
-              :test-id="`reply-${c.id}`"
-              placeholder="Reply…"
-              @update:model-value="(v) => replies.set(c.id, v)"
-              @send="(text) => review.command({ type: 'reply', conversation: c.id, text })"
-            />
-            <button
-              class="btn quiet small"
-              type="button"
-              title="Close this conversation — its changes are accepted"
-              :data-testid="`accept-${c.id}`"
-              @click="review.command({ type: 'accept', conversation: c.id })"
-            >
-              Accept
-            </button>
-          </template>
-          <button
-            v-else
-            class="btn quiet small"
-            type="button"
-            :data-testid="`reopen-${c.id}`"
-            @click="review.command({ type: 'reopen', conversation: c.id })"
-          >
-            Reopen
-          </button>
-        </article>
-        <NoteBox
-          :model-value="slideNotes.get(subject) ?? ''"
-          test-id="slide-note"
-          placeholder="New note for the agent about this slide…"
-          @update:model-value="(v) => slideNotes.set(subject, v)"
-          @send="(text) => review.command({ type: 'comment', slides: [subject], text })"
-        />
-      </section>
-
-      <section v-if="listed.length" class="box list">
+      <!-- the conversations -->
+      <section class="box">
         <div class="row">
           <h3 class="box-title">Conversations</h3>
+          <span class="spacer"></span>
+          <label v-if="review.closedCount || review.showClosed" class="check small">
+            <input v-model="review.showClosed" type="checkbox" data-testid="review-show-closed" />
+            show accepted ({{ review.closedCount }})
+          </label>
         </div>
         <div class="rows">
           <button
@@ -207,29 +135,125 @@ function time(at: string): string {
             data-testid="conv-row-all"
             @click="review.filter = null"
           >
-            <span class="conv-id">All slides</span>
-            <span class="conv-state">no conversation chosen</span>
+            <span class="conv-name">All slides</span>
           </button>
-          <button
+          <div
             v-for="c in listed"
             :key="c.id"
             class="conv-row"
-            :class="{ active: c.id === review.filter }"
-            type="button"
-            :aria-pressed="c.id === review.filter"
-            :title="c.id === review.filter ? 'Click again to see all slides' : 'Show this conversation’s slides'"
-            :data-testid="`conv-row-${c.id}`"
-            @click="review.toggle(c.id)"
+            :class="{ active: c.id === review.filter, closed: c.status === 'closed' }"
           >
-            <span class="conv-id mono">{{ c.id }}</span>
-            <span class="conv-state" :class="c.status === 'closed' ? 'closed' : c.turn">
-              {{ turnLabel(c) }}{{ originLabel(c) }}
-            </span>
-            <span class="conv-slides mono">{{ c.slides.map((s) => `@${s}`).join(' ') }}</span>
-          </button>
+            <button
+              class="pick"
+              type="button"
+              :aria-pressed="c.id === review.filter"
+              :title="c.id === review.filter ? 'Click again to see all slides' : 'Read this conversation; grey out the other slides'"
+              :data-testid="`conv-row-${c.id}`"
+              @click="review.toggle(c.id)"
+            >
+              <span class="conv-name" dir="auto">
+                <span v-if="!c.is_deck" class="conv-id mono">{{ c.id }}</span> {{ nameOf(c) }}
+              </span>
+              <span class="conv-state" :class="c.status === 'closed' ? 'closed' : c.turn">
+                {{ turnLabel(c) }}{{ originLabel(c) }}
+              </span>
+              <span v-if="c.slides.length" class="conv-slides mono">{{ c.slides.map((s) => `@${s}`).join(' ') }}</span>
+            </button>
+            <button
+              v-if="!c.is_deck && c.status === 'open'"
+              class="accept"
+              type="button"
+              title="Accept: close this conversation, its changes are fine"
+              :aria-label="`Accept ${c.id}`"
+              :data-testid="`accept-${c.id}`"
+              @click="review.command({ type: 'accept', conversation: c.id })"
+            >
+              ✓
+            </button>
+          </div>
         </div>
       </section>
-      <p v-if="editor.snapshot && !review.data" class="dim-text small">Comparing…</p>
+
+      <!-- the chosen conversation -->
+      <section v-if="chosen" class="box" :data-testid="`conv-${chosen.id}`">
+        <div class="row">
+          <input
+            v-if="renaming"
+            ref="titleInput"
+            v-model="newTitle"
+            class="field title-input"
+            aria-label="Conversation title"
+            data-testid="conv-title-input"
+            @keydown.enter.prevent="finishRename(chosen, true)"
+            @keydown.esc.prevent="finishRename(chosen, false)"
+            @blur="finishRename(chosen, true)"
+          />
+          <h3 v-else class="box-title" dir="auto">
+            <span v-if="!chosen.is_deck" class="mono">{{ chosen.id }} · </span>{{ nameOf(chosen) }}
+            <button
+              v-if="!chosen.is_deck"
+              class="rename"
+              type="button"
+              title="Rename"
+              data-testid="conv-rename"
+              @click="startRename(chosen)"
+            >
+              ✎
+            </button>
+          </h3>
+          <span class="spacer"></span>
+          <span class="conv-state small" :class="chosen.status === 'closed' ? 'closed' : chosen.turn">
+            {{ chosen.is_deck ? 'instructions for the whole deck' : turnLabel(chosen) }}
+          </span>
+        </div>
+        <p v-if="chosen.slides.length" class="conv-slides mono">{{ chosen.slides.map((s) => `@${s}`).join(' ') }}</p>
+        <ul v-if="chosen.messages.length" class="messages">
+          <li v-for="(m, i) in chosen.messages" :key="i" :class="m.author">
+            <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
+            <span class="text" dir="auto">{{ m.text }}</span>
+          </li>
+        </ul>
+        <template v-if="chosen.status === 'open'">
+          <NoteBox
+            :model-value="replies.get(chosen.id) ?? ''"
+            :test-id="`reply-${chosen.id}`"
+            :placeholder="chosen.is_deck ? 'Instructions for the agent about the whole deck…' : 'Reply…'"
+            @update:model-value="(v) => replies.set(chosen!.id, v)"
+            @send="(text) => review.command({ type: 'reply', conversation: chosen!.id, text })"
+          />
+        </template>
+        <button
+          v-else
+          class="btn quiet small"
+          type="button"
+          :data-testid="`reopen-${chosen.id}`"
+          @click="review.command({ type: 'reopen', conversation: chosen.id })"
+        >
+          Reopen
+        </button>
+      </section>
+      <p v-else class="hint">Choose a conversation to read it and reply.</p>
+
+      <!-- a new conversation -->
+      <section class="box">
+        <div class="row wrap">
+          <h3 class="box-title">New conversation about</h3>
+          <span v-for="s in review.newSlides" :key="s" class="chip mono" :data-testid="`new-slide-${s}`">
+            @{{ s }}
+            <button type="button" :aria-label="`Untag @${s}`" :data-testid="`new-slide-remove-${s}`" @click="review.unpick(s)">×</button>
+          </span>
+        </div>
+        <p class="hint small">
+          {{ review.newSlides.length ? 'Ctrl-click slides in the strip to tag more.' : 'Ctrl-click slides in the strip to tag them.' }}
+        </p>
+        <NoteBox
+          v-if="review.newSlides.length"
+          v-model="draft"
+          test-id="new-note"
+          placeholder="What should change…"
+          @send="(text) => review.startConversation(text)"
+        />
+      </section>
     </template>
   </section>
 </template>
@@ -244,6 +268,10 @@ function time(at: string): string {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+}
+.row.wrap {
+  flex-wrap: wrap;
 }
 .spacer {
   flex: 1;
@@ -254,23 +282,23 @@ function time(at: string): string {
 .btn.small {
   min-height: 26px;
   padding: 0 var(--space-2);
+  white-space: nowrap;
 }
 .hint {
   margin: 0;
   font-size: var(--text-sm);
   color: var(--dim);
 }
-.head {
-  display: grid;
-  gap: var(--space-2);
-  padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--line);
+.hint.small {
+  font-size: var(--text-xs);
 }
-.head-title {
-  margin: 0;
-  font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--text);
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
 }
 /* each part of the panel sits in its own box */
 .box {
@@ -287,15 +315,20 @@ function time(at: string): string {
   font-weight: 600;
   color: var(--text);
 }
-.deck {
-  display: grid;
-  gap: var(--space-2);
+.rename {
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  color: var(--dim);
+  cursor: pointer;
 }
-.conv {
-  display: grid;
-  gap: var(--space-1);
-  padding-left: var(--space-2);
-  border-left: 2px solid var(--line);
+.rename:hover {
+  color: var(--accent);
+}
+.title-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
 }
 .messages {
   display: grid;
@@ -329,17 +362,10 @@ function time(at: string): string {
   overflow: hidden;
 }
 .conv-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px var(--space-2);
-  padding: var(--space-2);
+  display: flex;
+  align-items: stretch;
   background: var(--surface);
-  border: 0;
   border-top: 1px solid var(--line);
-  color: var(--text);
-  font-size: var(--text-sm);
-  text-align: left;
-  cursor: pointer;
 }
 .conv-row:first-child {
   border-top: 0;
@@ -351,19 +377,82 @@ function time(at: string): string {
   background: var(--raised);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+.conv-row.closed .conv-name {
+  color: var(--dim);
+}
+.conv-row.all,
+.pick {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2);
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.conv-row.all {
+  border-top: 0;
+}
+.conv-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .conv-id {
   font-weight: 600;
 }
 .conv-state {
   color: var(--dim);
+  white-space: nowrap;
 }
 .conv-state.author {
   color: var(--warn);
 }
 .conv-slides {
   grid-column: 1 / -1;
+  margin: 0;
   font-size: var(--text-xs);
   color: var(--dim);
   overflow-wrap: anywhere;
+}
+.accept {
+  flex: none;
+  width: 36px;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line);
+  color: var(--ok);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+.accept:hover {
+  background: var(--ok);
+  color: var(--bg);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 2px 1px 6px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+}
+.chip button {
+  padding: 0 4px;
+  background: transparent;
+  border: 0;
+  color: var(--dim);
+  cursor: pointer;
+}
+.chip button:hover {
+  color: var(--err);
 }
 </style>

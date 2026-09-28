@@ -73,6 +73,14 @@ const stripWidth = ref(stored('ss.stripWidth', 168))
 const consoleWidth = ref(stored('ss.consoleWidth', 300))
 const stripOpen = ref(storedFlag('ss.stripOpen', true))
 const consoleOpen = ref(storedFlag('ss.consoleOpen', true))
+// a link on the slide chose a conversation: show it in the Review tab
+watch(
+  () => review.panelRequests,
+  () => {
+    consoleTab.value = 'review'
+    consoleOpen.value = true
+  },
+)
 const narrow = ref(false)
 const overlay = ref<'strip' | 'console' | null>(null)
 

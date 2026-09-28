@@ -155,3 +155,18 @@ def test_unknown_field_is_ignored(tmp_path: Path) -> None:
 def test_all_authors_round_trip(author: str) -> None:
     rec = Record("message", "c1", "2026-09-27T14:02:00", author, text="hi")  # type: ignore[arg-type]
     assert parse_log(serialize_record(rec))[0] == [rec]
+
+
+def test_a_title_round_trips_and_the_latest_one_names_the_conversation() -> None:
+    records = [
+        _rec("open", slides=("a",), text="Too long.", title="Shorter intro"),
+        _rec("message", text="Cut it.", title="Two-line intro"),
+        _rec("message", text="Thanks."),  # no title: the name stays
+    ]
+    text = "".join(serialize_record(r) for r in records)
+    assert "  title: Shorter intro\n" in text
+    back, warnings = parse_log(text)
+    assert back == records and warnings == []
+    assert replay(back).conversations["c1"].title == "Two-line intro"
+    renamed = replay([*back, _rec("message", title="Intro")]).conversations["c1"]
+    assert renamed.title == "Intro" and len(renamed.messages) == 3  # a rename adds no message

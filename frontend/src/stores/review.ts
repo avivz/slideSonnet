@@ -35,8 +35,50 @@ export const useReviewStore = defineStore('review', () => {
   const subject = computed(() => viewingRemoved.value ?? editor.currentId)
   const scope = computed(() => {
     const conv = conversations.value.find((c) => c.id === filter.value)
-    return conv ? new Set(conv.slides) : null
+    return conv && !conv.is_deck ? new Set(conv.slides) : null // the deck one greys nothing
   })
+  /** The conversation whose messages the panel shows (the chosen one). */
+  const chosen = computed(() => conversations.value.find((c) => c.id === filter.value) ?? null)
+
+  // ---- a new conversation's slides ----------------------------------------------
+  /** Slides tagged by hand (Ctrl-click in the strip); until then, the one on screen. */
+  const picked = ref<string[]>([])
+  const pickedByHand = ref(false)
+  const newSlides = computed(() => (pickedByHand.value ? picked.value : subject.value ? [subject.value] : []))
+  /** Ctrl-click: tag or untag a slide for the next new conversation. */
+  function pick(slideId: string): void {
+    if (!pickedByHand.value) {
+      picked.value = subject.value && subject.value !== slideId ? [subject.value] : []
+      pickedByHand.value = true
+    }
+    picked.value = picked.value.includes(slideId)
+      ? picked.value.filter((s) => s !== slideId)
+      : [...picked.value, slideId]
+  }
+  function unpick(slideId: string): void {
+    if (!pickedByHand.value) picked.value = [...newSlides.value]
+    pickedByHand.value = true
+    picked.value = picked.value.filter((s) => s !== slideId)
+  }
+  function resetPicked(): void {
+    picked.value = []
+    pickedByHand.value = false
+  }
+  /** Open a conversation about the tagged slides, and show it. */
+  async function startConversation(text: string): Promise<boolean> {
+    const slides = newSlides.value
+    if (!slides.length) return false
+    const outcome = await command({ type: 'comment', slides, text })
+    if (outcome) resetPicked()
+    return outcome
+  }
+
+  /** Bumped to ask the editor to show the Review tab (a link elsewhere chose a conversation). */
+  const panelRequests = ref(0)
+  function showInPanel(conversation: string): void {
+    select(conversation)
+    panelRequests.value++
+  }
 
   function conversationsFor(slideId: string): ConversationDTO[] {
     return slideConversations.value.filter((c) => c.slides.includes(slideId))
@@ -103,6 +145,7 @@ export const useReviewStore = defineStore('review', () => {
       const outcome = await editor.client.reviewCommand(token, body)
       if (outcome.message) editor.flash(outcome.message, body.type === 'file_unrequested' ? 'warn' : 'ok')
       if (outcome.focus && outcome.conversation) filter.value = outcome.conversation
+      if (body.type === 'comment' && outcome.conversation) filter.value = outcome.conversation // show it
       await refresh()
       return true
     } catch (e) {
@@ -198,5 +241,7 @@ export const useReviewStore = defineStore('review', () => {
     strip,
     conversationsFor, badge, refresh, command, fileUnrequested, viewRemoved, leaveRemoved,
     leaveFilterFor, step, select, toggle, nextYourTurn,
+    chosen, picked, pickedByHand, newSlides, pick, unpick, resetPicked, startConversation,
+    panelRequests, showInPanel,
   }
 })

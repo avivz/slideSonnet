@@ -17,6 +17,7 @@ The format is readable in the style of the ``.narration`` sidecar::
 
     == message c1 2026-09-27T14:10:00 agent
       add-slides: @euler-trick-2
+      title: Split the Euler trick
       text: Split into two slides.
 
     == accept c1 2026-09-27T14:20:00 author
@@ -24,7 +25,8 @@ The format is readable in the style of the ``.narration`` sidecar::
 A record is a header line (``== <kind> <conversation|-> <time> <author>``) and
 indented fields; ``text:`` continues over lines indented four spaces. Every
 record ends with a blank line, so a record cut short by a crash mid-write is
-recognizable and skipped.
+recognizable and skipped. An ``open`` or ``message`` may carry a ``title:``; the
+latest one names the conversation (a message with a title and no text renames it).
 """
 
 from __future__ import annotations
@@ -79,6 +81,7 @@ class Record:
     slides: tuple[str, ...] = ()  # open: the scope; message: slides added to it
     origin: Origin = "requested"  # open only
     text: str = ""
+    title: str = ""  # open/message: names the conversation from here on
 
 
 # ---- serialization -----------------------------------------------------------
@@ -91,6 +94,8 @@ def serialize_record(rec: Record) -> str:
         lines.append(f"  {name}: " + " ".join(f"@{s}" for s in rec.slides))
     if rec.kind == "open" and rec.origin != "requested":
         lines.append(f"  origin: {rec.origin}")
+    if rec.title:
+        lines.append(f"  title: {' '.join(rec.title.split())}")  # one line
     if rec.text:
         first, *rest = rec.text.split("\n")
         lines.append(f"  text: {first}")
@@ -133,6 +138,7 @@ def _parse_chunk(chunk: list[str]) -> Record | None:
         return None
     slides: tuple[str, ...] = ()
     origin = "requested"
+    title = ""
     # Text continuation lines are indented four spaces, so they never match the
     # two-space field pattern — a text line that looks like "slides: …" is safe.
     for line in chunk[1:]:
@@ -144,6 +150,8 @@ def _parse_chunk(chunk: list[str]) -> Record | None:
             slides = tuple(tok.removeprefix("@") for tok in value.split())
         elif name == "origin" and value in _ORIGINS:
             origin = value
+        elif name == "title":
+            title = value.strip()
     text = "\n".join(_collect_text(chunk))
     return Record(
         kind=cast(RecordKind, kind),
@@ -153,6 +161,7 @@ def _parse_chunk(chunk: list[str]) -> Record | None:
         slides=slides,
         origin=cast(Origin, origin),
         text=text,
+        title=title,
     )
 
 
@@ -191,6 +200,7 @@ class Conversation:
     origin: Origin = "requested"
     status: Status = "open"
     messages: list[Message] = field(default_factory=list)
+    title: str = ""  # optional name (the id stays the identifier)
 
     @property
     def turn(self) -> Turn:
@@ -272,6 +282,8 @@ def replay(records: list[Record]) -> ReviewState:
                 conv.slides.append(sid)
             if conv.origin != "unrequested" and not conv.is_deck:
                 _claim(state, conv, sid)
+        if rec.title:
+            conv.title = rec.title
         if rec.text:
             conv.messages.append(Message(author=rec.author, at=rec.at, text=rec.text))
         if rec.kind == "accept" and not conv.is_deck:

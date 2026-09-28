@@ -10,6 +10,8 @@ import { useEditorStore } from '@/stores/editor'
 import { usePlayerStore } from '@/stores/player'
 import { useReviewStore } from '@/stores/review'
 
+import SlideLinks from '@/features/review/SlideLinks.vue'
+
 import PlayerBar from './PlayerBar.vue'
 
 const editor = useEditorStore()
@@ -58,6 +60,7 @@ onBeforeUnmount(() => {
       <div v-else class="placeholder mono">{{ editor.currentId || `page ${editor.index + 1}` }} · rendering…</div>
       <slot name="overlay" />
     </div>
+    <SlideLinks />
     <PlayerBar />
   </div>
 </template>
@@ -115,7 +118,8 @@ onBeforeUnmount(() => {
   color: var(--dim);
 }
 .stage-wrap :deep(.player-bar),
-.stage-wrap > :last-child {
+.stage-wrap > :last-child,
+.stage-wrap > .links {
   width: min(100%, calc(var(--stage-h, 50vh) * var(--deck-ar-n, 1.7778)));
 }
 .stage :deep(.ss-morph) {

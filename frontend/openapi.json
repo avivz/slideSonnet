@@ -252,6 +252,10 @@
             "title": "Status",
             "type": "string"
           },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
           "turn": {
             "enum": [
               "author",
@@ -263,6 +267,7 @@
         },
         "required": [
           "id",
+          "title",
           "slides",
           "origin",
           "status",
@@ -1720,6 +1725,31 @@
         "title": "ReviewReply",
         "type": "object"
       },
+      "ReviewRetitle": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation": {
+            "title": "Conversation",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "const": "retitle",
+            "default": "retitle",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation",
+          "title"
+        ],
+        "title": "ReviewRetitle",
+        "type": "object"
+      },
       "RevisionsDTO": {
         "additionalProperties": false,
         "properties": {
@@ -2872,7 +2902,8 @@
                     "file_unrequested": "#/components/schemas/ReviewFileUnrequested",
                     "mark_seen": "#/components/schemas/ReviewMarkSeen",
                     "reopen": "#/components/schemas/ReviewReopen",
-                    "reply": "#/components/schemas/ReviewReply"
+                    "reply": "#/components/schemas/ReviewReply",
+                    "retitle": "#/components/schemas/ReviewRetitle"
                   },
                   "propertyName": "type"
                 },
@@ -2888,6 +2919,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ReviewAccept"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviewRetitle"
                   },
                   {
                     "$ref": "#/components/schemas/ReviewReopen"

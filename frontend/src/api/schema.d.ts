@@ -454,6 +454,8 @@ export interface components {
              * @enum {string}
              */
             status: "open" | "closed";
+            /** Title */
+            title: string;
             /**
              * Turn
              * @enum {string}
@@ -1005,6 +1007,18 @@ export interface components {
              * @enum {string}
              */
             type: "reply";
+        };
+        /** ReviewRetitle */
+        ReviewRetitle: {
+            /** Conversation */
+            conversation: string;
+            /** Title */
+            title: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "retitle";
         };
         /** RevisionsDTO */
         RevisionsDTO: {
@@ -1670,7 +1684,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReviewMarkSeen"] | components["schemas"]["ReviewComment"] | components["schemas"]["ReviewReply"] | components["schemas"]["ReviewAccept"] | components["schemas"]["ReviewReopen"] | components["schemas"]["ReviewClear"] | components["schemas"]["ReviewFileUnrequested"];
+                "application/json": components["schemas"]["ReviewMarkSeen"] | components["schemas"]["ReviewComment"] | components["schemas"]["ReviewReply"] | components["schemas"]["ReviewAccept"] | components["schemas"]["ReviewRetitle"] | components["schemas"]["ReviewReopen"] | components["schemas"]["ReviewClear"] | components["schemas"]["ReviewFileUnrequested"];
             };
         };
         responses: {

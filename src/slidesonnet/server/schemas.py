@@ -407,6 +407,8 @@ class MessageDTO(_Model):
 
 class ConversationDTO(_Model):
     id: str
+    #: An optional name (the agent's, or the author's rename); "" when untitled.
+    title: str
     slides: list[str]
     origin: str
     status: Literal["open", "closed"]
@@ -469,6 +471,12 @@ class ReviewAccept(_Model):
     conversation: str
 
 
+class ReviewRetitle(_Model):
+    type: Literal["retitle"] = "retitle"
+    conversation: str
+    title: str
+
+
 class ReviewReopen(_Model):
     type: Literal["reopen"] = "reopen"
     conversation: str
@@ -487,6 +495,7 @@ ReviewCommand = Annotated[
     | ReviewComment
     | ReviewReply
     | ReviewAccept
+    | ReviewRetitle
     | ReviewReopen
     | ReviewClear
     | ReviewFileUnrequested,

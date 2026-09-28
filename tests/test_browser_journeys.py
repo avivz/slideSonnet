@@ -272,7 +272,7 @@ def test_keyboard_deck_switching(page: Page, server: Server, tmp_path: Path) -> 
 
 @pytest.mark.timeout(120)
 def test_a_review_round_with_the_agent(page: Page, server: Server, tmp_path: Path) -> None:
-    """Start, compare a changed slide, send a note, see the agent's reply arrive, accept."""
+    """Compare a changed slide, open a conversation on it, see the agent's titled reply, accept."""
     import pymupdf
 
     from slidesonnet.review import ops
@@ -287,13 +287,25 @@ def test_a_review_round_with_the_agent(page: Page, server: Server, tmp_path: Pat
     doc.close()
     tid(page, "thumb-1").click()
     expect(tid(page, "stage-before")).to_be_visible(timeout=20_000)  # before | now
-    note = tid(page, "slide-note")
+    tid(page, "thumb-0").click(modifiers=["Control"])  # tag slide 1 as well: no navigation
+    expect(tid(page, "new-slide-intro-title")).to_be_visible()
+    expect(tid(page, "new-slide-euler-setup")).to_be_visible()
+    tid(page, "new-slide-remove-intro-title").click()
+    note = tid(page, "new-note")
     note.fill("Why did this change?")
     note.press("Enter")
-    expect(page.get_by_text("Why did this change?")).to_be_visible()
-    conv = ops.open_slide_conversations(pdf)[0].id
-    ops.reply(pdf, conv, "To show the next step.", author="agent")
-    expect(page.get_by_text("To show the next step.")).to_be_visible(timeout=15_000)
+    shown = page.locator(".messages .text", has_text="Why did this change?")
+    expect(shown).to_be_visible()  # the new conversation, shown
+    conv = next(
+        c.id
+        for c in ops.open_slide_conversations(pdf)
+        if any(m.text == "Why did this change?" for m in c.messages)
+    )
+    ops.reply(pdf, conv, "To show the next step.", author="agent", title="The next step")
+    reply = page.locator(".messages .text", has_text="To show the next step.")
+    expect(reply).to_be_visible(timeout=15_000)
+    expect(tid(page, f"conv-row-{conv}")).to_contain_text("The next step")
+    expect(tid(page, f"slide-link-{conv}")).to_be_visible()
     expect(tid(page, "thumb-review-1")).to_have_text("your turn")
     tid(page, f"accept-{conv}").click()
     expect(tid(page, "thumb-review-1")).to_have_text("accepted")

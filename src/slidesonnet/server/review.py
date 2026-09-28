@@ -46,6 +46,7 @@ def reset_review_models() -> None:
 def _conversation(conv: Any) -> dict[str, Any]:
     return {
         "id": conv.id,
+        "title": conv.title,
         "slides": list(conv.slides),
         "origin": conv.origin,
         "status": conv.status,
@@ -145,6 +146,9 @@ def run_command(entry: DeckEntry, command: str, args: dict[str, Any]) -> Command
         model.reply(str(args["conversation"]), str(args["text"]))
         model.send()
         return CommandOutcome("Reply sent", conversation=str(args["conversation"]))
+    if command == "retitle":
+        ops.retitle(pdf, str(args["conversation"]), str(args["title"]))
+        return CommandOutcome("Renamed", conversation=str(args["conversation"]))
     if command == "accept":
         model.accept(str(args["conversation"]))
         return CommandOutcome("Accepted", conversation=str(args["conversation"]))

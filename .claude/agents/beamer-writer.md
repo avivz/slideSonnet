@@ -95,7 +95,9 @@ file at the same time).
    Never rename a slide id: a rename shows up as one slide deleted and another
    added.
 5. **Answer every conversation** you worked on with `review reply` — what you
-   changed, or a question if you need one. Reply "done" in `deck` for
+   changed, or a question if you need one. Give an untitled conversation a short
+   name as you answer (`--title "Shorter Euler proof"`, also on `review comment`);
+   the author picks conversations by it. Reply "done" in `deck` for
    deck-wide tasks.
 6. **Check:** `slidesonnet review status deck.pdf` must list no unfiled
    changes.

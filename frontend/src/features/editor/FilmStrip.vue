@@ -48,6 +48,14 @@ function moved(slideId: string): number | null {
   const c = review.changes.get(slideId)
   return c?.moved ? (c.base_index ?? -1) : null
 }
+/** Tagged (Ctrl-click) for the next new conversation. */
+function picked(slideId: string): boolean {
+  return review.pickedByHand && review.picked.includes(slideId)
+}
+function onThumb(event: MouseEvent, index: number, slideId: string): void {
+  if ((event.ctrlKey || event.metaKey) && review.active && slideId) review.pick(slideId)
+  else openPage(index, slideId)
+}
 function openPage(index: number, slideId: string): void {
   review.leaveFilterFor(slideId)
   review.leaveRemoved()
@@ -79,13 +87,16 @@ watch(
           :class="{
             active: item.index === editor.index && !review.viewingRemoved,
             dimmed: dimmed(item.slideId),
+            picked: picked(item.slideId),
           }"
           type="button"
           :data-index="item.index"
+          :data-picked="picked(item.slideId) || undefined"
           :data-testid="`thumb-${item.index}`"
           :aria-current="item.index === editor.index ? 'true' : undefined"
           :aria-label="`Slide ${item.index + 1}${item.slideId ? ' · ' + item.slideId : ''} · ${STATUS_LABEL[status(item.index)]}`"
-          @click="openPage(item.index, item.slideId)"
+          :title="review.active ? 'Ctrl-click: tag for a new conversation' : undefined"
+          @click="onThumb($event, item.index, item.slideId)"
         >
           <img v-if="editor.images[item.index]" :src="editor.images[item.index] as string" alt="" loading="lazy" />
           <span v-else class="fallback mono">{{ item.slideId || `page ${item.index + 1}` }}</span>
@@ -171,6 +182,10 @@ watch(
 .thumb.active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+}
+.thumb.picked {
+  outline: 2px dashed var(--warn);
+  outline-offset: 1px;
 }
 .thumb.dimmed {
   opacity: 0.25;

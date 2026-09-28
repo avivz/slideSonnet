@@ -51,6 +51,16 @@ def test_comment_reply_list_json(deck: Path) -> None:
     assert "page body" in conv["pages"]["proof"]["current_text"]
 
 
+def test_conversations_take_a_title(deck: Path) -> None:
+    _run("comment", str(deck), "@proof", "-m", "Too wordy.", "--title", "Wordy proof")
+    _run("reply", str(deck), "c1", "Shortened.", "--title", "Shorter proof")
+    assert "Shorter proof" in _run("list", str(deck))
+    _run("title", str(deck), "c1", "Proof, two lines")
+    convs = json.loads(_run("list", str(deck), "--json"))["conversations"]
+    conv = next(c for c in convs if c["id"] == "c1")
+    assert conv["title"] == "Proof, two lines" and len(conv["messages"]) == 2
+
+
 def test_status_json_reports_changes_and_unfiled(deck: Path) -> None:
     _run("snapshot", str(deck))
     doc = pymupdf.open(deck)

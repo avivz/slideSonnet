@@ -157,7 +157,9 @@ def _conversation(state: ReviewState, conv_id: str) -> Conversation:
     return conv
 
 
-def comment(pdf_path: Path, slide_ids: list[str], text: str, *, author: Author = "author") -> str:
+def comment(
+    pdf_path: Path, slide_ids: list[str], text: str, *, author: Author = "author", title: str = ""
+) -> str:
     """Open a new conversation about *slide_ids*; return its id."""
     slide_ids = [s.removeprefix("@") for s in slide_ids]
     if not slide_ids:
@@ -168,7 +170,10 @@ def comment(pdf_path: Path, slide_ids: list[str], text: str, *, author: Author =
     _check_slides(slide_ids)
     ensure_base(pdf_path)
     conv_id = load(pdf_path).next_id()
-    _append(pdf_path, Record("open", conv_id, now(), author, slides=tuple(slide_ids), text=text))
+    _append(
+        pdf_path,
+        Record("open", conv_id, now(), author, slides=tuple(slide_ids), text=text, title=title),
+    )
     return conv_id
 
 
@@ -179,8 +184,9 @@ def reply(
     *,
     author: Author = "agent",
     add_slides: list[str] | None = None,
+    title: str = "",
 ) -> None:
-    """Add a message to a conversation, optionally widening its slide scope."""
+    """Add a message to a conversation, optionally widening its slide scope or renaming it."""
     added = [s.removeprefix("@") for s in add_slides or []]
     conv = _conversation(load(pdf_path), conv_id)
     if added and conv.is_deck:
@@ -192,7 +198,19 @@ def reply(
         raise ReviewError(f"conversation {conv_id} is closed — reopen it first")
     if added:
         _check_slides(added)
-    _append(pdf_path, Record("message", conv_id, now(), author, slides=tuple(added), text=text))
+    _append(
+        pdf_path,
+        Record("message", conv_id, now(), author, slides=tuple(added), text=text, title=title),
+    )
+
+
+def retitle(pdf_path: Path, conv_id: str, title: str, *, author: Author = "author") -> None:
+    """Name a conversation (open or accepted); the id stays its identifier."""
+    title = " ".join(title.split())
+    if not title:
+        raise ReviewError("a title can't be empty")
+    _conversation(load(pdf_path), conv_id)
+    _append(pdf_path, Record("message", conv_id, now(), author, title=title))
 
 
 def accept(pdf_path: Path, conv_id: str, *, author: Author = "author") -> None:

@@ -75,6 +75,10 @@ def test_a_review_round_through_the_api(client: TestClient, pdf: Path) -> None:
     ops.reply(pdf, conv["conversation"], "Clearer now.", author="agent")
     assert client.get(f"/api/v1/decks/{token}/review").json()["badges"]["b"] == "your-turn"
 
+    ops.reply(pdf, conv["conversation"], "Named it.", author="agent", title="Why b changed")
+    _cmd(client, token, type="retitle", conversation=conv["conversation"], title="b's new look")
+    listed = client.get(f"/api/v1/decks/{token}/review").json()["conversations"]
+    assert next(c for c in listed if c["id"] == conv["conversation"])["title"] == "b's new look"
     _cmd(client, token, type="accept", conversation=conv["conversation"])
     assert client.get(f"/api/v1/decks/{token}/review").json()["badges"]["b"] == "closed"
     _cmd(client, token, type="reopen", conversation=conv["conversation"])

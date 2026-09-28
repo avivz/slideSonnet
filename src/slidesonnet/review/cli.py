@@ -36,6 +36,7 @@ def _errors() -> Any:
 def _conv_json(conv: Conversation) -> dict[str, Any]:
     return {
         "id": conv.id,
+        "title": conv.title,
         "slides": list(conv.slides),
         "origin": conv.origin,
         "status": conv.status,
@@ -195,7 +196,8 @@ def list_cmd(pdf: Path, as_json: bool, mine: bool, show_all: bool) -> None:
         if conv.is_deck and not conv.messages:
             continue
         scope = " ".join(f"@{s}" for s in conv.slides) or "(whole deck)"
-        click.echo(f"── {conv.id}  {_turn_label(conv)}  {scope}")
+        name = f"  {conv.title}" if conv.title else ""
+        click.echo(f"── {conv.id}{name}  {_turn_label(conv)}  {scope}")
         for msg in conv.messages:
             click.echo(f"   {msg.author} {msg.at[11:16]}: {msg.text}")
 
@@ -213,8 +215,11 @@ def _note_uncompiled(slide_ids: list[str]) -> None:
 @_PDF
 @click.argument("slides", nargs=-1, required=True)
 @click.option("-m", "--text", required=True, help="The message")
+@click.option("--title", default="", help="A short name for the conversation")
 @_AS
-def comment_cmd(pdf: Path, slides: tuple[str, ...], text: str, author: str | None) -> None:
+def comment_cmd(
+    pdf: Path, slides: tuple[str, ...], text: str, title: str, author: str | None
+) -> None:
     """Open a conversation about SLIDES (e.g. @euler-trick @euler-result)."""
     from slidesonnet.review import ops
 
@@ -224,7 +229,9 @@ def comment_cmd(pdf: Path, slides: tuple[str, ...], text: str, author: str | Non
             '`slidesonnet review reply <pdf> deck -m "…"`'
         )
     with _errors():
-        cid = ops.comment(pdf, list(slides), text, author=cast(Author, author or "agent"))
+        cid = ops.comment(
+            pdf, list(slides), text, author=cast(Author, author or "agent"), title=title
+        )
         _note_uncompiled(ops.not_in_deck(pdf, list(slides)))
     click.echo(cid)
 
@@ -239,6 +246,7 @@ def comment_cmd(pdf: Path, slides: tuple[str, ...], text: str, author: str | Non
     multiple=True,
     help="Widen the conversation to this slide (repeatable, or space-separated)",
 )
+@click.option("--title", default="", help="Rename the conversation (a short name)")
 @_AS
 def reply_cmd(
     pdf: Path,
@@ -246,6 +254,7 @@ def reply_cmd(
     text: str | None,
     text_opt: str | None,
     add_slides: tuple[str, ...],
+    title: str,
     author: str | None,
 ) -> None:
     """Add a message to CONVERSATION ("deck" = the deck-wide conversation)."""
@@ -258,8 +267,26 @@ def reply_cmd(
     with _errors():
         _note_uncompiled(ops.not_in_deck(pdf, slides))
         ops.reply(
-            pdf, conversation, message, author=cast(Author, author or "agent"), add_slides=slides
+            pdf,
+            conversation,
+            message,
+            author=cast(Author, author or "agent"),
+            add_slides=slides,
+            title=title,
         )
+
+
+@review.command("title")
+@_PDF
+@click.argument("conversation")
+@click.argument("title")
+@_AS
+def title_cmd(pdf: Path, conversation: str, title: str, author: str | None) -> None:
+    """Name CONVERSATION (the id stays its identifier)."""
+    from slidesonnet.review import ops
+
+    with _errors():
+        ops.retitle(pdf, conversation, title, author=cast(Author, author or "agent"))
 
 
 @review.command("accept")

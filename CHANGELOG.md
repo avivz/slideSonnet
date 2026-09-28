@@ -28,6 +28,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   **Reset comparison** compares from the deck as it is now — for when a
   recompile changed every slide — without closing or clearing any conversation.
   No clean level (not even `--keep nothing`, nor `make clean`) deletes the base.
+- **The Review tab is organised around conversations.** The list comes first
+  (the whole-deck conversation pinned on top; ✓ accepts right on a row);
+  choosing one greys out the other slides and shows its messages, reply box
+  and Reopen below. A new conversation is about the slide on screen, or about
+  several: Ctrl-click them in the filmstrip, and they show as removable tags.
+  Conversations can have a **title** — the agent gives one with `review reply
+  … --title "…"` (or on `review comment`, or `review title`), and you rename by
+  clicking ✎ — shown instead of just "c6". Under the slide, one line links the
+  conversations it's in and says what changed on it.
 - **Resuming after an edit plays the new words.** Pause, edit, play: the slide
   is rebuilt and picks up at the start of the line it was paused in.
 
