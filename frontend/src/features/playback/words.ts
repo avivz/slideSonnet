@@ -9,6 +9,11 @@ export function spanAt(spans: readonly SpeechSpan[], time: number): SpeechSpan |
   return spans.find((s) => time >= s.start && time < s.end) ?? null
 }
 
+/** The line to go on from at `time`: the one playing, or the next; null past the last. */
+export function lineAt(spans: readonly SpeechSpan[], time: number): number | null {
+  return spans.find((s) => time < s.end)?.index ?? null
+}
+
 /**
  * How far through its words an utterance is at `time` (0..1), counting only
  * voiced time: the clock stands still through the silences inside the clip (a

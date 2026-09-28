@@ -9,9 +9,10 @@ describe('Transport', () => {
     ['a loaded, playing', 'a', 'r1', 'pause'],
     ['a loaded, paused', 'a', 'r1', 'resume'],
     ['a loaded, playing', 'deck', 'r1', 'build'], // a different track
-    ['a loaded, playing', 'a', 'r2', 'build'], // the narration changed: rebuild, don't resume stale audio
+    ['a loaded, playing', 'a', 'r2', 'pause'], // pausing never needs the new words
+    ['a loaded, paused', 'a', 'r2', 'refresh'], // the narration changed: rebuild, resume where it was
     ['a building', 'a', 'r1', 'wait'], // a double-click never cancels its own build
-    ['deck loaded, playing', 'deck', 'r2', 'pause'], // Play all builds each slide as it comes: an edit doesn't restart it
+    ['deck loaded, playing', 'deck', 'r2', 'pause'],
   ] as const)('%s: press %s @%s → %s', (setup, key, revision, expected) => {
     const t = new Transport()
     if (setup.startsWith('deck loaded')) {

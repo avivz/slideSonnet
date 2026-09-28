@@ -77,7 +77,11 @@ function slideTrack(slideId: string): PreviewManifest {
   return {
     artifact_id: slideId, slide_id: slideId, narration_revision: 'r1', pdf_revision: 'p', engine: 'kokoro',
     media_url: `/media/${slideId}.wav`, duration: 2, start_at: 0,
-    cues: [{ start: 0, slide_id: slideId }], pages: [], transitions: [], speech: [],
+    cues: [{ start: 0, slide_id: slideId }], pages: [], transitions: [],
+    speech: [
+      { slide_id: slideId, index: 0, start: 0.3, end: 1, silences: [] },
+      { slide_id: slideId, index: 1, start: 1, end: 1.8, silences: [] },
+    ],
   }
 }
 
@@ -153,5 +157,44 @@ describe('Play all', () => {
     editor.go(2)
     await vi.waitFor(() => expect(audio.src).toBe('/media/c.wav'))
     expect(player.allProgress).toEqual({ at: 3, of: 3 })
+  })
+
+  it('paused to edit, resumes with the new words, from the line it was on', async () => {
+    const server = new FakeServer({ a: 'One. Two.', b: 'World.' })
+    const { editor, player, audio, previews } = await playing(server)
+    await player.press('deck')
+    await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
+    audio.currentTime = 1.5 // on the second line
+    await player.press('deck') // pause
+    expect(audio.paused).toBe(true)
+    const line = editor.draftFor('a')?.middle[0]
+    if (line?.kind === 'speech') line.text = 'One. Two, reworded.'
+    editor.touch('a')
+    await player.press('deck') // resume: a is rebuilt with the new words
+    await vi.waitFor(() => expect(previews().filter((s) => s === 'a')).toHaveLength(2))
+    await vi.waitFor(() => expect(audio.paused).toBe(false))
+    expect(audio.currentTime).toBe(1) // back to the start of the line it paused in
+  })
+
+  it('on a paid engine, asks before generating a line edited while paused', async () => {
+    const server = new FakeServer({ a: 'One.', b: 'World.' })
+    server.paid = true
+    server.cached = { a: [true], b: [true] } // everything generated: Play all starts without asking
+    const { editor, player, audio } = await playing(server)
+    editor.engine = 'inworld' // a paid engine (the fake server never calls it)
+    const asked = vi.fn(async () => true)
+    useGenerationStore().setConfirm(asked)
+    await player.press('deck')
+    await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
+    expect(asked).not.toHaveBeenCalled()
+    await player.press('deck') // pause
+    const line = editor.draftFor('a')?.middle[0]
+    if (line?.kind === 'speech') line.text = 'One, reworded.'
+    editor.touch('a')
+    server.cached = { a: [false], b: [true] } // the new words have no audio yet
+    await player.press('deck') // resume
+    await vi.waitFor(() => expect(audio.paused).toBe(false))
+    expect(asked).toHaveBeenCalledOnce()
+    expect(server.jobs.filter((j) => j.kind === 'preview').at(-2)?.body).toMatchObject({ slide_id: 'a', allow_paid: true })
   })
 })

@@ -2,8 +2,9 @@
 // the defined behaviors, independent of any audio element. (Ported from the
 // NiceGUI editor's PlaybackController.)
 //
-// - A play button toggles: pressed for the loaded, up-to-date track it pauses or
-//   resumes; pressed for anything else (or a stale track) it builds that track.
+// - A play button toggles: pressed for the loaded track it pauses or resumes;
+//   resuming a track the narration has changed since is a 'refresh' (rebuild it,
+//   go on from where it was); pressed for anything else it builds that track.
 // - A new request supersedes whatever is rolling; the superseded build never starts.
 // - Stop cancels a request still being built, and unloads the player.
 // - A single-slide track belongs to its slide: navigating away clears it. The
@@ -52,12 +53,12 @@ export class Transport {
   }
 
   /** What a play press for `key` should do, given the deck's current revision. */
-  pressAction(key: TrackKey, revision: string): 'build' | 'pause' | 'resume' | 'wait' {
+  pressAction(key: TrackKey, revision: string): 'build' | 'pause' | 'resume' | 'refresh' | 'wait' {
     if (this.pendingKey === key) return 'wait' // a double-click doesn't cancel its own build
     if (this.loadedKey !== key) return 'build'
-    // Play all builds each slide as it comes, so an edit never makes it stale
-    if (key !== 'deck' && this.loadedRevision !== revision) return 'build'
-    return this.playing ? 'pause' : 'resume'
+    if (this.playing) return 'pause' // pausing never needs the new words
+    if (this.loadedRevision === revision) return 'resume'
+    return key === 'video' ? 'build' : 'refresh' // the whole deck restarts from this slide
   }
 
   /** What moving to another slide should do to the player right now. */

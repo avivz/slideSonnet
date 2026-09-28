@@ -16,7 +16,7 @@ import type { PreviewManifest } from '@/features/playback/manifest'
 import { nextAfter, playable, progress, startAt } from '@/features/playback/playlist'
 import { Transport, type TrackKey } from '@/features/playback/transport'
 import { OutputWaker } from '@/features/playback/wake'
-import { spanAt, voicedFraction, wordAt } from '@/features/playback/words'
+import { lineAt, spanAt, voicedFraction, wordAt } from '@/features/playback/words'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { useReviewStore } from '@/stores/review'
@@ -25,6 +25,12 @@ export const SPEEDS = [1, 1.25, 1.5, 2] as const
 
 const EMPTY_FRAME: Frame = {
   loaded: false, playing: false, time: 0, duration: 0, slideId: null, imageUrl: null, morph: null,
+}
+
+/** Where to go on from in a rebuilt track: a line's start, else the same time. */
+interface Place {
+  line: number | null
+  time: number
 }
 
 /** A preview being built on the server; `cancel` drops it. */
@@ -194,11 +200,17 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   /** Point the player at a built track and start it once the output is awake. */
-  async function begin(key: TrackKey, manifest: PreviewManifest, awake: Promise<void>): Promise<void> {
+  async function begin(
+    key: TrackKey, manifest: PreviewManifest, awake: Promise<void>, place: Place | null = null,
+  ): Promise<void> {
     if (audio === null || controller === null) return
     audio.src = manifest.start_at > 0 ? `${manifest.media_url}#t=${manifest.start_at}` : manifest.media_url
     const track = controller.load(manifest)
     transport.loaded(key, manifest.narration_revision)
+    if (place !== null) {
+      const line = manifest.speech.find((s) => s.index === place.line)
+      controller.seek(line ? line.start : place.time)
+    }
     await awake
     controller.play(track) // unless stopped or replaced meanwhile
   }
@@ -219,12 +231,22 @@ export const usePlayerStore = defineStore('player', () => {
       controller?.play(track)
       return
     }
+    if (action === 'refresh') {
+      // edited while paused: rebuild with the new words, and go on from the line it was on
+      const time = frame.value.time
+      const place = { line: lineAt(controller?.manifest?.speech ?? [], time), time }
+      if (key === 'deck' && allAt.value !== null) await playSlide(allAt.value, awake, place)
+      else await build(key, false, awake, place)
+      return
+    }
     if (key === 'deck') await playAll(awake)
     else await build(key, false, awake)
   }
 
   /** One slide's track, or the whole deck's as one. */
-  async function build(key: TrackKey, allowPaid = false, awake = waker.wake()): Promise<void> {
+  async function build(
+    key: TrackKey, allowPaid = false, awake = waker.wake(), place: Place | null = null,
+  ): Promise<void> {
     if (audio === null || controller === null) return
     if (key !== 'video' && !(editor.page?.audio.speech ?? 0)) {
       editor.flash('This slide has no narration to play')
@@ -247,7 +269,7 @@ export const usePlayerStore = defineStore('player', () => {
         return
       }
       const manifest = finished.result as unknown as PreviewManifest
-      await begin(key, manifest, awake)
+      await begin(key, manifest, awake, place)
       editor.flash(`Preview ready (${manifest.duration.toFixed(1)}s)`, 'ok')
     } catch (e) {
       transport.unload()
@@ -256,7 +278,7 @@ export const usePlayerStore = defineStore('player', () => {
         const missing = key === 'video'
           ? (editor.snapshot?.missing_audio ?? 0)
           : (editor.page?.audio.speech ?? 0) - (editor.page?.audio.cached ?? 0)
-        if (await confirmPaid(missing)) return build(key, true)
+        if (await confirmPaid(missing)) return build(key, true, waker.wake(), place)
         return
       }
       editor.flash(e instanceof ApiError ? e.message : 'The preview could not be built.', 'err')
@@ -285,13 +307,22 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   /** Play all reaches `slideId`: show it, play its track (prepared already, or now), prepare the next. */
-  async function playSlide(slideId: string, awake: Promise<void> = Promise.resolve()): Promise<void> {
+  async function playSlide(
+    slideId: string, awake: Promise<void> = Promise.resolve(), place: Place | null = null,
+  ): Promise<void> {
     controller?.pause()
     const ticket = transport.begin('deck')
     building.value = 'deck'
     allAt.value = slideId
     showSlide(slideId)
     void generation.focus(slideId) // its clips first, if any are still generating
+    if (generation.paid && !allowPaidAll) {
+      // a line edited since Play all began has no audio yet: ask before paying for it
+      await editor.refresh()
+      const missing = generation.uncached(slideId)
+      if (missing.length) allowPaidAll = (await generation.enqueue(missing, { action: 'Generate & play' })) > 0
+      if (!transport.mayStart(ticket)) return
+    }
     const manifest = await prepared(slideId)
     if (!transport.mayStart(ticket)) return // stopped, or moved on meanwhile
     building.value = null
@@ -299,7 +330,7 @@ export const usePlayerStore = defineStore('player', () => {
       void playNext() // no audio for it (generation declined, or it failed): go on
       return
     }
-    await begin('deck', manifest, awake)
+    await begin('deck', manifest, awake, place)
     const next = nextAfter(editor.pages, review.scope, slideId)
     if (next !== null) prepare(next)
   }

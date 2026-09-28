@@ -101,11 +101,11 @@ export class FakeServer {
         throw new ApiError(409, 'revision_conflict', 'The narration file changed.')
       }
       this.saves.push({ slideId, body })
-      this.narration[slideId] = {
+      this.narration[slideId] = JSON.parse(JSON.stringify({ // plain data, as over the wire
         slide_id: slideId, segments: body.segments,
         transition_in: body.transition_in ?? { kind: 'cut', seconds: 0 },
         transition_out: body.transition_out ?? { kind: 'cut', seconds: 0 },
-      }
+      }))
       this.rev++
       return { changed: true, revision: this.revision }
     }
@@ -122,7 +122,10 @@ export class FakeServer {
     c.exportBlockers = async () => this.blockers
     c.startJob = async (_t, body) => {
       const b = body as unknown as Record<string, unknown>
-      if (this.paid && b.kind !== 'render_pages' && b.kind !== 'warm' && !b.allow_paid) {
+      // like the server: a paid engine needs permission only when clips are missing
+      const slides = b.kind === 'preview' && b.slide_id ? [String(b.slide_id)] : Object.keys(this.narration)
+      const missing = slides.some((id) => (this.cached[id] ?? [false]).some((c) => !c))
+      if (this.paid && missing && b.kind !== 'render_pages' && b.kind !== 'warm' && !b.allow_paid) {
         throw new ApiError(403, 'paid_confirmation_required', 'This will spend credits.')
       }
       this.jobs.push({ kind: String(b.kind), body: b })
