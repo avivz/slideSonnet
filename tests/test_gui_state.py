@@ -599,6 +599,14 @@ def _bump_mtime(path: Path) -> None:
     os.utime(path, (later, later))
 
 
+def test_block_differs_only_for_a_real_edit(tmp_path: Path) -> None:
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    block = state.current_block
+    kw = {"transition_in": state.incoming_transition, "transition_out": block.transition_out}
+    assert state.block_differs(list(block.segments), **kw) is False
+    assert state.block_differs([Segment.speech("Typed.")], **kw) is True
+
+
 def test_poll_sources_false_when_unchanged(tmp_path: Path) -> None:
     state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
     assert state.poll_sources() is False

@@ -318,6 +318,28 @@ class EditorState:
             return self.current_block.transition_in
         return boundary_transition(self.deck.page_narration(prev_id), self.current_block)
 
+    def block_differs(
+        self, segments: list[Segment], *, transition_in: Transition, transition_out: Transition
+    ) -> bool:
+        """Would :meth:`replace_block` with these editor values change the deck?
+
+        Read-only — lets the editor tell an unsaved draft from untouched cards.
+        """
+        cur = self.current_block
+        if transition_in != self.incoming_transition:
+            return True
+        edited = cur.with_content(
+            segments, transition_in=cur.transition_in, transition_out=transition_out
+        )
+        return edited != cur
+
+    def current_baseline(self) -> tuple[str, Transition]:
+        """What the current slide's editor was built from: its block + incoming boundary.
+
+        Compared across a reload to see whether an external edit touched this slide.
+        """
+        return serialize_block(self.current_block), self.incoming_transition
+
     def _set_transition_out(self, slide_id: str, tr: Transition) -> bool:
         """Set *slide_id*'s ``transition_out`` (dropping an emptied block); changed?"""
         old = self.deck.narration.get(slide_id)
