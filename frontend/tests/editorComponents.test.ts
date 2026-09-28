@@ -52,6 +52,7 @@ describe('narration editor', () => {
         resolved: { lecturer: 'am_michael', guest: null } },
     }
     const w = mount(NarrationEditor, { attachTo: document.body })
+    await w.get('[data-testid="usettings-0"]').trigger('click')
     expect(w.get('[data-testid="uvoice-0"]').findAll('option').map((o) => o.text())).toEqual([
       'default (lecturer)', 'lecturer (am_michael)', 'guest (unmapped)',
     ])
@@ -64,6 +65,48 @@ describe('narration editor', () => {
     const last = server.narration.a?.segments
     expect(last?.map((s) => s.kind)).toEqual(['pause', 'speech', 'pause']) // silences + the line
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS)
+  })
+
+  it('folds a line’s voice, pace and note away, naming only what differs from the defaults', async () => {
+    const server = new FakeServer()
+    const { editor } = await setup(server)
+    const w = mount(NarrationEditor, { attachTo: document.body })
+    expect(w.find('[data-testid="upace-0"]').exists()).toBe(false) // the text is what matters
+    expect(w.find('[data-testid="uchips-0"]').exists()).toBe(false) // all defaults: nothing to name
+    await w.get('[data-testid="usettings-0"]').trigger('click')
+    await w.get('[data-testid="upace-0"]').setValue('slow')
+    await w.get('[data-testid="udirect-0"]').setValue('warmly')
+    await w.get('[data-testid="usettings-0"]').trigger('click') // fold it again
+    expect(w.find('[data-testid="upace-0"]').exists()).toBe(false)
+    expect(w.get('[data-testid="uchips-0"]').text()).toBe('slow · “warmly”')
+    await w.get('[data-testid="uchips-0"]').trigger('click') // the chips open the settings too
+    expect(w.find('[data-testid="upace-0"]').exists()).toBe(true)
+    await editor.flush()
+  })
+
+  it('an opened line stays open when a newer version of the slide arrives', async () => {
+    const server = new FakeServer()
+    const { editor } = await setup(server)
+    const w = mount(NarrationEditor, { attachTo: document.body })
+    await w.get('[data-testid="usettings-0"]').trigger('click')
+    server.narration.a = { ...server.narration.a!, segments: [speech('Reworded by the agent.')] }
+    server.rev++
+    await editor.refresh() // nothing typed here: the new version is taken, in place
+    await flushPromises()
+    expect((w.get('[data-testid="utext-0"]').element as HTMLTextAreaElement).value).toBe('Reworded by the agent.')
+    expect(w.find('[data-testid="upace-0"]').exists()).toBe(true)
+  })
+
+  it('a line naming the deck’s default voice shows no voice chip', async () => {
+    const server = new FakeServer()
+    server.narration.a = { ...server.narration.a!, segments: [{ kind: 'speech', text: 'Hi.', voice: 'lecturer', pace: null, direction: null }] }
+    const { editor } = await setup(server)
+    editor.snapshot = {
+      ...editor.snapshot!,
+      voices: { map: {}, default_voice: 'lecturer', names: ['lecturer', 'guest'], resolved: { lecturer: 'x', guest: 'y' } },
+    }
+    const w = mount(NarrationEditor, { attachTo: document.body })
+    expect(w.find('[data-testid="uchips-0"]').exists()).toBe(false)
   })
 
   it('a slide without an id cannot be edited', async () => {

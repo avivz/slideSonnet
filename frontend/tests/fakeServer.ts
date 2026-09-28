@@ -31,6 +31,9 @@ export class FakeServer {
   rev = 1
   narration: Record<string, BlockDTO> = {}
   pages = ['a', 'b', 'c']
+  pdfRev = 'p'
+  /** Page images on disk (false: a fresh render hasn't produced them yet). */
+  imagesRendered = true
   saves: { slideId: string; body: unknown }[] = []
   /** Hold every save until release() — to test typing during an in-flight save. */
   hold: (() => void)[] = []
@@ -70,10 +73,10 @@ export class FakeServer {
     return {
       token: 'tok', name: 'deck', label: 'week1/deck', pdf_name: 'deck.pdf',
       sidecar_name: 'deck.narration',
-      revisions: { narration: this.revision, pdf: 'p', config: 'c', review: 'x' },
+      revisions: { narration: this.revision, pdf: this.pdfRev, config: 'c', review: 'x' },
       engine: 'kokoro', default_engine: 'kokoro', engines: META.engines,
       pages: this.pages.map((id, index) => ({
-        index, slide_id: id, status: this.narration[id] ? 'ready' : 'empty', image_url: `/img/${id}.png`,
+        index, slide_id: id, status: this.narration[id] ? 'ready' : 'empty', image_url: this.imagesRendered ? `/img/${this.pdfRev}/${id}.png` : null,
         incoming: { kind: 'cut', seconds: 0 },
         audio: { speech: this.narration[id] ? 1 : 0, cached: (this.cached[id] ?? []).filter(Boolean).length },
         clips: (this.narration[id]?.segments ?? []).filter((s) => s.kind === 'speech')

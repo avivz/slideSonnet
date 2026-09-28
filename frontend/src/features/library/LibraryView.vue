@@ -5,7 +5,7 @@ import AppNotice from '@/components/AppNotice.vue'
 import AppWordmark from '@/components/AppWordmark.vue'
 import { useLibraryStore } from '@/stores/library'
 
-import DeckCard from './DeckCard.vue'
+import DeckRow from './DeckRow.vue'
 import { countText, filterDecks } from './library'
 
 const store = useLibraryStore()
@@ -134,8 +134,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
         <h2 v-if="group.title" class="heading mono">
           {{ group.title }} <span class="n">{{ group.decks.length }}</span>
         </h2>
-        <div class="grid">
-          <DeckCard
+        <div class="list">
+          <DeckRow
             v-for="deck in group.decks"
             :key="deck.token"
             :deck="deck"
@@ -251,7 +251,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
 .main {
   display: grid;
   gap: var(--space-5);
-  width: min(1100px, 100%);
+  width: min(760px, 100%);
   margin: 0 auto;
   padding: var(--space-6) var(--space-4) 64px;
 }
@@ -272,10 +272,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
   color: var(--line);
   letter-spacing: 0;
 }
-.grid {
+.list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--space-3);
+  gap: 1px;
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
 }
 .empty {
   display: grid;

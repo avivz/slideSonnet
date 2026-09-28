@@ -58,13 +58,13 @@ function openRemoved(slideId: string): void {
   review.viewRemoved(slideId)
 }
 
+// keep the slide being shown in view: a page, or a removed slide shown from the base
 watch(
-  () => editor.index,
-  async (i) => {
+  () => [editor.index, review.viewingRemoved] as const,
+  async ([i, removed]) => {
     await nextTick()
-    list.value
-      ?.querySelector<HTMLElement>(`[data-index="${i}"]`)
-      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    const selector = removed === null ? `[data-index="${i}"]` : `[data-removed="${CSS.escape(removed)}"]`
+    list.value?.querySelector<HTMLElement>(selector)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
   },
 )
 </script>
@@ -123,6 +123,7 @@ watch(
           :class="{ active: review.viewingRemoved === item.slideId, dimmed: dimmed(item.slideId) }"
           type="button"
           title="Removed since the review started — click to see it"
+          :data-removed="item.slideId"
           :data-testid="`removed-thumb-${item.slideId}`"
           @click="openRemoved(item.slideId)"
         >

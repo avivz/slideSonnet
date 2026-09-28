@@ -1,10 +1,9 @@
 <script setup lang="ts">
 // A note to the agent: Enter (or Send) sends it; Shift+Enter starts a new line.
-import { ref } from 'vue'
-
+// The text is a v-model so the panel can keep each slide's unsent note apart.
 defineProps<{ placeholder: string; testId: string }>()
 const emit = defineEmits<{ send: [text: string] }>()
-const text = ref('')
+const text = defineModel<string>({ default: '' })
 
 function send(): void {
   const value = text.value.trim()
@@ -26,30 +25,49 @@ function onKey(event: KeyboardEvent): void {
       v-model="text"
       class="field"
       dir="auto"
-      rows="2"
+      rows="3"
       :placeholder="placeholder"
       :aria-label="placeholder"
       :data-testid="testId"
       @keydown="onKey"
     ></textarea>
-    <button class="btn quiet" type="button" title="Send to the agent (Enter)" :data-testid="`${testId}-add`" @click="send">
-      Send
-    </button>
+    <div class="actions">
+      <span class="hint">Enter sends · Shift+Enter for a new line</span>
+      <button
+        class="btn quiet"
+        type="button"
+        title="Send to the agent (Enter)"
+        :disabled="!text.trim()"
+        :data-testid="`${testId}-add`"
+        @click="send"
+      >
+        Send
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .note {
   display: grid;
-  grid-template-columns: 1fr auto;
   gap: var(--space-1);
-  align-items: end;
 }
 textarea {
+  width: 100%;
   height: auto;
-  min-height: 52px;
-  padding: var(--space-2);
+  min-height: 84px;
+  padding: var(--space-2) var(--space-3);
   resize: vertical;
-  line-height: 1.4;
+  line-height: 1.45;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.hint {
+  font-size: var(--text-xs);
+  color: var(--dim);
 }
 </style>

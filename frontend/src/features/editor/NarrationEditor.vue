@@ -105,6 +105,17 @@ function onKey(event: KeyboardEvent): void {
     commit() // save now, without leaving the field
   }
 }
+
+const saveLabel = computed(
+  () =>
+    ({
+      saved: 'Saved',
+      unsaved: 'Unsaved changes',
+      saving: 'Saving…',
+      conflict: 'Changed on disk',
+      error: 'Not saved',
+    })[editor.saveState],
+)
 </script>
 
 <template>
@@ -119,6 +130,7 @@ function onKey(event: KeyboardEvent): void {
   >
     <header class="head">
       <h2 class="id mono" data-testid="slide-id">{{ slideId || '(no slide id)' }}</h2>
+      <span class="save mono" :class="editor.saveState" data-testid="save-state" role="status">{{ saveLabel }}</span>
       <span class="spacer"></span>
       <button
         class="btn quiet" type="button" :disabled="!block" data-testid="add-utterance"
@@ -150,11 +162,14 @@ function onKey(event: KeyboardEvent): void {
       This page has no slide id — add <code>\ssid</code> in the source to narrate it.
     </p>
     <template v-else-if="editor.meta && !review.viewingRemoved">
-      <TransitionPicker v-model="block.transitionIn" which="in" :meta="editor.meta" @update:model-value="commit" />
-      <SilenceField
-        v-if="hasSilenceFields(block)" v-model="block.start as number" which="start"
-        @update:model-value="commit"
-      />
+      <!-- a slide's edges: each transition shares a line with its held silence -->
+      <div class="edge" data-testid="edge-start">
+        <TransitionPicker v-model="block.transitionIn" which="in" :meta="editor.meta" @update:model-value="commit" />
+        <SilenceField
+          v-if="hasSilenceFields(block)" v-model="block.start as number" which="start"
+          @update:model-value="commit"
+        />
+      </div>
       <div class="cards">
         <template v-for="(seg, i) in block.middle" :key="seg.key">
           <UtteranceCard
@@ -167,6 +182,7 @@ function onKey(event: KeyboardEvent): void {
             :clip="clips[speech.get(seg.key) ?? -1] ?? null"
             :generating="generation.inflight.has(`${slideId}#${speech.get(seg.key)}`)"
             :voices="voiceOptions"
+            :default-voice="editor.snapshot?.voices.default_voice ?? null"
             @patch="(changes, now) => patch(seg, changes, now)"
             @commit="commit"
             @move="move(i, $event)"
@@ -183,11 +199,13 @@ function onKey(event: KeyboardEvent): void {
           Nothing to say on this slide yet — add a line or a pause.
         </p>
       </div>
-      <SilenceField
-        v-if="hasSilenceFields(block)" v-model="block.end as number" which="end"
-        @update:model-value="commit"
-      />
-      <TransitionPicker v-model="block.transitionOut" which="out" :meta="editor.meta" @update:model-value="commit" />
+      <div class="edge" data-testid="edge-end">
+        <SilenceField
+          v-if="hasSilenceFields(block)" v-model="block.end as number" which="end"
+          @update:model-value="commit"
+        />
+        <TransitionPicker v-model="block.transitionOut" which="out" :meta="editor.meta" @update:model-value="commit" />
+      </div>
     </template>
   </section>
 </template>
@@ -195,13 +213,27 @@ function onKey(event: KeyboardEvent): void {
 <style scoped>
 .editor {
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-2);
   align-content: start;
 }
 .head {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+.save {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--dim);
+}
+.save.unsaved,
+.save.saving {
+  color: var(--warn);
+}
+.save.conflict,
+.save.error {
+  color: var(--err);
+  font-weight: 600;
 }
 .id {
   margin: 0;
@@ -212,9 +244,15 @@ function onKey(event: KeyboardEvent): void {
 .spacer {
   flex: 1;
 }
+.edge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+}
 .cards {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 .diff {
   margin: 0;

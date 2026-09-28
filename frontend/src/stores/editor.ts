@@ -25,6 +25,7 @@ import {
   blockSegments,
   editBlock,
   fingerprint,
+  keepKeys,
   syncSilenceFields,
   type EditBlock,
 } from '@/features/editor/narration'
@@ -177,8 +178,11 @@ export const useEditorStore = defineStore('editor', () => {
     if (before !== undefined && newRevision !== before && !ownRevisions.has(newRevision)) {
       externalChanges.value++
     }
+    // while a render fills in, keep showing what we have; a recompiled PDF's old
+    // pictures are of another build (and deleted), so they go
+    const samePdf = snapshot.value?.revisions.pdf === snap.revisions.pdf
     snapshot.value = snap
-    images.value = snap.pages.map((p, i) => p.image_url ?? images.value[i] ?? null)
+    images.value = snap.pages.map((p, i) => p.image_url ?? (samePdf ? images.value[i] : null) ?? null)
     if (inFlight === 0) revision.value = newRevision
     for (const [slideId, draft] of drafts) {
       const theirs = serverBlock(snap, slideId)
@@ -191,7 +195,7 @@ export const useEditorStore = defineStore('editor', () => {
       }
       const dirty = fingerprint(draft.block) !== draft.baseline
       if (!dirty) {
-        draft.block = theirs // changed elsewhere, nothing typed here: take it
+        draft.block = keepKeys(draft.block, theirs) // changed elsewhere, nothing typed here: take it
         draft.baseline = theirsFp
         draft.ackRevision = null
       } else if (conflict.value === null) {

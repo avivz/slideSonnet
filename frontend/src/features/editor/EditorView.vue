@@ -8,7 +8,6 @@ import { useRoute, useRouter } from 'vue-router'
 import type { LibraryDeckDTO } from '@/api/client'
 import { EventStream } from '@/api/events'
 import AppIcon from '@/components/AppIcon.vue'
-import AppWordmark from '@/components/AppWordmark.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
@@ -18,6 +17,7 @@ import ReviewPanel from '@/features/review/ReviewPanel.vue'
 
 import ConflictDialog from './ConflictDialog.vue'
 import ConsolePanel from './ConsolePanel.vue'
+import DeckHead from './DeckHead.vue'
 import DeckSwitcher from './DeckSwitcher.vue'
 import FilmStrip from './FilmStrip.vue'
 import NarrationEditor from './NarrationEditor.vue'
@@ -43,17 +43,6 @@ const deckLabel = computed(() => {
   const section = s.label.includes('/') ? s.label.split('/')[0] : ''
   return section && section !== s.name ? `${section} / ${s.name}` : s.name
 })
-const saveLabel = computed(
-  () =>
-    ({
-      saved: 'Saved',
-      unsaved: 'Unsaved changes',
-      saving: 'Saving…',
-      conflict: 'Changed on disk',
-      error: 'Not saved',
-    })[editor.saveState],
-)
-
 // ---- panes ------------------------------------------------------------------
 function stored(key: string, fallback: number): number {
   try {
@@ -109,6 +98,54 @@ function startResize(which: 'strip' | 'console', event: PointerEvent): void {
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
 }
+
+// The centre pane: the slide stays put above a divider; only the narration
+// under it scrolls. Dragging the divider trades height between the two.
+const mainEl = ref<HTMLElement | null>(null)
+const mainHeight = ref(0)
+const stageHeight = ref(stored('ss.stageHeight', 0)) // 0: not chosen yet, use half
+const MIN_PART = 140
+const stagePx = computed(() => {
+  const total = mainHeight.value
+  if (total <= 0) return stageHeight.value || 360
+  const wanted = stageHeight.value || Math.round(total * 0.5)
+  return Math.max(MIN_PART, Math.min(total - MIN_PART, wanted))
+})
+let mainObserver: ResizeObserver | null = null
+watch(mainEl, (el) => {
+  mainObserver?.disconnect()
+  mainObserver = null
+  if (el === null || typeof ResizeObserver === 'undefined') return
+  mainObserver = new ResizeObserver(() => {
+    mainHeight.value = el.clientHeight
+  })
+  mainObserver.observe(el)
+})
+function setStageHeight(px: number): void {
+  stageHeight.value = Math.round(px)
+  remember('ss.stageHeight', stageHeight.value)
+}
+function startSplit(event: PointerEvent): void {
+  const startY = event.clientY
+  const start = stagePx.value
+  const onMove = (e: PointerEvent): void => {
+    stageHeight.value = Math.max(MIN_PART, Math.min(mainHeight.value - MIN_PART, start + e.clientY - startY))
+  }
+  const onUp = (): void => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    setStageHeight(stageHeight.value)
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+function onSplitKey(event: KeyboardEvent): void {
+  const step = event.key === 'ArrowUp' ? -24 : event.key === 'ArrowDown' ? 24 : 0
+  if (step === 0) return
+  event.preventDefault()
+  setStageHeight(Math.max(MIN_PART, Math.min(mainHeight.value - MIN_PART, stagePx.value + step)))
+}
+const mainStyle = computed(() => ({ '--stage-px': `${stagePx.value}px` }))
 
 function onResize(): void {
   narrow.value = window.innerWidth < 1100
@@ -296,6 +333,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('beforeunload', onBeforeUnload)
   events.close()
+  mainObserver?.disconnect()
   void generation.leave()
 })
 
@@ -306,42 +344,22 @@ function pick(deck: LibraryDeckDTO): void {
 
 <template>
   <div class="editor-page" :class="{ narrow }">
-    <header class="header">
-      <AppWordmark />
-      <div class="deck">
-        <button
-          class="icon-btn" type="button" title="Previous deck (Alt+←)" aria-label="Previous deck"
-          :disabled="!snap?.neighbours.prev" data-testid="deck-prev" @click="stepDeck(-1)"
-        >
-          <AppIcon name="prev" />
-        </button>
-        <button
-          class="deck-name mono" type="button" title="Switch deck (Ctrl+K)" data-testid="deck-switcher"
-          @click="switcherOpen = true"
-        >
-          {{ deckLabel }} <AppIcon name="down" :size="16" />
-        </button>
-        <button
-          class="icon-btn" type="button" title="Next deck (Alt+→)" aria-label="Next deck"
-          :disabled="!snap?.neighbours.next" data-testid="deck-next" @click="stepDeck(1)"
-        >
-          <AppIcon name="next" />
-        </button>
-      </div>
-      <span class="spacer"></span>
-      <span class="save mono" :class="editor.saveState" data-testid="save-state" role="status">{{ saveLabel }}</span>
-      <span v-if="snap" class="pill mono" :class="editor.errorCount ? 'bad' : 'good'" data-testid="error-pill">
-        {{ editor.errorCount ? `${editor.errorCount} error${editor.errorCount === 1 ? '' : 's'}` : 'no errors' }}
-      </span>
+    <!-- narrow windows only: the side panes are pop-overs, so their openers and the
+         deck's name need a bar. Wide windows give the full height to the work. -->
+    <header v-if="narrow" class="header">
       <button
-        class="icon-btn" :class="{ on: narrow ? overlay === 'strip' : stripOpen }" type="button"
+        class="icon-btn" :class="{ on: overlay === 'strip' }" type="button"
         title="Show or hide the slides" aria-label="Show or hide the slides" data-testid="toggle-strip"
         @click="toggle('strip')"
       >
         <AppIcon name="panelLeft" />
       </button>
+      <DeckHead
+        class="bar-head" inline :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
+        @switch="switcherOpen = true" @step="stepDeck"
+      />
       <button
-        class="icon-btn" :class="{ on: narrow ? overlay === 'console' : consoleOpen }" type="button"
+        class="icon-btn" :class="{ on: overlay === 'console' }" type="button"
         title="Show or hide the console" aria-label="Show or hide the console" data-testid="toggle-console"
         @click="toggle('console')"
       >
@@ -355,20 +373,50 @@ function pick(deck: LibraryDeckDTO): void {
 
     <div v-else-if="snap" class="body" :style="gridStyle">
       <div class="pane strip" :class="{ overlay: narrow && overlay === 'strip', hidden: narrow ? overlay !== 'strip' : !stripOpen }">
+        <DeckHead
+          v-if="!narrow" :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
+          @switch="switcherOpen = true" @step="stepDeck"
+        />
         <FilmStrip />
       </div>
       <div
         class="divider d1" role="separator" aria-orientation="vertical" aria-label="Resize the slides pane"
         @pointerdown="startResize('strip', $event)"
-      ></div>
-      <main class="main">
-        <SlideStage />
-        <NarrationEditor @voices="voicesOpen = true" />
+      >
+        <button
+          class="fold left" type="button" :title="stripOpen ? 'Hide the slides' : 'Show the slides'"
+          :aria-label="stripOpen ? 'Hide the slides' : 'Show the slides'" data-testid="fold-strip"
+          @pointerdown.stop @click="toggle('strip')"
+        >
+          <AppIcon :name="stripOpen ? 'prev' : 'next'" :size="14" />
+        </button>
+      </div>
+      <main ref="mainEl" class="main" :style="mainStyle">
+        <div class="stage-area"><SlideStage /></div>
+        <div
+          class="split"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize the slide and the narration"
+          tabindex="0"
+          data-testid="stage-split"
+          @pointerdown="startSplit"
+          @keydown="onSplitKey"
+        ></div>
+        <div class="narration-area"><NarrationEditor @voices="voicesOpen = true" /></div>
       </main>
       <div
         class="divider d2" role="separator" aria-orientation="vertical" aria-label="Resize the console"
         @pointerdown="startResize('console', $event)"
-      ></div>
+      >
+        <button
+          class="fold right" type="button" :title="consoleOpen ? 'Hide the console' : 'Show the console'"
+          :aria-label="consoleOpen ? 'Hide the console' : 'Show the console'" data-testid="fold-console"
+          @pointerdown.stop @click="toggle('console')"
+        >
+          <AppIcon :name="consoleOpen ? 'next' : 'prev'" :size="14" />
+        </button>
+      </div>
       <div class="pane console" :class="{ overlay: narrow && overlay === 'console', hidden: narrow ? overlay !== 'console' : !consoleOpen }">
         <div class="tabs" role="tablist" aria-label="Console">
           <button
@@ -390,12 +438,10 @@ function pick(deck: LibraryDeckDTO): void {
       </div>
     </div>
 
-    <footer class="footer mono">
-      <span class="flash" :class="editor.flashMessage?.kind" data-testid="flash" role="status">
-        {{ editor.flashMessage?.text ?? '' }}
-      </span>
-      <span class="hints">←→ slides · Ctrl+K decks · saves automatically · Ctrl+S saves now</span>
-    </footer>
+    <!-- short-lived messages ("Copied", "Exported …") float above the work -->
+    <p v-if="editor.flashMessage" class="toast" :class="editor.flashMessage.kind" data-testid="flash" role="status">
+      {{ editor.flashMessage.text }}
+    </p>
 
     <DeckSwitcher :open="switcherOpen" :current="token" @close="switcherOpen = false" @pick="pick" />
     <VoicesDialog :open="voicesOpen" @close="voicesOpen = false" />
@@ -406,81 +452,31 @@ function pick(deck: LibraryDeckDTO): void {
 
 <style scoped>
 .editor-page {
-  display: grid;
-  grid-template-rows: 52px 1fr 28px;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 .header {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: var(--space-3);
-  padding: 0 var(--space-4);
-  background: rgb(21 26 34 / 92%);
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-2);
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-.deck {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-}
-.deck-name {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  max-width: 40vw;
-  overflow: hidden;
-  padding: 3px var(--space-2) 3px var(--space-3);
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  color: var(--text);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-.deck-name:hover {
-  border-color: var(--accent-deep);
-}
-.spacer {
+.header .bar-head {
   flex: 1;
-}
-.save {
-  font-size: var(--text-xs);
-  color: var(--dim);
-}
-.save.saved {
-  color: var(--ok);
-}
-.save.unsaved,
-.save.saving {
-  color: var(--warn);
-}
-.save.conflict,
-.save.error {
-  color: var(--err);
-}
-.pill {
-  padding: 2px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-.pill.good {
-  color: var(--ok);
-  border-color: rgb(126 224 138 / 35%);
-}
-.pill.bad {
-  color: var(--err);
-  border-color: rgb(255 107 107 / 45%);
-  background: var(--err-fill);
+  min-width: 0;
+  padding: 0;
+  border: 0;
 }
 .body {
   position: relative;
   display: grid;
+  flex: 1;
   min-height: 0;
 }
 .pane {
@@ -491,6 +487,10 @@ function pick(deck: LibraryDeckDTO): void {
 }
 .pane.strip {
   grid-area: strip;
+}
+.pane.strip:not(.hidden) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 .pane.console:not(.hidden) {
   display: grid;
@@ -561,8 +561,37 @@ function pick(deck: LibraryDeckDTO): void {
   right: 0;
 }
 .divider {
+  position: relative;
+  z-index: 3;
   background: var(--line);
   cursor: col-resize;
+}
+/* the tab on each divider folds its pane away (and back) */
+.fold {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 40px;
+  padding: 0;
+  transform: translateY(-50%);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  cursor: pointer;
+}
+.fold:hover {
+  color: var(--text);
+  border-color: var(--accent-deep);
+}
+.fold.left {
+  left: 0;
+  border-radius: 0 6px 6px 0;
+}
+.fold.right {
+  right: 0;
+  border-radius: 6px 0 0 6px;
 }
 .divider:hover {
   background: var(--accent-deep);
@@ -572,56 +601,72 @@ function pick(deck: LibraryDeckDTO): void {
 }
 .main {
   display: grid;
-  align-content: start;
-  gap: var(--space-4);
+  grid-template-rows: var(--stage-px) 6px minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* the slide fits the stage area's height, less the player bar under it */
+  --stage-h: calc(var(--stage-px) - 84px);
+}
+.stage-area {
+  display: grid;
+  align-content: center;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--space-3) var(--space-5) var(--space-2);
+}
+.split {
+  background: var(--line);
+  cursor: row-resize;
+}
+.split:hover,
+.split:focus-visible {
+  background: var(--accent-deep);
+}
+.narration-area {
+  display: grid;
+  align-content: start;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-4) var(--space-5) 48px;
 }
-.main > * {
-  width: min(100%, 980px);
+.stage-area > * {
+  width: 100%; /* the slide is sized by the area's height, not a fixed cap */
+}
+.narration-area > * {
+  width: min(100%, 980px); /* long text lines are hard to read */
   justify-self: center;
 }
-.footer {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: 0 var(--space-4);
-  overflow: hidden;
-  background: var(--surface);
-  border-top: 1px solid var(--line);
-  font-size: var(--text-xs);
-  white-space: nowrap;
+.toast {
+  position: fixed;
+  bottom: var(--space-4);
+  left: 50%;
+  z-index: 30;
+  max-width: min(640px, 90vw);
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  transform: translateX(-50%);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  color: var(--text);
+  font-size: var(--text-sm);
+  pointer-events: none;
 }
-.flash {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--dim);
-}
-.flash.ok {
+.toast.ok {
   color: var(--ok);
 }
-.flash.warn {
+.toast.warn {
   color: var(--warn);
 }
-.flash.err {
+.toast.err {
   color: var(--err);
   font-weight: 600;
-}
-.hints {
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--dim);
 }
 .load-error {
   padding: var(--space-6);
   color: var(--err);
 }
-@media (width < 760px) {
-  .hints {
-    display: none;
-  }
-}
+
 </style>

@@ -190,6 +190,7 @@ def test_block_editing_add_reorder_delete_and_attributes(
     tid(page, "pause-secs-2").fill("1.5")
     tid(page, "pause-secs-2").press("Enter")
     tid(page, "seg-up-2").click()  # the pause moves between the lines
+    tid(page, "usettings-2").click()  # voice/pace/note are folded away by default
     tid(page, "upace-2").select_option("slow")
     assert _eventually(
         lambda: (
