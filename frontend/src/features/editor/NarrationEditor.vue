@@ -5,6 +5,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
+import { useReviewStore } from '@/stores/review'
 
 import { hasSilenceFields, moveSeg, newPause, newSpeech, speechIndexes, type EditSeg } from './narration'
 import PauseCard from './PauseCard.vue'
@@ -17,7 +18,10 @@ const emit = defineEmits<{ voices: [] }>()
 const editor = useEditorStore()
 const generation = useGenerationStore()
 const player = usePlayerStore()
+const review = useReviewStore()
 const root = ref<HTMLElement | null>(null)
+/** Under review: how this slide's narration changed since the base, word by word. */
+const diff = computed(() => (review.active ? (review.data?.diffs[slideId.value] ?? null) : null))
 
 const slideId = computed(() => editor.currentId)
 const block = computed(() => editor.draftFor(slideId.value))
@@ -130,10 +134,22 @@ function onKey(event: KeyboardEvent): void {
       </button>
     </header>
 
-    <p v-if="!block" class="notice warn-text">
+    <p v-if="diff" class="diff" data-testid="narration-diff">
+      <span class="section-title">Narration changes</span>
+      <template v-for="([op, word], i) in diff" :key="i">
+        <del v-if="op === '-'">{{ word }}</del>
+        <ins v-else-if="op === '+'">{{ word }}</ins>
+        <span v-else>{{ word }}</span>{{ ' ' }}
+      </template>
+    </p>
+    <p v-if="review.viewingRemoved" class="notice dim-text">
+      <span class="mono">@{{ review.viewingRemoved }}</span> was removed since the review started — its
+      narration can't be edited here. Its conversations are in the Review tab.
+    </p>
+    <p v-else-if="!block" class="notice warn-text">
       This page has no slide id — add <code>\ssid</code> in the source to narrate it.
     </p>
-    <template v-else-if="editor.meta">
+    <template v-else-if="editor.meta && !review.viewingRemoved">
       <TransitionPicker v-model="block.transitionIn" which="in" :meta="editor.meta" @update:model-value="commit" />
       <SilenceField
         v-if="hasSilenceFields(block)" v-model="block.start as number" which="start"
@@ -199,6 +215,26 @@ function onKey(event: KeyboardEvent): void {
 .cards {
   display: grid;
   gap: var(--space-2);
+}
+.diff {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+.diff .section-title {
+  margin-right: var(--space-2);
+}
+.diff del {
+  color: var(--err);
+}
+.diff ins {
+  color: var(--ok);
+  text-decoration: none;
+  border-bottom: 1px solid var(--ok);
 }
 .empty,
 .notice {

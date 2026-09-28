@@ -215,6 +215,64 @@
         "title": "ClipRef",
         "type": "object"
       },
+      "ConversationDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_deck": {
+            "title": "Is Deck",
+            "type": "boolean"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageDTO"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "slides": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Slides",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "turn": {
+            "enum": [
+              "author",
+              "agent"
+            ],
+            "title": "Turn",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slides",
+          "origin",
+          "status",
+          "turn",
+          "is_deck",
+          "messages"
+        ],
+        "title": "ConversationDTO",
+        "type": "object"
+      },
       "CountDTO": {
         "additionalProperties": false,
         "properties": {
@@ -1110,6 +1168,35 @@
         "title": "LibrarySectionDTO",
         "type": "object"
       },
+      "MessageDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "author": {
+            "enum": [
+              "author",
+              "agent",
+              "system"
+            ],
+            "title": "Author",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "author",
+          "at",
+          "text"
+        ],
+        "title": "MessageDTO",
+        "type": "object"
+      },
       "MetaDTO": {
         "additionalProperties": false,
         "description": "Static facts the editor needs: the transition gallery and the engines.",
@@ -1369,6 +1456,269 @@
         "title": "RenderPagesJob",
         "type": "object"
       },
+      "ReviewAccept": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation": {
+            "title": "Conversation",
+            "type": "string"
+          },
+          "type": {
+            "const": "accept",
+            "default": "accept",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation"
+        ],
+        "title": "ReviewAccept",
+        "type": "object"
+      },
+      "ReviewClear": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "clear",
+            "default": "clear",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ReviewClear",
+        "type": "object"
+      },
+      "ReviewComment": {
+        "additionalProperties": false,
+        "properties": {
+          "slides": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Slides",
+            "type": "array"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "comment",
+            "default": "comment",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slides",
+          "text"
+        ],
+        "title": "ReviewComment",
+        "type": "object"
+      },
+      "ReviewDTO": {
+        "additionalProperties": false,
+        "description": "Review for one deck. ``active`` false means no review has been started.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "badges": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Badges",
+            "type": "object"
+          },
+          "base_images": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Base Images",
+            "type": "object"
+          },
+          "base_order": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Base Order",
+            "type": "array"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/SlideChangeDTO"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationDTO"
+            },
+            "title": "Conversations",
+            "type": "array"
+          },
+          "diffs": {
+            "additionalProperties": {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Diffs",
+            "type": "object"
+          },
+          "final_build": {
+            "title": "Final Build",
+            "type": "boolean"
+          },
+          "pending": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Pending",
+            "type": "object"
+          },
+          "unfiled": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unfiled",
+            "type": "array"
+          }
+        },
+        "required": [
+          "active",
+          "final_build",
+          "conversations",
+          "changes",
+          "unfiled",
+          "pending",
+          "badges",
+          "base_order",
+          "base_images",
+          "diffs"
+        ],
+        "title": "ReviewDTO",
+        "type": "object"
+      },
+      "ReviewFileUnrequested": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "file_unrequested",
+            "default": "file_unrequested",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ReviewFileUnrequested",
+        "type": "object"
+      },
+      "ReviewOutcomeDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "focus": {
+            "title": "Focus",
+            "type": "boolean"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "conversation",
+          "count",
+          "focus"
+        ],
+        "title": "ReviewOutcomeDTO",
+        "type": "object"
+      },
+      "ReviewReopen": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation": {
+            "title": "Conversation",
+            "type": "string"
+          },
+          "type": {
+            "const": "reopen",
+            "default": "reopen",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation"
+        ],
+        "title": "ReviewReopen",
+        "type": "object"
+      },
+      "ReviewReply": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation": {
+            "title": "Conversation",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "reply",
+            "default": "reply",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation",
+          "text"
+        ],
+        "title": "ReviewReply",
+        "type": "object"
+      },
+      "ReviewStart": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "start",
+            "default": "start",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ReviewStart",
+        "type": "object"
+      },
       "RevisionsDTO": {
         "additionalProperties": false,
         "properties": {
@@ -1449,6 +1799,67 @@
           "end"
         ],
         "title": "SilenceDefaultsDTO",
+        "type": "object"
+      },
+      "SlideChangeDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "base_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Index"
+          },
+          "current_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Index"
+          },
+          "image": {
+            "title": "Image",
+            "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "moved": {
+            "title": "Moved",
+            "type": "boolean"
+          },
+          "narration": {
+            "title": "Narration",
+            "type": "boolean"
+          },
+          "slide_id": {
+            "title": "Slide Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slide_id",
+          "kinds",
+          "image",
+          "narration",
+          "moved",
+          "base_index",
+          "current_index"
+        ],
+        "title": "SlideChangeDTO",
         "type": "object"
       },
       "SlideEdit": {
@@ -2372,6 +2783,170 @@
           }
         },
         "summary": "Get Pages"
+      }
+    },
+    "/api/v1/decks/{token}/review": {
+      "get": {
+        "description": "Review state for the deck (comparing pages can take a moment on a big deck).",
+        "operationId": "get_review_api_v1_decks__token__review_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Review"
+      }
+    },
+    "/api/v1/decks/{token}/review/commands": {
+      "post": {
+        "operationId": "post_review_command_api_v1_decks__token__review_commands_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "accept": "#/components/schemas/ReviewAccept",
+                    "clear": "#/components/schemas/ReviewClear",
+                    "comment": "#/components/schemas/ReviewComment",
+                    "file_unrequested": "#/components/schemas/ReviewFileUnrequested",
+                    "reopen": "#/components/schemas/ReviewReopen",
+                    "reply": "#/components/schemas/ReviewReply",
+                    "start": "#/components/schemas/ReviewStart"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ReviewStart"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviewComment"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviewReply"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviewAccept"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviewReopen"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviewClear"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReviewFileUnrequested"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewOutcomeDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Post Review Command"
       }
     },
     "/api/v1/decks/{token}/slides/{slide_id}": {

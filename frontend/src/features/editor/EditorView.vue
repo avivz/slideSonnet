@@ -13,6 +13,8 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
+import { useReviewStore } from '@/stores/review'
+import ReviewPanel from '@/features/review/ReviewPanel.vue'
 
 import ConflictDialog from './ConflictDialog.vue'
 import ConsolePanel from './ConsolePanel.vue'
@@ -27,6 +29,8 @@ const router = useRouter()
 const editor = useEditorStore()
 const generation = useGenerationStore()
 const player = usePlayerStore()
+const review = useReviewStore()
+const consoleTab = ref<'audio' | 'review'>('audio')
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const switcherOpen = ref(false)
 const voicesOpen = ref(false)
@@ -135,6 +139,7 @@ async function openDeck(deckToken: string): Promise<void> {
   document.title = `${editor.snapshot.name} · slideSonnet`
   await generation.refresh()
   void generation.focus(editor.currentId)
+  void review.refresh()
   if (editor.images.some((img) => img === null)) {
     renderAsked = editor.snapshot.revisions.pdf
     void editor.client.startJob(deckToken, { kind: 'render_pages', near: editor.index }).catch(() => undefined)
@@ -183,7 +188,19 @@ events.onResync(() => {
   void generation.refresh()
 })
 
-watch(() => editor.externalChanges, () => void generation.sweep())
+watch(() => editor.externalChanges, () => {
+  void generation.sweep()
+  void review.fileUnrequested() // an outside narration edit, under review: file it
+})
+// the review log changed (an agent replied), or a recompile landed: relight review
+watch(
+  () => [editor.snapshot?.revisions.review, editor.snapshot?.revisions.pdf] as const,
+  (now, before) => {
+    if (!before || before[0] === undefined) return
+    if (now[1] !== before[1]) void review.fileUnrequested().then(() => review.refresh())
+    else if (now[0] !== before[0]) void review.refresh()
+  },
+)
 // a recompiled PDF drops its old page images: render the new ones (once per change)
 let renderAsked = ''
 watch(
@@ -224,14 +241,20 @@ function onKey(event: KeyboardEvent): void {
     void editor.flush()
     return
   }
-  if (typing(event.target) || event.ctrlKey || event.metaKey || event.shiftKey) return
-  if (key === 'ArrowLeft' || key === 'ArrowUp') {
-    event.preventDefault()
-    editor.go(editor.index - 1)
-  } else if (key === 'ArrowRight' || key === 'ArrowDown') {
-    event.preventDefault()
-    editor.go(editor.index + 1)
+  if (typing(event.target) || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+  if (review.active && key.toLowerCase() === 'd') {
+    review.beforeOnly = !review.beforeOnly // the base version full-size / side by side
+    return
   }
+  if (review.active && key.toLowerCase() === 'n') {
+    review.nextYourTurn()
+    return
+  }
+  const delta = key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : key === 'ArrowRight' || key === 'ArrowDown' ? 1 : 0
+  if (delta === 0) return
+  event.preventDefault()
+  if (review.step(delta)) return // within a conversation, or off a removed slide
+  editor.go(editor.index + delta)
 }
 
 function onBeforeUnload(event: BeforeUnloadEvent): void {
@@ -347,7 +370,23 @@ function pick(deck: LibraryDeckDTO): void {
         @pointerdown="startResize('console', $event)"
       ></div>
       <div class="pane console" :class="{ overlay: narrow && overlay === 'console', hidden: narrow ? overlay !== 'console' : !consoleOpen }">
-        <ConsolePanel :confirm="confirm" @voices="voicesOpen = true" />
+        <div class="tabs" role="tablist" aria-label="Console">
+          <button
+            role="tab" type="button" class="tab" :class="{ on: consoleTab === 'audio' }"
+            :aria-selected="consoleTab === 'audio'" data-testid="console-tab-audio" @click="consoleTab = 'audio'"
+          >
+            Audio
+          </button>
+          <button
+            role="tab" type="button" class="tab" :class="{ on: consoleTab === 'review' }"
+            :aria-selected="consoleTab === 'review'" data-testid="console-tab-review" @click="consoleTab = 'review'"
+          >
+            Review
+            <span v-if="review.waitingHere" class="count" data-testid="console-tab-review-badge">{{ review.waitingHere }}</span>
+          </button>
+        </div>
+        <ConsolePanel v-show="consoleTab === 'audio'" :confirm="confirm" @voices="voicesOpen = true" />
+        <div v-show="consoleTab === 'review'" class="review-pane"><ReviewPanel /></div>
       </div>
     </div>
 
@@ -452,6 +491,44 @@ function pick(deck: LibraryDeckDTO): void {
 }
 .pane.strip {
   grid-area: strip;
+}
+.pane.console:not(.hidden) {
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--dim);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.tab.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.count {
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+.review-pane {
+  overflow-y: auto;
+  padding: var(--space-4);
 }
 .pane.console {
   grid-area: console;

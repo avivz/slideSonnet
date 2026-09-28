@@ -6,13 +6,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
-- **A new deck editor (preview).** `slidesonnet edit --frontend vue` opens the
-  redesigned editor: the player sits right under the slide, deck-wide tools
-  (engine, voices, generate, export) are at the top of the console, the
-  filmstrip labels each slide's state, and typing is saved as you go — no need
-  to leave the field. If someone else edits the narration file while you're
-  typing on the same slide, both versions are shown and you choose. Generation
-  is shared between tabs and keeps going if you reload.
+- **A new deck editor.** `slidesonnet edit` now opens the redesigned editor:
+  the player sits right under the slide, deck-wide tools (engine, voices,
+  generate, export) are at the top of the console, the filmstrip labels each
+  slide's state, and typing is saved as you go — no need to leave the field. If
+  someone else edits the narration file while you're typing on the same slide,
+  both versions are shown and you choose. Generation is shared between tabs and
+  keeps going if you reload. The **Review** tab has everything it had before —
+  conversations, before/after pictures, word-level narration changes, removed
+  slides — and also lists slides a conversation names that aren't in the PDF
+  yet. For now `--frontend nicegui` still opens the previous editor.
 - **Review tools in the editor.** "Start review" (or `slidesonnet review
   snapshot`) makes the deck as it is now the base. From then on the console's
   **Review** tab (beside **Audio**, badged when something on this slide waits

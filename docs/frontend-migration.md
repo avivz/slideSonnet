@@ -317,6 +317,11 @@ mockup to redirect.
 
 Checkpoint: a full review round with an agent on a real deck.
 
+*As built:* see the Phase 5 notes in `docs/frontend-parity.md`. With the
+review tab in, nothing the NiceGUI editor offers is missing, so the Vue
+editor became the default at the end of this phase (`--frontend nicegui`
+keeps the old one reachable until Phase 6 deletes it).
+
 ### Phase 6 — Remove NiceGUI
 
 - Move the routers to a plain FastAPI app factory (`create_app`, explicit

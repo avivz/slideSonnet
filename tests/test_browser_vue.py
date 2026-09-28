@@ -260,3 +260,33 @@ def test_keyboard_deck_switching(page: Page, server: Server, tmp_path: Path) -> 
     page.keyboard.press("Enter")
     expect(tid(page, "deck-switcher")).to_contain_text("intro")
     expect(tid(page, "utext-0")).to_have_value("Line in intro.")
+
+
+@pytest.mark.timeout(120)
+def test_a_review_round_with_the_agent(page: Page, server: Server, tmp_path: Path) -> None:
+    """Start, compare a changed slide, send a note, see the agent's reply arrive, accept."""
+    import fitz
+
+    from slidesonnet.review import ops
+
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    page.goto(server(pdf))
+    tid(page, "console-tab-review").click()
+    tid(page, "review-start").click()
+    expect(tid(page, "review-clear")).to_be_visible()
+    doc = fitz.open(pdf)  # the author recompiles with slide 2 changed
+    doc[1].insert_text((40, 200), "a new line on the slide", fontsize=16)
+    doc.saveIncr()
+    doc.close()
+    tid(page, "thumb-1").click()
+    expect(tid(page, "stage-before")).to_be_visible(timeout=20_000)  # before | now
+    note = tid(page, "slide-note")
+    note.fill("Why did this change?")
+    note.press("Enter")
+    expect(page.get_by_text("Why did this change?")).to_be_visible()
+    conv = ops.open_slide_conversations(pdf)[0].id
+    ops.reply(pdf, conv, "To show the next step.", author="agent")
+    expect(page.get_by_text("To show the next step.")).to_be_visible(timeout=15_000)
+    expect(tid(page, "thumb-review-1")).to_have_text("your turn")
+    tid(page, f"accept-{conv}").click()
+    expect(tid(page, "thumb-review-1")).to_have_text("accepted")

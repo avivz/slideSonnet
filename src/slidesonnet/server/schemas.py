@@ -398,6 +398,108 @@ class CountDTO(_Model):
     count: int
 
 
+# ---- review ---------------------------------------------------------------------------
+class MessageDTO(_Model):
+    author: Literal["author", "agent", "system"]
+    at: str
+    text: str
+
+
+class ConversationDTO(_Model):
+    id: str
+    slides: list[str]
+    origin: str
+    status: Literal["open", "closed"]
+    turn: Literal["author", "agent"]
+    is_deck: bool
+    messages: list[MessageDTO]
+
+
+class SlideChangeDTO(_Model):
+    slide_id: str
+    kinds: list[str]
+    image: bool
+    narration: bool
+    moved: bool
+    base_index: int | None
+    current_index: int | None
+
+
+class ReviewDTO(_Model):
+    """Review for one deck. ``active`` false means no review has been started."""
+
+    active: bool
+    final_build: bool
+    conversations: list[ConversationDTO]
+    changes: list[SlideChangeDTO]
+    #: Changed slides no conversation covers yet.
+    unfiled: list[str]
+    #: Declared in an open conversation, but in neither the base nor the PDF yet.
+    pending: dict[str, list[str]]
+    #: slide id → "your-turn" | "agent-turn" | "closed" | "unfiled".
+    badges: dict[str, str]
+    #: The base version's slide order (removed slides sit after their old predecessor).
+    base_order: list[str]
+    #: Base-version page images of changed or removed slides.
+    base_images: dict[str, str]
+    #: Word diffs of changed narration: ``[op, word]`` with op ``=``, ``-``, or ``+``.
+    diffs: dict[str, list[list[str]]]
+
+
+class ReviewStart(_Model):
+    type: Literal["start"] = "start"
+
+
+class ReviewComment(_Model):
+    type: Literal["comment"] = "comment"
+    slides: list[str]
+    text: str = Field(min_length=1)
+
+
+class ReviewReply(_Model):
+    type: Literal["reply"] = "reply"
+    conversation: str
+    text: str = Field(min_length=1)
+
+
+class ReviewAccept(_Model):
+    type: Literal["accept"] = "accept"
+    conversation: str
+
+
+class ReviewReopen(_Model):
+    type: Literal["reopen"] = "reopen"
+    conversation: str
+
+
+class ReviewClear(_Model):
+    type: Literal["clear"] = "clear"
+
+
+class ReviewFileUnrequested(_Model):
+    type: Literal["file_unrequested"] = "file_unrequested"
+
+
+ReviewCommand = Annotated[
+    ReviewStart
+    | ReviewComment
+    | ReviewReply
+    | ReviewAccept
+    | ReviewReopen
+    | ReviewClear
+    | ReviewFileUnrequested,
+    Field(discriminator="type"),
+]
+
+
+class ReviewOutcomeDTO(_Model):
+    message: str
+    conversation: str | None
+    count: int
+    #: Point the user at this conversation (a big batch of unrequested changes).
+    focus: bool
+
+
 class SessionDTO(_Model):
     #: Sent back as ``X-SlideSonnet-Session`` on every mutating request.
     token: str

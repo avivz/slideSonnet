@@ -150,6 +150,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/decks/{token}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Review
+         * @description Review state for the deck (comparing pages can take a moment on a big deck).
+         */
+        get: operations["get_review_api_v1_decks__token__review_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decks/{token}/review/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Review Command */
+        post: operations["post_review_command_api_v1_decks__token__review_commands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/decks/{token}/slides/{slide_id}": {
         parameters: {
             query?: never;
@@ -399,6 +436,29 @@ export interface components {
             slide_id: string;
             /** Speech Index */
             speech_index: number;
+        };
+        /** ConversationDTO */
+        ConversationDTO: {
+            /** Id */
+            id: string;
+            /** Is Deck */
+            is_deck: boolean;
+            /** Messages */
+            messages: components["schemas"]["MessageDTO"][];
+            /** Origin */
+            origin: string;
+            /** Slides */
+            slides: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "closed";
+            /**
+             * Turn
+             * @enum {string}
+             */
+            turn: "author" | "agent";
         };
         /** CountDTO */
         CountDTO: {
@@ -716,6 +776,18 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** MessageDTO */
+        MessageDTO: {
+            /** At */
+            at: string;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author: "author" | "agent" | "system";
+            /** Text */
+            text: string;
+        };
         /**
          * MetaDTO
          * @description Static facts the editor needs: the transition gallery and the engines.
@@ -818,6 +890,119 @@ export interface components {
              */
             near: number;
         };
+        /** ReviewAccept */
+        ReviewAccept: {
+            /** Conversation */
+            conversation: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "accept";
+        };
+        /** ReviewClear */
+        ReviewClear: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "clear";
+        };
+        /** ReviewComment */
+        ReviewComment: {
+            /** Slides */
+            slides: string[];
+            /** Text */
+            text: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "comment";
+        };
+        /**
+         * ReviewDTO
+         * @description Review for one deck. ``active`` false means no review has been started.
+         */
+        ReviewDTO: {
+            /** Active */
+            active: boolean;
+            /** Badges */
+            badges: {
+                [key: string]: string;
+            };
+            /** Base Images */
+            base_images: {
+                [key: string]: string;
+            };
+            /** Base Order */
+            base_order: string[];
+            /** Changes */
+            changes: components["schemas"]["SlideChangeDTO"][];
+            /** Conversations */
+            conversations: components["schemas"]["ConversationDTO"][];
+            /** Diffs */
+            diffs: {
+                [key: string]: string[][];
+            };
+            /** Final Build */
+            final_build: boolean;
+            /** Pending */
+            pending: {
+                [key: string]: string[];
+            };
+            /** Unfiled */
+            unfiled: string[];
+        };
+        /** ReviewFileUnrequested */
+        ReviewFileUnrequested: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "file_unrequested";
+        };
+        /** ReviewOutcomeDTO */
+        ReviewOutcomeDTO: {
+            /** Conversation */
+            conversation: string | null;
+            /** Count */
+            count: number;
+            /** Focus */
+            focus: boolean;
+            /** Message */
+            message: string;
+        };
+        /** ReviewReopen */
+        ReviewReopen: {
+            /** Conversation */
+            conversation: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reopen";
+        };
+        /** ReviewReply */
+        ReviewReply: {
+            /** Conversation */
+            conversation: string;
+            /** Text */
+            text: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reply";
+        };
+        /** ReviewStart */
+        ReviewStart: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "start";
+        };
         /** RevisionsDTO */
         RevisionsDTO: {
             /** Config */
@@ -850,6 +1035,23 @@ export interface components {
             end: number;
             /** Start */
             start: number;
+        };
+        /** SlideChangeDTO */
+        SlideChangeDTO: {
+            /** Base Index */
+            base_index: number | null;
+            /** Current Index */
+            current_index: number | null;
+            /** Image */
+            image: boolean;
+            /** Kinds */
+            kinds: string[];
+            /** Moved */
+            moved: boolean;
+            /** Narration */
+            narration: boolean;
+            /** Slide Id */
+            slide_id: string;
         };
         /** SlideEdit */
         SlideEdit: {
@@ -1374,6 +1576,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PagesDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_review_api_v1_decks__token__review_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_review_command_api_v1_decks__token__review_commands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewStart"] | components["schemas"]["ReviewComment"] | components["schemas"]["ReviewReply"] | components["schemas"]["ReviewAccept"] | components["schemas"]["ReviewReopen"] | components["schemas"]["ReviewClear"] | components["schemas"]["ReviewFileUnrequested"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOutcomeDTO"];
                 };
             };
             /** @description Not Found */

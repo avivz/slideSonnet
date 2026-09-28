@@ -21,12 +21,13 @@ from slidesonnet.audio.synth import ref_cache_status
 from slidesonnet.cache import resolve_audio_dir
 from slidesonnet.config import load_config
 from slidesonnet.deck import resolve_voice_files
-from slidesonnet.exceptions import ConfigError
+from slidesonnet.exceptions import ConfigError, SlideSonnetError
 from slidesonnet.gui.library import DeckEntry
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import Deck
 from slidesonnet.server import editing, snapshots
+from slidesonnet.server import review as review_service
 from slidesonnet.server.context import (
     ApiError,
     ApiRoute,
@@ -68,6 +69,9 @@ from slidesonnet.server.schemas import (
     PreviewJob,
     ProgressDTO,
     RenderPagesJob,
+    ReviewCommand,
+    ReviewDTO,
+    ReviewOutcomeDTO,
     SaveResponse,
     SessionDTO,
     SlideEdit,
@@ -584,6 +588,37 @@ def get_meta() -> MetaDTO:
             for n, b in sorted(BACKENDS.items())
         ],
         speeds=[1.0, 1.25, 1.5, 2.0],
+    )
+
+
+# ---- review ----------------------------------------------------------------------------
+@router.get("/decks/{token}/review", response_model=ReviewDTO)
+def get_review(request: Request, token: str) -> ReviewDTO:
+    """Review state for the deck (comparing pages can take a moment on a big deck)."""
+    entry = _entry(_ctx(request), token)
+    try:
+        return ReviewDTO.model_validate(review_service.review_snapshot(entry))
+    except (SidecarError, ConfigError) as exc:
+        raise _load_error(exc) from exc
+
+
+@router.post("/decks/{token}/review/commands", response_model=ReviewOutcomeDTO)
+def post_review_command(
+    request: Request, token: str, body: ReviewCommand, _m: None = Mutation
+) -> ReviewOutcomeDTO:
+    ctx = _ctx(request)
+    entry = _entry(ctx, token)
+    args = body.model_dump(exclude={"type"})
+    try:
+        outcome = review_service.run_command(entry, body.type, args)
+    except SlideSonnetError as exc:
+        raise ApiError(409, "review_refused", str(exc)) from exc
+    ctx.announce_write(token, _service(entry).revisions())
+    return ReviewOutcomeDTO(
+        message=outcome.message,
+        conversation=outcome.conversation,
+        count=outcome.count,
+        focus=outcome.count > review_service.MASS_EDIT_THRESHOLD,
     )
 
 
