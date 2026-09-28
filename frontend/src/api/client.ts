@@ -28,7 +28,7 @@ export type ReviewDTO = Schemas['ReviewDTO']
 export type ConversationDTO = Schemas['ConversationDTO']
 export type ReviewOutcomeDTO = Schemas['ReviewOutcomeDTO']
 export type ReviewCommand =
-  | Schemas['ReviewStart']
+  | Schemas['ReviewMarkSeen']
   | Schemas['ReviewComment']
   | Schemas['ReviewReply']
   | Schemas['ReviewAccept']

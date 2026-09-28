@@ -1520,7 +1520,7 @@
       },
       "ReviewDTO": {
         "additionalProperties": false,
-        "description": "Review for one deck. ``active`` false means no review has been started.",
+        "description": "Review for one deck. ``active`` false: no base could be taken (a final build).",
         "properties": {
           "active": {
             "title": "Active",
@@ -1624,6 +1624,20 @@
         "title": "ReviewFileUnrequested",
         "type": "object"
       },
+      "ReviewMarkSeen": {
+        "additionalProperties": false,
+        "description": "Everything as it is now becomes the base: no changes left to look at.",
+        "properties": {
+          "type": {
+            "const": "mark_seen",
+            "default": "mark_seen",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ReviewMarkSeen",
+        "type": "object"
+      },
       "ReviewOutcomeDTO": {
         "additionalProperties": false,
         "properties": {
@@ -1704,19 +1718,6 @@
           "text"
         ],
         "title": "ReviewReply",
-        "type": "object"
-      },
-      "ReviewStart": {
-        "additionalProperties": false,
-        "properties": {
-          "type": {
-            "const": "start",
-            "default": "start",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "title": "ReviewStart",
         "type": "object"
       },
       "RevisionsDTO": {
@@ -2869,15 +2870,15 @@
                     "clear": "#/components/schemas/ReviewClear",
                     "comment": "#/components/schemas/ReviewComment",
                     "file_unrequested": "#/components/schemas/ReviewFileUnrequested",
+                    "mark_seen": "#/components/schemas/ReviewMarkSeen",
                     "reopen": "#/components/schemas/ReviewReopen",
-                    "reply": "#/components/schemas/ReviewReply",
-                    "start": "#/components/schemas/ReviewStart"
+                    "reply": "#/components/schemas/ReviewReply"
                   },
                   "propertyName": "type"
                 },
                 "oneOf": [
                   {
-                    "$ref": "#/components/schemas/ReviewStart"
+                    "$ref": "#/components/schemas/ReviewMarkSeen"
                   },
                   {
                     "$ref": "#/components/schemas/ReviewComment"

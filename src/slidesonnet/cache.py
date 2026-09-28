@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CACHE_DIRNAME = ".slidesonnet"
+#: Under the cache root: the review base, kept by every clean level (not regenerable).
+REVIEW_DIRNAME = "review"
 
 #: Environment variable naming the shared speech-clip pool (overrides the toml).
 AUDIO_DIR_ENV = "SLIDESONNET_AUDIO_DIR"

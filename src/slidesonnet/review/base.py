@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-from slidesonnet.cache import cache_root
+from slidesonnet.cache import REVIEW_DIRNAME, cache_root
 from slidesonnet.exceptions import ReviewError
 from slidesonnet.pdf.reader import is_final_build
 from slidesonnet.review.versions import DeckVersion, SlideVersion, capture
@@ -22,7 +22,7 @@ _FORMAT = 1
 
 
 def base_dir(pdf_path: Path) -> Path:
-    return cache_root(pdf_path) / "review" / pdf_path.stem
+    return cache_root(pdf_path) / REVIEW_DIRNAME / pdf_path.stem
 
 
 def _base_file(pdf_path: Path) -> Path:
@@ -31,6 +31,10 @@ def _base_file(pdf_path: Path) -> Path:
 
 def _pages_dir(pdf_path: Path) -> Path:
     return base_dir(pdf_path) / "pages"
+
+
+def has_base(pdf_path: Path) -> bool:
+    return _base_file(pdf_path).exists()
 
 
 def load_base(pdf_path: Path) -> DeckVersion | None:

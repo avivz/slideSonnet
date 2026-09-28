@@ -90,8 +90,15 @@ class ReviewModel:
         """Change signature of the log — the editor polls it to relight the panel."""
         return _stamp(self.review_path)
 
-    def start(self) -> None:
-        ops.start(self.pdf_path)
+    def ensure_base(self) -> None:
+        """Take the base now if the deck has none (quietly: no file beside the deck)."""
+        if self._base_version() is None:
+            ops.ensure_base(self.pdf_path)
+            self._base = None
+
+    def mark_seen(self) -> None:
+        """Everything as it is now becomes the base."""
+        base_mod.snapshot(self.pdf_path)
         self._base = None
 
     def pages_fresh(self) -> bool:

@@ -922,7 +922,7 @@ export interface components {
         };
         /**
          * ReviewDTO
-         * @description Review for one deck. ``active`` false means no review has been started.
+         * @description Review for one deck. ``active`` false: no base could be taken (a final build).
          */
         ReviewDTO: {
             /** Active */
@@ -962,6 +962,17 @@ export interface components {
              */
             type: "file_unrequested";
         };
+        /**
+         * ReviewMarkSeen
+         * @description Everything as it is now becomes the base: no changes left to look at.
+         */
+        ReviewMarkSeen: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "mark_seen";
+        };
         /** ReviewOutcomeDTO */
         ReviewOutcomeDTO: {
             /** Conversation */
@@ -994,14 +1005,6 @@ export interface components {
              * @enum {string}
              */
             type: "reply";
-        };
-        /** ReviewStart */
-        ReviewStart: {
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "start";
         };
         /** RevisionsDTO */
         RevisionsDTO: {
@@ -1667,7 +1670,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReviewStart"] | components["schemas"]["ReviewComment"] | components["schemas"]["ReviewReply"] | components["schemas"]["ReviewAccept"] | components["schemas"]["ReviewReopen"] | components["schemas"]["ReviewClear"] | components["schemas"]["ReviewFileUnrequested"];
+                "application/json": components["schemas"]["ReviewMarkSeen"] | components["schemas"]["ReviewComment"] | components["schemas"]["ReviewReply"] | components["schemas"]["ReviewAccept"] | components["schemas"]["ReviewReopen"] | components["schemas"]["ReviewClear"] | components["schemas"]["ReviewFileUnrequested"];
             };
         };
         responses: {

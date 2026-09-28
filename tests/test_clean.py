@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from slidesonnet.cache import audio_dir, cache_root, render_dir
-from slidesonnet.clean import CleanResult, clean, prune_local_orphans
+from slidesonnet.clean import CleanResult, KeepLevel, clean, prune_local_orphans
 from slidesonnet.hashing import audio_filename, text_hash
 from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.format import serialize_sidecar
@@ -53,6 +53,21 @@ def test_keep_nothing_removes_all(tmp_path: Path) -> None:
     result = clean(pdf, keep="nothing")
     assert not cache_root(pdf).exists()
     assert result.removed_files >= 3
+
+
+def test_no_clean_touches_the_review(tmp_path: Path) -> None:
+    """The review base is the author's record of what was already seen, not a cache:
+    even ``--keep nothing`` leaves it, or every change since would vanish unseen."""
+    pdf = _seed(tmp_path)
+    review = cache_root(pdf) / "review" / "deck"
+    (review / "pages").mkdir(parents=True)
+    (review / "base.json").write_text("{}", encoding="utf-8")
+    (review / "pages" / "ab12.png").write_bytes(b"img")
+    levels: tuple[KeepLevel, ...] = ("api", "nothing")
+    for keep in levels:
+        clean(pdf, keep=keep)
+        assert (review / "base.json").exists() and (review / "pages" / "ab12.png").exists()
+    assert not audio_dir(pdf).exists()  # everything else still goes
 
 
 def test_clean_no_cache(tmp_path: Path) -> None:

@@ -48,8 +48,9 @@ def _append(pdf_path: Path, *records: Record) -> None:
 
 
 def is_active(pdf_path: Path) -> bool:
-    """Review mode is on while ``<deck>.review`` exists."""
-    return review_path(pdf_path).exists()
+    """Review is on once the deck has a base (the editor takes one when it first
+    opens a deck) or a ``<deck>.review`` log (an older start, or the CLI)."""
+    return review_path(pdf_path).exists() or base_mod.has_base(pdf_path)
 
 
 def start(pdf_path: Path) -> DeckVersion:

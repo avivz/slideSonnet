@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from slidesonnet.pdf.reader import is_final_build
 from slidesonnet.review import ops
 from slidesonnet.server.decks import deck_service
 from slidesonnet.server.library import DeckEntry
@@ -58,9 +59,10 @@ def review_snapshot(entry: DeckEntry) -> dict[str, Any]:
     """Everything the review panel shows, as plain data."""
     pdf = entry.pdf_path
     model = review_model(pdf)
+    model.ensure_base()  # review is always on: the first look at a deck takes its base
     if not model.active:
         return {
-            "active": False, "final_build": False, "conversations": [], "changes": [],
+            "active": False, "final_build": is_final_build(pdf), "conversations": [], "changes": [],
             "unfiled": [], "pending": {}, "badges": {}, "base_order": [], "base_images": {},
             "diffs": {},
         }  # fmt: skip
@@ -132,9 +134,9 @@ def run_command(entry: DeckEntry, command: str, args: dict[str, Any]) -> Command
     """Apply one review command as the author. Raises SlideSonnetError on refusal."""
     pdf = entry.pdf_path
     model = review_model(pdf)
-    if command == "start":
-        model.start()
-        return CommandOutcome("Review started — changes are compared from here")
+    if command == "mark_seen":
+        model.mark_seen()
+        return CommandOutcome("Comparison reset — changes are shown from here")
     if command == "comment":
         conv_id = model.comment(list(args["slides"]), str(args["text"]))
         model.send()  # every note wakes a waiting agent: sending *is* the handover

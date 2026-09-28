@@ -21,6 +21,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   "slide 3 of 7". Missing clips are queued up front, asking once on a paid
   engine. Jumping to a slide plays on from there. The old whole-deck preview,
   transitions drawn, is now **Watch as video** (the film button).
+- **Review is always on.** The editor takes the base (what the deck looked like)
+  the first time it opens a deck, so there's no **Start review** button; the
+  `.review` file beside the deck appears only once something is written (a note,
+  or your own edit being recorded), not for decks you only looked at.
+  **Reset comparison** compares from the deck as it is now — for when a
+  recompile changed every slide — without closing or clearing any conversation.
+  No clean level (not even `--keep nothing`, nor `make clean`) deletes the base.
+- **Resuming after an edit plays the new words.** Pause, edit, play: the slide
+  is rebuilt and picks up at the start of the line it was paused in.
 
 - **A new deck editor.** `slidesonnet edit` now opens the redesigned editor:
   the player sits right under the slide, deck-wide tools (engine, voices,
@@ -190,6 +199,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   line kept room for its pause), so on a line of several rows it stopped short.
   The copy now sizes the line, and a pause follows the last word instead of
   sitting at the right edge.
+- **No half-sent slide pictures after a recompile.** Pages were re-rendered in
+  place, so a picture requested mid-render arrived broken ("Response content
+  longer than Content-Length" in the editor's log); each is now rendered aside
+  and swapped in whole, and the old one stays up until then.
 - **A recompiled PDF shows during playback.** A deck preview held the slide
   pictures from when it was built, so slides changed meanwhile showed their old
   look; the playing slide is now always drawn as it is now.

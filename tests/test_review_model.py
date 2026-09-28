@@ -29,19 +29,23 @@ def _edit_page(pdf: Path, index: int) -> None:
     doc.close()
 
 
-def test_inactive_until_started(tmp_path: Path) -> None:
+def test_on_once_the_deck_has_a_base(tmp_path: Path) -> None:
     pdf = _deck(tmp_path, ["a", "b"], "@a\nHi.\n")
     model = ReviewModel(pdf)
     assert not model.active
-    model.start()
-    assert model.active and ops.review_path(pdf).exists()
+    model.ensure_base()
+    assert model.active and not ops.review_path(pdf).exists()  # no file until something's said
+    assert model.status(_narr(pdf)).changes == []
+    _edit_page(pdf, 1)
+    assert model.status(_narr(pdf)).changes
+    model.mark_seen()
     assert model.status(_narr(pdf)).changes == []
 
 
 def test_changes_badges_and_conversations(tmp_path: Path) -> None:
     pdf = _deck(tmp_path, ["a", "b", "c"], "@a\nHi.\n")
     model = ReviewModel(pdf)
-    model.start()
+    model.ensure_base()
     _edit_page(pdf, 1)
     cid = model.comment(["b"], "why?")
     st = model.status(_narr(pdf))
@@ -59,7 +63,7 @@ def test_page_capture_is_cached_until_the_pdf_changes(tmp_path: Path, monkeypatc
 
     pdf = _deck(tmp_path, ["a"])
     model = ReviewModel(pdf)
-    model.start()
+    model.ensure_base()
     calls = {"n": 0}
     real = review_mod.capture_pages
 
@@ -79,10 +83,8 @@ def test_page_capture_is_cached_until_the_pdf_changes(tmp_path: Path, monkeypatc
 def test_file_unrequested_only_when_active(tmp_path: Path) -> None:
     pdf = _deck(tmp_path, ["a", "b"])
     model = ReviewModel(pdf)
-    ops.ensure_base(pdf)
-    _edit_page(pdf, 0)
-    assert model.file_unrequested(_narr(pdf)) is None  # not in review mode
-    model.start()
+    assert model.file_unrequested(_narr(pdf)) is None  # no base yet: nothing to compare
+    model.ensure_base()
     _edit_page(pdf, 1)
     filed = model.file_unrequested(_narr(pdf))
     assert filed is not None
@@ -94,8 +96,8 @@ def test_author_edits_noted_only_when_active(tmp_path: Path) -> None:
     pdf = _deck(tmp_path, ["a"])
     model = ReviewModel(pdf)
     model.note_edits({"a"})
-    assert not ops.review_path(pdf).exists()  # never starts review on its own
-    model.start()
+    assert not ops.review_path(pdf).exists()  # no base yet: nothing to note against
+    model.ensure_base()
     model.note_edits({"a"})
     assert any(c.origin == "author-edits" for c in ops.load(pdf).slide_conversations())
 
@@ -103,7 +105,7 @@ def test_author_edits_noted_only_when_active(tmp_path: Path) -> None:
 def test_narration_diff_and_base_image(tmp_path: Path) -> None:
     pdf = _deck(tmp_path, ["a"], "@a\nThe old words here.\n")
     model = ReviewModel(pdf)
-    model.start()
+    model.ensure_base()
     (tmp_path / "deck.narration").write_text(
         simple_narration("@a\nThe new words here.\n"), encoding="utf-8"
     )

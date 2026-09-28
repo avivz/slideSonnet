@@ -137,4 +137,16 @@ describe('review panel', () => {
     await note.trigger('keydown', { key: 'Enter' })
     await vi.waitFor(() => expect(sent).toEqual([{ type: 'comment', slides: ['a'], text: 'Too long.' }]))
   })
+
+  it('resets the comparison after asking, leaving the conversations alone', async () => {
+    const { sent } = await setup()
+    const w = mount(ReviewPanel, { attachTo: document.body })
+    await flushPromises()
+    const ask = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    await w.get('[data-testid="review-reset"]').trigger('click')
+    expect(sent).toEqual([]) // said no
+    await w.get('[data-testid="review-reset"]').trigger('click')
+    await vi.waitFor(() => expect(sent).toEqual([{ type: 'mark_seen' }]))
+    expect(ask).toHaveBeenCalledTimes(2)
+  })
 })

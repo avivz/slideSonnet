@@ -54,8 +54,9 @@ def _edit_page(pdf: Path, index: int) -> None:
 
 def test_a_review_round_through_the_api(client: TestClient, pdf: Path) -> None:
     token = _token(client)
-    assert client.get(f"/api/v1/decks/{token}/review").json()["active"] is False
-    _cmd(client, token, type="start")
+    first = client.get(f"/api/v1/decks/{token}/review").json()
+    assert first["active"] is True and first["changes"] == []  # the base is taken on first open
+    assert not ops.review_path(pdf).exists()  # looking leaves no file beside the deck
     _edit_page(pdf, 1)
     sidecar = pdf.with_suffix(".narration")
     sidecar.write_text(simple_narration("@a\nHello over there.\n@b\nSecond.\n"), "utf-8")
@@ -79,13 +80,16 @@ def test_a_review_round_through_the_api(client: TestClient, pdf: Path) -> None:
     _cmd(client, token, type="reopen", conversation=conv["conversation"])
     _cmd(client, token, type="accept", conversation=conv["conversation"])
     assert "Cleared 1" in _cmd(client, token, type="clear")["message"]
+    assert client.get(f"/api/v1/decks/{token}/review").json()["changes"]  # a: never discussed
+    assert "reset" in _cmd(client, token, type="mark_seen")["message"]
+    assert client.get(f"/api/v1/decks/{token}/review").json()["changes"] == []
 
 
 def test_unrequested_changes_are_filed_and_refusals_are_readable(
     client: TestClient, pdf: Path
 ) -> None:
     token = _token(client)
-    _cmd(client, token, type="start")
+    client.get(f"/api/v1/decks/{token}/review")  # opening the deck takes the base
     _edit_page(pdf, 0)
     filed = _cmd(client, token, type="file_unrequested")
     assert filed["count"] == 1 and filed["conversation"] and filed["focus"] is False

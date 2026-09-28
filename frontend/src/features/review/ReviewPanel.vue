@@ -53,6 +53,15 @@ const deckCount = computed(() => review.deckConversation?.messages.length ?? 0)
 const slideNotes = reactive(new Map<string, string>())
 const replies = reactive(new Map<string, string>())
 
+async function resetComparison(): Promise<void> {
+  const n = review.changes.size
+  const ok = window.confirm(
+    `Compare from the deck as it is now? The ${n} slide${n === 1 ? '' : 's'} changed so far ` +
+      'stop showing as changed. Conversations stay open or accepted as they are.',
+  )
+  if (ok) await review.command({ type: 'mark_seen' })
+}
+
 function time(at: string): string {
   return at.slice(11, 16)
 }
@@ -62,15 +71,10 @@ function time(at: string): string {
   <section class="review" data-testid="review-panel">
     <template v-if="!review.data || !review.active">
       <p v-if="!review.data && review.comparing" class="dim-text">Loading…</p>
-      <template v-else>
-        <button class="btn" type="button" data-testid="review-start" @click="review.command({ type: 'start' })">
-          Start review
-        </button>
-        <p class="hint">
-          Compare the next changes against the deck as it is now, slide by slide, and talk them
-          over with the agent.
-        </p>
-      </template>
+      <p v-else-if="review.data?.final_build" class="hint" data-testid="review-final">
+        This PDF is a final build (page numbers shown). Recompile it normally to compare changes
+        and talk them over.
+      </p>
     </template>
 
     <template v-else>
@@ -88,6 +92,16 @@ function time(at: string): string {
             @click="review.command({ type: 'clear' })"
           >
             Clear accepted ({{ review.closedCount }})
+          </button>
+          <button
+            class="btn quiet small"
+            type="button"
+            :disabled="!review.changes.size"
+            title="Compare from the deck as it is now (e.g. after a recompile changed every slide). Conversations stay as they are."
+            data-testid="review-reset"
+            @click="resetComparison"
+          >
+            Reset comparison
           </button>
         </div>
         <div class="row">

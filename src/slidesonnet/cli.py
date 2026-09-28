@@ -427,7 +427,8 @@ def clean(pdf: Path, keep: str, yes: bool) -> None:
     depends on --keep. When the deck's clips live in a shared pool (see
     "slidesonnet pool status"), --keep only governs the local directory: the
     pool is never touched here — "slidesonnet pool prune" does that, with every
-    deck that uses the pool in view.
+    deck that uses the pool in view. The review base (what you've already seen,
+    for "slidesonnet review") is kept at every level.
     """
     from slidesonnet.cache import cache_root
     from slidesonnet.clean import clean as run_clean

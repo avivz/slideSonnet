@@ -71,10 +71,10 @@ def review() -> None:
 @review.command("snapshot")
 @_PDF
 def snapshot_cmd(pdf: Path) -> None:
-    """Start review (or restart it): the base becomes the deck as it is now.
+    """Mark everything as seen: the base becomes the deck as it is now.
 
-    Creates <deck>.review if needed — the editor then shows review tools and
-    files changes nobody asked for into their own conversation.
+    The editor takes a base by itself the first time it opens a deck; this
+    resets it (and creates <deck>.review if needed).
     """
     from slidesonnet.review import ops
 

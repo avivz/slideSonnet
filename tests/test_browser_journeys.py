@@ -280,7 +280,6 @@ def test_a_review_round_with_the_agent(page: Page, server: Server, tmp_path: Pat
     pdf = _prep(tmp_path, "@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     page.goto(server(pdf))
     tid(page, "console-tab-review").click()
-    tid(page, "review-start").click()
     expect(tid(page, "review-clear")).to_be_visible()
     doc = pymupdf.open(pdf)  # the author recompiles with slide 2 changed
     doc[1].insert_text((40, 200), "a new line on the slide", fontsize=16)

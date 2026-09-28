@@ -426,7 +426,7 @@ class SlideChangeDTO(_Model):
 
 
 class ReviewDTO(_Model):
-    """Review for one deck. ``active`` false means no review has been started."""
+    """Review for one deck. ``active`` false: no base could be taken (a final build)."""
 
     active: bool
     final_build: bool
@@ -446,8 +446,10 @@ class ReviewDTO(_Model):
     diffs: dict[str, list[list[str]]]
 
 
-class ReviewStart(_Model):
-    type: Literal["start"] = "start"
+class ReviewMarkSeen(_Model):
+    """Everything as it is now becomes the base: no changes left to look at."""
+
+    type: Literal["mark_seen"] = "mark_seen"
 
 
 class ReviewComment(_Model):
@@ -481,7 +483,7 @@ class ReviewFileUnrequested(_Model):
 
 
 ReviewCommand = Annotated[
-    ReviewStart
+    ReviewMarkSeen
     | ReviewComment
     | ReviewReply
     | ReviewAccept

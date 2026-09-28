@@ -1,6 +1,6 @@
 """Selective cache cleanup with graduated preservation levels.
 
-nothing — remove the entire .slidesonnet cache
+nothing — remove the entire .slidesonnet cache (except the review base: no level drops it)
 api     — keep cloud (paid, e.g. Inworld) audio, drop local Kokoro audio + renders
 current — keep audio for the current sidecar text (any engine), drop orphans + renders
 exact   — keep only audio matching the current text + active TTS config
@@ -24,6 +24,7 @@ from typing import Literal
 
 from slidesonnet.audio.synth import engine_for_pace
 from slidesonnet.cache import (
+    REVIEW_DIRNAME,
     adopt_legacy_audio,
     cache_root,
     default_audio_dir,
@@ -85,7 +86,7 @@ def clean(pdf_path: Path, keep: KeepLevel = "api") -> CleanResult:
     if keep == "nothing":
         if res.shared:
             adopt_legacy_audio(pdf_path, res.path)  # never lose a clip the pool lacks
-        shutil.rmtree(root)
+        _remove_all_but_review(root)
     elif res.shared:
         _remove_logs(pdf_path)
         _remove_renders(pdf_path)
@@ -160,6 +161,20 @@ def prune_local_orphans(pdf_path: Path) -> CleanResult:
         f.unlink()
         result.removed_files += 1
     return result
+
+
+def _remove_all_but_review(root: Path) -> None:
+    """Empty the deck's cache, except the review base (the record of what the author
+    has already seen: not regenerable, so no clean level drops it)."""
+    for child in root.iterdir():
+        if child.name == REVIEW_DIRNAME and child.is_dir():
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+    if not any(root.iterdir()):
+        root.rmdir()
 
 
 def _remove_logs(pdf_path: Path) -> None:
