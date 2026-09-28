@@ -30,12 +30,18 @@ from slidesonnet.deck import (
 )
 from slidesonnet.diagnostics import Diagnostic, boundary_transition, voice_diagnostics
 from slidesonnet.env import load_env
-from slidesonnet.exceptions import ConfigError
+from slidesonnet.exceptions import ConfigError, NarrationChangedOnDisk
+from slidesonnet.gui.review import ReviewModel
 from slidesonnet.hashing import audio_cache_path_or_alt
 from slidesonnet.models import Backend, ProgressFn, VoiceConfig, resolve_voice
-from slidesonnet.narration.format import SidecarError
+from slidesonnet.narration.format import (
+    SidecarError,
+    parse_sidecar,
+    serialize_block,
+    serialize_body,
+)
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
-from slidesonnet.pdf.reader import rasterize, read_page_ids
+from slidesonnet.pdf.reader import open_render, read_page_ids, render_page_range
 from slidesonnet.timing import word_count
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
@@ -129,7 +135,7 @@ class EditorState:
         # to disk). None = fall back to the config default. See active_backend.
         self.selected_backend: Backend | None = None
         self.index = 0
-        self._images: list[Path] | None = None
+        self._pages: dict[int, Path] | None = None  # rendered page images, by index
         # (pdf (mtime, size) stamp, deduped page ids, dedupe diagnostics)
         self._page_cache: tuple[tuple[float, int], list[str], list[Diagnostic]] | None = None
         self._audio_scan: tuple[float, list[tuple[SpeechRef, bool]]] | None = None
@@ -137,6 +143,7 @@ class EditorState:
         # changes (keyed on (deck identity, backend) so it tracks the engine pick)
         self._voice_diags: tuple[tuple[int, str], list[Diagnostic]] | None = None
         self.source_error: str | None = None
+        self.review = ReviewModel(self.pdf_path)
         self.reload()
         self._stamps = self._source_stamps()
 
@@ -199,7 +206,7 @@ class EditorState:
             # Keep showing the last good deck; the next tick retries.
             return False
         if current[str(self.pdf_path)] != self._stamps[str(self.pdf_path)]:
-            self._images = None  # page images are stale; re-rasterize on demand
+            self._pages = None  # page images are stale; render the new build
         self._stamps = current
         self.config = config
         self.deck, self.diagnostics = deck, diagnostics
@@ -218,18 +225,46 @@ class EditorState:
         }
         return {labels[key] for key, stamp in current.items() if stamp != self._stamps[key]}
 
-    def ensure_images(self) -> list[Path]:
-        """Page images for this deck, rendering them only when they're missing.
+    def _page_map(self) -> dict[int, Path]:
+        if self._pages is None:
+            self._pages = open_render(
+                self.pdf_path, render_dir(self.pdf_path) / "pages", page_count=self.page_count
+            )
+        return self._pages
 
-        ``reuse`` matters most when switching decks: a state is built per deck
-        open, and re-running pdftoppm over an unchanged 49-page deck costs ~3.5 s
-        of blocking work every time. A recompile still re-renders — the stamp
-        carries the PDF's mtime and size — and :meth:`poll_sources` drops the
-        memo so the new build is picked up.
+    def page_images(self) -> list[Path | None]:
+        """Each page's image if it's rendered yet — never renders (cheap).
+
+        The editor opens a deck at once and fills the rest in the background
+        (:meth:`render_pages`, nearest the current slide first); a reopened,
+        unchanged deck reuses what's on disk, and a recompile starts over.
         """
-        if self._images is None:
-            self._images = rasterize(self.pdf_path, render_dir(self.pdf_path) / "pages", reuse=True)
-        return self._images
+        pages = self._page_map()
+        return [pages.get(i) for i in range(self.page_count)]
+
+    def next_missing(self, *, near: int) -> int | None:
+        """The unrendered page closest to *near* (ties: the later one), or None."""
+        pages = self._page_map()
+        missing = [i for i in range(self.page_count) if i not in pages]
+        return min(missing, key=lambda i: (abs(i - near), -i)) if missing else None
+
+    def render_pages(self, first: int, last: int) -> None:
+        """Render pages *first*..*last* (0-based, inclusive). Blocking: run off the loop."""
+        pages = self._page_map()
+        out = render_dir(self.pdf_path) / "pages"
+        pages.update(render_page_range(self.pdf_path, out, first, last))
+
+    def ensure_images(self) -> list[Path]:
+        """Every page image, rendering whatever is still missing (blocking)."""
+        while (i := self.next_missing(near=0)) is not None:
+            last = i
+            while last + 1 < self.page_count and last + 1 not in self._page_map():
+                last += 1
+            before = len(self._page_map())
+            self.render_pages(i, last)
+            if len(self._page_map()) == before:  # pdftoppm wrote nothing: don't spin
+                break
+        return [p for p in self.page_images() if p is not None]
 
     # ---- navigation ----------------------------------------------------
     @property
@@ -254,7 +289,8 @@ class EditorState:
         self.go(self.index - 1)
 
     def current_image(self) -> Path | None:
-        images = self.ensure_images()
+        """This slide's image, if it's rendered yet (see :meth:`page_images`)."""
+        images = self.page_images()
         return images[self.index] if self.index < len(images) else None
 
     # ---- editing -------------------------------------------------------
@@ -365,19 +401,51 @@ class EditorState:
 
         if not changed:
             return False  # a no-op blur/save: don't reload, flash, or revoke the track
-        self._write_and_reload()
+        self._write_and_reload(lost_text=serialize_body(new_cur))
         return True
 
-    def _write_and_reload(self) -> None:
+    def _write_and_reload(self, *, lost_text: str | None = None) -> None:
         """Persist the deck, re-run diagnostics, and absorb our own sidecar write.
 
         Only the sidecar baseline is refreshed — refreshing the others here
         would mask a PDF/config change that landed since the last poll.
+
+        If the sidecar changed on disk since we last loaded it (an agent edited
+        it between polls), writing our in-memory copy would silently undo that
+        edit. Ours loses instead: reload from disk and raise
+        :class:`NarrationChangedOnDisk` carrying *lost_text* for the user.
         """
+        key = str(self.sidecar_path)
+        if _stat_stamp(self.sidecar_path) != self._stamps[key]:
+            if not self.poll_sources():
+                # mid-write on the other side: at least drop our stale copy
+                self.reload()
+            raise NarrationChangedOnDisk(lost_text)
+        edited = self._blocks_changed_on_save()
         save_deck(self.deck)
         self.reload()
         self._stamps[str(self.sidecar_path)] = _stat_stamp(self.sidecar_path)
+        self._note_review_edits(edited)
         self._prune_stale_audio()
+
+    def _blocks_changed_on_save(self) -> set[str]:
+        """Slide ids whose narration block this save changes (vs the file on disk)."""
+        try:
+            text = self.sidecar_path.read_text(encoding="utf-8")
+            before = {b.slide_id: serialize_block(b) for b in parse_sidecar(text)}
+        except (OSError, SidecarError):
+            before = {}
+        after = {sid: serialize_block(b) for sid, b in self.deck.narration.items()}
+        return {sid for sid in before.keys() | after.keys() if before.get(sid) != after.get(sid)}
+
+    def _note_review_edits(self, slide_ids: set[str]) -> None:
+        """Under review, file the author's own narration edits (best-effort)."""
+        if not slide_ids:
+            return
+        try:
+            self.review.note_edits(slide_ids)
+        except Exception:  # pragma: no cover - defensive: never break a save
+            logger.warning("Could not note review edits for %s", self.pdf_path, exc_info=True)
 
     def _prune_stale_audio(self) -> None:
         """Reclaim local clips orphaned by this edit (cheap to regenerate).
@@ -796,7 +864,13 @@ class EditorState:
             progress=progress,
         )
 
-    def export(self, output: Path, *, silent: bool = False) -> api.ExportResult:
+    def export_blockers(self) -> list[str]:
+        """Why the deck isn't ready for a final video (see api.export_blockers)."""
+        return api.export_blockers(self.pdf_path)
+
+    def export(
+        self, output: Path, *, silent: bool = False, draft: bool = False
+    ) -> api.ExportResult:
         # The preview player streams track.wav / page WAVs from the render dir;
         # an export must not delete them from under an open preview.
         return api.export(
@@ -806,6 +880,7 @@ class EditorState:
             silent=silent,
             engine=self.selected_backend,
             keep_scratch=True,
+            draft=draft,
         )
 
     # ---- per-slide status (filmstrip) -----------------------------------

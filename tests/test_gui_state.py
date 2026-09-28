@@ -620,12 +620,84 @@ def test_own_save_does_not_trigger_reload(tmp_path: Path) -> None:
     assert state.poll_sources() is False
 
 
-def test_pdf_change_invalidates_image_cache(tmp_path: Path) -> None:
+def test_save_refuses_when_sidecar_changed_under_us(tmp_path: Path) -> None:
+    """An agent rewrote the sidecar between the editor's polls: saving the
+    editor's stale in-memory deck would silently undo the agent's edit. The
+    editor's edit loses instead — reloaded from disk, the lost text handed back."""
+    from slidesonnet.exceptions import NarrationChangedOnDisk
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(simple_narration("@intro-title\nAgent's rewrite.\n"), encoding="utf-8")
+    _bump_mtime(sidecar)
+
+    with pytest.raises(NarrationChangedOnDisk) as info:
+        state.replace_block(parse_segments("Typed in the editor."))
+
+    assert "Typed in the editor." in (info.value.lost_text or "")
+    assert "Agent's rewrite." in sidecar.read_text(encoding="utf-8")  # disk untouched
+    assert "Agent's rewrite." in serialize_body(state.current_block)  # editor reloaded
+    assert state.poll_sources() is False  # the reload absorbed the new baseline
+
+
+def test_non_block_save_also_refuses_on_external_change(tmp_path: Path) -> None:
+    from slidesonnet.exceptions import NarrationChangedOnDisk
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n\n@gone\nOrphan.\n")
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(simple_narration("@intro-title\nNew.\n\n@gone\nOrphan.\n"), encoding="utf-8")
+    _bump_mtime(sidecar)
+    with pytest.raises(NarrationChangedOnDisk) as info:
+        state.delete_orphan("gone")
+    assert info.value.lost_text is None
+    assert "@gone" in sidecar.read_text(encoding="utf-8")
+
+
+def _fake_pdftoppm(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    calls: list[list[str]] = []
+
+    def run(cmd: list[str], **_kw: object) -> None:
+        calls.append(cmd)
+        first, last = int(cmd[cmd.index("-f") + 1]), int(cmd[cmd.index("-l") + 1])
+        for n in range(first, last + 1):
+            Path(f"{cmd[-1]}-{n:02d}.png").write_bytes(b"\x89PNG")
+
+    monkeypatch.setattr("slidesonnet.pdf.reader.run_tool", run)
+    return calls
+
+
+def test_page_images_never_render(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _fake_pdftoppm(monkeypatch)
     state = _state(tmp_path)
-    state._images = [tmp_path / "fake.png"]  # primed cache
+    assert state.page_images() == [None] * state.page_count  # cheap: just what exists
+    assert state.current_image() is None
+    assert calls == []
+
+
+def test_render_pages_fills_in_and_next_missing_prefers_nearby(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_pdftoppm(monkeypatch)
+    state = _state(tmp_path)
+    assert state.page_count >= 3
+    state.render_pages(1, 1)
+    assert state.page_images()[1] is not None and state.page_images()[0] is None
+    assert state.next_missing(near=1) in (0, 2)
+    state.go(1)
+    assert state.current_image() is not None
+    assert len(state.ensure_images()) == state.page_count  # the rest, on demand
+    assert state.next_missing(near=0) is None
+
+
+def test_pdf_change_invalidates_image_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_pdftoppm(monkeypatch)
+    state = _state(tmp_path)
+    state.render_pages(0, 0)
     _bump_mtime(tmp_path / "marked.pdf")
     assert state.poll_sources() is True
-    assert state._images is None
+    assert state.page_images()[0] is None  # the new build starts over
 
 
 def test_config_change_reloads_config(tmp_path: Path) -> None:
@@ -1090,3 +1162,23 @@ def test_gui_export_keeps_render_scratch(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setattr(state_mod.api, "export", fake_export)
     state.export(tmp_path / "out.mp4")
     assert captured.get("keep_scratch") is True
+
+
+def test_own_narration_save_is_noted_in_review(tmp_path: Path) -> None:
+    """Under review, the author's own edit is filed (not left for the next
+    recompile to flag as an unrequested change)."""
+    from slidesonnet.review import ops
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    state.review.start()
+    state.replace_block(parse_segments("My own rewrite."))
+    convs = ops.load(state.pdf_path).slide_conversations()
+    assert [(c.origin, c.slides) for c in convs] == [("author-edits", ["intro-title"])]
+
+
+def test_saves_outside_review_touch_nothing(tmp_path: Path) -> None:
+    from slidesonnet.review import ops
+
+    state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
+    state.replace_block(parse_segments("Edited."))
+    assert not ops.review_path(state.pdf_path).exists()

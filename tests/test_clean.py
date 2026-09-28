@@ -441,3 +441,24 @@ def test_prune_local_orphans_is_a_noop_in_pool_mode(tmp_path: Path) -> None:
     result = prune_local_orphans(pdf)
     assert orphan.exists()
     assert result.removed_files == 0
+
+
+def test_prune_keeps_clips_the_review_base_still_says(tmp_path: Path) -> None:
+    """Under review, the old narration is still being compared (play old vs new),
+    so its clip counts as in use even after the sidecar moved on."""
+    from slidesonnet.review.base import snapshot
+
+    pdf = _seed_deck(tmp_path)
+    snapshot(pdf)  # base holds HELLO
+    edited = [PageNarration("intro-title", [Segment.speech("A rewritten line.")])]
+    (tmp_path / "marked.narration").write_text(serialize_sidecar(edited), encoding="utf-8")
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True)
+    old = audio_filename(HELLO, "kokoro", "kokoro:am_echo")
+    gone = audio_filename("Never said anywhere.", "kokoro", "kokoro:am_echo")
+    for name in (old, gone):
+        (ad / name).write_bytes(b"a")
+
+    prune_local_orphans(pdf)
+    assert (ad / old).exists()  # the base's narration — kept
+    assert not (ad / gone).exists()

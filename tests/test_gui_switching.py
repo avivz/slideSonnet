@@ -261,10 +261,10 @@ async def test_each_deck_serves_its_own_page_images(user: User, course: Path) ->
     for pdf, body in ((intro, b"intro-bytes"), (llm, b"llm-bytes")):
         pages = render_dir(pdf) / "pages"
         pages.mkdir(parents=True, exist_ok=True)
-        (pages / "page-1.png").write_bytes(body)
+        (pages / "probe.png").write_bytes(body)  # a name the page renderer never writes
 
     for pdf, body in ((intro, b"intro-bytes"), (llm, b"llm-bytes")):
-        url = f"/ssmedia/{deck_token(pdf)}/pages/page-1.png"
+        url = f"/ssmedia/{deck_token(pdf)}/pages/probe.png"
         response = await user.http_client.get(url)
         assert response.status_code == 200
         assert response.content == body

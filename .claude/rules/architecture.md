@@ -74,6 +74,16 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   sort, neighbour lookup. Only registered decks resolve, so a URL can't open arbitrary files.
 - **gui/library_view.py** — the library landing page (grouped list, lazy per-deck stats).
 - **gui/theme.py** — palette + head assets shared by both pages.
+- **review/** — the agent review loop (spec: `dev/DESIGN-review.md`).
+  `versions.py` captures a `DeckVersion` (per slide id: pixel hash at 150 dpi,
+  page text, narration block); `diff.py` compares two by id (new/deleted/edited/
+  moved via LCS); `base.py` stores the base under `.slidesonnet/review/<stem>/`
+  (advances only on Clear; refuses final builds); `log.py` is the append-only
+  `<deck>.review` (format, flock-locked appends, replay into `Conversation`s,
+  permanent `deck` conversation); `ops.py` is the API (comment/reply/accept/
+  reopen/send/clear/status/wait, automatic filing, author-edit notes); `cli.py`
+  is the `slidesonnet review` group. slideSonnet never edits `.tex`/`.narration`
+  during review.
 - **api.py** — typed entry points mirroring the CLI: `sty_text`/`write_sty`,
   `init_sidecar`, `check_deck`, `synthesize_deck`, `export`, `write_subs`, `build_preview`.
 - **cli.py** — Click commands: `sty`, `init`, `check`, `tts`, `export`, `subs`, `edit`,

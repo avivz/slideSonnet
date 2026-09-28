@@ -129,6 +129,7 @@ def main(
       edit    deck.pdf                     launch the NiceGUI editor
       clean   deck.pdf [--keep ...]        prune the deck's own audio/render cache
       pool    status | migrate | prune     inspect / fill / prune a shared clip pool
+      review  status | comment | reply ...  review agent changes slide by slide
       doctor                               check installed dependencies
     """
     try:
@@ -298,6 +299,14 @@ def tts(
         "By default they are deleted; cached speech clips are never touched."
     ),
 )
+@click.option(
+    "--draft",
+    is_flag=True,
+    help=(
+        "Export even though the deck isn't final (a plain build without page numbers, "
+        "or review conversations still open). Writes <name>.draft.mp4."
+    ),
+)
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -311,6 +320,7 @@ def export(
     subtitles: str,
     sub_granularity: str,
     keep_scratch: bool,
+    draft: bool,
 ) -> None:
     """Render the narrated (or silent) video with optional subtitles."""
     from slidesonnet.api import export as run_export
@@ -331,11 +341,12 @@ def export(
             sub_granularity=sub_granularity,
             keep_scratch=True if keep_scratch else None,
             progress=progress,
+            draft=draft,
         )
     logger.info(progress.summary())
     kind = "silent " if result.silent else ""
     extras = f" + {', '.join(p.name for p in result.subtitles)}" if result.subtitles else ""
-    click.echo(f"Built {output.name} ({kind}{result.duration:.1f}s){extras}")
+    click.echo(f"Built {result.video.name} ({kind}{result.duration:.1f}s){extras}")
 
 
 @main.command()
@@ -834,3 +845,12 @@ def doctor() -> None:
 
     if not print_report(run_all_checks()):
         raise SystemExit(1)
+
+
+def _register_review() -> None:
+    from slidesonnet.review.cli import review
+
+    main.add_command(review)
+
+
+_register_review()

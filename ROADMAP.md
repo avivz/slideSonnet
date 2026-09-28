@@ -29,7 +29,20 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — next feature work (post-a2, toward 1.0)
 
-1. [ ] **Inline pronunciation override — spoken form vs. subtitle form.**
+1. [ ] **Agent review loop — verify in the real editor, then merge
+   `feat/review-loop`.** *(Built 2026-09-27; spec `dev/DESIGN-review.md`.)* On
+   the branch and unit-tested: the narration-overwrite fix, plain-by-default
+   builds (`\ssfinal` for final), the base + diff by slide id, `<deck>.review`
+   conversations + the `slidesonnet review` CLI (incl. the `deck` conversation
+   and agent-opened conversations), the export check (`--draft`), and the editor
+   review tools (Start review, Review tab, Enter-to-send, Clear accepted, per-slide threads
+   with Reply/Accept/Reopen, conversation filter, badges, before/after `D`,
+   narration word diff, before strip, automatic filing + many-slides warning,
+   `N` = next waiting). *Left before merge:* open a demo deck in the real
+   editor and check the layout (the in-process tests can't see it — console
+   width, compare view, the two strips); run `make test` (integration);
+   recompile the demo PDFs as final builds. **[agent→human]**
+2. [ ] **Inline pronunciation override — spoken form vs. subtitle form.**
    *(Promoted from inbox 2026-06-19; the active friction.)* The pronunciation
    dictionary (`pronunciation/*.md` → `apply_pronunciation`) rewrites text
    *before* synthesis, and the subtitle timeline is built from that **same
@@ -51,7 +64,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    Qwen3). *Appetite:* ~one day. *Open question:* pick the grammar; relationship to
    (or replacement of) the global dictionary — design alongside Next's per-engine
    dictionary item. **[agent]**
-2. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
+3. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
    shipped and mocked-tested — see Done. This is the one human step gating a real
    own-voice render: nothing about Qwen3 has run on real weights + a real voice
    yet.)* *Story:* As the deck author, I want to record a ~10 s reference, build
@@ -66,7 +79,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
    isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
    covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-3. [ ] **Play "play all" before the deck is fully generated** — the one remaining
+4. [ ] **Play "play all" before the deck is fully generated** — the one remaining
    "minor UX" sub-item, **re-scoped out of an afternoon**. The other three shipped
    (per-utterance dirty badge, single-slide transition toggle, and the new-line
    default-voice behavior — see Done). *Story:* As a deck author with a
@@ -81,7 +94,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    assembly (extend the track as pages finish) or per-page playback (stitch on
    boundaries like the single-slide path). Decide the approach before building.
    **[agent]**
-4. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
+5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
@@ -331,6 +344,35 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    reconciled; (b) `beamer-writer` in particular emits **valid format-v2** sidecars
    with a correct `voices:` preamble, verified against the migrated demo sidecars.
    *Appetite:* half a day. **[agent]**
+
+20. [ ] **Review loop follow-ups** (not in the first cut of the review loop;
+    spec `dev/DESIGN-review.md`):
+    - *Change highlight* — overlay the pixels that differ on the before/after
+      view (spec'd; today the two images sit side by side).
+    - *Play old vs new narration* — the base clip is kept (pruning rule
+      shipped); add a play button for it next to the narration diff.
+    - *Comment on several slides* — shift-click in the filmstrip → "Comment on
+      selected" opens one conversation over all of them (the CLI already can).
+    - *Comment on selection* — select narration text → quote it into a note.
+    - *Optional Claude Code hook* — run `slidesonnet review status` after any
+      LaTeX compile so even an agent without the skill sees unfiled changes.
+    - *Themes beyond metropolis* — plain builds hide footline/headline
+      generically and metropolis progress bars specifically; add other themes'
+      position-dependent decorations as they're used. **[agent]**
+
+21. [ ] **Test tiers: a faster inner loop and a habit for the slow tier.**
+    *Story:* As the developer, I want day-to-day test runs to take seconds, and
+    the slow tiers to run at clear, remembered moments. *Acceptance examples:*
+    (a) `make test-changed` runs only the tests affected by the files changed
+    since the last run (pytest-testmon as a dev dependency), falling back to
+    `test-fast` when there's no testmon data; (b) `test_generation_target_helpers`
+    (~10 s, loads Kokoro) moves out of the fast tier into `integration`, and a
+    quick `--durations` pass moves any other multi-second unit test the same
+    way; (c) CLAUDE.md documents the cadence: while coding — the touched test
+    files + `make test-changed`/`test-fast`; before every push — `make
+    test-unit` (what CI runs); before a release tag and after touching the
+    `.sty`, export, or rendering — `make test` (integration). *Appetite:* an
+    hour or two. **[agent]**
 
 ## Later — before 1.0 final
 

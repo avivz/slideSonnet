@@ -35,6 +35,18 @@ The id is stamped as **invisible** text (PDF rendering mode 3 — like an OCR la
 never visible, on any background, but reliably recovered from the text layer.
 Compile however you like (`latexmk -pdf deck.tex`).
 
+**Plain and final builds.** An ordinary compile is a *plain* build: page
+numbers, navigation, and (metropolis) progress bars are drawn invisibly — they
+keep their space, so the layout never moves, but they don't change when a slide
+is inserted or removed. That keeps slide-by-slide comparisons exact while you
+iterate. When you're done — for distributing the slides or rendering the final
+video — make a *final* build, which shows them:
+
+```bash
+latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex
+# or: pdflatex "\def\ssfinal{}\input{deck}"
+```
+
 **Rules**
 
 - Every emitted page should have exactly one `\ssid`. A page you forget gets a

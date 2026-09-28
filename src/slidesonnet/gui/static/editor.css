@@ -245,3 +245,61 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:1;opac
 .ss-lib-empty-icon{font-size:40px;color:var(--ss-line)}
 .ss-lib-empty-title{font-size:15px;color:var(--ss-text)}
 .ss-lib-empty-hint{font-size:11.5px;color:var(--ss-dim);max-width:44ch;line-height:1.6}
+
+/* ---- review: before strip, compare view, conversations, badges ---------- */
+.ss-strips{flex:1 1 0;min-height:0;align-items:stretch}
+.ss-strips>.ss-strip{flex:1 1 0;width:auto;min-width:0}
+.ss-before-cap{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ss-dim)}
+/* one filmstrip: removed slides as faded tiles; moved ones marked; a chosen
+   conversation greys out the slides outside it */
+.ss-removed-thumb{opacity:.5;border-style:dashed}
+.ss-removed-thumb.ss-active{opacity:.85}
+.ss-thumb-removed-cap{position:absolute;bottom:3px;left:5px;font-size:10px;font-weight:700;
+  padding:0 4px;border-radius:4px;background:rgba(20,17,15,.85);color:var(--ss-err)}
+.ss-thumb-moved{position:absolute;bottom:3px;right:5px;font-size:12px;font-weight:700;
+  line-height:14px;padding:0 4px;border-radius:4px;background:rgba(20,17,15,.85);
+  color:var(--ss-warn)}
+.ss-thumb.ss-dimmed{opacity:.25;filter:grayscale(1)}
+.ss-thumb-review{position:absolute;top:3px;right:18px;font-size:11px;font-weight:700;
+  line-height:14px;padding:0 4px;border-radius:4px;background:rgba(20,17,15,.85)}
+.ss-rv-your-turn{color:var(--ss-accent)}
+.ss-rv-agent-turn{color:var(--ss-dim)}
+.ss-rv-closed{color:var(--ss-ok)}
+.ss-rv-unfiled{color:var(--ss-warn)}
+.ss-before{flex:1 1 0;min-width:0;height:100%;position:relative}
+/* compare: both images top-aligned in equal boxes, so they line up; the caption
+   sits in the strip above the before image instead of taking its height. */
+.ss-stage-view.ss-compare{gap:10px;padding-top:18px}
+.ss-stage-view.ss-compare .ss-stage-img img{object-position:50% 0 !important}
+.ss-before>.ss-before-cap{position:absolute;top:-17px;left:0;right:0;text-align:center}
+.ss-stage-view.ss-compare>.ss-stage-img{flex:1 1 0;min-width:0}
+.ss-stage-view.ss-before-only>.ss-stage-img{display:none}
+.ss-narr-diff{font-size:13px;line-height:1.5;padding:6px 8px;border:1px solid var(--ss-line);
+  border-radius:6px;background:var(--ss-raised)}
+.ss-narr-diff del{color:var(--ss-err);text-decoration:line-through}
+.ss-narr-diff ins{color:var(--ss-ok);text-decoration:none;border-bottom:1px solid var(--ss-ok)}
+.ss-narr-diff-cap{font-size:10px;font-weight:600;text-transform:uppercase;color:var(--ss-dim);
+  margin-right:6px}
+.ss-conv{border-left:2px solid var(--ss-line);padding-left:8px}
+.ss-conv-head,.ss-msg-meta{font-size:11px;color:var(--ss-dim)}
+.ss-msg-text{font-size:13px;white-space:pre-wrap}
+.ss-msg-system .ss-msg-text{color:var(--ss-dim);font-style:italic}
+.ss-msg-agent .ss-msg-text{color:var(--ss-accent)}
+.ss-conv-row{font-size:12px;cursor:pointer;padding:2px 4px;border-radius:4px}
+.ss-conv-row:hover{background:var(--ss-raised)}
+.ss-conv-row.ss-active{outline:1px solid var(--ss-accent)}
+/* compare view: the stage may use its full width, not the height-derived cap */
+.ss-stage:has(.ss-stage-view.ss-compare){padding-left:10px;padding-right:10px}
+.ss-stage-inner:has(.ss-stage-view.ss-compare){width:100%}
+/* console: Audio | Review tabs */
+.ss-console-tabs .q-tab{min-height:28px;padding:0 10px}
+.ss-console-tabs .q-tab__label{font-size:12px}
+.ss-tab-badge{font-size:10px;margin-left:6px;background:var(--ss-accent) !important;
+  color:#111 !important}
+.ss-console-panels{flex:1 1 auto;background:transparent}
+.ss-console-panel.q-tab-panel{padding:0;display:flex;flex-direction:column;
+  min-height:calc(100vh - 150px)}
+/* a thumb keeps the slide's shape while its image is still rendering */
+.ss-thumb-slot{aspect-ratio:var(--ss-ar,1.7778);display:flex;align-items:center;
+  justify-content:center}

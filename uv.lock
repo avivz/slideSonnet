@@ -3368,6 +3368,7 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "nicegui" },
+    { name = "numpy" },
     { name = "pymupdf" },
     { name = "python-dotenv" },
 ]
@@ -3401,6 +3402,7 @@ requires-dist = [
     { name = "kokoro", marker = "extra == 'kokoro'", specifier = ">=0.9" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.3.1" },
     { name = "nicegui", specifier = ">=2.0" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "playwright", marker = "extra == 'dev'" },
     { name = "pymupdf", specifier = ">=1.24" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

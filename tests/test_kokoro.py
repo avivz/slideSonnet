@@ -349,3 +349,20 @@ class TestCacheFirstDownloads:
         KokoroTTS().synthesize("Hi", tmp_path / "out.wav")
 
         mock_install.assert_called_once()
+
+
+def test_engine_module_does_not_import_torch() -> None:
+    """Creating the engine (the editor does, just to name cache files) must not
+    pay for torch — that's seconds on every deck open. Only synthesis loads it."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "from slidesonnet.tts import create_tts\n"
+        "from slidesonnet.config import TTSConfig\n"
+        "create_tts(TTSConfig(backend='kokoro'))\n"
+        "print('torch' in sys.modules)\n"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "False"

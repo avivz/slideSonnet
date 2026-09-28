@@ -6,6 +6,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Review tools in the editor.** "Start review" (or `slidesonnet review
+  snapshot`) makes the deck as it is now the base. From then on the console's
+  **Review** tab (beside **Audio**, badged when something on this slide waits
+  for you) shows the Deck conversation (instructions not about one slide), this
+  slide's conversations with Reply / Accept / Reopen, a note box that opens a
+  new one, and all conversations (click one to grey out the other slides — ←/→ then
+  step only through its slides; click a greyed slide to leave);
+  accepted ones stay hidden unless you tick **Show closed**. A note
+  goes out with Enter (Shift+Enter for a new line) or **Send**, and wakes an
+  agent blocked in `review wait`; **Clear accepted** makes accepted changes the
+  new base. A changed slide shows its
+  base version beside the current one (`D` toggles before-only) and a word diff
+  of its narration. The filmstrip stays in the current order: a moved slide
+  is marked ↕ ("was slide N"), and a removed one appears as a faded tile right
+  after the slide that preceded it — click it to see it and its conversations. Filmstrip badges mark slides waiting for you,
+  for the agent, accepted, or changed without a conversation; `N` jumps to the
+  next one waiting for you. Changes that arrive with no conversation (a
+  recompile, an outside edit) are filed into their own conversation, with a
+  warning when many slides changed at once — and move out of it when the agent
+  declares them afterwards (until you reply there); your own narration edits are noted
+  in the slide's open conversation so the agent sees them.
+- **Export checks the deck is final.** `export` (and the editor's Export
+  button) refuses a plain build — no page numbers — and a deck with review
+  conversations still open, listing each reason. `--draft` (or "Export draft"
+  in the editor) renders anyway, to `<name>.draft.mp4`. PDFs from an older
+  `slidesonnet.sty` carry no build marker and export as before.
+- **Review conversations (`slidesonnet review …`).** A loop for reviewing
+  an agent's changes slide by slide. The *base* — the last-cleared version of
+  every slide (page image, page text, narration, order) — is taken
+  automatically on first use; `review status` lists slides that differ from it
+  (new, edited, moved, deleted — matched by slide id) and which conversation
+  each belongs to. A slide whose page LaTeX re-lays out by a hair when a
+  neighbour moves still counts as unchanged. Conversations live in an append-only, human-readable
+  `<deck>.review` next to the deck: `list` shows the open ones (`--all`
+  adds accepted, `--mine` just the agent's turn), `comment` opens one about some slides,
+  `reply` answers (`-m` or a plain argument; can `--add-slides`, including a
+  new slide not compiled yet — `status` lists those as pending until it is), `accept` closes it (tentatively
+  accepted), `reopen`, and `clear` drops closed ones and moves their slides'
+  base forward. `deck` is a permanent deck-wide conversation for instructions
+  like "publish these". `send` / `wait --since N` let an agent block until you
+  hand over a batch. Every write is a locked append, so the editor and an
+  agent can write at the same time.
 - **A shared speech-clip pool (`[cache] audio_dir`, `SLIDESONNET_AUDIO_DIR`,
   `--audio-dir`).** Clips are content-addressed, so one directory can serve
   every deck of a course and every git worktree of it — but their *location*
@@ -42,6 +84,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   hides them. Phases get equal shares of the percentage for now.
 
 ### Changed
+- **Decks open at once.** The editor no longer waits for pdftoppm to render
+  every page: the current slide renders first, the filmstrip fills in around it
+  in the background (nearest pages first, following you if you jump), and pages
+  already rendered for this build are reused. Opening also stopped loading the
+  Kokoro model's libraries (torch) just to name cache files — they load on the
+  first synthesis — and a deck under review compares in the background
+  ("Comparing…") instead of before the page appears. A cold open of a 22-slide
+  deck went from ~11 s to ~1 s.
+- **Automatic audio pruning keeps the clips of the review base.** While a
+  slide is under review its old narration is still compared and played, so its
+  audio counts as in use until the base moves on (`review clear`).
+- **`slidesonnet.sty`: an ordinary compile is now a *plain* build.** Page
+  numbers, the headline (navigation), and metropolis progress bars are drawn
+  invisibly — keeping their space, so the layout is identical — because they
+  change on every slide when one is inserted or deleted, which would make
+  slide-by-slide comparisons useless. A *final* build shows them:
+  `latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex`. Final builds carry an
+  invisible `SSFINAL` marker (`slidesonnet.pdf.reader.is_final_build`).
+  **After upgrading, re-run `slidesonnet sty` and compile your final video with
+  `\ssfinal`, or the page numbers disappear from it.**
 - **`ProgressFn` is now `(phase, done, total, label)`** (was `(slide_id, done,
   total)`, with `"assemble"` sometimes standing in for the slide id). API
   callers passing `progress=` to `synthesize_deck`, `export`, or
@@ -74,6 +136,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   watchers, rsync) treat the subtitles as newer than what they came from.
 
 ### Fixed
+- **Saving in the editor no longer undoes an edit made to the narration file
+  by someone else.** The editor only noticed outside changes on its next check,
+  so an agent's rewrite that landed in between was silently overwritten by the
+  editor's older copy on the next save. The editor now checks first: if the
+  file changed, it keeps the file's version, shows it, and offers your unsaved
+  text in a dialog with a Copy button.
 - **`subs` no longer invents a timeline when it can't find the audio.** Each
   voice keeps its own content-addressed cache (the filename embeds the backend
   and its config hash), but `subs` had no `--engine` flag — so a deck rendered

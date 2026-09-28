@@ -24,6 +24,7 @@ from nicegui.events import KeyEventArguments
 from slidesonnet.audio.track import Cue
 from slidesonnet.cache import render_dir
 from slidesonnet.diagnostics import boundary_transition
+from slidesonnet.exceptions import NarrationChangedOnDisk
 from slidesonnet.gui.jobs import JobQueue
 from slidesonnet.gui.launch import (
     app_invocation,
@@ -32,6 +33,7 @@ from slidesonnet.gui.launch import (
     launch_browser,
 )
 from slidesonnet.gui.library import DeckEntry, DeckRegistry, deck_token
+from slidesonnet.gui.review_panel import ReviewPanel
 from slidesonnet.gui.state import (
     EditorState,
     bracket_silences,
@@ -43,6 +45,7 @@ from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration import transitions as trans
 from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
+from slidesonnet.review.base import base_dir
 from slidesonnet.tts import BACKENDS
 
 logger = logging.getLogger(__name__)
@@ -109,6 +112,7 @@ DEFAULT_VOICE_OPTION = "__default__"
 
 _STAGE_RESERVE = 680.0  # stage minimum (620px content) + its padding + separators
 _STRIP_MAX = 400.0
+_PAGES_PER_RENDER = 4  # background page renders: pages per pdftoppm run
 _CONSOLE_MAX = 520.0
 
 
@@ -261,6 +265,14 @@ def _is_content_stamp(value: str | None) -> bool:
     return mtime.isdigit() and size.isdigit()
 
 
+_BASE_PREFIX = "_base/"
+
+
+def _base_media_url(state: EditorState, path: Path) -> str:
+    """URL for a review-base page image (named by its pixel hash, so immutable)."""
+    return f"{_MEDIA_URL}/{deck_token(state.pdf_path)}/{_BASE_PREFIX}{path.name}?v=0-{path.stem}"
+
+
 def _media_url(state: EditorState, path: Path, *, cache_bust: bool = False) -> str:
     """URL for a render artifact under the deck's media dir.
 
@@ -390,6 +402,9 @@ def _serve_media(state: EditorState) -> None:
         if entry is None:  # unknown deck: never touch the filesystem for it
             raise HTTPException(status_code=404, detail="Not Found")
         local_dir = render_dir(entry.pdf_path).resolve()
+        if filename.startswith(_BASE_PREFIX):  # review base page images
+            local_dir = (base_dir(entry.pdf_path) / "pages").resolve()
+            filename = filename.removeprefix(_BASE_PREFIX)
         filepath = (local_dir / filename).resolve()
         if not filepath.is_relative_to(local_dir) or not filepath.is_file():
             raise HTTPException(status_code=404, detail="Not Found")
@@ -1239,7 +1254,12 @@ class BlockEditor:
     def _apply_structure(self, segs: list[Segment], tin: Transition, tout: Transition) -> None:
         """Commit an add/delete/move — the loaded track no longer matches the deck."""
         slide_id = self.view.state.current_id
-        if self.view.state.replace_block(segs, transition_in=tin, transition_out=tout):
+        try:
+            changed = self.view.state.replace_block(segs, transition_in=tin, transition_out=tout)
+        except NarrationChangedOnDisk as exc:
+            self.view.narration_conflict(exc)
+            return
+        if changed:
             self.view.player.stop_playback()
             # a structural commit flushes any typed-but-unblurred utterance, so it
             # must schedule auto-build too — otherwise text saved this way (type a
@@ -1282,7 +1302,12 @@ class BlockEditor:
             return False  # nothing built (e.g. unmarked page)
         segs, tin, tout = self.collect()
         slide_id = self.view.state.current_id
-        changed = self.view.state.replace_block(segs, transition_in=tin, transition_out=tout)
+        try:
+            changed = self.view.state.replace_block(segs, transition_in=tin, transition_out=tout)
+        except NarrationChangedOnDisk as exc:
+            self._dirty_speech.clear()  # the reloaded text is what's on screen now
+            self.view.narration_conflict(exc)
+            return False
         if changed:
             # The dirty flags mean "unsaved text the cached clip no longer
             # matches". Saving settles that question: from here the cache flags
@@ -1421,6 +1446,9 @@ class OrphanTray:
         except ValueError as exc:
             view.flash(str(exc), "warning")
             return
+        except NarrationChangedOnDisk as exc:
+            view.narration_conflict(exc)
+            return
         view.flash(f"Appended '@{orphan_id}' to '{target}'", "positive")
         view.render()
 
@@ -1441,6 +1469,9 @@ class OrphanTray:
                     view.state.attach_orphan(orphan_id, str(target.value))
                 except ValueError as exc:
                     view.flash(str(exc), "warning")
+                    return
+                except NarrationChangedOnDisk as exc:
+                    view.narration_conflict(exc)
                     return
                 view.flash(f"Narration attached to '{target.value}'", "positive")
                 view.render()
@@ -1464,6 +1495,9 @@ class OrphanTray:
                     view.state.delete_orphan(orphan_id)
                 except ValueError as exc:
                     view.flash(str(exc), "warning")
+                    return
+                except NarrationChangedOnDisk as exc:
+                    view.narration_conflict(exc)
                     return
                 view.flash(f"Deleted narration '@{orphan_id}'", "info")
                 view.render()
@@ -1507,11 +1541,18 @@ class EditorView:
         self.busy = False  # one action (synth/export/preview build) at a time
         self._flash_token = 0  # keeps an old fade timer from wiping a newer message
         self.thumb_cards: list[tuple[Any, Any, Any]] = []  # (card, dot, audio-missing badge)
+        self.thumb_slots: list[Any] = []  # each thumb's image holder, filled as pages render
+        self._page_render_running = False
+        self._page_render_again = False  # asked for while running: go round once more
         self._auto_build_timers: dict[str, Any] = {}  # per-slide debounce timers
         # (done, total) while the whole-deck preview track is being assembled, else
         # None. Written from the io_bound worker thread, polled by the progress
         # timer — a plain tuple write is atomic, so no lock is needed.
         self.assembling: tuple[int, int] | None = None
+        self.review = ReviewPanel(self)
+
+    def base_media_url(self, path: Path) -> str:
+        return _base_media_url(self.state, path)
 
     def build(self) -> None:
         """Build the widget tree, attach the components, and wire all events."""
@@ -1551,7 +1592,8 @@ class EditorView:
                 ui.label("Slides").classes("ss-section")
                 collapse_strip = ui.button(icon="chevron_left").props("flat round dense size=sm")
                 collapse_strip.mark("collapse-strip").tooltip("Collapse filmstrip")
-            self.strip_col = ui.column().classes("ss-strip gap-2")
+            with ui.row().classes("ss-strips no-wrap gap-0 w-full"):
+                self.strip_col = ui.column().classes("ss-strip gap-2")
 
         self.build_strip()
 
@@ -1580,6 +1622,7 @@ class EditorView:
                         ui.element("div").classes("ss-stage-view") as stage_view,
                     ):
                         self.stage_view = stage_view
+                        self.review.build_stage()
                         self.slide_img = (
                             ui.image()
                             .classes("ss-stage-img")
@@ -1607,6 +1650,7 @@ class EditorView:
                             )
                             self.add_pause_btn.props("flat dense no-caps").mark("add-pause")
                             self.add_pause_btn.tooltip("Add a silent pause")
+                        self.review.build_diff_box()
                         blocks_col = ui.column().classes("ss-blocks no-wrap gap-2 w-full")
                     with ui.row().classes("w-full items-center no-wrap gap-1"):
                         prev_btn = ui.button(icon="chevron_left").props("flat round dense")
@@ -1637,92 +1681,117 @@ class EditorView:
                         time_label = ui.label("").classes("ss-mono ss-time")
 
             with console_split.after, ui.column().classes("ss-console gap-3 no-wrap"):
+                # Two tabs keep review apart from the speech tools: Audio | Review.
                 with ui.row().classes("w-full items-center justify-between no-wrap"):
-                    ui.label("Checks · this slide").classes("ss-section")
+                    with (
+                        ui.tabs()
+                        .props("dense no-caps inline-label align=left")
+                        .classes("ss-console-tabs") as console_tabs
+                    ):
+                        audio_tab = ui.tab("audio", label="Audio")
+                        audio_tab.mark("console-tab-audio")
+                        with ui.tab("review", label="Review") as review_tab:
+                            self.review.build_tab_badge()
+                        review_tab.mark("console-tab-review")
                     collapse_console = ui.button(icon="chevron_right").props(
                         "flat round dense size=sm"
                     )
                     collapse_console.mark("collapse-console").tooltip("Collapse console")
-                self.diag_box = ui.column().classes("w-full gap-1")
-                ui.label("Audio · this slide").classes("ss-section")
-                self.audio_status = ui.label().classes("ss-diag ss-diag-info")
-                # Background-generation progress: a deck-wide count bar (A), an
-                # estimated within-clip bar (C), and an elapsed/estimate line (B).
-                # The ✕ beside the bar cancels every queued/running clip at once.
-                with ui.row().classes("w-full items-center no-wrap gap-1"):
-                    self.gen_bar = (
-                        ui.linear_progress(value=0.0, show_value=False)
-                        .props("rounded size=8px")
-                        .classes("grow")
-                    )
-                    self.gen_bar.mark("gen-progress")
-                    self.gen_cancel_btn = ui.button(
-                        icon="close", on_click=self.cancel_all_generation
-                    )
-                    self.gen_cancel_btn.props("flat round dense size=xs color=grey-6")
-                    self.gen_cancel_btn.mark("gen-cancel").tooltip("Cancel all generation")
-                self.gen_clip_bar = (
-                    ui.linear_progress(value=0.0, show_value=False)
-                    .props("rounded size=4px instant-feedback")
-                    .classes("w-full")
-                )
-                self.gen_status = ui.label().classes("ss-diag ss-diag-info ss-mono")
-                self.gen_status.mark("gen-progress-status")
-                self.gen_bar.visible = False
-                self.gen_cancel_btn.visible = False
-                self.gen_clip_bar.visible = False
-                self.gen_status.visible = False
-                tray_box = ui.column().classes("w-full gap-1")
-                tray_box.mark("orphan-tray")
-                tray_box.visible = False
-                ui.space()
-                ui.label("Engine").classes("ss-section")
-                self.engine_select = (
-                    ui.select(state.backend_options(), value=state.active_backend)
-                    .props("dense outlined")
-                    .classes("w-full ss-mono")
-                )
-                self.engine_select.mark("engine-select")
-                self.engine_select.tooltip(
-                    "Generate / preview / export with this engine — for this session only "
-                    "(not saved to the deck)"
-                )
-                self.engine_select.on_value_change(lambda e: self._on_engine_change(str(e.value)))
-                self.voices_btn = ui.button("Voices…", icon="record_voice_over").classes("w-full")
-                self.voices_btn.props("flat no-caps dense").mark("edit-voices")
-                self.voices_btn.tooltip(
-                    "Name voices and map each to a per-engine voice — saved in the deck, "
-                    "so the same script narrates under any engine"
-                )
-                self.voices_btn.on_click(self.open_voices_dialog)
-                auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
-                auto_build.props("dense").mark("auto-build")
-                # Always start a session with auto-generate off, even if a previous
-                # session left it on — generation is opt-in each time you open the deck.
-                app.storage.general["auto_build"] = False
-                auto_build.bind_value(app.storage.general, "auto_build")
-                self.auto_build = auto_build
-                self._sync_auto_build_gate()
-                auto_build.on_value_change(lambda e: self._on_auto_build_toggle(bool(e.value)))
-                single_trans = ui.checkbox("Play transitions in single-slide preview")
-                single_trans.props("dense").mark("single-slide-transitions")
-                single_trans.tooltip(
-                    "When on, playing one slide animates its in/out transitions; "
-                    "off (default) plays just that slide's narration"
-                )
-                # Off each session — proofing one slide's audio shouldn't morph by
-                # default; the whole-deck preview always plays transitions regardless.
-                app.storage.general["single_slide_transitions"] = False
-                single_trans.bind_value(app.storage.general, "single_slide_transitions")
-                self.gen_all_btn = ui.button("Generate missing", icon="library_music").classes(
-                    "w-full"
-                )
-                self.gen_all_btn.props("flat no-caps").mark("gen-missing")
-                self.gen_all_btn.tooltip(
-                    "Makes only the clips that don't exist yet — finished audio is left untouched"
-                )
-                export_btn = ui.button("Export video", icon="movie").classes("w-full ss-export")
-                export_btn.props("unelevated no-caps color=primary")
+                with ui.tab_panels(console_tabs, value=audio_tab).classes(
+                    "w-full ss-console-panels"
+                ):
+                    with ui.tab_panel(audio_tab).classes("ss-console-panel gap-3"):
+                        ui.label("Checks · this slide").classes("ss-section")
+                        self.diag_box = ui.column().classes("w-full gap-1")
+                        ui.label("Audio · this slide").classes("ss-section")
+                        self.audio_status = ui.label().classes("ss-diag ss-diag-info")
+                        # Background-generation progress: a deck-wide count bar (A), an
+                        # estimated within-clip bar (C), and an elapsed/estimate line (B).
+                        # The ✕ beside the bar cancels every queued/running clip at once.
+                        with ui.row().classes("w-full items-center no-wrap gap-1"):
+                            self.gen_bar = (
+                                ui.linear_progress(value=0.0, show_value=False)
+                                .props("rounded size=8px")
+                                .classes("grow")
+                            )
+                            self.gen_bar.mark("gen-progress")
+                            self.gen_cancel_btn = ui.button(
+                                icon="close", on_click=self.cancel_all_generation
+                            )
+                            self.gen_cancel_btn.props("flat round dense size=xs color=grey-6")
+                            self.gen_cancel_btn.mark("gen-cancel").tooltip("Cancel all generation")
+                        self.gen_clip_bar = (
+                            ui.linear_progress(value=0.0, show_value=False)
+                            .props("rounded size=4px instant-feedback")
+                            .classes("w-full")
+                        )
+                        self.gen_status = ui.label().classes("ss-diag ss-diag-info ss-mono")
+                        self.gen_status.mark("gen-progress-status")
+                        self.gen_bar.visible = False
+                        self.gen_cancel_btn.visible = False
+                        self.gen_clip_bar.visible = False
+                        self.gen_status.visible = False
+                        tray_box = ui.column().classes("w-full gap-1")
+                        tray_box.mark("orphan-tray")
+                        tray_box.visible = False
+                        ui.space()
+                        ui.label("Engine").classes("ss-section")
+                        self.engine_select = (
+                            ui.select(state.backend_options(), value=state.active_backend)
+                            .props("dense outlined")
+                            .classes("w-full ss-mono")
+                        )
+                        self.engine_select.mark("engine-select")
+                        self.engine_select.tooltip(
+                            "Generate / preview / export with this engine — for this session only "
+                            "(not saved to the deck)"
+                        )
+                        self.engine_select.on_value_change(
+                            lambda e: self._on_engine_change(str(e.value))
+                        )
+                        self.voices_btn = ui.button("Voices…", icon="record_voice_over").classes(
+                            "w-full"
+                        )
+                        self.voices_btn.props("flat no-caps dense").mark("edit-voices")
+                        self.voices_btn.tooltip(
+                            "Name voices and map each to a per-engine voice — saved in the deck, "
+                            "so the same script narrates under any engine"
+                        )
+                        self.voices_btn.on_click(self.open_voices_dialog)
+                        auto_build = ui.checkbox("Auto-generate as I edit").classes("ss-autobuild")
+                        auto_build.props("dense").mark("auto-build")
+                        # Always start a session with auto-generate off, even if a previous
+                        # session left it on — generation is opt-in each time you open the deck.
+                        app.storage.general["auto_build"] = False
+                        auto_build.bind_value(app.storage.general, "auto_build")
+                        self.auto_build = auto_build
+                        self._sync_auto_build_gate()
+                        auto_build.on_value_change(
+                            lambda e: self._on_auto_build_toggle(bool(e.value))
+                        )
+                        single_trans = ui.checkbox("Play transitions in single-slide preview")
+                        single_trans.props("dense").mark("single-slide-transitions")
+                        single_trans.tooltip(
+                            "When on, playing one slide animates its in/out transitions; "
+                            "off (default) plays just that slide's narration"
+                        )
+                        # Off each session — proofing one slide's audio shouldn't morph by
+                        # default; the whole-deck preview always plays transitions regardless.
+                        app.storage.general["single_slide_transitions"] = False
+                        single_trans.bind_value(app.storage.general, "single_slide_transitions")
+                        self.gen_all_btn = ui.button(
+                            "Generate missing", icon="library_music"
+                        ).classes("w-full")
+                        self.gen_all_btn.props("flat no-caps").mark("gen-missing")
+                        self.gen_all_btn.tooltip(
+                            "Makes only the clips that don't exist yet — finished audio is left untouched"
+                        )
+                        export_btn = ui.button("Export video", icon="movie").classes(
+                            "w-full ss-export"
+                        )
+                        export_btn.props("unelevated no-caps color=primary").mark("export")
+                    with ui.tab_panel(review_tab).classes("ss-console-panel gap-3"):
+                        self.review.build_console()
 
         # --- footer: engine · sidecar · status flash · hints ---
         with ui.footer().classes("ss-footer no-wrap"):
@@ -1765,6 +1834,7 @@ class EditorView:
         )
         self.jobs.start()
         self.client.on_disconnect(self.jobs.stop)
+        ui.timer(0.05, self.render_pages_in_background, once=True)  # once the page is up
 
         # --- event wiring -----------------------------------------------------
         # NiceGUI's `args` filter only reaches top-level event keys, so a real
@@ -1786,9 +1856,10 @@ class EditorView:
         speed_btn.on_click(lambda: self.player.cycle_speed())
         gen_all_btn = self.gen_all_btn
         gen_all_btn.on_click(self.enqueue_missing)
-        export_btn.on_click(lambda: self.run_action(export_btn, self._export_work))
+        export_btn.on_click(lambda: self._on_export(export_btn))
 
         ui.timer(SOURCE_POLL_INTERVAL_S, self._poll_sources)
+        ui.timer(SOURCE_POLL_INTERVAL_S, self.review.poll)
         ui.timer(0.5, self._render_gen_progress)  # live elapsed/estimate while generating
 
         strip_toggle.on_click(lambda: self.layout.toggle("strip"))
@@ -1800,6 +1871,8 @@ class EditorView:
         ui.on("ss_resize", self.layout.on_resize)
         ui.keyboard(on_key=self._on_key)
 
+        if not self.state.review.active:
+            self.review.compute()  # cheap with review off; on, render() compares in the background
         self.render()
         self.layout.sync_toggles()
         if self.auto_build_active():  # deck opened with auto-build already on: fill it
@@ -1920,29 +1993,119 @@ class EditorView:
 
     # ---- filmstrip -----------------------------------------------------
     def build_strip(self) -> None:
-        """(Re)build the filmstrip; thumbnails degrade to id tiles without pdftoppm."""
+        """(Re)build the filmstrip at once: rendered pages show, the rest fill in.
+
+        Page images render in the background (:meth:`render_pages_in_background`),
+        so opening a deck never waits on pdftoppm; without pdftoppm the tiles
+        keep showing the slide id.
+        """
         state = self.state
-        images: list[Path] = []
+        images: list[Path | None] = [None] * state.page_count
         try:
-            images = state.ensure_images()
+            images = state.page_images()
         except Exception as exc:
-            logger.warning("thumbnail render failed: %s", exc)
+            logger.warning("page images unavailable: %s", exc)
         self.thumb_cards.clear()
+        self.thumb_slots.clear()
+        self.review.reset_thumbs()
         self.strip_col.clear()
+        ghosts = self.review.removed_after()  # removed slides, after their old predecessor
         with self.strip_col:
+            for sid in ghosts.get(-1, []):
+                self.review.build_removed_thumb(sid)
             for i, sid in enumerate(state.deck.pages):
                 with ui.element("div").classes("ss-thumb").mark(f"thumb-{i}") as card:
-                    if i < len(images):
-                        ui.image(_media_url(state, images[i], cache_bust=True)).classes("w-full")
-                    else:
-                        ui.label(sid or f"page {i + 1}").classes("ss-thumb-fallback ss-mono")
+                    with ui.element("div").classes("ss-thumb-slot") as slot:
+                        self._thumb_content(i, sid, images[i] if i < len(images) else None)
                     dot = ui.element("div").classes("ss-dot")
                     audio_badge = ui.icon("graphic_eq").classes("ss-thumb-audio hidden")
                     audio_badge.mark(f"thumb-audio-{i}")
                     audio_badge.tooltip("Some audio on this slide isn't generated yet")
                     ui.label(str(i + 1)).classes("ss-thumb-num")
-                card.on("click", lambda _e=None, i=i: self.jump(i))
+                    self.review.decorate_thumb(i)
+                card.on("click", lambda _e=None, i=i: self._thumb_click(i))
                 self.thumb_cards.append((card, dot, audio_badge))
+                self.thumb_slots.append(slot)
+                for gone in ghosts.get(i, []):
+                    self.review.build_removed_thumb(gone)
+
+    def _thumb_click(self, index: int) -> None:
+        """A greyed-out thumb (outside the chosen conversation) leaves that view."""
+        self.review.leave_filter_for(self.state.deck.pages[index])
+        self.jump(index)
+
+    def _thumb_content(self, i: int, sid: str, image: Path | None) -> None:
+        if image is not None:
+            ui.image(_media_url(self.state, image, cache_bust=True)).classes("w-full").mark(
+                f"thumb-img-{i}"
+            )
+        else:
+            ui.label(sid or f"page {i + 1}").classes("ss-thumb-fallback ss-mono")
+
+    def _fill_thumb(self, i: int, image: Path | None) -> None:
+        if image is None or i >= len(self.thumb_slots) or i >= self.state.page_count:
+            return
+        slot = self.thumb_slots[i]
+        slot.clear()
+        with slot:
+            self._thumb_content(i, self.state.deck.pages[i], image)
+
+    def render_pages_in_background(self) -> None:
+        """Start filling in missing page images (or re-check, if already running)."""
+        if self._page_render_running:
+            self._page_render_again = True  # e.g. a recompile mid-render
+            return
+        self._page_render_running = True
+        self._page_task(self._render_missing_pages())
+
+    async def _render_missing_pages(self) -> None:
+        """Render missing pages nearest the current slide first, a few per pdftoppm run.
+
+        The current slide goes alone (it's what you're looking at); the rest go in
+        small runs so a jump elsewhere is picked up within a fraction of a second.
+        """
+        try:
+            while not self.strip_col.is_deleted:
+                self._page_render_again = False
+                state = self.state
+                first = state.next_missing(near=state.index)
+                if first is None:
+                    return
+                images = state.page_images()
+                last = first
+                if first != state.index:
+                    while (
+                        last + 1 < state.page_count
+                        and last - first < _PAGES_PER_RENDER - 1
+                        and images[last + 1] is None
+                        and last + 1 != state.index
+                    ):
+                        last += 1
+                try:
+                    await run.io_bound(state.render_pages, first, last)
+                except Exception as exc:  # no pdftoppm, or a half-written PDF
+                    logger.warning("page render failed: %s", exc)
+                    return
+                if state is not self.state or self.strip_col.is_deleted:
+                    return
+                images = state.page_images()
+                if first >= len(images) or images[first] is None:
+                    if self._page_render_again:
+                        continue  # the deck changed under us — start on the new build
+                    return  # pdftoppm wrote nothing: stop rather than spin
+                for i in range(first, min(last + 1, len(images))):
+                    self._fill_thumb(i, images[i])
+                if first <= state.index <= last:
+                    self._show_current_image()
+        finally:
+            self._page_render_running = False
+
+    def _show_current_image(self) -> None:
+        img = self.state.current_image()
+        if img is not None:
+            self.slide_img.set_source(_media_url(self.state, img, cache_bust=True))
+        else:
+            self.slide_img.set_source("")  # not rendered yet — don't show another slide
 
     def _scroll_strip(self) -> None:
         card = self.thumb_cards[self.state.index][0]
@@ -1973,6 +2136,39 @@ class EditorView:
         with self.flash_label:  # park the timer in a slot that outlives any card rebuild
             ui.timer(linger, _fade, once=True)
 
+    def narration_conflict(self, exc: NarrationChangedOnDisk) -> None:
+        """A save was refused because the narration file changed on disk.
+
+        The other writer (usually an agent) wins; show its version and hand the
+        user's unsaved text back in a dialog so it can be copied, not lost.
+        """
+        self.render()  # the state already reloaded from disk; show that version
+        with self.flash_label:  # a slot that outlives the card rebuild above
+            with ui.dialog() as dialog, ui.card().classes("ss-conflict"):
+                ui.label("The narration file changed on disk while you were editing").classes(
+                    "text-bold"
+                )
+                ui.label(
+                    "Probably the agent. Your change wasn't saved, "
+                    "and the latest version is now shown."
+                )
+                if exc.lost_text:
+                    ui.label("Your unsaved text:")
+                    ui.label(exc.lost_text).classes("ss-orphan-text").mark("conflict-text")
+                with ui.row().classes("w-full justify-end"):
+                    if exc.lost_text:
+                        lost = exc.lost_text
+                        copy = ui.button("Copy my text", icon="content_copy")
+                        copy.props("flat no-caps").mark("conflict-copy")
+                        copy.on_click(lambda: self._copy_lost(lost))
+                    ui.button("Close", on_click=dialog.close).props("no-caps")
+        dialog.open()
+        self.flash("Narration changed on disk — your change wasn't saved", "warning")
+
+    def _copy_lost(self, text: str) -> None:
+        ui.clipboard.write(text)
+        self.flash("Copied your text", "info")
+
     def show_saved_flash(self) -> None:
         self.saved_flash.classes(remove="opacity-0")
         with self.saved_flash:  # park the timer in a slot that outlives card rebuilds
@@ -1998,11 +2194,11 @@ class EditorView:
         self.add_line_btn.set_enabled(editable)
         self.add_pause_btn.set_enabled(editable)
         try:
-            img = state.current_image()
-            if img is not None:
-                self.slide_img.set_source(_media_url(state, img, cache_bust=True))
-        except Exception as exc:  # rasterize may fail without pdftoppm
-            logger.warning("image render failed: %s", exc)
+            self._show_current_image()
+        except Exception as exc:
+            logger.warning("page image unavailable: %s", exc)
+        if state.current_image() is None:
+            self.render_pages_in_background()  # a jump to an unrendered slide: it goes next
         ungenerated = state.ungenerated_ids()
         for i, (card, dot, audio_badge) in enumerate(self.thumb_cards):
             if i >= len(state.deck.pages):
@@ -2020,8 +2216,20 @@ class EditorView:
         self._render_diagnostics()
         self._render_audio_status()
         self.tray.render()
+        self._sync_review()
         self.player.sync_transport()
         self.blocks.sync_gen_buttons()
+
+    def _sync_review(self) -> None:
+        """Recompute review status if that's cheap (PDF unchanged), else in the
+        background — then redraw the review tools."""
+        if not self.state.review.active or self.state.review.pages_fresh():
+            self.review.compute()  # cheap: nothing to compare, or pages cached
+            self.review.sync()
+        else:
+            self.review.sync()
+            if not self.review.refreshing:
+                self._page_task(self.review.refresh())
 
     def _render_diagnostics(self) -> None:
         self.diag_box.clear()
@@ -2057,6 +2265,7 @@ class EditorView:
     # ---- navigation (each saves first) ----
     def jump(self, index: int) -> None:
         self.blocks.save_current()
+        self.review.leave_removed()
         state = self.state
         moved = max(0, min(index, state.page_count - 1)) != state.index
         state.go(index)
@@ -2070,6 +2279,8 @@ class EditorView:
         self.render()
 
     def go(self, delta: int) -> None:
+        if self.review.step(delta):  # within a conversation, or off a removed slide
+            return
         self.jump(self.state.index + delta)
 
     def _on_key(self, e: KeyEventArguments) -> None:
@@ -2084,6 +2295,14 @@ class EditorView:
         if e.modifiers.ctrl and str(e.key).lower() == "k":
             self._page_task(self.open_switcher())
             return
+        key = str(e.key).lower()
+        if not (e.modifiers.ctrl or e.modifiers.meta or e.modifiers.shift):
+            if key == "d":  # review: base version full-size / side by side
+                self.review.toggle_before_only()
+                return
+            if key == "n":  # review: next slide waiting for you
+                self.review.next_your_turn()
+                return
         delta = nav_direction(e.key)
         if delta:
             self.go(delta)
@@ -2495,7 +2714,12 @@ class EditorView:
                 default = renames[default]
             elif default is None and state.deck.default_voice in renames:
                 default = renames[state.deck.default_voice]
-            changed = state.edit_voices(new_map, default, renames=renames)
+            try:
+                changed = state.edit_voices(new_map, default, renames=renames)
+            except NarrationChangedOnDisk as exc:
+                dialog.close()
+                self.narration_conflict(exc)
+                return
             dialog.close()
             if changed:
                 self.render()  # voice pickers, placeholders, unmapped warnings relight
@@ -2548,10 +2772,31 @@ class EditorView:
             self.jobs.enqueue(targets)
             self.render_side()
 
-    def _export_work(self) -> str:
+    def _export_work(self, *, draft: bool = False) -> str:
         out = self.state.pdf_path.with_suffix(".mp4")
-        result = self.state.export(out)
-        return f"Exported {out.name} ({result.duration:.1f}s)"
+        result = self.state.export(out, draft=draft)
+        return f"Exported {result.video.name} ({result.duration:.1f}s)"
+
+    async def _on_export(self, btn: Any) -> None:
+        """Export the final video — or, when the deck isn't ready, say why and
+        offer a draft (a plain build, or review conversations still open)."""
+        if self.busy:
+            return
+        reasons = await run.io_bound(self.state.export_blockers)
+        if not reasons:
+            await self.run_action(btn, self._export_work)
+            return
+        with ui.dialog() as dialog, ui.card():
+            ui.label("Not ready for the final video").classes("text-bold")
+            for reason in reasons:
+                ui.label(f"• {reason}")
+            ui.label("You can still export a draft (saved as a separate .draft.mp4 file).")
+            with ui.row().classes("w-full justify-end"):
+                ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat no-caps")
+                draft = ui.button("Export draft", on_click=lambda: dialog.submit(True))
+                draft.props("no-caps").mark("export-draft")
+        if await dialog:
+            await self.run_action(btn, lambda: self._export_work(draft=True))
 
     async def confirm_paid_synth(self, count: int, action_label: str = "Generate & play") -> bool:
         """Popup gate before any paid synthesis. Returns True only on explicit OK.
@@ -2602,11 +2847,8 @@ class EditorView:
         # mid-build; an in-GUI edit already does this via replace_block.
         if self.player.playback.loaded_key is not None:
             self.player.stop_playback()
-        try:
-            await run.io_bound(state.ensure_images)  # rasterize off the event loop
-        except Exception:
-            pass  # build_strip degrades to id tiles
         self.build_strip()
+        self.render_pages_in_background()
         # A PDF/config-only recompile leaves the narration untouched on disk, so
         # rebuilding the block editor would only revert whatever the user is
         # mid-typing. Refresh everything *but* the editor — unless our own slide
@@ -2622,6 +2864,8 @@ class EditorView:
         if self.auto_build_active():
             self._sweep_auto_build()
         self.flash("Deck files changed on disk — reloaded", "info")
+        if changes & {"pdf", "sidecar"}:
+            await self.review.after_reload()
 
 
 def build_editor(

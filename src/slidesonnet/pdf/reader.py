@@ -21,6 +21,8 @@ from slidesonnet.proc import run_tool
 logger = logging.getLogger(__name__)
 
 _SSID_RE = re.compile(r"SSID:(\S+)")
+_FINAL_MARKER = "SSFINAL"
+_PLAIN_MARKER = "SSPLAIN"
 
 
 def read_page_ids(pdf_path: Path) -> list[str]:
@@ -38,6 +40,36 @@ def read_page_ids(pdf_path: Path) -> list[str]:
             match = _SSID_RE.search(page.get_text())
             ids.append(match.group(1) if match else "")
     return ids
+
+
+def is_final_build(pdf_path: Path) -> bool:
+    """True when *pdf_path* was compiled as a final build (``\\ssfinal``).
+
+    ``slidesonnet.sty`` hides position-dependent decorations (page numbers,
+    navigation, progress bars) in an ordinary *plain* compile and shows them
+    only in a final build, which it stamps with an invisible ``SSFINAL`` marker
+    next to each page's ``SSID``. The first page decides.
+    """
+    return _build_marker(pdf_path) == _FINAL_MARKER
+
+
+def is_plain_build(pdf_path: Path) -> bool:
+    """True when *pdf_path* is a plain build from the current ``slidesonnet.sty``.
+
+    Plain builds are stamped ``SSPLAIN``; a PDF from an older ``.sty`` carries
+    neither marker and is neither plain nor final.
+    """
+    return _build_marker(pdf_path) == _PLAIN_MARKER
+
+
+def _build_marker(pdf_path: Path) -> str | None:
+    if not pdf_path.exists():
+        raise ParserError(f"PDF not found: {pdf_path}")
+    with fitz.open(pdf_path) as doc:
+        if doc.page_count == 0:
+            return None
+        words = doc[0].get_text().split()
+    return next((w for w in words if w in (_FINAL_MARKER, _PLAIN_MARKER)), None)
 
 
 def page_count(pdf_path: Path) -> int:
@@ -152,3 +184,51 @@ def rasterize(
         raise ParserError(f"pdftoppm produced no images for {pdf_path}")
     write_render_stamp(pdf_path, out_dir, dpi=dpi, prefix=prefix, count=len(pages))
     return pages
+
+
+def _page_files(out_dir: Path, prefix: str) -> dict[int, Path]:
+    """Page images in *out_dir*, by 0-based page index (pdftoppm names are 1-based)."""
+    return {_numeric_suffix(p) - 1: p for p in out_dir.glob(f"{prefix}-*.png")}
+
+
+def open_render(
+    pdf_path: Path, out_dir: Path, *, page_count: int, dpi: int = 150, prefix: str = "page"
+) -> dict[int, Path]:
+    """The page images already rendered from *pdf_path*, for filling in the rest.
+
+    Unlike :func:`cached_pages` this accepts a partial render: the editor shows
+    a deck at once and renders its pages in the background, a few at a time.
+    Images from another build (or dpi) are deleted and the render restarts.
+    """
+    try:
+        stamp = json.loads((out_dir / RENDER_STAMP_NAME).read_text(encoding="utf-8"))
+        wanted = _render_identity(pdf_path, dpi=dpi, prefix=prefix)
+        same = isinstance(stamp, dict) and all(stamp.get(k) == v for k, v in wanted.items())
+    except (OSError, ValueError):
+        same = False
+    if same:
+        return _page_files(out_dir, prefix)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / RENDER_STAMP_NAME).unlink(missing_ok=True)
+    for stale in out_dir.glob(f"{prefix}-*.png"):
+        stale.unlink(missing_ok=True)
+    write_render_stamp(pdf_path, out_dir, dpi=dpi, prefix=prefix, count=page_count)
+    return {}
+
+
+def render_page_range(
+    pdf_path: Path, out_dir: Path, first: int, last: int, *, dpi: int = 150, prefix: str = "page"
+) -> dict[int, Path]:
+    """Render pages *first*..*last* (0-based, inclusive) into *out_dir* via pdftoppm.
+
+    File names match a whole-deck :func:`rasterize` (pdftoppm pads page numbers
+    to the document's page count), so the two can fill the same directory.
+    """
+    cmd = [
+        "pdftoppm", "-png", "-r", str(dpi), "-f", str(first + 1), "-l", str(last + 1),
+        str(pdf_path), str(out_dir / prefix),
+    ]  # fmt: skip
+    run_tool(
+        cmd, error_cls=ParserError, install_hint="poppler-utils", fail_message="pdftoppm failed"
+    )
+    return {i: p for i, p in _page_files(out_dir, prefix).items() if first <= i <= last}

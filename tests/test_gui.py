@@ -513,6 +513,56 @@ async def test_ctrl_s_saves_the_field_being_typed(
     assert "Fresh words, mid-edit." in sidecar
 
 
+async def test_save_after_external_sidecar_edit_keeps_theirs_and_offers_mine(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent rewrote the narration between polls; saving must not clobber it.
+    The editor keeps the file's version and shows the unsaved text to copy."""
+    pdf = _prep(tmp_path, sidecar="@intro-title\nOld words.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(simple_narration("@intro-title\nThe agent's words.\n"), encoding="utf-8")
+    later = time.time() + 5
+    os.utime(sidecar, (later, later))
+
+    user.find(ui.textarea).clear().type("My unsaved words.")
+    user.find(marker="utext-0").trigger("keydown.ctrl.s.prevent")
+
+    await user.should_see("changed on disk")
+    await user.should_see("My unsaved words.")  # offered back for copying
+    user.find(marker="conflict-copy")  # a copy button is there
+    assert "The agent's words." in sidecar.read_text(encoding="utf-8")
+    assert "My unsaved words." not in sidecar.read_text(encoding="utf-8")
+
+
+async def test_export_when_not_ready_offers_a_draft(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Open review conversations block the final video; the editor says why
+    and offers a draft instead of failing with an error."""
+    from slidesonnet.review import ops
+
+    pdf = _prep(tmp_path, sidecar="@intro-title\nHi.\n")
+    ops.comment(pdf, ["intro-title"], "reword this", author="author")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    drafts: list[bool] = []
+    monkeypatch.setattr(
+        "slidesonnet.gui.state.EditorState.export",
+        lambda self, out, *, silent=False, draft=False: (
+            drafts.append(draft)
+            or api.ExportResult(video=out, subtitles=[], duration=1.0, silent=False)
+        ),
+    )
+    await user.open("/")
+    user.find(marker="export").click()
+    await user.should_see("Not ready for the final video")
+    await user.should_see("c1")
+    user.find(marker="export-draft").click()
+    await user.should_see("Exported", retries=100)
+    assert drafts == [True]
+
+
 async def test_diagnostics_visible(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1297,6 +1347,7 @@ async def test_slide_image_refetches_after_recompile(
     monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
     await user.open("/")
     await user.should_see("Slide 1 / 3")
+    await user.should_see(marker="thumb-img-2", retries=100)  # background render done
     img = next(iter(user.find(marker="stage-img").elements))
     before = str(img.props.get("src"))
 
@@ -1304,6 +1355,7 @@ async def test_slide_image_refetches_after_recompile(
     later = time.time() + 5
     os.utime(pdf, (later, later))
     await user.should_see("Deck files changed on disk — reloaded", retries=300)
+    await user.should_see(marker="thumb-img-1", retries=100)  # the new build rendered
 
     after = str(img.props.get("src"))
     assert before != after  # cache-busted → the browser refetches the fresh image
@@ -1888,3 +1940,45 @@ async def test_paid_confirm_names_the_session_engine_not_disk_default(
     sel.set_value("inworld")  # session pick: a paid engine while disk config is kokoro
     user.find(marker="gen-missing").click()
     await user.should_see("inworld will spend API credits")  # the engine that bills, not kokoro
+
+
+async def test_deck_opens_before_its_pages_render(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opening never waits on a whole-deck pdftoppm: pages render in the
+    background, one small run at a time, the current slide first."""
+    from slidesonnet.pdf import reader
+
+    calls: list[list[str]] = []
+    stub = reader.run_tool  # conftest's stub pdftoppm
+
+    def spy(cmd: list[str], **kw: object) -> None:
+        calls.append(cmd)
+        stub(cmd, **kw)
+
+    monkeypatch.setattr(reader, "run_tool", spy)
+    pdf = _prep(tmp_path)
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see("Slide 1 / 6")
+    for i in range(6):
+        await user.should_see(marker=f"thumb-img-{i}", retries=100)
+    assert calls and all("-f" in c for c in calls)  # never the whole deck in one go
+    assert calls[0][calls[0].index("-f") + 1 : calls[0].index("-l") + 2] == ["1", "-l", "1"]
+
+
+async def test_reopening_reuses_rendered_pages(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _prep(tmp_path)
+    from slidesonnet.gui.state import EditorState
+
+    EditorState(pdf).ensure_images()  # a previous session rendered everything
+    from slidesonnet.pdf import reader
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(reader, "run_tool", lambda cmd, **kw: calls.append(cmd))
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    await user.should_see(marker="thumb-img-5")
+    assert calls == []
