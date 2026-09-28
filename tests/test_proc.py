@@ -89,3 +89,41 @@ def test_hung_tool_is_killed_at_the_timeout(tmp_path: Path) -> None:
     cmd = _script(tmp_path, "import time\ntime.sleep(30)")
     with pytest.raises(ToolError, match="timed out after 1s"):
         _run(cmd, [], timeout=1.0)
+
+
+# ---- cancellation: a cancelled job must not leave its tool running ----------
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_cancel_scope_kills_a_running_tool(streaming: bool, tmp_path: Path) -> None:
+    """Cancelling a job stops its subprocess promptly instead of waiting it out."""
+    import threading
+    import time
+
+    from slidesonnet.cancellation import cancel_scope
+    from slidesonnet.exceptions import GenerationCancelled
+    from slidesonnet.proc import run_tool, run_tool_with_progress
+
+    slow = tmp_path / "slow-tool"
+    slow.write_text("#!/bin/sh\nsleep 30\n")  # ignores the ffmpeg flags streaming adds
+    slow.chmod(0o755)
+    cancel = threading.Event()
+    threading.Timer(0.2, cancel.set).start()
+    start = time.monotonic()
+    with cancel_scope(cancel), pytest.raises(GenerationCancelled):
+        if streaming:
+            run_tool_with_progress(
+                [str(slow)],
+                on_time=lambda _t: None,
+                error_cls=RuntimeError,
+                install_hint="coreutils",
+                fail_message="sleep failed",
+            )
+        else:
+            run_tool(
+                [str(slow)],
+                error_cls=RuntimeError,
+                install_hint="coreutils",
+                fail_message="sleep failed",
+            )
+    assert time.monotonic() - start < 5

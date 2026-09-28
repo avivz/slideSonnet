@@ -87,6 +87,20 @@ def _isolate_model_cache() -> Iterator[None]:
         mod._MODEL_CACHE.clear()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_deck_services() -> Iterator[None]:
+    """Forget the process-wide per-deck services (and their pending sweeps) per test.
+
+    ``slidesonnet.server.decks`` keeps one service per deck path; a later test
+    reusing a tmp path must not inherit an earlier test's lock or prune timer.
+    """
+    from slidesonnet.server.decks import reset_services
+
+    reset_services()
+    yield
+    reset_services()
+
+
 class _GuardedInworld:
     """Stand-in for the real Inworld client: any construction is a test bug.
 

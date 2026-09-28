@@ -172,6 +172,19 @@ Checkpoint: API tests green in CI; NiceGUI editor behaves identically on a
 demo deck, with saves no longer stalling the UI and overlapping previews
 playing their own tracks.
 
+*As built* (`src/slidesonnet/server/`): `revisions.py` (content hashes),
+`decks.py` (`DeckService`: per-deck lock, revision-checked atomic writes,
+debounced orphan sweep), `editing.py` (block/orphan/voice edits by explicit
+slide id), `jobs.py` + `events.py` (job manager, SSE bus), `previews.py`
+(immutable artifacts + manifest), `media.py`, `snapshots.py`, `schemas.py`,
+`routes.py`, `context.py`/`app.py` (mounting, host/origin/session guard),
+`openapi.py` (schema export for the TS types). Two deliberate gaps: the
+review routes wait for Phase 5, where their consumer is built; and the
+NiceGUI editor keeps its per-clip generation queue (`gui/jobs.py`, now
+behind the shared per-engine lock) until the Vue editor's generate commands
+replace it in Phase 4. Preview and export in the NiceGUI editor already run
+as backend jobs.
+
 ### Phase 2 — Frontend toolchain, packaging, and the library in Vue
 
 - Scaffold `frontend/` (Vite, Vue, Router, Pinia, Vitest, ESLint, `vue-tsc`).

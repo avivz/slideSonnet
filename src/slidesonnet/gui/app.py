@@ -8,6 +8,7 @@ sample-accurate to the exported video.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -18,13 +19,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from fastapi import HTTPException, Request, Response
 from nicegui import app, background_tasks, run, ui
 from nicegui.events import KeyEventArguments
 
 from slidesonnet.audio.track import Cue
 from slidesonnet.cache import render_dir
-from slidesonnet.diagnostics import boundary_transition
 from slidesonnet.exceptions import NarrationChangedOnDisk
 from slidesonnet.gui.jobs import JobQueue
 from slidesonnet.gui.launch import (
@@ -33,7 +32,7 @@ from slidesonnet.gui.launch import (
     is_wsl,
     launch_browser,
 )
-from slidesonnet.gui.library import DeckEntry, DeckRegistry, deck_token
+from slidesonnet.gui.library import DeckEntry, DeckRegistry
 from slidesonnet.gui.review_panel import ReviewPanel
 from slidesonnet.gui.state import (
     EditorState,
@@ -45,14 +44,16 @@ from slidesonnet.gui.theme import HEAD_MORPH, HEAD_RESIZE, apply_theme, wordmark
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration import transitions as trans
 from slidesonnet.narration.format import serialize_body
-from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
+from slidesonnet.narration.model import Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
-from slidesonnet.review.base import base_dir
+from slidesonnet.server.app import install_api
+from slidesonnet.server.context import ServerContext, context_of
+from slidesonnet.server.jobs import JobContext, JobKind
+from slidesonnet.server.media import base_media_url, media_url
+from slidesonnet.server.previews import PreviewArtifact, morph_schedule, single_slide_morph
 from slidesonnet.tts import BACKENDS
 
 logger = logging.getLogger(__name__)
-
-_MEDIA_URL = "/ssmedia"
 
 #: The decks this process serves, addressed by token. Set by :func:`run_editor`;
 #: created on demand for the standalone ``build_editor`` path (tests, dev server).
@@ -251,178 +252,30 @@ def toggled_width(current: float, remembered: float, *, default: float) -> tuple
     return (remembered if remembered > 2.0 else default), remembered
 
 
-def _is_content_stamp(value: str | None) -> bool:
-    """True for a ``?v=<mtime_ns>-<size>`` stamp minted by :func:`_media_url`.
-
-    Checked by shape rather than by mere presence so that only a URL naming one
-    exact byte-for-byte render can earn the immutable cache header. A file that is
-    rewritten in place at a fixed path (the assembled preview track) can never
-    produce such a stamp, so it can never be pinned in the browser cache by
-    accident — the failure mode there is silent and confusing: audio from a slide
-    you previewed in an earlier session playing over the slide you're looking at.
-    """
-    if not value:
-        return False
-    mtime, _, size = value.partition("-")
-    return mtime.isdigit() and size.isdigit()
-
-
-_BASE_PREFIX = "_base/"
-
-
 def _base_media_url(state: EditorState, path: Path) -> str:
     """URL for a review-base page image (named by its pixel hash, so immutable)."""
-    return f"{_MEDIA_URL}/{deck_token(state.pdf_path)}/{_BASE_PREFIX}{path.name}?v=0-{path.stem}"
+    return base_media_url(state.pdf_path, path)
 
 
 def _media_url(state: EditorState, path: Path, *, cache_bust: bool = False) -> str:
-    """URL for a render artifact under the deck's media dir.
-
-    Page images are re-rasterized to the same ``page-N.png`` paths on every
-    recompile, so without a version query the browser serves the stale cached
-    image (you'd still see a dropped/old slide). ``cache_bust`` appends a
-    ``(mtime, size)`` stamp so a re-render changes the URL and forces a refetch.
-    """
-    rel = path.resolve().relative_to(render_dir(state.pdf_path).resolve())
-    url = f"{_MEDIA_URL}/{deck_token(state.pdf_path)}/{rel.as_posix()}"
-    if cache_bust:
-        try:
-            st = path.stat()
-            url = f"{url}?v={st.st_mtime_ns}-{st.st_size}"
-        except OSError:
-            pass
-    return url
-
-
-def _morph_schedule(
-    cues: Sequence[Cue],
-    deck: Deck,
-    images: Sequence[Path],
-    media_url: Callable[[Path], str],
-) -> list[dict[str, Any]]:
-    """Per-boundary morph steps for the preview's transition overlay.
-
-    Mirrors the export's absorb-into-hold model: each animated boundary's morph
-    *completes* at the next slide's cue start (``at``), running ``dur`` seconds
-    of the outgoing slide's trailing hold — so the preview's transition lands at
-    the same instant the cue flips, just as the rendered wipe does. Plain cuts
-    emit nothing. Returns JSON-able dicts the client-side engine plays against
-    the audio clock.
-    """
-    steps: list[dict[str, Any]] = []
-    index = {sid: i for i, sid in enumerate(deck.pages)}
-    for i in range(len(cues) - 1):
-        a_start, a_sid = cues[i]
-        b_start, b_sid = cues[i + 1]
-        tr = boundary_transition(deck.page_narration(a_sid), deck.page_narration(b_sid))
-        if not tr.is_animated:
-            continue
-        ia, ib = index.get(a_sid), index.get(b_sid)
-        if ia is None or ib is None or ia >= len(images) or ib >= len(images):
-            continue  # filmstrip not rasterized (no pdftoppm) — fall back to a flip
-        span = b_start - a_start
-        steps.append(
-            {
-                "at": b_start,
-                "dur": max(0.05, min(tr.seconds, span)),
-                "kind": tr.kind,
-                "from": media_url(images[ia]),
-                "to": media_url(images[ib]),
-            }
-        )
-    return steps
-
-
-def _single_slide_morph(
-    block: PageNarration,
-    incoming: Transition,
-    index: int,
-    images: Sequence[Path],
-    total: float,
-    media_url: Callable[[Path], str],
-    *,
-    enabled: bool = True,
-) -> list[dict[str, Any]]:
-    """Morph steps for a *single-slide* preview: its in- and out-transition.
-
-    *incoming* is the effective transition entering this slide (its boundary with
-    the previous slide); ``block.transition_out`` is the boundary with the next.
-    The in-transition morphs the previous slide into this one as playback opens;
-    the out-transition morphs this slide into the next as it closes. A missing
-    neighbour (the deck's first/last slide) morphs against a black frame
-    (``from``/``to`` is ``None``). Each is clamped to half the slide so the two
-    never overlap.
-
-    *enabled* is the "Play transitions in single-slide preview" toggle (off by
-    default): when False a single-slide play is a plain cut, no morph at all.
-    """
-    if not enabled:
-        return []
-
-    def url(j: int) -> str | None:
-        return media_url(images[j]) if 0 <= j < len(images) else None
-
-    here = url(index)
-    if here is None:  # no rasterized image — nothing to morph
-        return []
-    steps: list[dict[str, Any]] = []
-    if incoming.is_animated:
-        d = max(0.05, min(incoming.seconds, total / 2))
-        steps.append({"at": d, "dur": d, "kind": incoming.kind, "from": url(index - 1), "to": here})
-    t_out = block.transition_out
-    if t_out.is_animated:
-        d = max(0.05, min(t_out.seconds, total / 2))
-        steps.append(
-            {"at": total, "dur": d, "kind": t_out.kind, "from": here, "to": url(index + 1)}
-        )
-    return steps
+    """URL for a render artifact under the deck's media dir (see server.media)."""
+    return media_url(state.pdf_path, path, stamp=cache_bust)
 
 
 def _serve_media(state: EditorState) -> None:
-    """Ensure this deck's render dir exists and the media endpoint is live.
+    """Ensure this deck's render dir exists and the backend (API + media) is mounted.
 
-    One dynamic route serves every deck, keyed by token — a single ``/ssmedia``
-    mount would bind to whichever deck was opened first and then hand deck A's
-    page images to deck B. Requests go through NiceGUI's range-response helper,
-    so the preview player can still seek within the assembled track.
+    Asking the app rather than tracking a flag: the routes belong to the app
+    instance, and a stale module-level flag would silently skip registration on
+    a rebuilt app (as the test server does per test).
     """
     (render_dir(state.pdf_path) / "pages").mkdir(parents=True, exist_ok=True)
-    # Asking the router rather than tracking a flag: the route belongs to the
-    # app instance, and a stale module-level flag would silently skip
-    # registration on a rebuilt app (as the test server does per test).
-    route_path = _MEDIA_URL + "/{token}/{filename:path}"
-    if any(getattr(route, "path", None) == route_path for route in app.routes):
-        return
+    install_api(app, registry_for(state.pdf_path))
 
-    from nicegui.app.range_response import get_range_response
 
-    @app.get(route_path)
-    def _read_media(  # pyright: ignore[reportUnusedFunction]
-        request: Request, token: str, filename: str, nicegui_chunk_size: int = 8192
-    ) -> Response:
-        entry = _registry.resolve(token) if _registry is not None else None
-        if entry is None:  # unknown deck: never touch the filesystem for it
-            raise HTTPException(status_code=404, detail="Not Found")
-        local_dir = render_dir(entry.pdf_path).resolve()
-        if filename.startswith(_BASE_PREFIX):  # review base page images
-            local_dir = (base_dir(entry.pdf_path) / "pages").resolve()
-            filename = filename.removeprefix(_BASE_PREFIX)
-        filepath = (local_dir / filename).resolve()
-        if not filepath.is_relative_to(local_dir) or not filepath.is_file():
-            raise HTTPException(status_code=404, detail="Not Found")
-        response = get_range_response(filepath, request, chunk_size=nicegui_chunk_size)
-        # A content-stamped URL (?v=<mtime>-<size>, see _media_url) names one
-        # exact render, so it can be cached hard: without this the browser
-        # revalidates every filmstrip thumbnail on each deck switch — 49
-        # round-trips for a deck whose images haven't moved. Everything else —
-        # above all the assembled track.wav, which is rewritten in place at a
-        # fixed path and busted with a one-shot ?t= token — must keep
-        # revalidating, or the browser replays a stale slide's audio.
-        versioned = _is_content_stamp(request.query_params.get("v"))
-        response.headers["Cache-Control"] = (
-            "public, max-age=31536000, immutable" if versioned else "no-cache"
-        )
-        return response
+def _backend() -> ServerContext:
+    """The backend context mounted on NiceGUI's app (jobs, events, registry)."""
+    return context_of(app)
 
 
 _ALL_DOTS = "ss-dot-error ss-dot-warning ss-dot-ready ss-dot-empty"
@@ -568,6 +421,7 @@ class PreviewPlayer:
         self._build_task: asyncio.Task[None] | None = None
         self._build_key: str | None = None  # "deck" or the slide id being built
         self._build_btn: Any = None  # the play button wearing the build spinner
+        self._build_job: str | None = None  # the backend preview job being awaited
 
     @staticmethod
     def _fmt_clock(t: float) -> str:
@@ -631,11 +485,11 @@ class PreviewPlayer:
             images = []
         url = lambda p: _media_url(state, p, cache_bust=True)
         if whole_deck:
-            steps = _morph_schedule(self.cues, state.deck, images, url)
+            steps = morph_schedule(self.cues, state.deck, images, url)
         else:
             # single-slide transitions are opt-in (off by default) — a plain play
             # of one slide shouldn't flourish through its in/out morph by default.
-            steps = _single_slide_morph(
+            steps = single_slide_morph(
                 state.current_block,
                 state.incoming_transition,
                 state.index,
@@ -666,6 +520,9 @@ class PreviewPlayer:
         task = self._build_task
         if task is None or task.done():
             return
+        if self._build_job is not None:  # stop the assembly itself, not just the wait
+            with contextlib.suppress(KeyError, TypeError):
+                _backend().job_manager().cancel(self._build_job)
         task.cancel()
         if self._build_btn is not None:
             self._build_btn.props(remove="loading")
@@ -761,45 +618,56 @@ class PreviewPlayer:
                 view.jobs.enqueue(needed, allow_paid=True)
             await view.jobs.await_targets(needed)
 
-            def _on_assemble(phase: str, done: int, total: int, label: str) -> None:
-                # Runs in the io_bound worker thread; just record the counts. The
-                # 0.5s progress timer (on the event loop) reads and renders them.
-                if phase == "assemble":
-                    view.assembling = (done, total)
+            slide = None if whole_deck else state.current_id
+            jobs = _backend().job_manager()
 
-            build = state.preview_deck if whole_deck else state.preview_current
+            def build(ctx: JobContext) -> PreviewArtifact:
+                def progress(phase: str, done: int, total: int, label: str) -> None:
+                    # Runs in the job's worker thread; just record the counts. The
+                    # 0.5s progress timer (on the event loop) reads and renders them.
+                    if phase == "assemble":
+                        view.assembling = (done, total)
+                    ctx.progress(phase, done, total, label)  # also where a cancel lands
+
+                return state.preview_artifact(slide, progress)
+
+            job = jobs.submit(
+                "preview",
+                view.entry.token,
+                {"slide_id": slide, "engine": state.active_backend},
+                build,
+            )
+            self._build_job = job.id
             view.assembling = (0, 0)  # show "Assembling audio…" until the first tick
             try:
-                preview = await run.io_bound(build, _on_assemble)
+                finished = await jobs.wait(job.id)
             finally:
                 view.assembling = None
-            if preview is None:
-                return  # NiceGUI returns None when the app is shutting down
+            if finished.status == "cancelled":
+                return
+            if finished.status != "succeeded" or not isinstance(finished.result, PreviewArtifact):
+                message = finished.error.message if finished.error else "preview failed"
+                raise RuntimeError(message)
+            preview = finished.result
             with client:
                 if not self.playback.may_start(token):  # user pressed Stop while building
                     view.flash("Preview stopped", "info")
                     return
                 self.cues = preview.cues if whole_deck else []
-                self._arm_morph(whole_deck, preview.total_duration)
+                self._arm_morph(whole_deck, preview.duration)
                 # whole-deck playback starts where the user is, not back at slide 1:
                 # seek to the current slide's cue (a #t= media fragment so the
                 # browser starts there on load).
                 start_at = (cue_start(self.cues, state.current_id) or 0.0) if whole_deck else 0.0
-                # every preview renders to the same track path — vary the URL so
-                # the browser refetches instead of replaying the previous audio.
-                # Deliberately ``?t=`` and not ``?v=``: ``?v=`` means "content
-                # stamp, cache forever" (see _read_media), and this token is a
-                # per-page-load counter that restarts at 1 on every reload and
-                # deck switch — stamping the track with it would pin one session's
-                # first preview and replay it as the next session's, so you'd hear
-                # a different slide than the one on screen.
-                src = f"{_media_url(state, preview.track)}?t={token}"
+                # Each build is its own content-addressed file (B4), so the URL
+                # alone names this exact audio — no cache-busting token needed.
+                src = _media_url(state, preview.path)
                 if start_at > 0:
                     src = f"{src}#t={start_at}"
                 self.audio.set_source(src)
                 self._apply_speed()  # the load resets playbackRate; re-pin the chosen speed
                 self.playback.mark_loaded("deck" if whole_deck else state.current_id)
-                self.track_duration = preview.total_duration
+                self.track_duration = preview.duration
                 self.pos_slider.value = (
                     start_at / self.track_duration if self.track_duration else 0.0
                 )
@@ -810,7 +678,7 @@ class PreviewPlayer:
                     self.audio.seek(start_at)  # belt-and-suspenders for browsers that ignore #t=
                 self.playback.set_playing(True)  # optimistic; the browser event confirms
                 self.sync_transport()
-                view.flash(f"Preview ready ({preview.total_duration:.1f}s)", "positive")
+                view.flash(f"Preview ready ({preview.duration:.1f}s)", "positive")
         except asyncio.CancelledError:
             # Stop / navigation / a new play press aborted the wait. The queued
             # generation keeps running — we only stopped waiting on it.
@@ -828,6 +696,7 @@ class PreviewPlayer:
                 self._build_task = None
                 self._build_key = None
                 self._build_btn = None
+                self._build_job = None
                 with client:
                     btn.props(remove="loading")
                     view.render()
@@ -2370,6 +2239,8 @@ class EditorView:
         btn: Any,
         work: Callable[[], str],
         *,
+        kind: JobKind = "export",
+        inputs: dict[str, Any] | None = None,
         stops_player: bool | Callable[[], bool] = False,
     ) -> None:
         if self.busy:
@@ -2383,10 +2254,17 @@ class EditorView:
         self.blocks.save_current()
         btn.props("loading")
         try:
-            done = await run.io_bound(work)
-            if done is None:
-                return  # NiceGUI returns None when the app is shutting down
-            self.flash(done, "positive")
+            # A backend job: it keeps running if this tab closes or navigates, and
+            # any other tab (or the API) can see and cancel it.
+            jobs = _backend().job_manager()
+            job = jobs.submit(kind, self.entry.token, dict(inputs or {}), lambda _ctx: work())
+            finished = await jobs.wait(job.id)
+            if finished.exception is not None:
+                raise finished.exception
+            if finished.status != "succeeded":
+                self.flash("Canceled", "info")
+                return
+            self.flash(str(finished.result), "positive")
         except NotImplementedError as exc:
             self.flash(str(exc), "warning")
         except Exception as exc:  # surface backend errors without crashing the UI
@@ -2841,7 +2719,7 @@ class EditorView:
             return
         reasons = await run.io_bound(self.state.export_blockers)
         if not reasons:
-            await self.run_action(btn, self._export_work)
+            await self.run_action(btn, self._export_work, inputs={"draft": False})
             return
         with ui.dialog() as dialog, ui.card():
             ui.label("Not ready for the final video").classes("text-bold")
@@ -2853,7 +2731,9 @@ class EditorView:
                 draft = ui.button("Export draft", on_click=lambda: dialog.submit(True))
                 draft.props("no-caps").mark("export-draft")
         if await dialog:
-            await self.run_action(btn, lambda: self._export_work(draft=True))
+            await self.run_action(
+                btn, lambda: self._export_work(draft=True), inputs={"draft": True}
+            )
 
     async def confirm_paid_synth(self, count: int, action_label: str = "Generate & play") -> bool:
         """Popup gate before any paid synthesis. Returns True only on explicit OK.
@@ -2991,6 +2871,8 @@ def register_pages(registry: DeckRegistry) -> None:
     timers dropped with the client) is the whole of the cleanup.
     """
     set_registry(registry)
+    backend = install_api(app, registry)
+    app.on_shutdown(backend.shutdown)
 
     @ui.page("/")
     def _library() -> None:  # pyright: ignore[reportUnusedFunction]
@@ -3040,6 +2922,7 @@ def run_editor(
     if pdf_path is not None:
         registry.register(pdf_path, sidecar_path=sidecar_path)
     register_pages(registry)
+    _backend().allow_host(host)
 
     logger.info(
         "Deck library: %d deck(s) under %s%s",

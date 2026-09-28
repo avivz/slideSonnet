@@ -516,8 +516,14 @@ def build_preview(
     engine: Engine | None = None,
     only_id: str | None = None,
     progress: ProgressFn | None = None,
+    render_dir: Path | None = None,
 ) -> Preview:
-    """Build a sample-accurate preview track + cue sheet (whole deck or one slide)."""
+    """Build a sample-accurate preview track + cue sheet (whole deck or one slide).
+
+    *render_dir* overrides where the page WAVs and ``track.wav`` are assembled
+    (default: the deck's render directory, shared with export so an unchanged
+    deck reuses its page audio).
+    """
     from slidesonnet.audio.synth import (
         page_speech_clips,
         page_speech_durations,
@@ -525,7 +531,7 @@ def build_preview(
     from slidesonnet.audio.synth import (
         synthesize as _synth,
     )
-    from slidesonnet.cache import render_dir
+    from slidesonnet.cache import render_dir as deck_render_dir
     from slidesonnet.render import build_timeline, render_audio_track
     from slidesonnet.timing import TimingMode
 
@@ -536,7 +542,7 @@ def build_preview(
     results = _synth(
         deck, config, audio_dir=_audio_dir(pdf_path, config), only_ids=only_ids, progress=progress
     )
-    rdir = render_dir(pdf_path)
+    rdir = render_dir or deck_render_dir(pdf_path)
     timeline = build_timeline(
         deck,
         TimingMode("tts"),

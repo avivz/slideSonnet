@@ -1,0 +1,403 @@
+"""The ``/api/v1`` contract, exercised through FastAPI's test client (no browser, no NiceGUI).
+
+What these pin: revision-checked writes (409, never a silent overwrite), the
+session/origin/host guard on mutations, stable error bodies, paid-synthesis
+approval, backend-owned jobs, immutable preview artifacts (B4), and ranged media.
+"""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from slidesonnet.api import Preview
+from slidesonnet.audio.track import Cue
+from slidesonnet.gui.library import DeckRegistry
+from slidesonnet.server.app import create_api_app
+from slidesonnet.server.context import SESSION_HEADER
+from tests.conftest import _StubTTS, simple_narration, write_pdf
+
+SIDECAR = "@intro\nHello there.\n@middle\nIn the middle.\n@gone\nFrom a dropped slide.\n"
+
+
+@pytest.fixture
+def deck(tmp_path: Path) -> Path:
+    (tmp_path / "course" / "week1").mkdir(parents=True)
+    pdf = write_pdf(tmp_path / "course" / "week1" / "talk.pdf", ["intro", "middle", "outro"])
+    (pdf.parent / "talk.narration").write_text(simple_narration(SIDECAR), encoding="utf-8")
+    return pdf
+
+
+@pytest.fixture
+def client(deck: Path) -> Iterator[TestClient]:
+    registry = DeckRegistry(deck.parent.parent)
+    registry.rescan()
+    with TestClient(create_api_app(registry)) as c:
+        c.headers[SESSION_HEADER] = c.get("/api/v1/session").json()["token"]
+        yield c
+
+
+def _token(client: TestClient) -> str:
+    lib = client.get("/api/v1/library").json()
+    return str(lib["sections"][0]["decks"][0]["token"])
+
+
+def _snapshot(client: TestClient, token: str) -> dict[str, Any]:
+    r = client.get(f"/api/v1/decks/{token}")
+    assert r.status_code == 200, r.text
+    return dict(r.json())
+
+
+def _speech(text: str) -> dict[str, Any]:
+    return {"kind": "speech", "text": text}
+
+
+def _wait(client: TestClient, job_id: str) -> dict[str, Any]:
+    for _ in range(200):
+        job = client.get(f"/api/v1/jobs/{job_id}").json()
+        if job["status"] in ("succeeded", "failed", "cancelled"):
+            return dict(job)
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} never finished")
+
+
+# ---- reading -------------------------------------------------------------------------
+def test_library_and_snapshot_describe_the_deck_without_leaking_paths(
+    client: TestClient, deck: Path
+) -> None:
+    lib = client.get("/api/v1/library").json()
+    assert [s["title"] for s in lib["sections"]] == ["week1"]
+    (entry,) = lib["sections"][0]["decks"]
+    assert entry["name"] == "talk" and entry["url"] == f"/d/{entry['token']}"
+
+    snap = _snapshot(client, entry["token"])
+    assert [p["slide_id"] for p in snap["pages"]] == ["intro", "middle", "outro"]
+    assert snap["orphans"] == ["gone"]  # narration whose slide the PDF no longer has
+    assert "gone" in snap["narration"]  # …still addressable by id
+    assert [p["status"] for p in snap["pages"]] == ["ready", "ready", "empty"]
+    assert snap["revisions"]["narration"] not in ("", "absent")
+    assert str(deck.parent) not in str(lib) + str(snap)  # no absolute paths on the wire
+
+
+@pytest.mark.parametrize(
+    ("method", "url", "status", "code"),
+    [
+        ("get", "/api/v1/decks/nope", 404, "unknown_deck"),
+        ("get", "/api/v1/jobs/nope", 404, "unknown_job"),
+        ("patch", "/api/v1/decks/{t}/slides/intro", 422, "invalid_input"),  # empty body
+    ],
+)
+def test_errors_have_stable_codes(
+    client: TestClient, method: str, url: str, status: int, code: str
+) -> None:
+    r = client.request(method, url.format(t=_token(client)), json={})
+    assert r.status_code == status
+    assert r.json()["error"]["code"] == code
+    assert r.json()["error"]["message"]
+
+
+# ---- writing ----------------------------------------------------------------------------
+def test_edit_saves_atomically_and_moves_the_incoming_boundary(
+    client: TestClient, deck: Path
+) -> None:
+    token = _token(client)
+    rev = _snapshot(client, token)["revisions"]["narration"]
+    body = {
+        "expected_revision": rev,
+        "segments": [_speech("Rewritten middle.")],
+        "transition_in": {"kind": "fade", "seconds": 0.5},
+    }
+    r = client.patch(f"/api/v1/decks/{token}/slides/middle", json=body)
+    assert r.status_code == 200, r.text
+    saved = r.json()
+    assert saved["changed"] is True and saved["revision"] != rev
+
+    snap = _snapshot(client, token)
+    assert snap["revisions"]["narration"] == saved["revision"]
+    assert snap["narration"]["middle"]["segments"] == [
+        {"kind": "speech", "text": "Rewritten middle.", "voice": None, "pace": None,
+         "direction": None}
+    ]  # fmt: skip
+    # the boundary is stored once, on the earlier slide's out
+    assert snap["narration"]["intro"]["transition_out"] == {"kind": "fade", "seconds": 0.5}
+    assert snap["pages"][1]["incoming"] == {"kind": "fade", "seconds": 0.5}
+    assert "Rewritten middle." in (deck.parent / "talk.narration").read_text(encoding="utf-8")
+
+    # the same values again: nothing to write
+    again = client.patch(
+        f"/api/v1/decks/{token}/slides/middle",
+        json={**body, "expected_revision": saved["revision"]},
+    )
+    assert again.json() == {"changed": False, "revision": saved["revision"]}
+
+
+def test_stale_revision_is_a_conflict_and_the_outside_edit_survives(
+    client: TestClient, deck: Path
+) -> None:
+    token = _token(client)
+    stale = _snapshot(client, token)["revisions"]["narration"]
+    sidecar = deck.parent / "talk.narration"
+    sidecar.write_text(simple_narration("@intro\nAn agent's edit.\n"), encoding="utf-8")
+
+    r = client.patch(
+        f"/api/v1/decks/{token}/slides/intro",
+        json={"expected_revision": stale, "segments": [_speech("Mine.")]},
+    )
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "revision_conflict"
+    assert "An agent's edit." in sidecar.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("headers", "code"),
+    [
+        ({SESSION_HEADER: "wrong"}, "bad_session"),
+        ({"Origin": "https://evil.example"}, "cross_origin"),
+        ({"Host": "evil.example"}, "bad_host"),
+    ],
+)
+def test_mutations_need_same_origin_session_and_host(
+    client: TestClient, headers: dict[str, str], code: str
+) -> None:
+    token = _token(client)
+    rev = _snapshot(client, token)["revisions"]["narration"]
+    r = client.patch(
+        f"/api/v1/decks/{token}/slides/intro",
+        json={"expected_revision": rev, "segments": [_speech("x")]},
+        headers=headers,
+    )
+    assert r.status_code == 403 and r.json()["error"]["code"] == code
+
+
+@pytest.mark.parametrize(
+    "segment",
+    [{"kind": "pause", "seconds": -1}, {"kind": "shout", "text": "x"}],
+)
+def test_invalid_segments_are_rejected(client: TestClient, segment: dict[str, Any]) -> None:
+    token = _token(client)
+    rev = _snapshot(client, token)["revisions"]["narration"]
+    r = client.patch(
+        f"/api/v1/decks/{token}/slides/intro",
+        json={"expected_revision": rev, "segments": [segment]},
+    )
+    assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_input"
+
+
+def test_commands_attach_orphans_and_rename_voices(client: TestClient) -> None:
+    token = _token(client)
+    rev = _snapshot(client, token)["revisions"]["narration"]
+    r = client.post(
+        f"/api/v1/decks/{token}/commands",
+        json={"type": "attach_orphan", "expected_revision": rev, "orphan_id": "gone",
+              "target_id": "outro"},
+    )  # fmt: skip
+    assert r.status_code == 200, r.text
+    snap = _snapshot(client, token)
+    assert snap["orphans"] == [] and "outro" in snap["narration"]
+
+    r = client.post(
+        f"/api/v1/decks/{token}/commands",
+        json={"type": "edit_voices", "expected_revision": r.json()["revision"],
+              "voices": {"narrator": {"kokoro": "am_echo"}}, "default_voice": "narrator"},
+    )  # fmt: skip
+    assert r.status_code == 200, r.text
+    snap = _snapshot(client, token)
+    assert snap["voices"]["default_voice"] == "narrator"
+    assert snap["voices"]["map"] == {"narrator": {"kokoro": "am_echo"}}
+
+    bad = client.post(
+        f"/api/v1/decks/{token}/commands",
+        json={"type": "attach_orphan", "expected_revision": snap["revisions"]["narration"],
+              "orphan_id": "nope", "target_id": "outro"},
+    )  # fmt: skip
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "invalid_edit"
+
+
+# ---- jobs ------------------------------------------------------------------------------
+def test_generate_job_runs_in_the_background(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.audio import synth as synth_mod
+
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: _StubTTS(cfg.backend))
+    token = _token(client)
+    assert _snapshot(client, token)["missing_audio"] == 2  # the unattached block has no page
+    r = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "generate"})
+    assert r.status_code == 202, r.text
+    job = _wait(client, r.json()["id"])
+    assert job["status"] == "succeeded" and job["result"] == {"generated": 2}
+    assert _snapshot(client, token)["missing_audio"] == 0
+
+
+def test_paid_generation_needs_explicit_approval(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[object] = []
+    monkeypatch.setattr("slidesonnet.api.synthesize_deck", lambda *a, **k: calls.append(k) or 0)
+    token = _token(client)
+    r = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "generate", "engine": "inworld"})
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "paid_confirmation_required"
+    assert calls == []  # nothing was billed
+
+    ok = client.post(
+        f"/api/v1/decks/{token}/jobs",
+        json={"kind": "generate", "engine": "inworld", "allow_paid": True},
+    )
+    assert ok.status_code == 202
+    assert _wait(client, ok.json()["id"])["status"] == "succeeded" and len(calls) == 1
+
+
+def test_previews_are_immutable_per_build_and_served_with_ranges(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """B4: a second preview never rewrites the first one's track under its URL."""
+
+    def fake_build(pdf: Path, *, only_id: str | None = None, render_dir: Path, **_: Any) -> Preview:
+        render_dir.mkdir(parents=True, exist_ok=True)
+        track = render_dir / "track.wav"  # rewritten in place, like the real assembler
+        track.write_bytes(f"RIFF-audio-for-{only_id}".encode() * 50)
+        return Preview(track=track, cues=[Cue(0.0, only_id or "intro")], total_duration=2.0)
+
+    monkeypatch.setattr("slidesonnet.api.build_preview", fake_build)
+    token = _token(client)
+
+    def preview(slide: str) -> dict[str, Any]:
+        r = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "preview", "slide_id": slide})
+        assert r.status_code == 202, r.text
+        job = _wait(client, r.json()["id"])
+        assert job["status"] == "succeeded", job
+        return dict(job["result"])
+
+    first, second = preview("intro"), preview("middle")
+    assert first["media_url"] != second["media_url"]
+    body = client.get(first["media_url"])
+    assert body.content.startswith(b"RIFF-audio-for-intro")  # still the first slide's audio
+    assert "immutable" in body.headers["cache-control"]
+    assert first["cues"] == [{"start": 0.0, "slide_id": "intro"}]
+
+    part = client.get(first["media_url"], headers={"Range": "bytes=0-3"})
+    assert part.status_code == 206 and part.content == b"RIFF"
+    beyond = client.get(first["media_url"], headers={"Range": "bytes=999999-"})
+    assert beyond.status_code == 416
+
+
+def test_cancel_endpoint_stops_a_running_job(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    started = threading.Event()
+
+    def slow_synth(*_a: Any, progress: Any = None, **_k: Any) -> int:
+        started.set()
+        for i in range(500):
+            progress("synthesize", i, 500, "")
+            time.sleep(0.01)
+        return 0
+
+    monkeypatch.setattr("slidesonnet.api.synthesize_deck", slow_synth)
+    token = _token(client)
+    job_id = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "generate"}).json()["id"]
+    assert started.wait(5)
+    assert client.post(f"/api/v1/jobs/{job_id}/cancel").json()["status"] in (
+        "cancelling",
+        "cancelled",
+    )
+    assert _wait(client, job_id)["status"] == "cancelled"
+
+
+# ---- media --------------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "path", ["nope/pages/page-1.png", "{t}/../../../etc/passwd", "{t}/missing.png"]
+)
+def test_media_refuses_unknown_decks_and_escapes(client: TestClient, path: str) -> None:
+    assert client.get("/ssmedia/" + path.format(t=_token(client))).status_code == 404
+
+
+# ---- events --------------------------------------------------------------------------------
+def test_events_replay_a_write_and_flag_a_gap(client: TestClient) -> None:
+    from slidesonnet.server.context import context_of
+
+    token = _token(client)
+    rev = _snapshot(client, token)["revisions"]["narration"]
+    client.patch(
+        f"/api/v1/decks/{token}/slides/intro",
+        json={"expected_revision": rev, "segments": [_speech("Changed.")]},
+    )
+    bus = context_of(client.app).bus  # type: ignore[arg-type]
+    changed = [e for e in bus.history() if e.type == "deck.changed"]
+    assert changed and changed[-1].deck == token
+    assert bus.since(changed[-1].seq - 1) == [changed[-1]]
+
+
+async def test_event_stream_replays_resyncs_and_goes_live() -> None:
+    """The SSE body: replay after Last-Event-ID, resync on a gap, then live events."""
+    import asyncio
+
+    from slidesonnet.server.events import EventBus
+    from slidesonnet.server.routes import event_stream
+
+    bus = EventBus(capacity=2)
+    for i in range(3):
+        bus.publish("deck.changed", deck="d", data={"i": i})
+    polls = {"n": 0}
+
+    async def gone_after_a_while() -> bool:
+        polls["n"] += 1
+        return polls["n"] > 3
+
+    async def collect(last: str | None) -> list[str]:
+        sub = bus.subscribe()
+        out: list[str] = []
+        stream = event_stream(bus, sub, last, gone_after_a_while, heartbeat=0.01)
+        async for chunk in stream:
+            out.append(chunk)
+            if len(out) == 2 and last == "2":
+                bus.publish("job.finished", deck="d", data={"job_id": "j1"})
+        return out
+
+    replayed = await collect("2")
+    assert replayed[0].startswith("retry:")
+    assert "id: 3\nevent: deck.changed" in replayed[1]
+    assert any("event: job.finished" in c and '"job_id": "j1"' in c for c in replayed)
+    polls["n"] = 0
+    gap = await asyncio.wait_for(collect("0"), timeout=5)  # seq 1 fell out of the buffer
+    assert "event: resync" in gap[1]
+
+
+def test_export_explains_blockers_and_runs_a_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plain build can't be exported as final; the draft export runs as a job."""
+    from slidesonnet import api as api_mod
+
+    (tmp_path / "d").mkdir()
+    write_pdf(tmp_path / "d" / "d.pdf", ["intro"], plain=True)
+    (tmp_path / "d" / "d.narration").write_text(simple_narration("@intro\nHi.\n"), "utf-8")
+    seen: dict[str, Any] = {}
+
+    def fake_export(pdf_path: Path, output: Path, **kw: Any) -> api_mod.ExportResult:
+        seen.update(kw)
+        return api_mod.ExportResult(video=output.with_suffix(".draft.mp4"), duration=3.0)
+
+    monkeypatch.setattr("slidesonnet.api.export", fake_export)
+    monkeypatch.setattr("slidesonnet.server.routes._uncached", lambda *a, **k: set())
+    registry = DeckRegistry(tmp_path)
+    registry.rescan()
+    with TestClient(create_api_app(registry)) as c:
+        c.headers[SESSION_HEADER] = c.get("/api/v1/session").json()["token"]
+        token = c.get("/api/v1/library").json()["sections"][0]["decks"][0]["token"]
+        final = c.post(f"/api/v1/decks/{token}/jobs", json={"kind": "export"})
+        assert final.status_code == 409 and final.json()["error"]["code"] == "export_blocked"
+        assert "plain build" in final.json()["error"]["message"]
+        draft = c.post(f"/api/v1/decks/{token}/jobs", json={"kind": "export", "draft": True})
+        job = _wait(c, draft.json()["id"])
+    assert job["status"] == "succeeded"
+    assert job["result"] == {"video": "d.draft.mp4", "duration": 3.0, "draft": True}
+    assert seen["draft"] is True and seen["keep_scratch"] is True

@@ -22,7 +22,7 @@ from tests.conftest import prep_marked_deck, simple_narration
 def test_preview_forwards_progress_to_build_preview(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The editor's preview entry points hand their progress callback down to
+    """The editor's preview entry point hands its progress callback down to
     api.build_preview, so the assembly bar can track the whole-deck track build."""
     from slidesonnet.api import Preview
 
@@ -31,15 +31,17 @@ def test_preview_forwards_progress_to_build_preview(
 
     def fake_build_preview(_pdf: Path, **kwargs: object) -> Preview:
         captured.append(kwargs.get("progress"))
-        return Preview(track=tmp_path / "track.wav", cues=[], total_duration=0.0)
+        track = tmp_path / "track.wav"
+        track.write_bytes(b"RIFF")
+        return Preview(track=track, cues=[], total_duration=0.0)
 
     monkeypatch.setattr("slidesonnet.gui.state.api.build_preview", fake_build_preview)
 
     def cb(phase: str, done: int, total: int, label: str) -> None:
         return None
 
-    state.preview_deck(cb)
-    state.preview_current(cb)
+    state.preview_artifact(None, cb)
+    state.preview_artifact(state.current_id, cb)
     assert captured == [cb, cb]
 
 
@@ -90,7 +92,12 @@ def test_actions_let_on_disk_config_pick_the_engine(
         return 0
 
     def fake_build_preview(pdf: Path, **kwargs: object) -> object:
+        from slidesonnet.api import Preview
+
         captured.update(kwargs)
+        track = tmp_path / "track.wav"
+        track.write_bytes(b"RIFF")
+        return Preview(track=track)
         return object()
 
     def fake_export(pdf: Path, output: Path, **kwargs: object) -> object:
@@ -105,8 +112,8 @@ def test_actions_let_on_disk_config_pick_the_engine(
         lambda: state.synth_current(),
         lambda: state.synth_segment(0),
         lambda: state.synth_all(),
-        lambda: state.preview_current(),
-        lambda: state.preview_deck(),
+        lambda: state.preview_artifact(state.current_id),
+        lambda: state.preview_artifact(None),
         lambda: state.export(tmp_path / "out.mp4"),
     ):
         captured.clear()
@@ -257,6 +264,7 @@ def test_editing_an_utterance_prunes_stale_local_audio(tmp_path: Path) -> None:
 
     assert state.replace_block([Segment.speech("Rewritten line entirely.")])
 
+    state.service.flush_prune()  # the sweep is debounced off the save path
     assert not (ad / stale).exists()  # old local clip auto-pruned on save
     assert (ad / paid).exists()  # paid audio retained
 
@@ -747,21 +755,25 @@ def test_reload_reuses_page_ids_when_pdf_unchanged(
 ) -> None:
     """Every commit saves + reloads; re-parsing the whole PDF per text-field
     blur stalls the event loop on big decks. Unchanged PDF → cached page ids."""
-    from slidesonnet.gui import state as state_mod
+    from slidesonnet.server import decks as decks_mod
+    from tests.conftest import write_pdf
 
     state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
     calls = {"n": 0}
-    real_read = state_mod.read_page_ids
+    real_read = decks_mod.read_page_ids
 
     def counting_read(pdf: Path) -> list[str]:
         calls["n"] += 1
         return real_read(pdf)
 
-    monkeypatch.setattr(state_mod, "read_page_ids", counting_read)
+    monkeypatch.setattr(decks_mod, "read_page_ids", counting_read)
     state.replace_block(parse_segments("Edit one."))
     state.replace_block(parse_segments("Edit two."))
-    assert calls["n"] == 0  # PDF untouched — commits must not re-open it
+    _bump_mtime(tmp_path / "marked.pdf")  # a touch is not a recompile: same content
+    state.poll_sources()
+    assert calls["n"] == 0  # PDF content untouched — commits must not re-open it
 
+    write_pdf(tmp_path / "marked.pdf", ["intro-title", "new-slide"])
     _bump_mtime(tmp_path / "marked.pdf")
     assert state.poll_sources() is True
     assert calls["n"] >= 1  # changed PDF is re-read
@@ -1156,8 +1168,8 @@ def test_editing_one_block_leaves_the_other_raw(tmp_path: Path) -> None:
 
 
 def test_gui_export_keeps_render_scratch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The editor's preview player streams ``track.wav`` from the render dir, so
-    an export launched from the GUI must not delete it out from under playback."""
+    """An export launched from the GUI keeps the page audio it shares with the
+    preview builder, so the next preview reuses it instead of rebuilding."""
     from slidesonnet.gui import state as state_mod
 
     state = _state(tmp_path, sidecar="@intro-title\nHello.\n")
