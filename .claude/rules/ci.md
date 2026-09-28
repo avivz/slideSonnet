@@ -8,7 +8,7 @@ gh run watch <run-id>                  # Watch until completion
 gh run view <run-id> --log-failed      # If failed, inspect logs
 ```
 
-CI runs 4 jobs: lint, typecheck, test (3.13), build. All must pass. If any fail, fix the issue and push again before moving on.
+CI runs 5 jobs: lint, typecheck, test (3.13), frontend (ESLint, vue-tsc, Vitest, build, API-type drift), build (frontend bundle + wheel/sdist, installed-package smoke test). All must pass. If any fail, fix the issue and push again before moving on.
 
 **No heavy tests in CI.** This repo stays on the GitHub Actions free tier, so CI
 runs only the fast unit tier: `pytest -m "not integration and not browser"`.

@@ -72,7 +72,6 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **gui/library.py** — UI-free deck discovery + `DeckRegistry`: `deck_token` (sha1 of the
   resolved path), a capped downward scan for `*.pdf` + sibling `<stem>.narration`, natural
   sort, neighbour lookup. Only registered decks resolve, so a URL can't open arbitrary files.
-- **gui/library_view.py** — the library landing page (grouped list, lazy per-deck stats).
 - **gui/theme.py** — palette + head assets shared by both pages.
 - **review/** — the agent review loop (spec: `dev/DESIGN-review.md`).
   `versions.py` captures a `DeckVersion` (per slide id: pixel hash at 150 dpi,
@@ -84,6 +83,16 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   reopen/send/clear/status/wait, automatic filing, author-edit notes); `cli.py`
   is the `slidesonnet review` group. slideSonnet never edits `.tex`/`.narration`
   during review.
+- **server/** — the editor's HTTP backend, UI-framework-free (frontend migration,
+  `docs/frontend-migration.md`): `revisions` (content hashes), `decks`
+  (`DeckService`: per-deck lock, revision-checked atomic writes, debounced orphan
+  sweep), `editing` (edits by explicit slide id), `jobs`/`events` (backend jobs,
+  SSE), `previews` (immutable preview tracks + manifest), `media`, `snapshots`,
+  `schemas` (Pydantic DTOs → OpenAPI → `frontend/src/api/schema.d.ts`), `routes`
+  (`/api/v1`), `frontend` (serves the built Vue app from `server/static/`).
+  Mounted on NiceGUI's FastAPI app during the migration (`install_api`).
+- **frontend/** — the Vue 3 + TypeScript app (Vite, Pinia, Vitest); builds into
+  `src/slidesonnet/server/static/`. Owns `/` (library) so far.
 - **api.py** — typed entry points mirroring the CLI: `sty_text`/`write_sty`,
   `init_sidecar`, `check_deck`, `synthesize_deck`, `export`, `write_subs`, `build_preview`.
 - **cli.py** — Click commands: `sty`, `init`, `check`, `tts`, `export`, `subs`, `edit`,

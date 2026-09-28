@@ -54,7 +54,9 @@ version = {attr = "slidesonnet.__version__"}
 
 [tool.setuptools.package-data]
 "slidesonnet.templates" = ["*.sty"]
-"slidesonnet.gui" = ["static/*"]
+# Recursive: the built frontend nests its assets (B5 — "static/*" would drop them).
+"slidesonnet.gui" = ["static/**/*"]
+"slidesonnet.server" = ["static/**/*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

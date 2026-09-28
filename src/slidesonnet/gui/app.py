@@ -46,7 +46,7 @@ from slidesonnet.narration import transitions as trans
 from slidesonnet.narration.format import serialize_body
 from slidesonnet.narration.model import Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
-from slidesonnet.server.app import install_api
+from slidesonnet.server.app import install_api, install_frontend
 from slidesonnet.server.context import ServerContext, context_of
 from slidesonnet.server.jobs import JobContext, JobKind
 from slidesonnet.server.media import base_media_url, media_url
@@ -2864,7 +2864,7 @@ def _retarget_deck_log(pdf_path: Path) -> None:
 
 
 def register_pages(registry: DeckRegistry) -> None:
-    """Register the library page (``/``) and the per-deck editor page.
+    """Register the library (``/``, the Vue app) and the per-deck editor page (NiceGUI).
 
     One parameterized route serves every deck: switching decks is a navigation,
     so the page teardown NiceGUI already does (job queue stopped on disconnect,
@@ -2872,13 +2872,8 @@ def register_pages(registry: DeckRegistry) -> None:
     """
     set_registry(registry)
     backend = install_api(app, registry)
+    install_frontend(app)
     app.on_shutdown(backend.shutdown)
-
-    @ui.page("/")
-    def _library() -> None:  # pyright: ignore[reportUnusedFunction]
-        from slidesonnet.gui.library_view import build_library
-
-        build_library(registry)
 
     @ui.page("/d/{token}")
     def _deck(token: str) -> None:  # pyright: ignore[reportUnusedFunction]

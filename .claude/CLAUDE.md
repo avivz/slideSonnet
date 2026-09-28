@@ -41,6 +41,10 @@ make test-unit                         # Unit tests only (fast, no external deps
 make lint                              # Ruff check + format --check
 make fmt                               # Ruff format
 make typecheck                         # mypy --strict on src/
+make frontend                          # Build the Vue frontend into src/slidesonnet/server/static/
+make frontend-dev                      # Vite dev server on :5173 (proxies to `slidesonnet edit --no-browser` on :8080)
+make test-frontend / make lint-frontend # Vitest; ESLint + vue-tsc
+make api-types                         # Regenerate frontend/openapi.json + src/api/schema.d.ts from the server
 make basel                             # Compile + render basel-problem (Kokoro)
 make showcase                          # Compile + render showcase (Kokoro)
 make demos                             # Both demos
@@ -90,3 +94,4 @@ Version is set in `src/slidesonnet/__init__.py`. Update it before tagging.
 - `mypy --strict` must pass on all source files. Untyped external libraries (inworld_tts, dotenv, kokoro, fitz, nicegui) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
 - Heavy tests are local-only (never in CI): `@pytest.mark.integration` (export/render and GUI-with-Kokoro) and `@pytest.mark.browser` (real-browser Playwright GUI journeys). GUI logic is also unit-tested via NiceGUI's in-process `user` simulation (selenium-free `nicegui.testing.user_plugin`, loaded in `tests/conftest.py`) — fast, but blind to focus/blur and value-sync timing, which is what the browser tier covers.
 - External tool dependencies: ffmpeg, ffprobe, pdftoppm, kokoro (Python package); latexmk + pdflatex to compile your own deck (use `slidesonnet doctor` to check)
+- **Frontend migration in progress** (`docs/frontend-migration.md`): the backend lives in `src/slidesonnet/server/` (services, `/api/v1`, jobs, SSE); the Vue app in `frontend/` (Vue 3 + strict TS + Pinia, Vitest). The library (`/`) is Vue; the deck editor (`/d/{token}`) is still NiceGUI. A source checkout needs Node ≥ 20.19 to rebuild the frontend (`make frontend`); installed wheels/sdists ship it built. After changing an API schema, run `make api-types` (CI fails on drift).
