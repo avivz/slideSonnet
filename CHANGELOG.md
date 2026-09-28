@@ -136,6 +136,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   watchers, rsync) treat the subtitles as newer than what they came from.
 
 ### Fixed
+- **Typing is no longer lost when the narration file changes on disk.** If an
+  agent (or another program) edited the narration file while you were typing,
+  the editor reloaded and your unsaved text vanished. Now an edit to a
+  different slide leaves your typing in place; an edit to the slide you're on
+  shows the new version and gives your text back, with **Copy my text** and
+  **Keep my version**.
 - **Saving in the editor no longer undoes an edit made to the narration file
   by someone else.** The editor only noticed outside changes on its next check,
   so an agent's rewrite that landed in between was silently overwritten by the

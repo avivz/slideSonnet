@@ -98,11 +98,19 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    "Checks · deck" console section for pageless diagnostics, and saving
    pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
    part is now mostly handled — a PDF/config-only refresh keeps the field
-   (editor pass #1); what remains is saving edits before a *sidecar*-triggered
-   reload, and never auto-saving on those. *Acceptance:* a sidecar edited on
-   disk while you have unsaved field text saves your text first (no silent loss),
-   and never auto-saves on a sidecar-triggered reload. *Appetite:* half a day each.
-   **[agent]**
+   (editor pass #1), and since 2026-09-28 a *sidecar*-triggered reload keeps
+   unsaved typing too (other slide: kept on screen; same slide: handed back with
+   Copy / Keep my version, never auto-saved). What remains is the deck-level
+   checks section. *Appetite:* half a day. **[agent]**
+6. [ ] **Frontend migration to Vue — phased.** *(Plan: `docs/frontend-migration.md`;
+   inventory: `docs/frontend-parity.md`; started 2026-09-28.)* Seven phases,
+   each its own branch merged only after a maintainer checkpoint: 0 baseline +
+   inventory + draft-loss fix (done), 1 service layer + `/api/v1` + jobs inside
+   the NiceGUI app, 2 toolchain/packaging + library in Vue, 3 browser-owned
+   playback, 4 editor, 5 review, 6 remove NiceGUI. Includes a **layout redesign**
+   (mockups approved per screen before its port) and a **smaller test suite**
+   (~330 frontend-facing tests → ~220; browser tier stays local). Item 4's
+   "play before fully generated" fits naturally into Phase 3. **[agent→human]**
 ## Next — toward 1.0 final
 
 1. [ ] **Unify logging across the project** (from inbox; reaffirmed 2026-06-19 as
