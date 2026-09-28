@@ -76,6 +76,9 @@ def _patch_tts(seconds: float) -> None:
 
 
 if __name__ == "__main__":
+    from slidesonnet.server import engines
+
+    engines.EDITOR_DEFAULT_ENGINE = "kokoro"  # the journeys run on the free engine
     if os.environ.get("SLIDESONNET_TEST_REAL_TTS") != "1":
         _patch_tts(float(os.environ.get("SLIDESONNET_TEST_STUB_SECONDS", "1.0")))
     pdf = Path(os.environ["SLIDESONNET_EDIT_PDF"])

@@ -117,6 +117,7 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     kwargs: dict[str, Any] = {}
     if "backend" in raw:
         kwargs["backend"] = raw["backend"]
+        kwargs["backend_configured"] = True
     if "voice" in kokoro:
         kwargs["kokoro_voice"] = str(kokoro["voice"])
     if "speed" in kokoro:

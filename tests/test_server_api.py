@@ -486,3 +486,24 @@ def test_a_pdf_caught_mid_recompile_is_a_readable_retry(client: TestClient, deck
     assert client.get(f"/api/v1/decks/{token}").status_code == 503
     deck.write_bytes(good)
     assert client.get(f"/api/v1/decks/{token}").status_code == 200
+
+
+def test_the_editor_starts_on_inworld_unless_the_deck_chooses(
+    client: TestClient, deck: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inworld is the editor's starting engine (conftest pins Kokoro for the rest
+    of the suite); a deck whose slidesonnet.toml names an engine keeps it. The
+    CLI is unaffected: its default stays the free Kokoro."""
+    from slidesonnet.server import engines
+
+    monkeypatch.setattr(engines, "EDITOR_DEFAULT_ENGINE", "inworld")
+    token = _token(client)
+    snap = client.get(f"/api/v1/decks/{token}").json()
+    assert (snap["engine"], snap["default_engine"]) == ("inworld", "inworld")
+    # a job naming no engine runs on the same one — so it asks before billing
+    r = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "generate"})
+    assert r.json()["error"]["code"] == "paid_confirmation_required"
+
+    (deck.parent / "slidesonnet.toml").write_text('[tts]\nbackend = "kokoro"\n', encoding="utf-8")
+    snap = client.get(f"/api/v1/decks/{token}").json()
+    assert (snap["engine"], snap["default_engine"]) == ("kokoro", "kokoro")

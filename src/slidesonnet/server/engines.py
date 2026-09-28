@@ -13,6 +13,21 @@ Lock order: a deck's render lock (``DeckService.render_lock``) is always taken
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from slidesonnet.config import Config
+    from slidesonnet.models import Backend
+
+#: The engine the editor starts on when a deck's slidesonnet.toml doesn't name
+#: one. Paid, so every synthesis it would bill asks first; the CLI keeps Kokoro.
+EDITOR_DEFAULT_ENGINE: Backend = "inworld"
+
+
+def editor_engine(config: Config) -> Backend:
+    """The engine the editor uses for a deck when the session picked none."""
+    return config.tts.backend if config.tts.backend_configured else EDITOR_DEFAULT_ENGINE
+
 
 _locks: dict[str, threading.Lock] = {}
 _guard = threading.Lock()

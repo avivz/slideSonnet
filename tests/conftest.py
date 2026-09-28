@@ -106,6 +106,15 @@ class _GuardedInworld:
 
 
 @pytest.fixture(autouse=True)
+def _editor_starts_on_kokoro(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The editor starts on paid Inworld when a deck names no engine; tests run on
+    the free engine unless they opt in (``engines.EDITOR_DEFAULT_ENGINE``)."""
+    from slidesonnet.server import engines
+
+    monkeypatch.setattr(engines, "EDITOR_DEFAULT_ENGINE", "kokoro")
+
+
+@pytest.fixture(autouse=True)
 def _no_pool_env() -> Iterator[None]:
     """Keep ``SLIDESONNET_AUDIO_DIR`` out of every test unless it sets it itself.
 

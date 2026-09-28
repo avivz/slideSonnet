@@ -35,7 +35,7 @@ from slidesonnet.server.context import (
     context_of,
 )
 from slidesonnet.server.decks import DeckService, RevisionConflict, deck_service
-from slidesonnet.server.engines import engine_lock
+from slidesonnet.server.engines import editor_engine, engine_lock
 from slidesonnet.server.events import Event, EventBus, Subscription
 from slidesonnet.server.generation import DeckGeneration
 from slidesonnet.server.jobs import Job, JobContext
@@ -251,7 +251,7 @@ def job_dto(job: Job) -> JobDTO:
 
 
 def _resolve_engine(entry: DeckEntry, engine: Backend | None) -> Backend:
-    return engine or load_config(entry.pdf_path).tts.backend
+    return engine or editor_engine(load_config(entry.pdf_path))
 
 
 def _uncached(
