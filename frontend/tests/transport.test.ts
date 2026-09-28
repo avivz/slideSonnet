@@ -11,9 +11,13 @@ describe('Transport', () => {
     ['a loaded, playing', 'deck', 'r1', 'build'], // a different track
     ['a loaded, playing', 'a', 'r2', 'build'], // the narration changed: rebuild, don't resume stale audio
     ['a building', 'a', 'r1', 'wait'], // a double-click never cancels its own build
+    ['deck loaded, playing', 'deck', 'r2', 'pause'], // Play all builds each slide as it comes: an edit doesn't restart it
   ] as const)('%s: press %s @%s → %s', (setup, key, revision, expected) => {
     const t = new Transport()
-    if (setup.startsWith('a loaded')) {
+    if (setup.startsWith('deck loaded')) {
+      t.loaded('deck', 'r1')
+      t.playing = true
+    } else if (setup.startsWith('a loaded')) {
       t.loaded('a', 'r1')
       t.playing = setup.endsWith('playing')
     } else if (setup === 'a building') {
@@ -33,7 +37,8 @@ describe('Transport', () => {
   })
 
   it.each([
-    ['deck', 'seek'],
+    ['deck', 'jump'], // Play all goes on from the slide chosen
+    ['video', 'seek'], // the whole-deck track spans every slide
     ['a', 'clear'],
     [null, 'none'],
   ] as const)('navigating with %s loaded → %s', (key, expected) => {

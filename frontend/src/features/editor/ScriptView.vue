@@ -9,6 +9,7 @@ import { useEditorStore } from '@/stores/editor'
 import { usePlayerStore } from '@/stores/player'
 import { useReviewStore } from '@/stores/review'
 
+import NarrationDiff from './NarrationDiff.vue'
 import { speechIndexes, type EditSeg } from './narration'
 
 const editor = useEditorStore()
@@ -66,6 +67,10 @@ function rows(slideId: string): Row[] {
   })
   return out
 }
+/** Under review: how this slide's narration changed since the review began. */
+function diffOf(slideId: string): string[][] | null {
+  return review.active ? (review.data?.diffs[slideId] ?? null) : null
+}
 function dimmed(slideId: string): boolean {
   return review.scope !== null && !review.scope.has(slideId)
 }
@@ -73,18 +78,34 @@ function spoken(slideId: string): boolean {
   return (editor.draftFor(slideId)?.middle ?? []).some((s) => s.kind === 'speech')
 }
 
-// follow the slide shown above (arrows, filmstrip, playback) — but never pull
-// the page away from a line being typed in
+/** Scroll `el` into view (to the middle while playing) — never away from a line being typed in. */
+function reveal(el: HTMLElement | null | undefined, block: 'center' | 'nearest'): void {
+  if (!el || root.value?.contains(document.activeElement)) return
+  el.scrollIntoView?.({ block, behavior: 'smooth' }) // absent in jsdom
+}
+// follow the slide shown above (arrows, filmstrip, playback)
 watch(
   () => editor.index,
   async (i) => {
     await nextTick()
     const section = root.value?.querySelector<HTMLElement>(`[data-index="${i}"]`)
-    if (section && !section.contains(document.activeElement)) {
-      section.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }) // absent in jsdom
-    }
+    reveal(section, player.frame.playing ? 'center' : 'nearest')
   },
 )
+// while playing, keep the line being spoken in the middle, not at the bottom edge
+watch(
+  () => (player.spoken ? `${player.spoken.slideId}#${player.spoken.index}` : null),
+  async (line) => {
+    if (line === null) return
+    await nextTick()
+    reveal(root.value?.querySelector<HTMLElement>(`[data-speech="${CSS.escape(line)}"]`), 'center')
+  },
+)
+function speechKey(slideId: string, seg: EditSeg): string | undefined {
+  const block = editor.draftFor(slideId)
+  const index = block ? speechIndexes(block).get(seg.key) : undefined
+  return index === undefined ? undefined : `${slideId}#${index}`
+}
 </script>
 
 <template>
@@ -103,7 +124,12 @@ watch(
       </button>
       <div v-if="page.slide_id" class="body">
         <template v-for="row in rows(page.slide_id)" :key="row.seg.key">
-          <div v-if="row.kind === 'line'" class="line-wrap" :data-testid="`script-line-${page.slide_id}-${row.j}`">
+          <div
+            v-if="row.kind === 'line'"
+            class="line-wrap"
+            :data-speech="speechKey(page.slide_id, row.seg)"
+            :data-testid="`script-line-${page.slide_id}-${row.j}`"
+          >
             <!-- the same text, drawn behind the box, marks the word being spoken
                  (separate elements: formatting whitespace between them is dropped) -->
             <div v-if="spokenParts(page.slide_id, row.seg)" class="mirror" aria-hidden="true">
@@ -157,6 +183,13 @@ watch(
           </label>
         </template>
         <p v-if="!spoken(page.slide_id)" class="none">No narration yet — open the slide to add a line.</p>
+        <NarrationDiff
+          v-if="diffOf(page.slide_id)"
+          class="changes"
+          title="Changed:"
+          :words="diffOf(page.slide_id) ?? []"
+          :data-testid="`script-diff-${page.slide_id}`"
+        />
       </div>
     </article>
   </section>
@@ -294,6 +327,13 @@ watch(
 .secs:focus-visible {
   border-color: var(--line);
   color: var(--text);
+}
+.changes {
+  flex: 1 1 100%;
+  margin: 2px 0 var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
 }
 .none {
   margin: 0;

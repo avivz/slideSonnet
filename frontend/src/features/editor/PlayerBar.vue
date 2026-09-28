@@ -24,7 +24,8 @@ const f = computed(() => player.frame)
 const slidePlaying = computed(
   () => f.value.playing && player.transport.loadedKey === editor.currentId && editor.currentId !== '',
 )
-const deckPlaying = computed(() => f.value.playing && player.transport.loadedKey === 'deck')
+const allPlaying = computed(() => f.value.playing && player.transport.loadedKey === 'deck')
+const videoPlaying = computed(() => f.value.playing && player.transport.loadedKey === 'video')
 const canPlaySlide = computed(() => (editor.page?.audio.speech ?? 0) > 0)
 const position = computed(() =>
   scrub.value !== null ? scrub.value : f.value.duration > 0 ? f.value.time / f.value.duration : 0,
@@ -74,16 +75,29 @@ function onScrubChange(event: Event): void {
     </button>
     <button
       class="icon-btn"
-      :class="{ on: deckPlaying }"
+      :class="{ on: allPlaying }"
       type="button"
-      :title="deckPlaying ? 'Pause the deck preview' : 'Preview the whole deck from here'"
-      :aria-label="deckPlaying ? 'Pause the deck preview' : 'Preview the whole deck from here'"
+      :title="allPlaying ? 'Pause' : 'Play all from here, slide by slide'"
+      :aria-label="allPlaying ? 'Pause' : 'Play all from here'"
       data-testid="play-deck"
-      :data-state="player.building === 'deck' ? 'building' : deckPlaying ? 'playing' : 'idle'"
+      :data-state="player.building === 'deck' ? 'building' : allPlaying ? 'playing' : 'idle'"
       @click="player.press('deck')"
     >
       <span v-if="player.building === 'deck'" class="spinner" aria-hidden="true"></span>
-      <AppIcon v-else :name="deckPlaying ? 'pause' : 'deck'" />
+      <AppIcon v-else :name="allPlaying ? 'pause' : 'deck'" />
+    </button>
+    <button
+      class="icon-btn"
+      :class="{ on: videoPlaying }"
+      type="button"
+      :title="videoPlaying ? 'Pause' : 'Watch as video: the whole deck from here, with its transitions (takes a while to prepare)'"
+      :aria-label="videoPlaying ? 'Pause' : 'Watch as video'"
+      data-testid="play-video"
+      :data-state="player.building === 'video' ? 'building' : videoPlaying ? 'playing' : 'idle'"
+      @click="player.press('video')"
+    >
+      <span v-if="player.building === 'video'" class="spinner" aria-hidden="true"></span>
+      <AppIcon v-else :name="videoPlaying ? 'pause' : 'movie'" />
     </button>
     <button class="icon-btn" type="button" title="Stop" aria-label="Stop" data-testid="stop" @click="player.stop()">
       <AppIcon name="stop" />
@@ -106,6 +120,9 @@ function onScrubChange(event: Event): void {
       @input="onScrubInput"
       @change="onScrubChange"
     />
+    <span v-if="player.allProgress" class="time mono" data-testid="play-progress">
+      slide {{ player.allProgress.at }} of {{ player.allProgress.of }} ·
+    </span>
     <span class="time mono" data-testid="time">{{ clock }}</span>
     <audio ref="audio" preload="auto" data-testid="preview-audio"></audio>
   </div>

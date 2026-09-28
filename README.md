@@ -147,7 +147,7 @@ grammar, and the optional `slidesonnet.toml` config — is in
 
 `slidesonnet edit deck.pdf` opens the editor in your browser (a local server —
 nothing leaves your machine): page through the deck, edit narration beside each
-slide, set voice/pace, generate per-slide TTS, and **preview the whole deck**.
+slide, set voice/pace, generate per-slide TTS, and **play the whole deck** (slide by slide, or as a video with its transitions).
 Typing is saved as you go. The preview plays one pre-rendered track with the
 pauses baked in and changes the slide on the audio's own clock — so the preview
 is sample-accurate to the exported video. A diagnostics panel flags duplicate,

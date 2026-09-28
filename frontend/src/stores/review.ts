@@ -85,7 +85,9 @@ export const useReviewStore = defineStore('review', () => {
     comparing.value = true
     try {
       data.value = await editor.client.review(token)
-      if (filter.value !== null && scope.value === null) filter.value = null // cleared meanwhile
+      // the chosen conversation was cleared, or accepted while closed ones are hidden: show every slide
+      const chosen = conversations.value.find((c) => c.id === filter.value)
+      if (filter.value !== null && (!chosen || (chosen.status === 'closed' && !showClosed.value))) filter.value = null
     } catch (e) {
       if (e instanceof ApiError) editor.flash(e.message, 'warn')
     } finally {

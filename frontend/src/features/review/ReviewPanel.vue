@@ -42,7 +42,7 @@ const here = computed(() =>
     .sort((a, b) => Number(a.status !== 'open') - Number(b.status !== 'open') || a.id.localeCompare(b.id)),
 )
 const listed = computed(() =>
-  review.slideConversations.filter((c) => c.status === 'open' || review.showClosed || c.id === review.filter),
+  review.slideConversations.filter((c) => c.status === 'open' || review.showClosed),
 )
 const pendingHere = computed(() => Object.keys(review.data?.pending ?? {}))
 

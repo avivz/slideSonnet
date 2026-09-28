@@ -59,6 +59,8 @@ export interface ControllerOptions {
   onFrame?: (frame: Frame) => void
   /** The playing slide changed. Fired once per change, never per frame. */
   onSlide?: (slideId: string) => void
+  /** The loaded track played to its end. */
+  onEnded?: () => void
 }
 
 const MEDIA_EVENTS = ['play', 'pause', 'seeked', 'ratechange', 'ended', 'loadedmetadata'] as const
@@ -88,6 +90,9 @@ export class PlaybackController {
   private readonly scheduler: Scheduler
   private readonly visibility: VisibilitySource | undefined
   private readonly onMediaEvent = (): void => this.sync()
+  private readonly onMediaEnded = (): void => {
+    if (this.manifestValue !== null) this.options.onEnded?.()
+  }
   private readonly onVisibility = (): void => {
     if (!this.visibility?.hidden) this.sync()
   }
@@ -99,6 +104,7 @@ export class PlaybackController {
     this.scheduler = options.scheduler ?? browserScheduler
     this.visibility = options.visibility ?? (typeof document === 'undefined' ? undefined : document)
     for (const type of MEDIA_EVENTS) media.addEventListener(type, this.onMediaEvent)
+    media.addEventListener('ended', this.onMediaEnded)
     this.visibility?.addEventListener('visibilitychange', this.onVisibility)
   }
 
@@ -178,6 +184,7 @@ export class PlaybackController {
   dispose(): void {
     this.cancelLoop()
     for (const type of MEDIA_EVENTS) this.media.removeEventListener(type, this.onMediaEvent)
+    this.media.removeEventListener('ended', this.onMediaEnded)
     this.visibility?.removeEventListener('visibilitychange', this.onVisibility)
   }
 

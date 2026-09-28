@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Script view** (the editor's default; **Slide** switches back): the whole
+  deck's narration as one editable document, each line its own paragraph, pauses
+  at the end of the line before them. While playing, the line being spoken is
+  marked up to the current word, which advances only while the voice speaks.
+  Under review, each changed slide shows its narration changes word by word.
+  Playback now plays a moment of silence before the first word so headphones and
+  speakers that sleep (Bluetooth, above all) don't swallow it.
+- **Play all plays slide by slide** and starts at once: each slide's own track,
+  the next prepared while this one plays, instead of building the whole deck
+  first (13–29 s on a 55-slide deck). It plays the slides not greyed out (the
+  chosen conversation's, or all from here), holds a silent slide for its pause,
+  keeps each transition's time but cuts rather than drawing it, and shows
+  "slide 3 of 7". Missing clips are queued up front, asking once on a paid
+  engine. Jumping to a slide plays on from there. The old whole-deck preview,
+  transitions drawn, is now **Watch as video** (the film button).
+
 - **A new deck editor.** `slidesonnet edit` now opens the redesigned editor:
   the player sits right under the slide, deck-wide tools (engine, voices,
   generate, export) are at the top of the console, the filmstrip labels each
@@ -169,6 +185,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   interface is built.
 
 ### Fixed
+- **A recompiled PDF shows during playback.** A deck preview held the slide
+  pictures from when it was built, so slides changed meanwhile showed their old
+  look; the playing slide is now always drawn as it is now.
 - **Playing a deck no longer re-measures every clip.** Each clip's length is
   saved beside it in the audio pool (`durations.json`) the moment it's made,
   so replaying a 55-slide deck takes a fraction of a second instead of ~14 s.

@@ -8,6 +8,7 @@ import { usePlayerStore } from '@/stores/player'
 import { useReviewStore } from '@/stores/review'
 
 import { hasSilenceFields, moveSeg, newPause, newSpeech, speechIndexes, type EditSeg } from './narration'
+import NarrationDiff from './NarrationDiff.vue'
 import PauseCard from './PauseCard.vue'
 import SilenceField from './SilenceField.vue'
 import TransitionPicker from './TransitionPicker.vue'
@@ -81,8 +82,9 @@ function move(index: number, delta: number): void {
 }
 
 async function generate(speechIndex: number, force: boolean): Promise<void> {
+  // the clip being replaced mustn't keep playing
   const loaded = player.transport.loadedKey
-  if (loaded === 'deck' || loaded === slideId.value) player.stop()
+  if (loaded === 'video' || loaded === slideId.value || player.allAt === slideId.value) player.stop()
   await generation.enqueue([{ slide_id: slideId.value, speech_index: speechIndex }], { force })
 }
 
@@ -146,14 +148,7 @@ const saveLabel = computed(
       </button>
     </header>
 
-    <p v-if="diff" class="diff" data-testid="narration-diff">
-      <span class="section-title">Narration changes</span>
-      <template v-for="([op, word], i) in diff" :key="i">
-        <del v-if="op === '-'">{{ word }}</del>
-        <ins v-else-if="op === '+'">{{ word }}</ins>
-        <span v-else>{{ word }}</span>{{ ' ' }}
-      </template>
-    </p>
+    <NarrationDiff v-if="diff" :words="diff" data-testid="narration-diff" />
     <p v-if="review.viewingRemoved" class="notice dim-text">
       <span class="mono">@{{ review.viewingRemoved }}</span> was removed since the review started — its
       narration can't be edited here. Its conversations are in the Review tab.
@@ -253,26 +248,6 @@ const saveLabel = computed(
 .cards {
   display: grid;
   gap: var(--space-1);
-}
-.diff {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-field);
-  font-size: var(--text-md);
-  line-height: 1.6;
-}
-.diff .section-title {
-  margin-right: var(--space-2);
-}
-.diff del {
-  color: var(--err);
-}
-.diff ins {
-  color: var(--ok);
-  text-decoration: none;
-  border-bottom: 1px solid var(--ok);
 }
 .empty,
 .notice {

@@ -221,7 +221,7 @@ def test_generate_a_clip_and_see_it_turn_fresh(page: Page, server: Server, tmp_p
 
 @pytest.mark.timeout(120)
 def test_preview_transport_and_deck_follow(page: Page, server: Server, tmp_path: Path) -> None:
-    """Real <audio>: play, clock, speed, stop — and the editor follows a deck preview."""
+    """Real <audio>: play, clock, speed, stop — and the editor follows Play all."""
     pdf = _prep(tmp_path, "@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     page.goto(server(pdf, stub_seconds=2.0))
     play = tid(page, "play-slide")
@@ -236,8 +236,13 @@ def test_preview_transport_and_deck_follow(page: Page, server: Server, tmp_path:
     tid(page, "stop").click()
     expect(play).to_have_attribute("data-state", "idle")
     expect(tid(page, "time")).to_have_text("")
-    tid(page, "play-deck").click()
+    tid(page, "play-deck").click()  # Play all: slide by slide, the editor following
+    expect(tid(page, "play-progress")).to_contain_text("slide 1 of", timeout=30_000)
     expect(tid(page, "counter")).to_have_text("Slide 2 / 6", timeout=30_000)
+    expect(tid(page, "play-progress")).to_contain_text("slide 2 of")
+    expect(tid(page, "counter")).to_have_text(
+        "Slide 3 / 6", timeout=30_000
+    )  # silent: held, not skipped
 
 
 def test_keyboard_deck_switching(page: Page, server: Server, tmp_path: Path) -> None:

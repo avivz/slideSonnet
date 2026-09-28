@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ScriptView from '@/features/editor/ScriptView.vue'
 import { AUTOSAVE_MS, useEditorStore } from '@/stores/editor'
 import { usePlayerStore } from '@/stores/player'
+import { useReviewStore } from '@/stores/review'
 
 import { FakeServer, speech } from './fakeServer'
 
@@ -65,5 +66,20 @@ describe('script view', () => {
     await pause.trigger('change')
     expect(editor.draftFor('a')?.middle[1]).toMatchObject({ kind: 'pause', seconds: 1.2 })
     await editor.flush()
+  })
+
+  it('under review, shows how each changed slide\'s narration changed', async () => {
+    await setup(new FakeServer({ a: 'A.', b: 'World again.' }))
+    const review = useReviewStore()
+    review.data = {
+      active: true, final_build: false, conversations: [], changes: [], unfiled: [], pending: {},
+      badges: {}, base_order: ['a', 'b'], base_images: {},
+      diffs: { b: [['=', 'World'], ['-', 'today.'], ['+', 'again.']] },
+    }
+    const w = mount(ScriptView, { attachTo: document.body })
+    await flushPromises()
+    expect(w.find('[data-testid="script-diff-a"]').exists()).toBe(false) // unchanged: nothing extra
+    const diff = w.get('[data-testid="script-slide-b"] [data-testid="script-diff-b"]')
+    expect([diff.get('del').text(), diff.get('ins').text()]).toEqual(['today.', 'again.'])
   })
 })

@@ -5,6 +5,7 @@ import { cueAt, cueStart, formatClock, nextInScope } from '@/features/playback/c
 import { StageOverlay, Transport } from '@/features/playback/dom'
 import type { PreviewManifest } from '@/features/playback/manifest'
 import { activeStep, effect, morphFrame } from '@/features/playback/morph'
+import { OutputWaker } from '@/features/playback/wake'
 
 const CUES = [
   { start: 0, slide_id: 'a' },
@@ -256,5 +257,31 @@ describe('DOM views', () => {
     expect(seeks).toEqual([0.5])
     transport.render(frame({ loaded: false }))
     expect([range.disabled, host.querySelector('.ss-time')?.textContent]).toEqual([true, ''])
+  })
+})
+
+describe('waking the sound output before the first word', () => {
+  function fakeContext() {
+    const ctx = { state: 'suspended', closed: false, resume: vi.fn(async () => { ctx.state = 'running' }), close: vi.fn(async () => { ctx.closed = true }) }
+    return ctx
+  }
+  it('holds the first start for the lead-in, starts at once while awake, and lets go on stop', async () => {
+    vi.useFakeTimers()
+    const made: ReturnType<typeof fakeContext>[] = []
+    const waker = new OutputWaker(() => { const c = fakeContext(); made.push(c); return c }, 0.8)
+    let started = false
+    void waker.wake().then(() => { started = true })
+    await vi.advanceTimersByTimeAsync(700)
+    expect(started).toBe(false) // a sleeping device would swallow these first words
+    await vi.advanceTimersByTimeAsync(200)
+    expect(started).toBe(true)
+    await waker.wake() // already awake (a resume after pause): no second wait
+    expect(made).toHaveLength(1)
+    waker.release()
+    expect(made[0]?.closed).toBe(true)
+    vi.useRealTimers()
+  })
+  it('never stands in the way where the browser has no audio context', async () => {
+    await new OutputWaker(() => null, 0.8).wake()
   })
 })
