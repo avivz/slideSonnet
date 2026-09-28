@@ -88,7 +88,8 @@ watch(
   async (line) => {
     if (line === null) return
     await nextTick()
-    reveal(root.value?.querySelector<HTMLElement>(`[data-speech="${CSS.escape(line)}"]`), 'center')
+    const lines = root.value?.querySelectorAll<HTMLElement>('[data-speech]') ?? []
+    reveal([...lines].find((el) => el.dataset.speech === line), 'center')
   },
 )
 function speechKey(slideId: string, seg: EditSeg): string | undefined {
