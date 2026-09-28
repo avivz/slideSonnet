@@ -105,6 +105,28 @@ without a browser.
 No paid API calls anywhere; keep the existing conftest guards against real
 Inworld calls. No model downloads or real TTS in browser tests.
 
+### Test hygiene: shrink, don't transplant
+
+The suite is already large (~1,090 tests; the unit tier alone takes ~2.5 min).
+The migration is a chance to make it smaller and sharper, not to port it 1:1.
+
+- **Every ported test earns its place.** Before porting a GUI test, name the
+  behavior it protects and check whether a domain, service, or API test
+  already covers it. If one does, drop the GUI test and move any unique
+  assertion down to that lower level.
+- **Test at the lowest level that can see the bug.** Logic goes into Python
+  unit/API tests or Vitest store tests. Component tests cover wiring. Browser
+  journeys are only for what needs a real browser (focus, timing, media).
+- **Consolidate.** Merge near-duplicate tests (same setup, one assertion
+  each) into one test or a parametrized table. Delete tests that only pin
+  implementation details (widget class names, internal call order) that the
+  port makes irrelevant anyway.
+- **Pruning is not deleting coverage to get green.** A removed test is either
+  redundant (point to what covers it) or pins behavior that no longer exists
+  (say which). The parity inventory records this mapping.
+- **Report the numbers.** Each checkpoint states test counts and wall time per
+  tier, before and after the phase. The expected trend is down.
+
 ## Phases
 
 Each phase lists what it builds, which bugs it closes, and its checkpoint.
@@ -117,6 +139,8 @@ Each phase lists what it builds, which bugs it closes, and its checkpoint.
   green. Capture reference screenshots of library, editor, preview, review.
 - Write the **parity inventory** (see below) as a checked list in
   `docs/frontend-parity.md`, each item pointing to its current test(s).
+  While mapping, flag GUI tests that are redundant with lower-level tests or
+  only pin implementation details; they are candidates to drop, not to port.
 - **B1 stopgap in NiceGUI:** when the sidecar changes externally and the open
   slide has a dirty draft, don't rebuild the editor; keep the draft, reload the
   other slides, and show a banner offering "keep mine" / "use file version".
