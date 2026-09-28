@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import wave
 from dataclasses import replace
 from pathlib import Path
 
-from slidesonnet.audio.synth import ref_cache_status
+from slidesonnet.audio.synth import _ref_targets
 from slidesonnet.cache import render_dir, resolve_audio_dir
 from slidesonnet.config import Config
 from slidesonnet.deck import relativize_voice_files
 from slidesonnet.diagnostics import Diagnostic, voice_diagnostics
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.gui.library import DeckEntry, DeckRegistry
-from slidesonnet.models import Backend
-from slidesonnet.pdf.reader import open_render
+from slidesonnet.hashing import audio_cache_path_or_alt
+from slidesonnet.models import Backend, ProgressFn, resolve_voice
+from slidesonnet.pdf.reader import open_render, page_aspect
 from slidesonnet.review import ops as review_ops
 from slidesonnet.server import editing
 from slidesonnet.server.decks import LoadedDeck, deck_service
@@ -20,6 +23,7 @@ from slidesonnet.server.media import media_url
 from slidesonnet.server.schemas import (
     AudioStatusDTO,
     BlockDTO,
+    ClipDTO,
     DeckSnapshot,
     DeckStatsDTO,
     DiagnosticDTO,
@@ -29,12 +33,13 @@ from slidesonnet.server.schemas import (
     LibrarySectionDTO,
     PageDTO,
     RevisionsDTO,
+    SilenceDefaultsDTO,
     SlideStatus,
     TransitionDTO,
     VoicesDTO,
     segment_dto,
 )
-from slidesonnet.tts import BACKENDS, available_backends
+from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
 
 def with_engine(config: Config, engine: Backend | None) -> Config:
@@ -73,7 +78,9 @@ def page_images(pdf_path: Path, page_count: int) -> dict[int, Path]:
         return {}
 
 
-def deck_snapshot(entry: DeckEntry, *, engine: Backend | None = None) -> DeckSnapshot:
+def deck_snapshot(
+    entry: DeckEntry, *, engine: Backend | None = None, registry: DeckRegistry | None = None
+) -> DeckSnapshot:
     """Everything the editor needs to show one deck, at one set of revisions."""
     service = deck_service(entry.pdf_path, entry.sidecar_path)
     loaded = service.load()
@@ -84,8 +91,11 @@ def deck_snapshot(entry: DeckEntry, *, engine: Backend | None = None) -> DeckSna
 
     audio_dir = resolve_audio_dir(entry.pdf_path, active_config).path
     per_slide: dict[str, list[bool]] = {}
-    for ref, cached in ref_cache_status(deck, active_config, audio_dir):
-        per_slide.setdefault(ref.slide_id, []).append(cached)
+    clips: dict[str, list[ClipDTO]] = {}
+    for ref, target in _ref_targets(deck, active_config, audio_dir):
+        path = audio_cache_path_or_alt(target)
+        per_slide.setdefault(ref.slide_id, []).append(path is not None)
+        clips.setdefault(ref.slide_id, []).append(_clip(path))
     images = page_images(entry.pdf_path, len(deck.pages))
 
     pages: list[PageDTO] = []
@@ -102,6 +112,7 @@ def deck_snapshot(entry: DeckEntry, *, engine: Backend | None = None) -> DeckSna
                 if sid
                 else TransitionDTO(),
                 audio=AudioStatusDTO(speech=len(flags), cached=sum(flags)),
+                clips=clips.get(sid, []),
             )
         )
     narration = {
@@ -143,10 +154,57 @@ def deck_snapshot(entry: DeckEntry, *, engine: Backend | None = None) -> DeckSna
             map={n: dict(v.backend_voices) for n, v in voice_map.items()},
             default_voice=deck.default_voice,
             names=names,
+            resolved={n: resolve_voice(n, {**config.voices, **deck.voices}, active) for n in names},
         ),
         missing_audio=sum(1 for flags in per_slide.values() for c in flags if not c),
         review_active=review_ops.is_active(entry.pdf_path),
+        silence=SilenceDefaultsDTO(start=config.video.pre_silence, end=config.video.tail_seconds),
+        engine_warm=_engine_warm(active_config),
+        neighbours=_neighbours(registry, entry.token) if registry is not None else {},
+        aspect=_aspect(entry.pdf_path),
     )
+
+
+def _aspect(pdf_path: Path) -> float:
+    try:
+        return float(page_aspect(pdf_path))
+    except (RuntimeError, ValueError, OSError, IndexError):  # a malformed page: default shape
+        return 16 / 9
+
+
+def _clip(path: Path | None) -> ClipDTO:
+    if path is None:
+        return ClipDTO(cached=False)
+    seconds: float | None = None
+    if path.suffix.lower() == ".wav":
+        try:
+            with wave.open(str(path), "rb") as wf:
+                rate = wf.getframerate()
+                seconds = wf.getnframes() / rate if rate else None
+        except (wave.Error, OSError, EOFError):
+            seconds = None
+    try:
+        size: int | None = path.stat().st_size
+    except OSError:
+        size = None
+    return ClipDTO(cached=True, seconds=seconds, bytes=size)
+
+
+def _engine_warm(config: Config) -> bool:
+    """False while a heavy engine (Qwen3) still has its model to load (cheap check)."""
+    try:
+        return bool(create_tts(config.tts).is_warm())
+    except (ImportError, SlideSonnetError):  # engine package missing: nothing to warm
+        return True
+
+
+def _neighbours(registry: DeckRegistry, token: str) -> dict[str, str | None]:
+    prev = registry.neighbour(token, -1)
+    nxt = registry.neighbour(token, 1)
+    return {
+        "prev": prev.token if prev is not None and prev.token != token else None,
+        "next": nxt.token if nxt is not None and nxt.token != token else None,
+    }
 
 
 def _library_deck(entry: DeckEntry) -> LibraryDeckDTO:
@@ -187,28 +245,38 @@ def deck_stats(entry: DeckEntry) -> DeckStatsDTO:
     )
 
 
-def ensure_page_images(pdf_path: Path, page_count: int, *, batch: int = 8) -> list[Path | None]:
+def ensure_page_images(
+    pdf_path: Path,
+    page_count: int,
+    *,
+    near: int = 0,
+    batch: int = 4,
+    progress: ProgressFn | None = None,
+) -> list[Path | None]:
     """Render every page image not rendered yet (blocking); images in page order.
 
-    Fills a partial render in batches, so an interrupted run (or the editor's
-    own background fill) is reused rather than started over.
+    Starts with page *near* (the one being looked at) and works outward in
+    small batches, so the page someone is waiting for comes first and a partial
+    render (an interrupted run, the editor's own fill) is reused.
     """
     from slidesonnet.pdf.reader import render_page_range
 
     out = render_dir(pdf_path) / "pages"
     out.mkdir(parents=True, exist_ok=True)
     pages = page_images(pdf_path, page_count)
-    i = 0
-    while i < page_count:
-        if i in pages:
-            i += 1
-            continue
-        last = i
-        while last + 1 < page_count and last + 1 not in pages and last - i + 1 < batch:
-            last += 1
+    while True:
+        missing = [i for i in range(page_count) if i not in pages]
+        if not missing:
+            break
+        first = min(missing, key=lambda i: (abs(i - near), -i))
+        last = first
+        if first != near:
+            while last + 1 < page_count and last + 1 not in pages and last - first + 1 < batch:
+                last += 1
         before = len(pages)
-        pages.update(render_page_range(pdf_path, out, i, last))
+        pages.update(render_page_range(pdf_path, out, first, last))
+        if progress is not None:
+            progress("render", len(pages), page_count, "")
         if len(pages) == before:  # pdftoppm wrote nothing: don't spin
             break
-        i = last + 1
     return [pages.get(i) for i in range(page_count)]

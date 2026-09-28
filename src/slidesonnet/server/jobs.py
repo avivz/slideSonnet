@@ -32,7 +32,7 @@ from slidesonnet.server.events import EventBus
 
 logger = logging.getLogger(__name__)
 
-JobKind = Literal["generate", "preview", "export", "render_pages"]
+JobKind = Literal["generate", "preview", "export", "render_pages", "warm"]
 JobStatus = Literal["queued", "running", "cancelling", "succeeded", "failed", "cancelled"]
 ACTIVE: frozenset[str] = frozenset({"queued", "running", "cancelling"})
 

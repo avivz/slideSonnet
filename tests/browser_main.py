@@ -21,6 +21,7 @@ Environment:
     SLIDESONNET_TEST_PORT          port to serve on (default 8666)
     SLIDESONNET_TEST_REAL_TTS      "1" -> keep the real TTS engine
     SLIDESONNET_TEST_STUB_SECONDS  stub clip length in seconds (default 1.0)
+    SLIDESONNET_TEST_FRONTEND      "vue" -> serve the Vue editor (library at /, decks at /d/{token})
 """
 
 from __future__ import annotations
@@ -106,7 +107,13 @@ if __name__ in {"__main__", "__mp_main__"}:
         _patch_tts(float(os.environ.get("SLIDESONNET_TEST_STUB_SECONDS", "1.0")))
     _pdf = Path(os.environ["SLIDESONNET_EDIT_PDF"])
     _lib_root = os.environ.get("SLIDESONNET_LIB_ROOT")
-    if _lib_root:
+    if os.environ.get("SLIDESONNET_TEST_FRONTEND") == "vue":
+        # The Vue editor at /d/{token}, the library at / — production routing.
+        _registry = DeckRegistry(Path(_lib_root) if _lib_root else _pdf.parent)
+        _registry.rescan()
+        _registry.register(_pdf)
+        register_pages(_registry, frontend="vue")
+    elif _lib_root:
         # Production routing: library at "/", decks at "/d/{token}" — what the
         # deck-switching journeys need (real neighbours, real navigation).
         _registry = DeckRegistry(Path(_lib_root))

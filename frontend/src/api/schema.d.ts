@@ -55,6 +55,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/decks/{token}/focus": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Focus
+         * @description Where a tab is looking: its slide's clips generate first.
+         */
+        post: operations["post_focus_api_v1_decks__token__focus_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decks/{token}/generation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Generation */
+        get: operations["get_generation_api_v1_decks__token__generation_get"];
+        put?: never;
+        /**
+         * Post Generation
+         * @description Queue clips for generation (dedup'd across tabs; nearest-first).
+         */
+        post: operations["post_generation_api_v1_decks__token__generation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decks/{token}/generation/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Generation
+         * @description Drop queued clips: this tab's (``owner``), or everything (the progress bar's ✕).
+         */
+        post: operations["cancel_generation_api_v1_decks__token__generation_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/decks/{token}/jobs": {
         parameters: {
             query?: never;
@@ -66,6 +127,23 @@ export interface paths {
         put?: never;
         /** Post Job */
         post: operations["post_job_api_v1_decks__token__jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decks/{token}/pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pages */
+        get: operations["get_pages_api_v1_decks__token__pages_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -98,6 +176,26 @@ export interface paths {
         };
         /** Get Deck Stats */
         get: operations["get_deck_stats_api_v1_decks__token__stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/engines/{engine}/voices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Engine Voices
+         * @description An engine's pickable voices and its default (empty list = free-text ids).
+         */
+        get: operations["get_engine_voices_api_v1_engines__engine__voices_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -194,6 +292,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Meta */
+        get: operations["get_meta_api_v1_meta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/session": {
         parameters: {
             query?: never;
@@ -259,6 +374,25 @@ export interface components {
             transition_in: components["schemas"]["TransitionDTO"];
             transition_out: components["schemas"]["TransitionDTO"];
         };
+        /** CancelGenerationRequest */
+        CancelGenerationRequest: {
+            /** Engine */
+            engine?: ("kokoro" | "qwen3" | "inworld") | null;
+            /** Owner */
+            owner?: string | null;
+        };
+        /**
+         * ClipDTO
+         * @description One utterance's audio under the snapshot's engine.
+         */
+        ClipDTO: {
+            /** Bytes */
+            bytes?: number | null;
+            /** Cached */
+            cached: boolean;
+            /** Seconds */
+            seconds?: number | null;
+        };
         /** ClipRef */
         ClipRef: {
             /** Slide Id */
@@ -266,8 +400,15 @@ export interface components {
             /** Speech Index */
             speech_index: number;
         };
+        /** CountDTO */
+        CountDTO: {
+            /** Count */
+            count: number;
+        };
         /** DeckSnapshot */
         DeckSnapshot: {
+            /** Aspect */
+            aspect: number;
             /**
              * Default Engine
              * @enum {string}
@@ -280,6 +421,8 @@ export interface components {
              * @enum {string}
              */
             engine: "kokoro" | "qwen3" | "inworld";
+            /** Engine Warm */
+            engine_warm: boolean;
             /** Engines */
             engines: components["schemas"]["EngineDTO"][];
             /** Label */
@@ -292,6 +435,10 @@ export interface components {
             narration: {
                 [key: string]: components["schemas"]["BlockDTO"];
             };
+            /** Neighbours */
+            neighbours: {
+                [key: string]: string | null;
+            };
             /** Orphans */
             orphans: string[];
             /** Pages */
@@ -303,6 +450,7 @@ export interface components {
             revisions: components["schemas"]["RevisionsDTO"];
             /** Sidecar Name */
             sidecar_name: string;
+            silence: components["schemas"]["SilenceDefaultsDTO"];
             /** Token */
             token: string;
             voices: components["schemas"]["VoicesDTO"];
@@ -376,6 +524,18 @@ export interface components {
             /** Realtime */
             realtime: boolean;
         };
+        /** EngineVoicesDTO */
+        EngineVoicesDTO: {
+            /** Default */
+            default: string | null;
+            /**
+             * Engine
+             * @enum {string}
+             */
+            engine: "kokoro" | "qwen3" | "inworld";
+            /** Voices */
+            voices: string[];
+        };
         /** ErrorBody */
         ErrorBody: {
             /** Code */
@@ -407,6 +567,13 @@ export interface components {
              */
             kind: "export";
         };
+        /** FocusRequest */
+        FocusRequest: {
+            /** Engine */
+            engine?: ("kokoro" | "qwen3" | "inworld") | null;
+            /** Slide Id */
+            slide_id: string | null;
+        };
         /** GenerateJob */
         GenerateJob: {
             /**
@@ -429,6 +596,58 @@ export interface components {
             /** Targets */
             targets?: components["schemas"]["ClipRef"][] | null;
         };
+        /** GenerateRequest */
+        GenerateRequest: {
+            /**
+             * Allow Paid
+             * @default false
+             */
+            allow_paid: boolean;
+            /** Engine */
+            engine?: ("kokoro" | "qwen3" | "inworld") | null;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Owner */
+            owner?: string | null;
+            /** Targets */
+            targets?: components["schemas"]["ClipRef"][] | null;
+        };
+        /** GenerationRunningDTO */
+        GenerationRunningDTO: {
+            /** Elapsed */
+            elapsed: number;
+            /** Estimate */
+            estimate: number | null;
+            /** Slide Id */
+            slide_id: string;
+            /** Speech Index */
+            speech_index: number;
+        };
+        /** GenerationStatusDTO */
+        GenerationStatusDTO: {
+            /** Done */
+            done: number;
+            /**
+             * Engine
+             * @enum {string}
+             */
+            engine: "kokoro" | "qwen3" | "inworld";
+            /** Inflight */
+            inflight: components["schemas"]["ClipRef"][];
+            /** Last Error */
+            last_error: string | null;
+            /**
+             * Queued
+             * @default 0
+             */
+            queued: number;
+            running: components["schemas"]["GenerationRunningDTO"] | null;
+            /** Total */
+            total: number;
+        };
         /** JobDTO */
         JobDTO: {
             /** Created At */
@@ -448,7 +667,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "generate" | "preview" | "export" | "render_pages";
+            kind: "generate" | "preview" | "export" | "render_pages" | "warm";
             progress: components["schemas"]["ProgressDTO"];
             /** Result */
             result: {
@@ -497,9 +716,27 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * MetaDTO
+         * @description Static facts the editor needs: the transition gallery and the engines.
+         */
+        MetaDTO: {
+            /** Aliases */
+            aliases: {
+                [key: string]: string;
+            };
+            /** Engines */
+            engines: components["schemas"]["EngineDTO"][];
+            /** Speeds */
+            speeds: number[];
+            /** Transitions */
+            transitions: components["schemas"]["TransitionFamilyDTO"][];
+        };
         /** PageDTO */
         PageDTO: {
             audio: components["schemas"]["AudioStatusDTO"];
+            /** Clips */
+            clips: components["schemas"]["ClipDTO"][];
             /** Image Url */
             image_url: string | null;
             incoming: components["schemas"]["TransitionDTO"];
@@ -512,6 +749,16 @@ export interface components {
              * @enum {string}
              */
             status: "error" | "warning" | "ready" | "empty";
+        };
+        /**
+         * PagesDTO
+         * @description Page images only — cheap to refetch while pages render in the background.
+         */
+        PagesDTO: {
+            /** Images */
+            images: (string | null)[];
+            /** Rendered */
+            rendered: number;
         };
         /** PauseDTO */
         PauseDTO: {
@@ -565,6 +812,11 @@ export interface components {
              * @enum {string}
              */
             kind: "render_pages";
+            /**
+             * Near
+             * @default 0
+             */
+            near: number;
         };
         /** RevisionsDTO */
         RevisionsDTO: {
@@ -588,6 +840,16 @@ export interface components {
         SessionDTO: {
             /** Token */
             token: string;
+        };
+        /**
+         * SilenceDefaultsDTO
+         * @description The deck's hold before and after a slide's speech when none is written.
+         */
+        SilenceDefaultsDTO: {
+            /** End */
+            end: number;
+            /** Start */
+            start: number;
         };
         /** SlideEdit */
         SlideEdit: {
@@ -630,6 +892,18 @@ export interface components {
              */
             seconds: number;
         };
+        /** TransitionFamilyDTO */
+        TransitionFamilyDTO: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Options */
+            options: [
+                string,
+                string
+            ][];
+        };
         /** VoicesDTO */
         VoicesDTO: {
             /** Default Voice */
@@ -642,6 +916,20 @@ export interface components {
             };
             /** Names */
             names: string[];
+            /** Resolved */
+            resolved: {
+                [key: string]: string | null;
+            };
+        };
+        /** WarmJob */
+        WarmJob: {
+            /** Engine */
+            engine?: ("kokoro" | "qwen3" | "inworld") | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "warm";
         };
     };
     responses: never;
@@ -805,6 +1093,216 @@ export interface operations {
             };
         };
     };
+    post_focus_api_v1_decks__token__focus_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FocusRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CountDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_generation_api_v1_decks__token__generation_get: {
+        parameters: {
+            query?: {
+                engine?: ("kokoro" | "qwen3" | "inworld") | null;
+            };
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationStatusDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_generation_api_v1_decks__token__generation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationStatusDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_generation_api_v1_decks__token__generation_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelGenerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CountDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     post_job_api_v1_decks__token__jobs_post: {
         parameters: {
             query?: never;
@@ -816,7 +1314,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GenerateJob"] | components["schemas"]["PreviewJob"] | components["schemas"]["ExportJob"] | components["schemas"]["RenderPagesJob"];
+                "application/json": components["schemas"]["GenerateJob"] | components["schemas"]["PreviewJob"] | components["schemas"]["ExportJob"] | components["schemas"]["RenderPagesJob"] | components["schemas"]["WarmJob"];
             };
         };
         responses: {
@@ -827,6 +1325,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_pages_api_v1_decks__token__pages_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PagesDTO"];
                 };
             };
             /** @description Not Found */
@@ -930,6 +1477,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeckStatsDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_engine_voices_api_v1_engines__engine__voices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engine: "kokoro" | "qwen3" | "inworld";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngineVoicesDTO"];
                 };
             };
             /** @description Not Found */
@@ -1172,6 +1768,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LibraryDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_meta_api_v1_meta_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetaDTO"];
                 };
             };
             /** @description Not Found */

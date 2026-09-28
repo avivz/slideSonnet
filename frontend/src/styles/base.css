@@ -50,3 +50,130 @@ input {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* ---- shared controls ---------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: var(--raised);
+  color: var(--text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--fast),
+    background var(--fast);
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--accent-deep);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.btn.primary:hover:not(:disabled) {
+  background: #7cc3f4;
+}
+.btn.danger {
+  border-color: rgb(255 107 107 / 45%);
+  color: var(--err);
+}
+.btn.quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--dim);
+}
+.btn.quiet:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--raised);
+}
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--dim);
+  cursor: pointer;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.icon-btn.on {
+  color: var(--accent);
+}
+.field {
+  height: 30px;
+  padding: 0 var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  color: var(--text);
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+.field:hover:not(:disabled) {
+  border-color: var(--dim);
+}
+.field:focus-visible {
+  border-color: var(--accent-deep);
+}
+select.field {
+  padding-right: var(--space-1);
+}
+.label {
+  font-size: var(--text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.section-title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.check input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+.ok-text {
+  color: var(--ok);
+}
+.warn-text {
+  color: var(--warn);
+}
+.err-text {
+  color: var(--err);
+}
+.dim-text {
+  color: var(--dim);
+}

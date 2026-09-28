@@ -762,6 +762,13 @@ def pool_prune_cmd(
     help="Auto-restart the editor when slideSonnet's own source code changes "
     "(for hacking on slideSonnet itself).",
 )
+@click.option(
+    "--frontend",
+    type=click.Choice(["vue", "nicegui"]),
+    default=None,
+    help="Which deck editor to serve while the new one is being finished "
+    "(default: nicegui; also via SLIDESONNET_FRONTEND). Temporary.",
+)
 @click.pass_context
 def edit(
     ctx: click.Context,
@@ -774,8 +781,9 @@ def edit(
     browser: str | None,
     app_window: bool,
     dev: bool,
+    frontend: str | None,
 ) -> None:
-    """Launch the NiceGUI narration editor.
+    """Launch the narration editor.
 
     TARGET is a deck PDF to open, or a folder of decks to browse. With neither,
     the current folder is scanned. The editor opens on a library of every deck
@@ -835,6 +843,7 @@ def edit(
         open_browser=not no_browser,
         browser=browser,
         app_window=app_window,
+        frontend=frontend or os.environ.get("SLIDESONNET_FRONTEND", "nicegui"),
     )
 
 
