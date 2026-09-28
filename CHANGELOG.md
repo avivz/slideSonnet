@@ -84,6 +84,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   hides them. Phases get equal shares of the percentage for now.
 
 ### Changed
+- **A new deck library.** Decks are cards with a narration progress bar and a
+  status (*complete*, *N to narrate*, *N errors*). Type to filter — **/** or
+  **Ctrl+K** jumps to the search box, ↑/↓ pick a deck, **Enter** opens it. A
+  folder with a single deck no longer gets a heading of its own, and PDFs
+  without narration are listed last with the command that starts a narration
+  file for them. The library page no longer loads fonts from the internet.
 - **Decks open at once.** The editor no longer waits for pdftoppm to render
   every page: the current slide renders first, the filmstrip fills in around it
   in the background (nearest pages first, following you if you jump), and pages
@@ -136,6 +142,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   watchers, rsync) treat the subtitles as newer than what they came from.
 
 ### Fixed
+- **No more phantom decks from old cache folders.** PDFs inside a deck's
+  leftover `cache/` folder (from slideSonnet before 1.0) were listed in the
+  library as decks without narration.
 - **A preview always plays its own audio.** Every preview used to be written to
   the same file, so starting a second preview (or reopening the editor) could
   play the previous slide's audio. Each preview now gets its own file.

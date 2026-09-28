@@ -1,0 +1,122 @@
+// Typed access to the slideSonnet backend (`/api/v1`). The DTO types are
+// generated from the server's OpenAPI schema (`npm run api-types`); nothing in
+// here is hand-written guesswork about a response shape.
+import type { components } from './schema'
+
+export type Schemas = components['schemas']
+export type LibraryDTO = Schemas['LibraryDTO']
+export type LibraryDeckDTO = Schemas['LibraryDeckDTO']
+export type LibrarySectionDTO = Schemas['LibrarySectionDTO']
+export type DeckStatsDTO = Schemas['DeckStatsDTO']
+export type DeckSnapshot = Schemas['DeckSnapshot']
+export type JobDTO = Schemas['JobDTO']
+
+export const API_PREFIX = '/api/v1'
+export const SESSION_HEADER = 'X-SlideSonnet-Session'
+
+/** An error from the backend: a stable code plus a message fit to show the user. */
+export class ApiError extends Error {
+  readonly status: number
+  readonly code: string
+
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+type Fetch = typeof fetch
+
+export interface ClientOptions {
+  fetch?: Fetch
+  base?: string
+}
+
+async function toError(response: Response): Promise<ApiError> {
+  try {
+    const body = (await response.json()) as { error?: { code?: string; message?: string } }
+    if (body.error?.code) {
+      return new ApiError(response.status, body.error.code, body.error.message ?? body.error.code)
+    }
+  } catch {
+    // not a JSON error body (a proxy, a crash page) — fall through
+  }
+  return new ApiError(response.status, 'http_error', `The editor server answered ${response.status}.`)
+}
+
+/**
+ * A small fetch wrapper: JSON in and out, stable errors, and the per-process
+ * session token on every mutating request (fetched once, refreshed once if the
+ * server restarted and no longer recognizes it).
+ */
+export class ApiClient {
+  private readonly fetchImpl: Fetch
+  private readonly base: string
+  private session: string | null = null
+
+  constructor(options: ClientOptions = {}) {
+    this.fetchImpl = options.fetch ?? ((input, init) => fetch(input, init))
+    this.base = options.base ?? API_PREFIX
+  }
+
+  async get<T>(path: string): Promise<T> {
+    const response = await this.fetchImpl(this.base + path, {
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) throw await toError(response)
+    return (await response.json()) as T
+  }
+
+  async send<T>(method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
+    let retried = false
+    for (;;) {
+      const token = await this.sessionToken()
+      const response = await this.fetchImpl(this.base + path, {
+        method,
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          [SESSION_HEADER]: token,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      })
+      if (response.ok) return (await response.json()) as T
+      const error = await toError(response)
+      if (error.code === 'bad_session' && !retried) {
+        retried = true
+        this.session = null // the server restarted: fetch a fresh token once
+        continue
+      }
+      throw error
+    }
+  }
+
+  private async sessionToken(): Promise<string> {
+    if (this.session === null) {
+      this.session = (await this.get<Schemas['SessionDTO']>('/session')).token
+    }
+    return this.session
+  }
+
+  // ---- endpoints ---------------------------------------------------------
+  library(options: { rescan?: boolean } = {}): Promise<LibraryDTO> {
+    return this.get(options.rescan ? '/library?rescan=true' : '/library')
+  }
+
+  deckStats(token: string): Promise<DeckStatsDTO> {
+    return this.get(`/decks/${encodeURIComponent(token)}/stats`)
+  }
+
+  deck(token: string): Promise<DeckSnapshot> {
+    return this.get(`/decks/${encodeURIComponent(token)}`)
+  }
+
+  job(id: string): Promise<JobDTO> {
+    return this.get(`/jobs/${encodeURIComponent(id)}`)
+  }
+}
+
+/** The client the app uses; tests build their own with a fake fetch. */
+export const api = new ApiClient()

@@ -1,4 +1,4 @@
-"""The deck library page and switching decks without leaving the editor."""
+"""Switching decks without leaving the editor (the library page itself is Vue: see frontend/tests)."""
 
 from __future__ import annotations
 
@@ -74,67 +74,15 @@ def test_media_urls_are_namespaced_per_deck(tmp_path: Path) -> None:
     assert url_b.startswith(f"/ssmedia/{deck_token(b)}/")
 
 
-# ---- the library page --------------------------------------------------
-
-
-async def test_library_lists_every_deck_grouped_by_week(user: User, course: Path) -> None:
-    await user.open("/")
-    await user.should_see("3 decks")
-    await user.should_see("week01")
-    await user.should_see("week02")
-    await user.should_see("intro")
-    await user.should_see("llm_basics")
-    await user.should_see("prompting")
-
-
-async def test_library_deck_card_opens_that_deck(user: User, course: Path) -> None:
-    await user.open("/")
-    user.find(marker=f"deck-card-{deck_token(course / 'week02' / 'llm_basics.pdf')}").click()
-    await user.should_see("llm_basics")
-    await user.should_see(marker="deck-switcher")  # we're in the editor now
-
-
-async def test_library_shows_deck_size_and_what_is_left(user: User, course: Path) -> None:
-    await user.open("/")
-    await user.should_see("2 slides · complete", retries=200)
-
-
-async def test_library_counts_what_is_still_unnarrated(
-    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    pdf = write_pdf(tmp_path / "half.pdf", ["alpha", "beta", "gamma"])
-    (tmp_path / "half.narration").write_text(
-        simple_narration("@alpha\nOnly this one.\n"), encoding="utf-8"
-    )
-    assert pdf.exists()
-    monkeypatch.setenv("SLIDESONNET_LIB_ROOT", str(tmp_path))
-    await user.open("/")
-    await user.should_see("3 slides · 2 to narrate", retries=200)
-
-
-async def test_library_lists_pdfs_without_narration_separately(user: User, course: Path) -> None:
-    (course / "week03").mkdir()
-    write_pdf(course / "week03" / "draft.pdf", ["alpha"])
-    await user.open("/")
-    await user.should_see("no narration yet")
-    await user.should_see("draft")
-
-
-async def test_empty_root_explains_what_a_deck_is(
-    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("SLIDESONNET_LIB_ROOT", str(tmp_path))
-    await user.open("/")
-    await user.should_see("No decks under this folder")
-    await user.should_see("matching .narration")
-
-
 # ---- switching ---------------------------------------------------------
 
 
 async def test_editor_header_names_the_current_deck(user: User, course: Path) -> None:
     await user.open(deck_url(deck_token(course / "week01" / "intro.pdf")))
     await user.should_see("week01 / intro")
+    # the wordmark is the way back to the (Vue) library
+    marks = [e for e in user.find(ui.html).elements if "ss-wordmark" in str(e.content)]
+    assert marks and 'href="/"' in str(marks[0].content)
 
 
 async def test_deck_forward_moves_to_the_next_deck_in_library_order(
@@ -184,7 +132,7 @@ async def test_a_lone_deck_disables_the_step_arrows(
 async def test_unknown_token_falls_back_to_the_library(user: User, course: Path) -> None:
     """A bookmark for a deck that has since moved must not dead-end."""
     await user.open("/d/deadbeef")
-    await user.should_see("3 decks")
+    await user.should_see("deck library")  # the placeholder standing in for the Vue page
 
 
 async def test_switching_saves_the_current_slide_first(user: User, course: Path) -> None:
@@ -234,14 +182,6 @@ async def test_editor_page_carries_the_leaving_handler(user: User, course: Path)
     from slidesonnet.gui.theme import HEAD_LEAVING
 
     await user.open(deck_url(deck_token(course / "week01" / "intro.pdf")))
-    head = "".join(str(h) for h in user.client.head_html)
-    assert HEAD_LEAVING in head
-
-
-async def test_library_page_carries_the_leaving_handler(user: User, course: Path) -> None:
-    from slidesonnet.gui.theme import HEAD_LEAVING
-
-    await user.open("/")
     head = "".join(str(h) for h in user.client.head_html)
     assert HEAD_LEAVING in head
 

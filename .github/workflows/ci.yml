@@ -58,13 +58,49 @@ jobs:
       # of running to GitHub's 6h ceiling (pytest-timeout ships in [dev]).
       - run: pytest tests/ -m "not integration and not browser" -v --timeout=120 --timeout-method=thread
 
+  # The Vue frontend: lint, type-check, unit tests (Vitest, jsdom — no browser),
+  # production build, and a check that the committed API types match the server.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: API types match the server (regenerate, then diff)
+        run: |
+          pip install -e ..
+          python -m slidesonnet.server.openapi > openapi.json
+          npm run api-types
+          git diff --exit-code -- openapi.json src/api/schema.d.ts
+
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - name: Build the frontend into the package
+        run: cd frontend && npm ci && npm run build
       - run: pip install build
       - run: python -m build
       - name: Verify wheel ships the LaTeX macro
@@ -82,3 +118,13 @@ jobs:
           pip install dist/slidesonnet-*.whl
           slidesonnet --version
           slidesonnet doctor || true
+      - name: Installed wheel serves the bundled frontend (fresh venv)
+        run: |
+          python -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install dist/slidesonnet-*.whl
+          cd /tmp && /tmp/wheel-venv/bin/python $GITHUB_WORKSPACE/scripts/smoke_installed_frontend.py
+      - name: Installed sdist serves the bundled frontend (fresh venv)
+        run: |
+          python -m venv /tmp/sdist-venv
+          /tmp/sdist-venv/bin/pip install dist/slidesonnet-*.tar.gz
+          cd /tmp && /tmp/sdist-venv/bin/python $GITHUB_WORKSPACE/scripts/smoke_installed_frontend.py

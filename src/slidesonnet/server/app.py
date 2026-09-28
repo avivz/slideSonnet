@@ -42,6 +42,14 @@ def install_api(app: FastAPI, registry: DeckRegistry, *, host: str | None = None
     return ctx
 
 
+def install_frontend(app: FastAPI) -> None:
+    """Serve the built Vue app shell at ``/`` and its assets under ``/ui`` (idempotent)."""
+    from slidesonnet.server.frontend import ASSET_PREFIX, frontend_router
+
+    if not any(getattr(r, "path", "") == ASSET_PREFIX + "/{path:path}" for r in app.routes):
+        app.include_router(frontend_router())
+
+
 def create_api_app(registry: DeckRegistry) -> FastAPI:
     """A plain FastAPI app serving the API and media (tests; post-NiceGUI serving)."""
     from collections.abc import AsyncIterator
@@ -57,6 +65,7 @@ def create_api_app(registry: DeckRegistry) -> FastAPI:
 
     app = FastAPI(title="slideSonnet", version="1", lifespan=lifespan)
     ctx = install_api(app, registry)
+    install_frontend(app)
     ctx.allowed_hosts.add("testserver")
     holder.append(ctx)
     return app

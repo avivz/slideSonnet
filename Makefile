@@ -2,6 +2,7 @@ VENV := .venv/bin
 SLIDESONNET := $(VENV)/slidesonnet
 
 .PHONY: install test test-unit test-fast test-browser lint fmt typecheck clean \
+	frontend frontend-deps frontend-dev test-frontend lint-frontend api-types check-api-types \
 	demos basel showcase \
 	check-basel check-showcase \
 	clean-basel clean-showcase clean-examples \
@@ -9,6 +10,8 @@ SLIDESONNET := $(VENV)/slidesonnet
 
 install:
 	$(VENV)/pip install -e ".[kokoro,dev]"
+	@if command -v npm >/dev/null; then $(MAKE) frontend; \
+	else echo "note: npm not found — the editor's browser interface isn't built (make frontend)"; fi
 
 test:
 	$(VENV)/pytest tests/
@@ -22,8 +25,42 @@ test-unit:
 test-fast:
 	$(VENV)/pytest tests/ -m "not integration and not browser and not gui"
 
-test-browser:
+test-browser: frontend
 	$(VENV)/pytest tests/ -m browser
+
+# --- Frontend (Vue + TypeScript, in frontend/) ---
+# The build lands in src/slidesonnet/server/static/, which the Python package
+# ships; installing a wheel or sdist never needs Node.
+FRONTEND := frontend
+
+$(FRONTEND)/node_modules: $(FRONTEND)/package-lock.json
+	cd $(FRONTEND) && npm ci
+	touch $@
+
+frontend-deps: $(FRONTEND)/node_modules
+
+frontend: frontend-deps
+	cd $(FRONTEND) && npm run build
+
+# Vite on :5173 with hot reload, proxying /api, /ssmedia and the editor to a
+# running `slidesonnet edit --no-browser` on :8080.
+frontend-dev: frontend-deps
+	cd $(FRONTEND) && npm run dev
+
+test-frontend: frontend-deps
+	cd $(FRONTEND) && npm test
+
+lint-frontend: frontend-deps
+	cd $(FRONTEND) && npm run lint && npm run typecheck
+
+# Regenerate the TypeScript API types from the server's OpenAPI schema.
+api-types: frontend-deps
+	$(VENV)/python -m slidesonnet.server.openapi > $(FRONTEND)/openapi.json
+	cd $(FRONTEND) && npm run api-types
+
+# CI: fail when the committed API types no longer match the server.
+check-api-types: api-types
+	git diff --exit-code -- $(FRONTEND)/openapi.json $(FRONTEND)/src/api/schema.d.ts
 
 lint:
 	$(VENV)/ruff check src/ tests/
@@ -78,6 +115,6 @@ purge-examples:
 	$(SLIDESONNET) clean examples/showcase/showcase.pdf --keep nothing -y
 
 clean:
-	rm -rf dist/ *.egg-info/
+	rm -rf dist/ *.egg-info/ src/slidesonnet/server/static/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .slidesonnet -exec rm -rf {} + 2>/dev/null || true

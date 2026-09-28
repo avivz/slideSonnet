@@ -1,0 +1,1976 @@
+{
+  "components": {
+    "schemas": {
+      "AppendOrphan": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "string"
+          },
+          "orphan_id": {
+            "title": "Orphan Id",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "append_orphan",
+            "default": "append_orphan",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "orphan_id",
+          "target_id"
+        ],
+        "title": "AppendOrphan",
+        "type": "object"
+      },
+      "AttachOrphan": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "string"
+          },
+          "orphan_id": {
+            "title": "Orphan Id",
+            "type": "string"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "attach_orphan",
+            "default": "attach_orphan",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "orphan_id",
+          "target_id"
+        ],
+        "title": "AttachOrphan",
+        "type": "object"
+      },
+      "AudioStatusDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "integer"
+          },
+          "speech": {
+            "title": "Speech",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "speech",
+          "cached"
+        ],
+        "title": "AudioStatusDTO",
+        "type": "object"
+      },
+      "BlockDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "segments": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "pause": "#/components/schemas/PauseDTO",
+                  "speech": "#/components/schemas/SpeechDTO"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SpeechDTO"
+                },
+                {
+                  "$ref": "#/components/schemas/PauseDTO"
+                }
+              ]
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "slide_id": {
+            "title": "Slide Id",
+            "type": "string"
+          },
+          "transition_in": {
+            "$ref": "#/components/schemas/TransitionDTO"
+          },
+          "transition_out": {
+            "$ref": "#/components/schemas/TransitionDTO"
+          }
+        },
+        "required": [
+          "slide_id",
+          "segments",
+          "transition_in",
+          "transition_out"
+        ],
+        "title": "BlockDTO",
+        "type": "object"
+      },
+      "ClipRef": {
+        "additionalProperties": false,
+        "properties": {
+          "slide_id": {
+            "title": "Slide Id",
+            "type": "string"
+          },
+          "speech_index": {
+            "minimum": 0.0,
+            "title": "Speech Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slide_id",
+          "speech_index"
+        ],
+        "title": "ClipRef",
+        "type": "object"
+      },
+      "DeckSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "default_engine": {
+            "enum": [
+              "kokoro",
+              "qwen3",
+              "inworld"
+            ],
+            "title": "Default Engine",
+            "type": "string"
+          },
+          "diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticDTO"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "engine": {
+            "enum": [
+              "kokoro",
+              "qwen3",
+              "inworld"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
+          "engines": {
+            "items": {
+              "$ref": "#/components/schemas/EngineDTO"
+            },
+            "title": "Engines",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "missing_audio": {
+            "title": "Missing Audio",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "narration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BlockDTO"
+            },
+            "title": "Narration",
+            "type": "object"
+          },
+          "orphans": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Orphans",
+            "type": "array"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/PageDTO"
+            },
+            "title": "Pages",
+            "type": "array"
+          },
+          "pdf_name": {
+            "title": "Pdf Name",
+            "type": "string"
+          },
+          "review_active": {
+            "title": "Review Active",
+            "type": "boolean"
+          },
+          "revisions": {
+            "$ref": "#/components/schemas/RevisionsDTO"
+          },
+          "sidecar_name": {
+            "title": "Sidecar Name",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "voices": {
+            "$ref": "#/components/schemas/VoicesDTO"
+          }
+        },
+        "required": [
+          "token",
+          "name",
+          "label",
+          "pdf_name",
+          "sidecar_name",
+          "revisions",
+          "engine",
+          "default_engine",
+          "engines",
+          "pages",
+          "narration",
+          "orphans",
+          "diagnostics",
+          "voices",
+          "missing_audio",
+          "review_active"
+        ],
+        "title": "DeckSnapshot",
+        "type": "object"
+      },
+      "DeckStatsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "narrated": {
+            "title": "Narrated",
+            "type": "integer"
+          },
+          "slides": {
+            "title": "Slides",
+            "type": "integer"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "warnings": {
+            "title": "Warnings",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "token",
+          "slides",
+          "narrated",
+          "errors",
+          "warnings"
+        ],
+        "title": "DeckStatsDTO",
+        "type": "object"
+      },
+      "DeleteOrphan": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "string"
+          },
+          "orphan_id": {
+            "title": "Orphan Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "delete_orphan",
+            "default": "delete_orphan",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "orphan_id"
+        ],
+        "title": "DeleteOrphan",
+        "type": "object"
+      },
+      "DiagnosticDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "slide_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slide Id"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message",
+          "slide_id"
+        ],
+        "title": "DiagnosticDTO",
+        "type": "object"
+      },
+      "EditVoices": {
+        "additionalProperties": false,
+        "properties": {
+          "default_voice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Voice"
+          },
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "string"
+          },
+          "renames": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Renames",
+            "type": "object"
+          },
+          "type": {
+            "const": "edit_voices",
+            "default": "edit_voices",
+            "title": "Type",
+            "type": "string"
+          },
+          "voices": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Voices",
+            "type": "object"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "voices"
+        ],
+        "title": "EditVoices",
+        "type": "object"
+      },
+      "EngineDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "paid": {
+            "title": "Paid",
+            "type": "boolean"
+          },
+          "realtime": {
+            "title": "Realtime",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "paid",
+          "realtime",
+          "installed"
+        ],
+        "title": "EngineDTO",
+        "type": "object"
+      },
+      "ErrorBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "ExportJob": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_paid": {
+            "default": false,
+            "title": "Allow Paid",
+            "type": "boolean"
+          },
+          "draft": {
+            "default": false,
+            "title": "Draft",
+            "type": "boolean"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kokoro",
+                  "qwen3",
+                  "inworld"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "kind": {
+            "const": "export",
+            "default": "export",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "ExportJob",
+        "type": "object"
+      },
+      "GenerateJob": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_paid": {
+            "default": false,
+            "title": "Allow Paid",
+            "type": "boolean"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kokoro",
+                  "qwen3",
+                  "inworld"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "generate",
+            "default": "generate",
+            "title": "Kind",
+            "type": "string"
+          },
+          "targets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ClipRef"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targets"
+          }
+        },
+        "title": "GenerateJob",
+        "type": "object"
+      },
+      "JobDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "deck": {
+            "title": "Deck",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "generate",
+              "preview",
+              "export",
+              "render_pages"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/ProgressDTO"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "cancelling",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "deck",
+          "status",
+          "inputs",
+          "progress",
+          "result",
+          "error",
+          "created_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "JobDTO",
+        "type": "object"
+      },
+      "LibraryDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/LibrarySectionDTO"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unnarrated": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryDeckDTO"
+            },
+            "title": "Unnarrated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "root",
+          "sections",
+          "unnarrated",
+          "truncated"
+        ],
+        "title": "LibraryDTO",
+        "type": "object"
+      },
+      "LibraryDeckDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "narrated": {
+            "title": "Narrated",
+            "type": "boolean"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "name",
+          "label",
+          "group",
+          "section",
+          "narrated",
+          "url"
+        ],
+        "title": "LibraryDeckDTO",
+        "type": "object"
+      },
+      "LibrarySectionDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "decks": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryDeckDTO"
+            },
+            "title": "Decks",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "decks"
+        ],
+        "title": "LibrarySectionDTO",
+        "type": "object"
+      },
+      "PageDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "$ref": "#/components/schemas/AudioStatusDTO"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "incoming": {
+            "$ref": "#/components/schemas/TransitionDTO"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "slide_id": {
+            "title": "Slide Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "error",
+              "warning",
+              "ready",
+              "empty"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "slide_id",
+          "status",
+          "image_url",
+          "incoming",
+          "audio"
+        ],
+        "title": "PageDTO",
+        "type": "object"
+      },
+      "PauseDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "pause",
+            "default": "pause",
+            "title": "Kind",
+            "type": "string"
+          },
+          "seconds": {
+            "minimum": 0.0,
+            "title": "Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "seconds"
+        ],
+        "title": "PauseDTO",
+        "type": "object"
+      },
+      "PreviewJob": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_paid": {
+            "default": false,
+            "title": "Allow Paid",
+            "type": "boolean"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kokoro",
+                  "qwen3",
+                  "inworld"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "kind": {
+            "const": "preview",
+            "default": "preview",
+            "title": "Kind",
+            "type": "string"
+          },
+          "single_slide_transitions": {
+            "default": false,
+            "title": "Single Slide Transitions",
+            "type": "boolean"
+          },
+          "slide_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slide Id"
+          },
+          "start_slide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Slide"
+          }
+        },
+        "title": "PreviewJob",
+        "type": "object"
+      },
+      "ProgressDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "phase": {
+            "title": "Phase",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "phase",
+          "done",
+          "total",
+          "label"
+        ],
+        "title": "ProgressDTO",
+        "type": "object"
+      },
+      "RenderPagesJob": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "render_pages",
+            "default": "render_pages",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "RenderPagesJob",
+        "type": "object"
+      },
+      "RevisionsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "title": "Config",
+            "type": "string"
+          },
+          "narration": {
+            "title": "Narration",
+            "type": "string"
+          },
+          "pdf": {
+            "title": "Pdf",
+            "type": "string"
+          },
+          "review": {
+            "title": "Review",
+            "type": "string"
+          }
+        },
+        "required": [
+          "narration",
+          "pdf",
+          "config",
+          "review"
+        ],
+        "title": "RevisionsDTO",
+        "type": "object"
+      },
+      "SaveResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "changed",
+          "revision"
+        ],
+        "title": "SaveResponse",
+        "type": "object"
+      },
+      "SessionDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "SessionDTO",
+        "type": "object"
+      },
+      "SlideEdit": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "title": "Expected Revision",
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "pause": "#/components/schemas/PauseDTO",
+                  "speech": "#/components/schemas/SpeechDTO"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SpeechDTO"
+                },
+                {
+                  "$ref": "#/components/schemas/PauseDTO"
+                }
+              ]
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "transition_in": {
+            "$ref": "#/components/schemas/TransitionDTO"
+          },
+          "transition_out": {
+            "$ref": "#/components/schemas/TransitionDTO"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "segments"
+        ],
+        "title": "SlideEdit",
+        "type": "object"
+      },
+      "SpeechDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction"
+          },
+          "kind": {
+            "const": "speech",
+            "default": "speech",
+            "title": "Kind",
+            "type": "string"
+          },
+          "pace": {
+            "anyOf": [
+              {
+                "enum": [
+                  "slow",
+                  "normal",
+                  "fast"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pace"
+          },
+          "text": {
+            "default": "",
+            "title": "Text",
+            "type": "string"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
+          }
+        },
+        "title": "SpeechDTO",
+        "type": "object"
+      },
+      "TransitionDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "default": "cut",
+            "title": "Kind",
+            "type": "string"
+          },
+          "seconds": {
+            "default": 0.0,
+            "minimum": 0.0,
+            "title": "Seconds",
+            "type": "number"
+          }
+        },
+        "title": "TransitionDTO",
+        "type": "object"
+      },
+      "VoicesDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "default_voice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Voice"
+          },
+          "map": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Map",
+            "type": "object"
+          },
+          "names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "map",
+          "default_voice",
+          "names"
+        ],
+        "title": "VoicesDTO",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "slideSonnet",
+    "version": "1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/decks/{token}": {
+      "get": {
+        "operationId": "get_deck_api_v1_decks__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "engine",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "kokoro",
+                    "qwen3",
+                    "inworld"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Engine"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeckSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Deck"
+      }
+    },
+    "/api/v1/decks/{token}/commands": {
+      "post": {
+        "operationId": "post_command_api_v1_decks__token__commands_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "append_orphan": "#/components/schemas/AppendOrphan",
+                    "attach_orphan": "#/components/schemas/AttachOrphan",
+                    "delete_orphan": "#/components/schemas/DeleteOrphan",
+                    "edit_voices": "#/components/schemas/EditVoices"
+                  },
+                  "propertyName": "type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AttachOrphan"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AppendOrphan"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DeleteOrphan"
+                  },
+                  {
+                    "$ref": "#/components/schemas/EditVoices"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Post Command"
+      }
+    },
+    "/api/v1/decks/{token}/export-blockers": {
+      "get": {
+        "operationId": "get_export_blockers_api_v1_decks__token__export_blockers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Export Blockers Api V1 Decks  Token  Export Blockers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Export Blockers"
+      }
+    },
+    "/api/v1/decks/{token}/jobs": {
+      "post": {
+        "operationId": "post_job_api_v1_decks__token__jobs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "export": "#/components/schemas/ExportJob",
+                    "generate": "#/components/schemas/GenerateJob",
+                    "preview": "#/components/schemas/PreviewJob",
+                    "render_pages": "#/components/schemas/RenderPagesJob"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/GenerateJob"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PreviewJob"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ExportJob"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RenderPagesJob"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Post Job"
+      }
+    },
+    "/api/v1/decks/{token}/slides/{slide_id}": {
+      "patch": {
+        "operationId": "patch_slide_api_v1_decks__token__slides__slide_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "slide_id",
+            "required": true,
+            "schema": {
+              "title": "Slide Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlideEdit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Patch Slide"
+      }
+    },
+    "/api/v1/decks/{token}/stats": {
+      "get": {
+        "operationId": "get_deck_stats_api_v1_decks__token__stats_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeckStatsDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Deck Stats"
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "description": "Deck/job/source events. Hints to refetch; ``resync`` means refetch everything.",
+        "operationId": "events_api_v1_events_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Events"
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "list_jobs_api_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "deck",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deck"
+            }
+          },
+          {
+            "in": "query",
+            "name": "active",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Active",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobDTO"
+                  },
+                  "title": "Response List Jobs Api V1 Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "List Jobs"
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Job"
+      }
+    },
+    "/api/v1/jobs/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_job_api_v1_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Cancel Job"
+      }
+    },
+    "/api/v1/library": {
+      "get": {
+        "operationId": "get_library_api_v1_library_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "rescan",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Rescan",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Library"
+      }
+    },
+    "/api/v1/session": {
+      "get": {
+        "operationId": "get_session_api_v1_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Session"
+      }
+    }
+  }
+}

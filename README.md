@@ -166,7 +166,10 @@ slidesonnet edit deck.pdf --root ~/courses   # ...while browsing a wider tree
 
 A deck is any PDF with a matching `.narration` beside it; subfolders are searched
 (`week01/intro/intro.pdf` and friends), and dot-folders, `node_modules`, and deck
-caches are skipped. Once you're in a deck, **Ctrl+K** opens a type-to-filter deck
+caches are skipped. Each deck shows how much of it is narrated; type to filter
+(press **/** or **Ctrl+K** to jump to the search box, **Enter** opens the
+highlighted deck), and PDFs without a narration file are listed at the bottom
+with the command that starts one. Once you're in a deck, **Ctrl+K** opens a type-to-filter deck
 switcher and **Alt+←/→** step to the previous/next deck. Switching saves the slide
 you were editing first and cancels audio still generating for the deck you're
 leaving — clips already finished stay cached, and coming back re-queues the rest.

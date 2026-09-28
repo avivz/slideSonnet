@@ -2,6 +2,10 @@
 dist/
 *.egg-info/
 
+# The compiled frontend (built from frontend/ by `make frontend`, shipped in wheels)
+src/slidesonnet/server/static/
+frontend/node_modules/
+
 # API keys and secrets
 .env
 

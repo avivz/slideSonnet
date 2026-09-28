@@ -73,7 +73,11 @@ def test_prunes_dot_dirs_and_vendor_dirs(tmp_path: Path) -> None:
     _deck(tmp_path / ".git" / "objects", "junk")
     _deck(tmp_path / "node_modules" / "pkg", "junk")
     _deck(tmp_path / ".venv" / "share", "junk")
-    assert [e.label for e in discover_decks(tmp_path).decks] == ["real/deck"]
+    # the pre-1.0 per-deck cache folder, still on disk in older checkouts
+    _deck(tmp_path / "real" / "cache" / "slides", "page-1", sidecar=False)
+    result = discover_decks(tmp_path)
+    assert [e.label for e in result.decks] == ["real/deck"]
+    assert result.unnarrated == []
 
 
 def test_deck_at_the_root_itself_is_found(tmp_path: Path) -> None:

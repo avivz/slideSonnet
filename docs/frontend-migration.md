@@ -204,6 +204,15 @@ mockup the library port is built to.
 Checkpoint: `pip install` of the built wheel in a clean venv, no Node on PATH,
 opens the Vue library and navigates into the NiceGUI editor and back.
 
+*As built:* `frontend/` builds into `server/static/` (base `/ui/`); the
+FastAPI side serves the shell at `/` and hashed assets at `/ui/assets/`
+(`server/frontend.py`), with a how-to-build page on an unbuilt checkout.
+Fonts are bundled (`@fontsource`). CI gained a `frontend` job and the `build`
+job now compiles the bundle and smoke-tests fresh wheel and sdist installs.
+The library was built to the design brief (`docs/frontend-design.md`)
+without a separate mockup round — the maintainer asked for Phases 1–3 first,
+so the built page serves as the mockup to approve or redirect.
+
 ### Layout redesign (runs alongside Phases 2–5)
 
 The redesign happens screen by screen, just ahead of each screen's port, so

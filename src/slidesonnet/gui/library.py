@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 
 #: Directories never worth walking into. Dot-directories are pruned wholesale
 #: (which covers ``.git``/``.venv``/``.slidesonnet``); these are the rest.
-_PRUNED = frozenset({"node_modules", "__pycache__", "site-packages", "venv"})
+#: ``cache`` is the pre-1.0 per-deck cache folder: older checkouts still have
+#: one beside each deck, full of per-slide PDFs that would list as phantom decks.
+_PRUNED = frozenset({"node_modules", "__pycache__", "site-packages", "venv", "cache"})
 
 _TOKEN_CHARS = 8
 

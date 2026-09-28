@@ -1,0 +1,52 @@
+/* Page-wide defaults over the tokens. Component styles live in their SFCs. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1100px 520px at 72% -10%, rgb(93 179 240 / 6%), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

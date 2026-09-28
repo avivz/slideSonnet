@@ -17,6 +17,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: frontend/.nvmrc
+      - name: Build the frontend into the package
+        run: cd frontend && npm ci && npm run build
       - run: pip install build twine
       - run: python -m build
       - name: Upload to TestPyPI
@@ -39,6 +44,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: frontend/.nvmrc
+      - name: Build the frontend into the package
+        run: cd frontend && npm ci && npm run build
       - run: pip install build twine
       - run: python -m build
       - name: Upload to PyPI

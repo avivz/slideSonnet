@@ -56,6 +56,27 @@ every synthesis path takes a per-engine lock, always after the deck's render
 lock, so the editor queue, API jobs, previews, and export never drive one
 model from two threads.
 
+### Phase 2 — toolchain, packaging, library in Vue (`migration/phase-2`)
+
+New: `frontend/` (Vue 3, strict TS, Pinia, Vue Router, Vitest, ESLint,
+`vue-tsc`), 28 Vitest tests in ~1.3 s; `test_server_frontend.py` (2);
+`test_server_api.py::test_deck_stats_*` (1); `scripts/smoke_installed_frontend.py`
+(CI, against a fresh wheel and sdist install).
+
+| Test(s) | Now | Why |
+|---|---|---|
+| `test_gui_switching.py::test_library_*` (5), `test_empty_root_explains_*` | `frontend/tests/LibraryView.test.ts`, `library.test.ts`, API stats test | the library is a Vue page |
+| `test_gui_switching.py::test_library_page_carries_the_leaving_handler` | dropped | guarded NiceGUI's connection-lost popup on a page that is no longer NiceGUI |
+| `test_gui_switching.py::test_unknown_token_falls_back_to_the_library` | kept, lands on a placeholder | the editor route is still NiceGUI |
+
+Bug closed: **B5** (recursive package data; wheel and sdist both carry the
+built bundle, verified by installing each in a clean venv). Found in the
+port: phantom decks from pre-1.0 `cache/` folders (fixed).
+
+The library layout follows `docs/frontend-design.md` — built to that brief
+without a separately approved mockup, because the maintainer asked for
+Phases 1–3 before reviewing; it is the thing to react to at this checkpoint.
+
 ## How to read the Tests column
 
 - **keep** — UI-free logic (`gui/state.py`, `gui/library.py`, `gui/jobs.py`,
@@ -78,12 +99,12 @@ are in the last column; the real count is reported at each checkpoint.
 |---|---|---|---|
 | [ ] | Browser choice: `--browser`, `$BROWSER`, WSL `wslview`, desktop default, `{url}` placeholder | `test_gui_browser_launch.py` (15) | keep; **merge** the 7 browser-choice tests and 3 `find_chromium` tests into two tables (15 → ~5) |
 | [ ] | App-window mode (`--app`) | `test_app_invocation_*` (3) | keep |
-| [ ] | Dev mode: watcher + worker, banner once, no reopen on reconnect | `test_gui_layout.py::test_dev_*`, `test_should_*`, `test_devserver_*` (7) | rewrite with the new dev startup (Phase 2); re-derive, don't port |
+| [ ] | Dev mode: watcher + worker, banner once, no reopen on reconnect | `test_gui_layout.py::test_dev_*`, `test_should_*`, `test_devserver_*` (7) | Phase 2 added `make frontend-dev` (Vite + proxy) for the Vue side; the NiceGUI dev server stays for the editor until Phase 6, then goes with its tests |
 | [ ] | Deck token stable, path-derived, spelling-independent | `test_gui_library.py::test_token_*` (2) | keep |
 | [ ] | Bounded discovery: nesting, dot/vendor pruning, depth/visit caps, natural sort, missing root | `test_gui_library.py` discovery tests (10) | keep |
 | [ ] | Registry: resolve, refuse unregistered, explicit deck/sidecar, neighbours wrap, rescan, grouping | `test_gui_library.py` registry tests (13) | keep; **merge** the 3 neighbour tests |
-| [ ] | Library page: grouped by week, card opens deck, size + remaining, unnarrated count, PDFs without narration, empty-root help | `test_gui_switching.py::test_library_*`, `test_empty_root_*` (6); browser `test_library_card_opens_a_deck` | port→Vitest (one component test with a fixture library); API test for `GET /library`; **drop** the browser journey (covered by Vitest + router) |
-| [ ] | **Bug:** PDFs in `*/cache/slides` folders are listed as phantom "no narration yet" decks | none | fix in the library port; add a discovery test |
+| [x] | Library page: grouped by week, card opens deck, size + remaining, unnarrated count, PDFs without narration, empty-root help | `frontend/tests/LibraryView.test.ts` (4), `library.test.ts`; `test_server_api.py::test_library_and_snapshot_*`, `test_deck_stats_*`; browser `test_library_card_opens_a_deck` | done in Phase 2. The browser journey stays until Phase 4: it is the one check that a Vue page hands off to the NiceGUI editor |
+| [x] | **Bug:** PDFs in `*/cache/slides` folders are listed as phantom "no narration yet" decks | `test_gui_library.py::test_prunes_dot_dirs_and_vendor_dirs` | fixed in Phase 2: the pre-1.0 `cache/` folder is pruned from discovery |
 | [ ] | Unknown token falls back to the library | `test_unknown_token_falls_back_to_the_library` | port→Vitest (router) |
 
 ## Navigation and layout

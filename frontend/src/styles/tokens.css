@@ -1,0 +1,67 @@
+/* slideSonnet design tokens — the one place colors, type, space, and radii live.
+   Derived from the NiceGUI editor's palette (gui/static/editor.css) so the
+   product stays recognizably itself. See docs/frontend-design.md. */
+:root {
+  color-scheme: dark;
+
+  /* surfaces */
+  --bg: #0e1116;
+  --surface: #151a22;
+  --raised: #1e2531;
+  --line: #2b3442;
+
+  /* text */
+  --text: #e8ecf3;
+  --dim: #8a94a6;
+
+  /* accent */
+  --accent: #5db3f0;
+  --accent-deep: #2f7fc4;
+  --on-accent: #0c1117;
+
+  /* status, with fills for chips and notices */
+  --ok: #7ee08a;
+  --warn: #ffc857;
+  --err: #ff6b6b;
+  --ok-fill: rgb(126 224 138 / 12%);
+  --warn-fill: rgb(255 200 87 / 12%);
+  --err-fill: rgb(255 107 107 / 12%);
+
+  /* type */
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-display: 'Bricolage Grotesque', var(--font-sans);
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 19px;
+
+  /* space */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* radii */
+  --radius-field: 6px;
+  --radius-card: 10px;
+  --radius-dialog: 14px;
+  --radius-pill: 999px;
+
+  /* motion */
+  --fast: 120ms;
+  --pane: 200ms;
+
+  /* focus */
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fast: 0ms;
+    --pane: 0ms;
+  }
+}

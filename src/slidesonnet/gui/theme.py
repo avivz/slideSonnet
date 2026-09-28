@@ -45,5 +45,8 @@ def apply_theme(*, aspect: float | None = None, extras: str = "") -> None:
 
 
 def wordmark() -> None:
-    """The slideSonnet wordmark, shared by both pages' headers."""
-    ui.html('<span class="ss-wordmark">slide<span class="ss-accent">Sonnet</span></span>')
+    """The slideSonnet wordmark — also the link back to the deck library (``/``)."""
+    ui.html(
+        '<a class="ss-wordmark" href="/" title="All decks">'
+        'slide<span class="ss-accent">Sonnet</span></a>'
+    )

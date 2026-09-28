@@ -1,8 +1,10 @@
-"""NiceGUI 'main file' for the deck-library and deck-switching tests.
+"""NiceGUI 'main file' for the deck-switching tests.
 
-Mirrors :func:`slidesonnet.gui.app.register_pages`, but rebuilds the registry on
-every request from ``SLIDESONNET_LIB_ROOT`` so each test can point it at its own
-temporary tree (the real app scans once at launch).
+Mirrors the editor route of :func:`slidesonnet.gui.app.register_pages`, but
+rebuilds the registry on every request from ``SLIDESONNET_LIB_ROOT`` so each
+test can point it at its own temporary tree (the real app scans once at
+launch). The library itself is the Vue app now; a plain placeholder stands in
+for it at ``/`` so "back to the library" navigations have somewhere to land.
 """
 
 from __future__ import annotations
@@ -14,7 +16,6 @@ from nicegui import ui
 
 from slidesonnet.gui.app import build_editor, set_registry
 from slidesonnet.gui.library import DeckRegistry
-from slidesonnet.gui.library_view import build_library
 
 
 def _registry() -> DeckRegistry:
@@ -26,7 +27,8 @@ def _registry() -> DeckRegistry:
 
 @ui.page("/")
 def index() -> None:
-    build_library(_registry())
+    _registry()
+    ui.label("deck library")
 
 
 @ui.page("/d/{token}")

@@ -84,6 +84,14 @@ def test_library_and_snapshot_describe_the_deck_without_leaking_paths(
     assert str(deck.parent) not in str(lib) + str(snap)  # no absolute paths on the wire
 
 
+def test_deck_stats_count_what_is_left_to_narrate(client: TestClient) -> None:
+    """The library card's numbers: slides in the PDF and how many have narration."""
+    token = _token(client)
+    stats = client.get(f"/api/v1/decks/{token}/stats").json()
+    # the unattached "gone" block is an error; "outro" without narration a warning
+    assert stats == {"token": token, "slides": 3, "narrated": 2, "errors": 1, "warnings": 1}
+
+
 @pytest.mark.parametrize(
     ("method", "url", "status", "code"),
     [
