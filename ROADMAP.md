@@ -107,7 +107,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    each its own branch merged only after a maintainer checkpoint: 0 baseline +
    inventory + draft-loss fix (done), 1 service layer + `/api/v1` + jobs inside
    the NiceGUI app, 2 toolchain/packaging + library in Vue, 3 browser-owned
-   playback, 4 editor, 5 review, 6 remove NiceGUI. Includes a **layout redesign**
+   playback (1–3 built on stacked branches `migration/phase-{1,2,3}`, awaiting
+   the maintainer's checkpoint), 4 editor, 5 review, 6 remove NiceGUI. Includes a **layout redesign**
    (mockups approved per screen before its port) and a **smaller test suite**
    (~330 frontend-facing tests → ~220; browser tier stays local). Item 4's
    "play before fully generated" fits naturally into Phase 3. **[agent→human]**

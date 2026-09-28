@@ -19,7 +19,15 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: fileURLToPath(new URL('./index.html', import.meta.url)),
+        // Loaded by the NiceGUI editor page at a stable URL (/ui/embed/playback.js).
+        playback: fileURLToPath(new URL('./src/features/playback/embed.ts', import.meta.url)),
       },
+      output: {
+        entryFileNames: (chunk) =>
+          chunk.name === 'playback' ? 'embed/playback.js' : 'assets/[name]-[hash].js',
+      },
+      // The embed has no importer; keep its side effect (window.ssPlayback).
+      preserveEntrySignatures: 'allow-extension',
     },
   },
   server: {

@@ -1,0 +1,32 @@
+import type { Cue } from './manifest'
+
+/**
+ * Index of the cue playing at time `t` (seconds): the last cue whose start is
+ * at or before `t`. Before the first cue, the first one. -1 for no cues.
+ * Binary search, so a 200-slide deck costs nothing per animation frame.
+ */
+export function cueAt(cues: readonly Cue[], t: number): number {
+  if (cues.length === 0) return -1
+  let lo = 0
+  let hi = cues.length - 1
+  const time = t + 1e-6 // a frame landing exactly on a boundary belongs to the next slide
+  if (time < (cues[0] as Cue).start) return 0
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if ((cues[mid] as Cue).start <= time) lo = mid
+    else hi = mid - 1
+  }
+  return lo
+}
+
+/** Start time of `slideId` in the cue sheet, or null when it isn't in it. */
+export function cueStart(cues: readonly Cue[], slideId: string): number | null {
+  const cue = cues.find((c) => c.slide_id === slideId)
+  return cue ? cue.start : null
+}
+
+/** `m:ss` for a playback position. */
+export function formatClock(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}

@@ -40,7 +40,7 @@ from slidesonnet.gui.state import (
     cue_start,
     split_edge_silences,
 )
-from slidesonnet.gui.theme import HEAD_MORPH, HEAD_RESIZE, apply_theme, wordmark
+from slidesonnet.gui.theme import HEAD_PLAYBACK, HEAD_RESIZE, apply_theme, wordmark
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration import transitions as trans
 from slidesonnet.narration.format import serialize_body
@@ -50,7 +50,7 @@ from slidesonnet.server.app import install_api, install_frontend
 from slidesonnet.server.context import ServerContext, context_of
 from slidesonnet.server.jobs import JobContext, JobKind
 from slidesonnet.server.media import base_media_url, media_url
-from slidesonnet.server.previews import PreviewArtifact, morph_schedule, single_slide_morph
+from slidesonnet.server.previews import PreviewArtifact, preview_manifest
 from slidesonnet.tts import BACKENDS
 
 logger = logging.getLogger(__name__)
@@ -263,7 +263,7 @@ def _media_url(state: EditorState, path: Path, *, cache_bust: bool = False) -> s
 
 
 def _serve_media(state: EditorState) -> None:
-    """Ensure this deck's render dir exists and the backend (API + media) is mounted.
+    """Ensure this deck's render dir exists and the backend (API, media, frontend) is mounted.
 
     Asking the app rather than tracking a flag: the routes belong to the app
     instance, and a stale module-level flag would silently skip registration on
@@ -271,6 +271,7 @@ def _serve_media(state: EditorState) -> None:
     """
     (render_dir(state.pdf_path) / "pages").mkdir(parents=True, exist_ok=True)
     install_api(app, registry_for(state.pdf_path))
+    install_frontend(app)  # the page loads the browser player from /ui/embed/
 
 
 def _backend() -> ServerContext:
@@ -398,16 +399,14 @@ class PreviewPlayer:
         view: EditorView,
         *,
         audio: Any,
-        pos_slider: Any,
-        time_label: Any,
+        transport: Any,
         play_one: Any,
         play_all: Any,
         speed_btn: Any,
     ) -> None:
         self.view = view
         self.audio = audio
-        self.pos_slider = pos_slider
-        self.time_label = time_label
+        self.transport = transport  # host of the browser-drawn scrubber and clock
         self.play_one = play_one
         self.play_all = play_all
         self.speed_btn = speed_btn
@@ -415,25 +414,14 @@ class PreviewPlayer:
         self.playback = PlaybackController()
         self.cues: list[Cue] = []
         self.track_duration = 0.0
-        self.scrubbing = False  # user is dragging the seek handle; don't fight them
+        # A deck-playback slide change that arrived mid-edit, applied on blur.
+        self._pending_follow: str | None = None
         # An in-flight preview build (it may be waiting on the generation queue).
         # Tracked so Stop, navigation, or a second play-press can cancel the wait.
         self._build_task: asyncio.Task[None] | None = None
         self._build_key: str | None = None  # "deck" or the slide id being built
         self._build_btn: Any = None  # the play button wearing the build spinner
         self._build_job: str | None = None  # the backend preview job being awaited
-
-    @staticmethod
-    def _fmt_clock(t: float) -> str:
-        s = max(0, int(t))
-        return f"{s // 60}:{s % 60:02d}"
-
-    def _sync_clock(self, t: float) -> None:
-        if self.track_duration <= 0:
-            return
-        if not self.scrubbing:
-            self.pos_slider.value = min(1.0, t / self.track_duration)
-        self.time_label.set_text(f"{self._fmt_clock(t)} / {self._fmt_clock(self.track_duration)}")
 
     def _run_js(self, script: str) -> None:
         try:  # no JS client under the in-process test sim
@@ -458,55 +446,53 @@ class PreviewPlayer:
         self.speed_btn.set_text(self._fmt_speed(self.speed))
         self._apply_speed()
 
-    def _apply_speed(self) -> None:
-        """Push the current rate onto the audio element.
-
-        Sets ``defaultPlaybackRate`` too: a fresh ``set_source`` triggers a media
-        load that resets ``playbackRate`` to the default, so pinning the default
-        keeps the speed across track rebuilds. ``preservesPitch`` keeps 2× natural
-        rather than chipmunked.
-        """
-        self._run_js(
-            f"(() => {{ const a = document.getElementById('c{self.audio.id}'); "
-            f"if (a) {{ a.preservesPitch = true; "
-            f"a.defaultPlaybackRate = {self.speed}; a.playbackRate = {self.speed}; }} }})()"
+    def _mount(self) -> str:
+        """The element ids the browser playback module attaches to (JSON)."""
+        return json.dumps(
+            {
+                "audioId": f"c{self.audio.id}",
+                "stageId": f"c{self.view.stage_view.id}",
+                "transportId": f"c{self.transport.id}",
+            }
         )
 
-    def _arm_morph(self, whole_deck: bool, total: float) -> None:
-        """Push the morph schedule to the client engine.
+    def _player_js(self, call: str, *args: object) -> None:
+        """Call ``window.ssPlayback.<call>(mount, *args)`` in the page (no-op if absent)."""
+        rest = "".join(f", {json.dumps(a)}" for a in args)
+        self._run_js(f"window.ssPlayback && window.ssPlayback.{call}({self._mount()}{rest})")
 
-        Whole-deck preview plays each boundary transition (cue-aligned); a
-        single-slide preview plays just that slide's own in/out transitions.
+    def seek_to_slide(self, slide_id: str) -> None:
+        """Move the loaded deck track to *slide_id*'s cue (navigation while previewing)."""
+        self._player_js("seekToSlide", slide_id)
+
+    def _apply_speed(self) -> None:
+        """Push the current rate to the browser player (pinned across track loads)."""
+        self._player_js("setRate", self.speed)
+
+    def _load_in_browser(self, preview: PreviewArtifact, track_url: str) -> None:
+        """Hand the loaded track's manifest to the browser-owned player.
+
+        From here the browser drives the clock, the slide shown on the stage, the
+        transitions, the scrubber, and the time label on its own; it reports back
+        only when the playing slide changes (see :meth:`on_playback_slide`). A
+        single-slide preview plays its own in/out transitions only when the
+        "Play transitions in single-slide preview" toggle is on.
         """
         state = self.view.state
-        try:
-            images = state.ensure_images()
-        except Exception:
-            images = []
-        url = lambda p: _media_url(state, p, cache_bust=True)
-        if whole_deck:
-            steps = morph_schedule(self.cues, state.deck, images, url)
-        else:
-            # single-slide transitions are opt-in (off by default) — a plain play
-            # of one slide shouldn't flourish through its in/out morph by default.
-            steps = single_slide_morph(
-                state.current_block,
-                state.incoming_transition,
-                state.index,
-                images,
-                total,
-                url,
-                enabled=bool(app.storage.general.get("single_slide_transitions", False)),
-            )
-        if not steps:
-            self._run_js("window.ssMorph && window.ssMorph.stop()")
-            return
-        cfg = {
-            "audioId": f"c{self.audio.id}",
-            "stageId": f"c{self.view.stage_view.id}",
-            "steps": steps,
-        }
-        self._run_js(f"window.ssMorph && window.ssMorph.start({json.dumps(cfg)})")
+        # already rendered by the preview job, so this only lists them
+        images = state.page_images()  # by page index; None where not rendered
+        manifest = preview_manifest(
+            preview,
+            state.deck,
+            images,
+            media_url=lambda p: _media_url(state, p, cache_bust=True),
+            track_url=track_url,
+            start_slide=state.current_id,
+            single_slide_transitions=bool(
+                app.storage.general.get("single_slide_transitions", False)
+            ),
+        )
+        self._player_js("load", manifest.to_json())
 
     def cancel_build(self) -> None:
         """Abort an in-flight preview build — the wait on the generation queue.
@@ -531,12 +517,11 @@ class PreviewPlayer:
         self.cancel_build()  # abort a build still waiting on generation — Stop wins now
         self.playback.stop()  # cancels a pending play too — Stop always wins
         self.audio.pause()
-        self._run_js("window.ssMorph && window.ssMorph.stop()")
+        self._player_js("stop")
         self.cues = []
         self.track_duration = 0.0
-        self.pos_slider.value = 0.0
-        self.pos_slider.props("disable")
-        self.time_label.set_text("")
+        self._pending_follow = None
+        self.transport.props("data-loaded=false")
         self.sync_transport()
 
     def request_preview(self, btn: Any, whole_deck: bool) -> None:
@@ -629,7 +614,12 @@ class PreviewPlayer:
                         view.assembling = (done, total)
                     ctx.progress(phase, done, total, label)  # also where a cancel lands
 
-                return state.preview_artifact(slide, progress)
+                artifact = state.preview_artifact(slide, progress)
+                # The browser player shows page images during the preview; render
+                # any missing ones here, off the event loop, not when loading it.
+                with contextlib.suppress(Exception):
+                    state.ensure_images()
+                return artifact
 
             job = jobs.submit(
                 "preview",
@@ -654,7 +644,6 @@ class PreviewPlayer:
                     view.flash("Preview stopped", "info")
                     return
                 self.cues = preview.cues if whole_deck else []
-                self._arm_morph(whole_deck, preview.duration)
                 # whole-deck playback starts where the user is, not back at slide 1:
                 # seek to the current slide's cue (a #t= media fragment so the
                 # browser starts there on load).
@@ -665,14 +654,11 @@ class PreviewPlayer:
                 if start_at > 0:
                     src = f"{src}#t={start_at}"
                 self.audio.set_source(src)
+                self._load_in_browser(preview, _media_url(state, preview.path))
                 self._apply_speed()  # the load resets playbackRate; re-pin the chosen speed
                 self.playback.mark_loaded("deck" if whole_deck else state.current_id)
                 self.track_duration = preview.duration
-                self.pos_slider.value = (
-                    start_at / self.track_duration if self.track_duration else 0.0
-                )
-                self.pos_slider.props(remove="disable")
-                self._sync_clock(start_at)
+                self.transport.props("data-loaded=true")
                 self.audio.play()
                 if start_at > 0:
                     self.audio.seek(start_at)  # belt-and-suspenders for browsers that ignore #t=
@@ -701,38 +687,43 @@ class PreviewPlayer:
                     btn.props(remove="loading")
                     view.render()
 
-    # clock/scrubber sync + cue-driven image flip during deck preview
-    def on_timeupdate(self, e: Any) -> None:
-        t = float(e.args) if e.args is not None else 0.0
-        self._sync_clock(t)
-        if not self.cues:
+    # ---- following deck playback ------------------------------------------
+    def on_playback_slide(self, e: Any) -> None:
+        """The browser player moved to another slide of the deck track: follow it.
+
+        Sent once per slide change (never per audio tick). Following moves the
+        *editor* to the playing slide — but never while a field is focused: the
+        slide is remembered and the editor catches up when the field loses focus
+        (:meth:`apply_pending_follow`), so typing is never cut off.
+        """
+        if self.playback.loaded_key != "deck":
             return
+        slide_id = str(e.args) if e.args is not None else ""
+        if self.view.blocks.editing_active:
+            self._pending_follow = slide_id
+            return
+        self._follow(slide_id)
+
+    def apply_pending_follow(self) -> None:
+        """Catch up with a slide change that arrived while a field was focused."""
+        slide_id, self._pending_follow = self._pending_follow, None
+        if slide_id is not None and self.playback.loaded_key == "deck":
+            self._follow(slide_id)
+
+    def _follow(self, slide_id: str) -> None:
         state = self.view.state
-        current = self.cues[0][1]
-        for start, sid in self.cues:
-            if t + 1e-6 >= start:
-                current = sid
-            else:
-                break
-        if current in state.deck.pages:
-            idx = state.deck.pages.index(current)
-            if idx != state.index:
-                if self.view.blocks.editing_active:
-                    return  # mid-edit: defer following until the field blurs
-                self.view.blocks.save_current()  # don't clobber narration typed during playback
-                state.index = idx
-                self.view.render()
+        if slide_id not in state.deck.pages:
+            return
+        index = state.deck.pages.index(slide_id)
+        if index == state.index:
+            return
+        self.view.blocks.save_current()  # don't clobber narration typed during playback
+        state.index = index
+        self.view.render()
 
     def on_player_state(self, playing: bool) -> None:
         self.playback.set_playing(playing)
         self.sync_transport()
-
-    def on_scrub_pan(self, e: Any) -> None:
-        self.scrubbing = e.args == "start"
-
-    def on_scrub(self, e: Any) -> None:
-        if self.track_duration > 0:
-            self.audio.seek(float(e.args) * self.track_duration)
 
     def sync_transport(self) -> None:
         """Play buttons mirror the player: the loaded track's button shows pause.
@@ -790,6 +781,8 @@ class BlockEditor:
     def _set_editing(self, active: bool, speech_index: int | None = None) -> None:
         self.editing_active = active
         self.focused_speech_index = speech_index if active else None
+        if not active:  # the field let go: catch up with deck playback, if it moved on
+            self.view.player.apply_pending_follow()
 
     def _track_editing(self, widget: Any, speech_index: int | None = None) -> None:
         widget.on("focus", lambda: self._set_editing(True, speech_index))
@@ -1459,7 +1452,7 @@ class EditorView:
             aspect = page_aspect(state.pdf_path)
         except Exception:  # never let a malformed page block the editor
             aspect = 16 / 9
-        apply_theme(aspect=aspect, extras=HEAD_RESIZE + HEAD_MORPH)
+        apply_theme(aspect=aspect, extras=HEAD_RESIZE + HEAD_PLAYBACK)
 
         # --- header: wordmark · deck · save flash · error pill ---
         with ui.header().classes("ss-header items-center justify-between no-wrap"):
@@ -1570,13 +1563,10 @@ class EditorView:
                         ui.element("div").classes("ss-vsep")
                         audio = ui.audio("").classes("ss-audio")
                         audio.mark("preview-audio")
-                        pos_slider = (
-                            ui.slider(min=0.0, max=1.0, step=0.001, value=0.0)
-                            .props("dense disable")
-                            .classes("ss-seek")
-                        )
-                        pos_slider.mark("seek")
-                        time_label = ui.label("").classes("ss-mono ss-time")
+                        # the scrubber and clock are drawn by the browser playback
+                        # module (/ui/embed/playback.js) inside this host
+                        transport = ui.element("div").classes("ss-seek").props("data-loaded=false")
+                        transport.mark("seek")
 
             with console_split.after, ui.column().classes("ss-console gap-3 no-wrap"):
                 # Two tabs keep review apart from the speech tools: Audio | Review.
@@ -1712,8 +1702,7 @@ class EditorView:
         self.player = PreviewPlayer(
             self,
             audio=audio,
-            pos_slider=pos_slider,
-            time_label=time_label,
+            transport=transport,
             play_one=play_one,
             play_all=play_all,
             speed_btn=speed_btn,
@@ -1735,17 +1724,14 @@ class EditorView:
         ui.timer(0.05, self.render_pages_in_background, once=True)  # once the page is up
 
         # --- event wiring -----------------------------------------------------
-        # NiceGUI's `args` filter only reaches top-level event keys, so a real
-        # browser can't deliver `event.target.currentTime` that way (the handler
-        # would receive an empty dict). Transform client-side and emit the number.
-        audio.on(
-            "timeupdate", self.player.on_timeupdate, js_handler="(e) => emit(e.target.currentTime)"
-        )
+        # The browser player owns the clock (B2): no per-tick timeupdate reaches
+        # Python. It dispatches `ssslide` (detail: slide id) on the audio element
+        # when the deck track moves to another slide; NiceGUI's `args` filter only
+        # reaches top-level event keys, so the detail is unpacked client-side.
+        audio.on("ssslide", self.player.on_playback_slide, js_handler="(e) => emit(e.detail)")
         audio.on("play", lambda: self.player.on_player_state(True))
         audio.on("pause", lambda: self.player.on_player_state(False))
         audio.on("ended", lambda: self.player.on_player_state(False))
-        pos_slider.on("pan", self.player.on_scrub_pan)
-        pos_slider.on("change", self.player.on_scrub)  # fires on release: one seek per scrub
         prev_btn.on_click(lambda: self.go(-1))
         next_btn.on_click(lambda: self.go(1))
         play_one.on_click(lambda: self.player.request_preview(play_one, False))
@@ -2197,9 +2183,8 @@ class EditorView:
         state.go(index)
         action = self.player.playback.nav_action() if moved else "none"
         if action == "seek" and self.player.cues:  # deck track loaded: follow to this cue
-            start = cue_start(self.player.cues, state.current_id)
-            if start is not None:
-                self.player.audio.seek(start)
+            if cue_start(self.player.cues, state.current_id) is not None:
+                self.player.seek_to_slide(state.current_id)
         elif action == "clear":  # a single-slide track belongs to its slide — reset
             self.player.stop_playback()
         self.render()

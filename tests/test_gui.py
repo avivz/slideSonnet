@@ -784,8 +784,8 @@ async def test_deck_playback_cue_flip_saves_pending_edits(
     user.find(marker="play-deck").click()
     await user.should_see("Preview ready", retries=300)
     user.find(ui.textarea).clear().type("Typed during playback.")
-    # the track reaches the second slide's cue: the editor flips the page
-    user.find(marker="preview-audio").trigger("timeupdate", args=2.5)
+    # the browser player reaches the second slide's cue: the editor follows
+    user.find(marker="preview-audio").trigger("ssslide", args="euler-setup")
     await user.should_see("Slide 2 / 6")
     sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
     assert "Typed during playback." in sidecar  # saved under @intro-title, not lost
@@ -810,11 +810,10 @@ async def test_cue_flip_is_deferred_while_a_field_is_focused(
     user.find(marker="play-deck").click()
     await user.should_see("Preview ready", retries=300)
     user.find(ui.textarea).trigger("focus")  # the user is mid-edit
-    user.find(marker="preview-audio").trigger("timeupdate", args=2.5)
-    await user.should_see("Slide 1 / 6")  # flip deferred, editor untouched
+    user.find(marker="preview-audio").trigger("ssslide", args="euler-setup")
+    await user.should_see("Slide 1 / 6")  # follow deferred, editor untouched
     user.find(ui.textarea).trigger("blur")
-    user.find(marker="preview-audio").trigger("timeupdate", args=2.6)
-    await user.should_see("Slide 2 / 6")  # following resumed after blur
+    await user.should_see("Slide 2 / 6")  # caught up as soon as the field let go
 
 
 async def test_speed_button_cycles_through_playback_rates(
@@ -921,41 +920,6 @@ async def test_play_button_toggles_pause_and_resume(
     assert str(audio.props.get("src")) == loaded
 
 
-async def test_seek_bar_tracks_position_and_resets_on_stop(
-    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The transport shows position/duration and a scrubber; Stop resets both."""
-    from nicegui import ui as ngui
-
-    from slidesonnet.gui.state import EditorState
-
-    pdf = _prep(tmp_path, sidecar="@intro-title\nHello.\n")
-    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
-    monkeypatch.setattr(
-        EditorState,
-        "preview_artifact",
-        lambda self, slide_id, progress=None: _fake_preview(self.pdf_path, []),
-    )
-    await user.open("/")
-    seek = next(iter(user.find(marker="seek").elements))
-    assert isinstance(seek, ngui.slider)
-    assert "disable" in seek.props  # nothing loaded yet
-
-    user.find(marker="play-slide").click()
-    await user.should_see("Preview ready", retries=300)
-    await user.should_see("0:00 / 0:04")  # fake preview is 4 seconds long
-    assert "disable" not in seek.props
-
-    # the track advances: the scrubber and clock follow
-    user.find(marker="preview-audio").trigger("timeupdate", args=2.0)
-    await user.should_see("0:02 / 0:04")
-    assert seek.value == pytest.approx(0.5)
-
-    user.find(marker="stop").click()
-    assert seek.value == 0.0
-    assert "disable" in seek.props
-
-
 async def test_generate_resets_rolling_player(
     user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -978,16 +942,13 @@ async def test_generate_resets_rolling_player(
 
     user.find(marker="play-slide").click()
     await user.should_see("Preview ready", retries=300)
-    user.find(marker="preview-audio").trigger("timeupdate", args=2.0)
-    await user.should_see("0:02 / 0:04")  # mid-run
     assert play_btn.props.get("icon") == "pause"
 
     # Re-generating the playing slide's clip makes the rolling track stale, so the
     # transport resets at click time (before the background job even finishes).
     user.find(marker="gen-seg-0").click()
     assert play_btn.props.get("icon") == "play_arrow"  # stopped, not lingering paused
-    assert seek.value == 0.0  # rewound
-    assert "disable" in seek.props
+    assert seek.props.get("data-loaded") == "false"
 
 
 async def test_structural_edit_resets_player(
@@ -1016,8 +977,7 @@ async def test_structural_edit_resets_player(
 
     user.find(marker="add-pause").click()  # mid-run: the audible content just changed
     assert play_btn.props.get("icon") == "play_arrow"
-    assert seek.value == 0.0
-    assert "disable" in seek.props
+    assert seek.props.get("data-loaded") == "false"
 
     first = str(audio.props.get("src"))
     user.find(marker="play-slide").click()  # must rebuild — the player was reset, not paused
@@ -1030,7 +990,7 @@ async def test_structural_edit_resets_player(
 
     user.find(marker="seg-del-1").click()  # delete the pause card mid-run
     assert play_btn.props.get("icon") == "play_arrow"
-    assert "disable" in seek.props
+    assert seek.props.get("data-loaded") == "false"
 
 
 async def test_pause_length_edit_resets_player_so_replay_rebuilds(
@@ -1068,7 +1028,7 @@ async def test_pause_length_edit_resets_player_so_replay_rebuilds(
     sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
     assert "pause: 3" in sidecar  # the edit itself saved
     assert play_btn.props.get("icon") == "play_arrow"  # player stopped...
-    assert "disable" in seek.props  # ...and rewound
+    assert seek.props.get("data-loaded") == "false"  # ...and rewound
 
     first = str(audio.props.get("src"))
     user.find(marker="play-slide").click()  # replay must rebuild, not resume the stale track
@@ -1185,7 +1145,7 @@ async def test_text_edit_revokes_loaded_track(
     sidecar = (tmp_path / "marked.narration").read_text(encoding="utf-8")
     assert "Completely different words." in sidecar  # the edit saved
     assert play_btn.props.get("icon") == "play_arrow"  # player stopped...
-    assert "disable" in seek.props  # ...and rewound
+    assert seek.props.get("data-loaded") == "false"  # ...and rewound
 
     first = str(audio.props.get("src"))
     user.find(marker="play-slide").click()  # replay must rebuild, not resume the stale track
@@ -1259,13 +1219,11 @@ async def test_play_all_starts_at_current_slide(
     user.find("Next").click()  # move to slide 2 (euler-setup)
     await user.should_see("Slide 2 / 6")
     audio = next(iter(user.find(marker="preview-audio").elements))
-    seek = next(iter(user.find(marker="seek").elements))
 
     user.find(marker="play-deck").click()
     await user.should_see("Preview ready", retries=300)
     # euler-setup's cue is 2.0s into a 4.0s track → seek there, not to 0
     assert "#t=2.0" in str(audio.props.get("src"))
-    assert float(seek.value or 0.0) == pytest.approx(0.5)
 
 
 async def test_generate_missing_keeps_unaffected_playback(

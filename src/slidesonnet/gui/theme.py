@@ -16,7 +16,8 @@ _STATIC_DIR = Path(__file__).parent / "static"
 HEAD_CSS = (_STATIC_DIR / "editor.css").read_text(encoding="utf-8")
 HEAD_FONTS = (_STATIC_DIR / "fonts.html").read_text(encoding="utf-8")
 HEAD_RESIZE = (_STATIC_DIR / "resize.html").read_text(encoding="utf-8")
-HEAD_MORPH = (_STATIC_DIR / "morph.html").read_text(encoding="utf-8")
+#: The browser-owned preview player (built from frontend/src/features/playback/).
+HEAD_PLAYBACK = '<script type="module" src="/ui/embed/playback.js"></script>'
 #: Suppresses the connection-lost popup while navigating away (see the file).
 HEAD_LEAVING = (_STATIC_DIR / "leaving.html").read_text(encoding="utf-8")
 
