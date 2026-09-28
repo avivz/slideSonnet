@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -534,6 +534,73 @@ async def test_save_after_external_sidecar_edit_keeps_theirs_and_offers_mine(
     user.find(marker="conflict-copy")  # a copy button is there
     assert "The agent's words." in sidecar.read_text(encoding="utf-8")
     assert "My unsaved words." not in sidecar.read_text(encoding="utf-8")
+
+
+async def _wait_for(predicate: Callable[[], bool], tries: int = 100) -> None:
+    import asyncio
+
+    for _ in range(tries):
+        if predicate():
+            return
+        await asyncio.sleep(0.05)
+
+
+def _utext_value(user: User, index: int = 0) -> str:
+    return str(next(iter(user.find(marker=f"utext-{index}").elements)).value)
+
+
+async def test_external_edit_elsewhere_keeps_the_unsaved_draft(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Typing (no blur) while an agent edits *another* slide: the reload must not
+    rebuild the editor and throw the draft away. Regression: it reverted the
+    field to the file's text."""
+    from slidesonnet.gui import app as app_module
+
+    monkeypatch.setattr(app_module, "SOURCE_POLL_INTERVAL_S", 0.1)
+    pdf = _prep(tmp_path, sidecar="@intro-title\nOld words.\n\n@euler-setup\nWorld.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(ui.textarea).clear().type("MY UNSAVED DRAFT")
+
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(
+        simple_narration("@intro-title\nOld words.\n\n@euler-setup\nThe agent's words.\n"),
+        encoding="utf-8",
+    )
+    await user.should_see("changed on disk", retries=100)
+    assert _utext_value(user) == "MY UNSAVED DRAFT"
+
+    user.find(marker="utext-0").trigger("keydown.ctrl.s.prevent")  # the draft still saves
+    text = sidecar.read_text(encoding="utf-8")
+    assert "MY UNSAVED DRAFT" in text
+    assert "The agent's words." in text  # without undoing the external edit
+
+
+async def test_external_edit_to_the_same_slide_offers_the_draft_back(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The agent rewrote the very slide being typed: show its version, hand the
+    draft back, and let the user keep theirs on purpose."""
+    from slidesonnet.gui import app as app_module
+
+    monkeypatch.setattr(app_module, "SOURCE_POLL_INTERVAL_S", 0.1)
+    pdf = _prep(tmp_path, sidecar="@intro-title\nOld words.\n")
+    monkeypatch.setenv("SLIDESONNET_EDIT_PDF", str(pdf))
+    await user.open("/")
+    user.find(ui.textarea).clear().type("MY UNSAVED DRAFT")
+
+    sidecar = tmp_path / "marked.narration"
+    sidecar.write_text(simple_narration("@intro-title\nExternal text.\n"), encoding="utf-8")
+    await user.should_see("changed on disk", retries=100)
+    await user.should_see("MY UNSAVED DRAFT")  # offered back, not silently dropped
+    assert _utext_value(user) == "External text."
+    assert "MY UNSAVED DRAFT" not in sidecar.read_text(encoding="utf-8")  # nothing overwritten
+
+    user.find(marker="conflict-keep").click()
+    await _wait_for(lambda: "MY UNSAVED DRAFT" in sidecar.read_text(encoding="utf-8"))
+    assert "MY UNSAVED DRAFT" in sidecar.read_text(encoding="utf-8")
+    assert _utext_value(user) == "MY UNSAVED DRAFT"
 
 
 async def test_export_when_not_ready_offers_a_draft(

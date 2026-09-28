@@ -14,6 +14,7 @@ import os
 import shutil
 import time
 from collections.abc import Callable, Coroutine, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -43,6 +44,7 @@ from slidesonnet.gui.state import (
 from slidesonnet.gui.theme import HEAD_MORPH, HEAD_RESIZE, apply_theme, wordmark
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration import transitions as trans
+from slidesonnet.narration.format import serialize_body
 from slidesonnet.narration.model import Deck, Pace, PageNarration, Segment, Transition
 from slidesonnet.pdf.reader import page_aspect
 from slidesonnet.review.base import base_dir
@@ -876,6 +878,21 @@ class PreviewPlayer:
         self.play_one.set_enabled(state.current_block.has_speech)
 
 
+@dataclass(frozen=True)
+class Draft:
+    """Unsaved editor values for one slide, plus the file state they were typed over."""
+
+    slide_id: str
+    segments: list[Segment]
+    transition_in: Transition
+    transition_out: Transition
+    baseline: tuple[str, Transition]  # EditorState.current_baseline() when captured
+
+    @property
+    def text(self) -> str:
+        return serialize_body(PageNarration(slide_id=self.slide_id, segments=self.segments))
+
+
 class BlockEditor:
     """The structured per-slide editor: utterance/pause cards and transitions."""
 
@@ -1250,6 +1267,18 @@ class BlockEditor:
         tin = getters["in"]() if "in" in getters else Transition()
         tout = getters["out"]() if "out" in getters else Transition()
         return segs, tin, tout
+
+    def unsaved_draft(self) -> Draft | None:
+        """The open slide's editor values when they differ from the deck, else None."""
+        if not self.seg_collectors and "in" not in self.transition_getters:
+            return None
+        state = self.view.state
+        segs, tin, tout = self.collect()
+        if not state.current_id or not state.block_differs(
+            segs, transition_in=tin, transition_out=tout
+        ):
+            return None
+        return Draft(state.current_id, segs, tin, tout, state.current_baseline())
 
     def _apply_structure(self, segs: list[Segment], tin: Transition, tout: Transition) -> None:
         """Commit an add/delete/move — the loaded track no longer matches the deck."""
@@ -2136,11 +2165,14 @@ class EditorView:
         with self.flash_label:  # park the timer in a slot that outlives any card rebuild
             ui.timer(linger, _fade, once=True)
 
-    def narration_conflict(self, exc: NarrationChangedOnDisk) -> None:
+    def narration_conflict(
+        self, exc: NarrationChangedOnDisk, *, keep: Callable[[], None] | None = None
+    ) -> None:
         """A save was refused because the narration file changed on disk.
 
         The other writer (usually an agent) wins; show its version and hand the
         user's unsaved text back in a dialog so it can be copied, not lost.
+        *keep*, when given, adds a button that writes the user's version instead.
         """
         self.render()  # the state already reloaded from disk; show that version
         with self.flash_label:  # a slot that outlives the card rebuild above
@@ -2161,9 +2193,34 @@ class EditorView:
                         copy = ui.button("Copy my text", icon="content_copy")
                         copy.props("flat no-caps").mark("conflict-copy")
                         copy.on_click(lambda: self._copy_lost(lost))
+                    if keep is not None:
+                        keep_btn = ui.button("Keep my version", icon="undo")
+                        keep_btn.props("flat no-caps").mark("conflict-keep")
+                        keep_btn.on_click(lambda: (dialog.close(), keep()))
                     ui.button("Close", on_click=dialog.close).props("no-caps")
         dialog.open()
         self.flash("Narration changed on disk — your change wasn't saved", "warning")
+
+    def _keep_draft(self, draft: Draft) -> None:
+        """Write a draft the user chose over the external edit to this slide."""
+        state = self.state
+        if state.current_id != draft.slide_id:
+            self.flash("That slide is no longer open — copy your text instead", "warning")
+            return
+        try:
+            changed = state.replace_block(
+                draft.segments,
+                transition_in=draft.transition_in,
+                transition_out=draft.transition_out,
+            )
+        except NarrationChangedOnDisk as exc:
+            self.narration_conflict(exc)
+            return
+        if changed:
+            self.player.stop_playback()
+            self.schedule_auto_build(draft.slide_id)
+            self.show_saved_flash()
+        self.render()
 
     def _copy_lost(self, text: str) -> None:
         ui.clipboard.write(text)
@@ -2831,6 +2888,11 @@ class EditorView:
             # dropped slide survives as an unattached block instead of vanishing.
             # (never on sidecar changes — that would clobber the external edit)
             self.blocks.save_current()
+            draft = None
+        else:
+            # never save over the external edit — but don't discard the typing
+            # either: hold it so the reload below can keep it or hand it back
+            draft = self.blocks.unsaved_draft()
         prev_id = state.current_id
         if not await run.io_bound(state.poll_sources):
             return
@@ -2853,7 +2915,18 @@ class EditorView:
         # rebuilding the block editor would only revert whatever the user is
         # mid-typing. Refresh everything *but* the editor — unless our own slide
         # moved (dropped/renamed/reordered), where the cards must follow it.
-        if "sidecar" in changes or state.current_id != prev_id:
+        # A sidecar edit that left this slide alone keeps an unsaved draft on
+        # screen the same way; one that touched it shows the file and hands the
+        # draft back (narration_conflict re-renders).
+        same_slide = state.current_id == prev_id
+        if draft is not None and same_slide and state.current_baseline() == draft.baseline:
+            self.render_side()
+        elif draft is not None:
+            self.narration_conflict(
+                NarrationChangedOnDisk(draft.text),
+                keep=(lambda: self._keep_draft(draft)) if same_slide else None,
+            )
+        elif "sidecar" in changes or not same_slide:
             self.render()
         else:
             self.render_side()
