@@ -65,6 +65,9 @@ class JobHandle:
     discarded: bool = False
     #: ``time.monotonic()`` when this clip started running (drives the elapsed timer).
     started_at: float | None = None
+    #: Who asked for this clip (e.g. an editor tab). Empty = unowned (never dropped
+    #: by :meth:`JobQueue.cancel_owned`).
+    owners: set[str] = field(default_factory=set)
 
 
 class JobQueue:
@@ -118,7 +121,12 @@ class JobQueue:
 
     # ---- producing ------------------------------------------------------
     def enqueue(
-        self, targets: set[Target], *, force: bool = False, allow_paid: bool = False
+        self,
+        targets: set[Target],
+        *,
+        force: bool = False,
+        allow_paid: bool = False,
+        owner: str | None = None,
     ) -> list[JobHandle]:
         """Queue synthesis of *targets*; return a handle per launched/attached job.
 
@@ -144,10 +152,14 @@ class JobQueue:
             existing = self._inflight.get(key)
             if existing is not None:
                 existing.refs.add(rid)
+                if owner is not None:
+                    existing.owners.add(owner)
                 if existing not in handles:
                     handles.append(existing)
                 continue
             handle = JobHandle(key=key, refs={rid}, done=asyncio.Event(), force=force)
+            if owner is not None:
+                handle.owners.add(owner)
             self._inflight[key] = handle
             self._pending[key] = handle
             self._unfinished += 1
@@ -231,6 +243,36 @@ class JobQueue:
         self._burst_done = 0
         self._emit()
         return cleared
+
+    def cancel_owned(self, owner: str) -> int:
+        """Forget *owner*'s requests; drop queued clips nobody else asked for.
+
+        Used when an editor tab leaves the deck: its queued-but-unstarted clips
+        go (awaiters released, nothing synthesized), while clips another tab
+        also wants stay queued. A clip already running finishes — it lands in
+        the cache either way. Returns how many clips were dropped.
+        """
+        dropped = 0
+        for handle in list(self._inflight.values()):
+            if owner not in handle.owners:
+                continue
+            handle.owners.discard(owner)
+            if handle.owners or handle is self._running or handle.key not in self._pending:
+                continue
+            self._pending.pop(handle.key, None)
+            self._inflight.pop(handle.key, None)
+            handle.status = "error"
+            handle.done.set()
+            self._burst_total = max(0, self._burst_total - 1)
+            self._finish_one()
+            dropped += 1
+        if dropped:
+            self._emit()
+        return dropped
+
+    def inflight(self) -> list[JobHandle]:
+        """Every queued or running clip (drives per-clip spinners)."""
+        return list(self._inflight.values())
 
     def running_handle(self) -> JobHandle | None:
         """The clip currently generating, if any (drives the live elapsed timer)."""

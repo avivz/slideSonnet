@@ -124,6 +124,77 @@
         "title": "BlockDTO",
         "type": "object"
       },
+      "CancelGenerationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kokoro",
+                  "qwen3",
+                  "inworld"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          }
+        },
+        "title": "CancelGenerationRequest",
+        "type": "object"
+      },
+      "ClipDTO": {
+        "additionalProperties": false,
+        "description": "One utterance's audio under the snapshot's engine.",
+        "properties": {
+          "bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bytes"
+          },
+          "cached": {
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          }
+        },
+        "required": [
+          "cached"
+        ],
+        "title": "ClipDTO",
+        "type": "object"
+      },
       "ClipRef": {
         "additionalProperties": false,
         "properties": {
@@ -144,9 +215,27 @@
         "title": "ClipRef",
         "type": "object"
       },
+      "CountDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "CountDTO",
+        "type": "object"
+      },
       "DeckSnapshot": {
         "additionalProperties": false,
         "properties": {
+          "aspect": {
+            "title": "Aspect",
+            "type": "number"
+          },
           "default_engine": {
             "enum": [
               "kokoro",
@@ -172,6 +261,10 @@
             "title": "Engine",
             "type": "string"
           },
+          "engine_warm": {
+            "title": "Engine Warm",
+            "type": "boolean"
+          },
           "engines": {
             "items": {
               "$ref": "#/components/schemas/EngineDTO"
@@ -196,6 +289,20 @@
               "$ref": "#/components/schemas/BlockDTO"
             },
             "title": "Narration",
+            "type": "object"
+          },
+          "neighbours": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Neighbours",
             "type": "object"
           },
           "orphans": {
@@ -227,6 +334,9 @@
             "title": "Sidecar Name",
             "type": "string"
           },
+          "silence": {
+            "$ref": "#/components/schemas/SilenceDefaultsDTO"
+          },
           "token": {
             "title": "Token",
             "type": "string"
@@ -251,7 +361,11 @@
           "diagnostics",
           "voices",
           "missing_audio",
-          "review_active"
+          "review_active",
+          "silence",
+          "engine_warm",
+          "neighbours",
+          "aspect"
         ],
         "title": "DeckSnapshot",
         "type": "object"
@@ -429,6 +543,45 @@
         "title": "EngineDTO",
         "type": "object"
       },
+      "EngineVoicesDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "engine": {
+            "enum": [
+              "kokoro",
+              "qwen3",
+              "inworld"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
+          "voices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Voices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "engine",
+          "voices",
+          "default"
+        ],
+        "title": "EngineVoicesDTO",
+        "type": "object"
+      },
       "ErrorBody": {
         "additionalProperties": false,
         "properties": {
@@ -500,6 +653,43 @@
         "title": "ExportJob",
         "type": "object"
       },
+      "FocusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kokoro",
+                  "qwen3",
+                  "inworld"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "slide_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slide Id"
+          }
+        },
+        "required": [
+          "slide_id"
+        ],
+        "title": "FocusRequest",
+        "type": "object"
+      },
       "GenerateJob": {
         "additionalProperties": false,
         "properties": {
@@ -553,6 +743,165 @@
         "title": "GenerateJob",
         "type": "object"
       },
+      "GenerateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_paid": {
+            "default": false,
+            "title": "Allow Paid",
+            "type": "boolean"
+          },
+          "engine": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kokoro",
+                  "qwen3",
+                  "inworld"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "targets": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ClipRef"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targets"
+          }
+        },
+        "title": "GenerateRequest",
+        "type": "object"
+      },
+      "GenerationRunningDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "elapsed": {
+            "title": "Elapsed",
+            "type": "number"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate"
+          },
+          "slide_id": {
+            "title": "Slide Id",
+            "type": "string"
+          },
+          "speech_index": {
+            "title": "Speech Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "slide_id",
+          "speech_index",
+          "elapsed",
+          "estimate"
+        ],
+        "title": "GenerationRunningDTO",
+        "type": "object"
+      },
+      "GenerationStatusDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "done": {
+            "title": "Done",
+            "type": "integer"
+          },
+          "engine": {
+            "enum": [
+              "kokoro",
+              "qwen3",
+              "inworld"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
+          "inflight": {
+            "items": {
+              "$ref": "#/components/schemas/ClipRef"
+            },
+            "title": "Inflight",
+            "type": "array"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "queued": {
+            "default": 0,
+            "title": "Queued",
+            "type": "integer"
+          },
+          "running": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenerationRunningDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "engine",
+          "done",
+          "total",
+          "running",
+          "inflight",
+          "last_error"
+        ],
+        "title": "GenerationStatusDTO",
+        "type": "object"
+      },
       "JobDTO": {
         "additionalProperties": false,
         "properties": {
@@ -599,7 +948,8 @@
               "generate",
               "preview",
               "export",
-              "render_pages"
+              "render_pages",
+              "warm"
             ],
             "title": "Kind",
             "type": "string"
@@ -760,11 +1110,60 @@
         "title": "LibrarySectionDTO",
         "type": "object"
       },
+      "MetaDTO": {
+        "additionalProperties": false,
+        "description": "Static facts the editor needs: the transition gallery and the engines.",
+        "properties": {
+          "aliases": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Aliases",
+            "type": "object"
+          },
+          "engines": {
+            "items": {
+              "$ref": "#/components/schemas/EngineDTO"
+            },
+            "title": "Engines",
+            "type": "array"
+          },
+          "speeds": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Speeds",
+            "type": "array"
+          },
+          "transitions": {
+            "items": {
+              "$ref": "#/components/schemas/TransitionFamilyDTO"
+            },
+            "title": "Transitions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "transitions",
+          "aliases",
+          "engines",
+          "speeds"
+        ],
+        "title": "MetaDTO",
+        "type": "object"
+      },
       "PageDTO": {
         "additionalProperties": false,
         "properties": {
           "audio": {
             "$ref": "#/components/schemas/AudioStatusDTO"
+          },
+          "clips": {
+            "items": {
+              "$ref": "#/components/schemas/ClipDTO"
+            },
+            "title": "Clips",
+            "type": "array"
           },
           "image_url": {
             "anyOf": [
@@ -805,9 +1204,40 @@
           "status",
           "image_url",
           "incoming",
-          "audio"
+          "audio",
+          "clips"
         ],
         "title": "PageDTO",
+        "type": "object"
+      },
+      "PagesDTO": {
+        "additionalProperties": false,
+        "description": "Page images only \u2014 cheap to refetch while pages render in the background.",
+        "properties": {
+          "images": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Images",
+            "type": "array"
+          },
+          "rendered": {
+            "title": "Rendered",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "images",
+          "rendered"
+        ],
+        "title": "PagesDTO",
         "type": "object"
       },
       "PauseDTO": {
@@ -929,6 +1359,11 @@
             "default": "render_pages",
             "title": "Kind",
             "type": "string"
+          },
+          "near": {
+            "default": 0,
+            "title": "Near",
+            "type": "integer"
           }
         },
         "title": "RenderPagesJob",
@@ -994,6 +1429,26 @@
           "token"
         ],
         "title": "SessionDTO",
+        "type": "object"
+      },
+      "SilenceDefaultsDTO": {
+        "additionalProperties": false,
+        "description": "The deck's hold before and after a slide's speech when none is written.",
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "number"
+          },
+          "start": {
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "SilenceDefaultsDTO",
         "type": "object"
       },
       "SlideEdit": {
@@ -1112,6 +1567,43 @@
         "title": "TransitionDTO",
         "type": "object"
       },
+      "TransitionFamilyDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Options",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "options"
+        ],
+        "title": "TransitionFamilyDTO",
+        "type": "object"
+      },
       "VoicesDTO": {
         "additionalProperties": false,
         "properties": {
@@ -1142,14 +1634,58 @@
             },
             "title": "Names",
             "type": "array"
+          },
+          "resolved": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Resolved",
+            "type": "object"
           }
         },
         "required": [
           "map",
           "default_voice",
-          "names"
+          "names",
+          "resolved"
         ],
         "title": "VoicesDTO",
+        "type": "object"
+      },
+      "WarmJob": {
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "anyOf": [
+              {
+                "enum": [
+                  "kokoro",
+                  "qwen3",
+                  "inworld"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engine"
+          },
+          "kind": {
+            "const": "warm",
+            "default": "warm",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "WarmJob",
         "type": "object"
       }
     }
@@ -1395,6 +1931,294 @@
         "summary": "Get Export Blockers"
       }
     },
+    "/api/v1/decks/{token}/focus": {
+      "post": {
+        "description": "Where a tab is looking: its slide's clips generate first.",
+        "operationId": "post_focus_api_v1_decks__token__focus_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FocusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Post Focus"
+      }
+    },
+    "/api/v1/decks/{token}/generation": {
+      "get": {
+        "operationId": "get_generation_api_v1_decks__token__generation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "engine",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "kokoro",
+                    "qwen3",
+                    "inworld"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Engine"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationStatusDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Generation"
+      },
+      "post": {
+        "description": "Queue clips for generation (dedup'd across tabs; nearest-first).",
+        "operationId": "post_generation_api_v1_decks__token__generation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationStatusDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Post Generation"
+      }
+    },
+    "/api/v1/decks/{token}/generation/cancel": {
+      "post": {
+        "description": "Drop queued clips: this tab's (``owner``), or everything (the progress bar's \u2715).",
+        "operationId": "cancel_generation_api_v1_decks__token__generation_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Cancel Generation"
+      }
+    },
     "/api/v1/decks/{token}/jobs": {
       "post": {
         "operationId": "post_job_api_v1_decks__token__jobs_post",
@@ -1418,7 +2242,8 @@
                     "export": "#/components/schemas/ExportJob",
                     "generate": "#/components/schemas/GenerateJob",
                     "preview": "#/components/schemas/PreviewJob",
-                    "render_pages": "#/components/schemas/RenderPagesJob"
+                    "render_pages": "#/components/schemas/RenderPagesJob",
+                    "warm": "#/components/schemas/WarmJob"
                   },
                   "propertyName": "kind"
                 },
@@ -1434,6 +2259,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/RenderPagesJob"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WarmJob"
                   }
                 ],
                 "title": "Body"
@@ -1485,6 +2313,65 @@
           }
         },
         "summary": "Post Job"
+      }
+    },
+    "/api/v1/decks/{token}/pages": {
+      "get": {
+        "operationId": "get_pages_api_v1_decks__token__pages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagesDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Pages"
       }
     },
     "/api/v1/decks/{token}/slides/{slide_id}": {
@@ -1622,6 +2509,71 @@
           }
         },
         "summary": "Get Deck Stats"
+      }
+    },
+    "/api/v1/engines/{engine}/voices": {
+      "get": {
+        "description": "An engine's pickable voices and its default (empty list = free-text ids).",
+        "operationId": "get_engine_voices_api_v1_engines__engine__voices_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "engine",
+            "required": true,
+            "schema": {
+              "enum": [
+                "kokoro",
+                "qwen3",
+                "inworld"
+              ],
+              "title": "Engine",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineVoicesDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Engine Voices"
       }
     },
     "/api/v1/events": {
@@ -1922,6 +2874,54 @@
           }
         },
         "summary": "Get Library"
+      }
+    },
+    "/api/v1/meta": {
+      "get": {
+        "operationId": "get_meta_api_v1_meta_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Get Meta"
       }
     },
     "/api/v1/session": {

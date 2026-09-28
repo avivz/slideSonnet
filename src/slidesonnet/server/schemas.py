@@ -101,6 +101,14 @@ class AudioStatusDTO(_Model):
     cached: int
 
 
+class ClipDTO(_Model):
+    """One utterance's audio under the snapshot's engine."""
+
+    cached: bool
+    seconds: float | None = None  # from the WAV header, when readable
+    bytes: int | None = None
+
+
 class PageDTO(_Model):
     index: int
     slide_id: str  # "" for a page without a slide id (unmarked)
@@ -109,6 +117,8 @@ class PageDTO(_Model):
     #: The effective transition entering this page (its boundary with the previous).
     incoming: TransitionDTO
     audio: AudioStatusDTO
+    #: Per speech segment of this slide, in order.
+    clips: list[ClipDTO]
 
 
 class DiagnosticDTO(_Model):
@@ -130,6 +140,15 @@ class VoicesDTO(_Model):
     map: dict[str, dict[str, str]]
     default_voice: str | None
     names: list[str]
+    #: What each name resolves to under the snapshot's engine (None = unmapped).
+    resolved: dict[str, str | None]
+
+
+class SilenceDefaultsDTO(_Model):
+    """The deck's hold before and after a slide's speech when none is written."""
+
+    start: float
+    end: float
 
 
 class DeckSnapshot(_Model):
@@ -151,6 +170,13 @@ class DeckSnapshot(_Model):
     voices: VoicesDTO
     missing_audio: int
     review_active: bool
+    silence: SilenceDefaultsDTO
+    #: False while the snapshot's engine still has a heavy model to load.
+    engine_warm: bool
+    #: Other decks in library order, for stepping (Alt+←/→).
+    neighbours: dict[str, str | None]
+    #: Page width ÷ height (the stage and filmstrip keep the slide's shape).
+    aspect: float
 
 
 # ---- library -------------------------------------------------------------------------
@@ -267,10 +293,17 @@ class ExportJob(_Model):
 
 class RenderPagesJob(_Model):
     kind: Literal["render_pages"] = "render_pages"
+    #: Render outward from this page first (the one being looked at).
+    near: int = 0
+
+
+class WarmJob(_Model):
+    kind: Literal["warm"] = "warm"
+    engine: Backend | None = None
 
 
 JobRequest = Annotated[
-    GenerateJob | PreviewJob | ExportJob | RenderPagesJob, Field(discriminator="kind")
+    GenerateJob | PreviewJob | ExportJob | RenderPagesJob | WarmJob, Field(discriminator="kind")
 ]
 
 
@@ -283,7 +316,7 @@ class ProgressDTO(_Model):
 
 class JobDTO(_Model):
     id: str
-    kind: Literal["generate", "preview", "export", "render_pages"]
+    kind: Literal["generate", "preview", "export", "render_pages", "warm"]
     deck: str
     status: Literal["queued", "running", "cancelling", "succeeded", "failed", "cancelled"]
     inputs: dict[str, Any]
@@ -293,6 +326,76 @@ class JobDTO(_Model):
     created_at: float
     started_at: float | None
     finished_at: float | None
+
+
+class TransitionFamilyDTO(_Model):
+    key: str
+    label: str
+    #: (direction label, stored name) pairs; empty for a non-directional family.
+    options: list[tuple[str, str]]
+
+
+class MetaDTO(_Model):
+    """Static facts the editor needs: the transition gallery and the engines."""
+
+    transitions: list[TransitionFamilyDTO]
+    aliases: dict[str, str]
+    engines: list[EngineDTO]
+    speeds: list[float]
+
+
+class EngineVoicesDTO(_Model):
+    engine: Backend
+    voices: list[str]
+    default: str | None
+
+
+class PagesDTO(_Model):
+    """Page images only — cheap to refetch while pages render in the background."""
+
+    images: list[str | None]
+    rendered: int
+
+
+class GenerateRequest(_Model):
+    #: Specific clips, or ``None`` for every clip without audio.
+    targets: list[ClipRef] | None = None
+    force: bool = False
+    engine: Backend | None = None
+    allow_paid: bool = False
+    #: The asking tab (so leaving the deck drops only its own queued clips).
+    owner: str | None = None
+
+
+class GenerationRunningDTO(_Model):
+    slide_id: str
+    speech_index: int
+    elapsed: float
+    estimate: float | None
+
+
+class GenerationStatusDTO(_Model):
+    engine: Backend
+    done: int
+    total: int
+    running: GenerationRunningDTO | None
+    inflight: list[ClipRef]
+    last_error: str | None
+    queued: int = 0  # how many clips the request that returned this added
+
+
+class CancelGenerationRequest(_Model):
+    engine: Backend | None = None
+    owner: str | None = None
+
+
+class FocusRequest(_Model):
+    slide_id: str | None
+    engine: Backend | None = None
+
+
+class CountDTO(_Model):
+    count: int
 
 
 class SessionDTO(_Model):

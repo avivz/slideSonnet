@@ -8,10 +8,12 @@ here — each route validates, calls a service, and maps the outcome.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from slidesonnet import api
@@ -35,30 +37,42 @@ from slidesonnet.server.context import (
 from slidesonnet.server.decks import DeckService, RevisionConflict, deck_service
 from slidesonnet.server.engines import engine_lock
 from slidesonnet.server.events import Event, EventBus, Subscription
+from slidesonnet.server.generation import DeckGeneration
 from slidesonnet.server.jobs import Job, JobContext
 from slidesonnet.server.media import media_url
 from slidesonnet.server.previews import build_preview_artifact, preview_manifest
 from slidesonnet.server.schemas import (
     AppendOrphan,
     AttachOrphan,
+    CancelGenerationRequest,
+    CountDTO,
     DeckCommand,
     DeckSnapshot,
     DeckStatsDTO,
     DeleteOrphan,
     EditVoices,
+    EngineDTO,
+    EngineVoicesDTO,
     ErrorBody,
     ErrorResponse,
     ExportJob,
+    FocusRequest,
     GenerateJob,
+    GenerateRequest,
+    GenerationStatusDTO,
     JobDTO,
     JobRequest,
     LibraryDTO,
+    MetaDTO,
+    PagesDTO,
     PreviewJob,
     ProgressDTO,
     RenderPagesJob,
     SaveResponse,
     SessionDTO,
     SlideEdit,
+    TransitionFamilyDTO,
+    WarmJob,
     segment_domain,
 )
 from slidesonnet.tts import BACKENDS
@@ -123,10 +137,13 @@ def get_deck(request: Request, token: str, engine: Backend | None = None) -> Dec
     ctx = _ctx(request)
     entry = _entry(ctx, token)
     try:
-        snap = snapshots.deck_snapshot(entry, engine=engine)
+        snap = snapshots.deck_snapshot(entry, engine=engine, registry=ctx.registry)
     except (SidecarError, ConfigError) as exc:
         raise _load_error(exc) from exc
     ctx.watch(token, _service(entry).revisions())
+    if ctx.on_deck_open is not None and ctx.last_opened != token:
+        ctx.last_opened = token
+        ctx.on_deck_open(entry.pdf_path)
     return snap
 
 
@@ -311,11 +328,25 @@ def export_work(entry: DeckEntry, *, draft: bool, engine: Backend) -> Any:
     return work
 
 
-def render_pages_work(entry: DeckEntry) -> Any:
+def render_pages_work(entry: DeckEntry, near: int) -> Any:
     def work(ctx: JobContext) -> dict[str, Any]:
         count = len(_service(entry).page_ids()[0])
-        images = snapshots.ensure_page_images(entry.pdf_path, count)
+        images = snapshots.ensure_page_images(
+            entry.pdf_path, count, near=near, progress=ctx.progress
+        )
         return {"rendered": sum(1 for p in images if p is not None), "pages": count}
+
+    return work
+
+
+def warm_work(engine: Backend) -> Any:
+    def work(ctx: JobContext) -> dict[str, Any]:
+        from slidesonnet.models import TTSConfig
+        from slidesonnet.tts import create_tts
+
+        with engine_lock(engine):
+            create_tts(TTSConfig(backend=engine)).warm()
+        return {"engine": engine}
 
     return work
 
@@ -351,9 +382,10 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
             )
         elif isinstance(body, PreviewJob):
             engine = _resolve_engine(entry, body.engine)
-            _require_paid_approval(
-                engine, len(_uncached(entry, engine, slide_id=body.slide_id)), body.allow_paid
-            )
+            needed = _uncached(entry, engine, slide_id=body.slide_id)
+            _require_paid_approval(engine, len(needed), body.allow_paid)
+            if needed:
+                _preempt_generation(ctx, entry, engine, needed)
             inputs = {
                 "engine": engine,
                 "narration_revision": narration_rev,
@@ -384,10 +416,19 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
                 export_work(entry, draft=body.draft, engine=engine),
                 dedupe_key=f"export:{token}",
             )
+        elif isinstance(body, WarmJob):
+            engine = _resolve_engine(entry, body.engine)
+            job = jobs.submit(
+                "warm", token, {"engine": engine}, warm_work(engine), dedupe_key=f"warm:{engine}"
+            )
         else:
             assert isinstance(body, RenderPagesJob)
             job = jobs.submit(
-                "render_pages", token, {}, render_pages_work(entry), dedupe_key=f"pages:{token}"
+                "render_pages",
+                token,
+                {"near": body.near},
+                render_pages_work(entry, body.near),
+                dedupe_key=f"pages:{token}",
             )
     except (SidecarError, ConfigError) as exc:
         raise _load_error(exc) from exc
@@ -419,6 +460,131 @@ def cancel_job(request: Request, job_id: str, _m: None = Mutation) -> JobDTO:
 @router.get("/decks/{token}/export-blockers", response_model=list[str])
 def get_export_blockers(request: Request, token: str) -> list[str]:
     return api.export_blockers(_entry(_ctx(request), token).pdf_path)
+
+
+# ---- clip generation (the per-deck queue) --------------------------------------------
+def _preempt_generation(
+    ctx: ServerContext, entry: DeckEntry, engine: Backend, needed: set[tuple[str, int]]
+) -> None:
+    """A preview needs these clips now: pause a heavy clip generating for another slide."""
+    import anyio.from_thread
+
+    def on_loop() -> None:
+        gen = ctx.generation().get(entry, engine, create=False)
+        if gen is not None:
+            gen.preempt_for(needed)
+
+    with contextlib.suppress(RuntimeError):  # not called from a worker thread (tests)
+        anyio.from_thread.run_sync(on_loop)
+
+
+def _status(gen: DeckGeneration, queued: int = 0) -> GenerationStatusDTO:
+    return GenerationStatusDTO.model_validate({**gen.status(), "queued": queued})
+
+
+@router.post("/decks/{token}/generation", response_model=GenerationStatusDTO)
+async def post_generation(
+    request: Request, token: str, body: GenerateRequest, _m: None = Mutation
+) -> GenerationStatusDTO:
+    """Queue clips for generation (dedup'd across tabs; nearest-first)."""
+    ctx = _ctx(request)
+    entry = _entry(ctx, token)
+    engine = await run_in_threadpool(_resolve_engine, entry, body.engine)
+    uncached = await run_in_threadpool(_uncached, entry, engine)
+    if body.targets is None:
+        targets = uncached
+    else:
+        targets = {(t.slide_id, t.speech_index) for t in body.targets}
+    count = len(targets) if body.force else len(targets & uncached)
+    _require_paid_approval(engine, count, body.allow_paid)
+    gen = ctx.generation().get(entry, engine)
+    assert gen is not None
+    queued = gen.enqueue(targets, force=body.force, allow_paid=body.allow_paid, owner=body.owner)
+    return _status(gen, queued)
+
+
+@router.get("/decks/{token}/generation", response_model=GenerationStatusDTO)
+async def get_generation(
+    request: Request, token: str, engine: Backend | None = None
+) -> GenerationStatusDTO:
+    ctx = _ctx(request)
+    entry = _entry(ctx, token)
+    resolved = await run_in_threadpool(_resolve_engine, entry, engine)
+    gen = ctx.generation().get(entry, resolved)
+    assert gen is not None
+    return _status(gen)
+
+
+@router.post("/decks/{token}/generation/cancel", response_model=CountDTO)
+async def cancel_generation(
+    request: Request, token: str, body: CancelGenerationRequest, _m: None = Mutation
+) -> CountDTO:
+    """Drop queued clips: this tab's (``owner``), or everything (the progress bar's ✕)."""
+    ctx = _ctx(request)
+    entry = _entry(ctx, token)
+    gens = ctx.generation().for_deck(token)
+    if body.engine is not None:
+        resolved = await run_in_threadpool(_resolve_engine, entry, body.engine)
+        gens = [g for g in gens if g.engine == resolved]
+    return CountDTO(count=sum(g.cancel(body.owner) for g in gens))
+
+
+@router.post("/decks/{token}/focus", response_model=CountDTO)
+async def post_focus(
+    request: Request, token: str, body: FocusRequest, _m: None = Mutation
+) -> CountDTO:
+    """Where a tab is looking: its slide's clips generate first."""
+    ctx = _ctx(request)
+    _entry(ctx, token)
+    for gen in ctx.generation().for_deck(token):
+        if body.engine is None or gen.engine == body.engine:
+            gen.focus(body.slide_id)
+    return CountDTO(count=len(ctx.generation().for_deck(token)))
+
+
+# ---- pages, engines, meta ----------------------------------------------------------------
+@router.get("/decks/{token}/pages", response_model=PagesDTO)
+def get_pages(request: Request, token: str) -> PagesDTO:
+    entry = _entry(_ctx(request), token)
+    count = len(_service(entry).page_ids()[0])
+    found = snapshots.page_images(entry.pdf_path, count)
+    images = [
+        media_url(entry.pdf_path, found[i], stamp=True) if i in found else None
+        for i in range(count)
+    ]
+    return PagesDTO(images=images, rendered=len(found))
+
+
+@router.get("/engines/{engine}/voices", response_model=EngineVoicesDTO)
+def get_engine_voices(engine: Backend) -> EngineVoicesDTO:
+    """An engine's pickable voices and its default (empty list = free-text ids)."""
+    from slidesonnet.models import TTSConfig
+    from slidesonnet.tts import create_tts
+
+    tts = create_tts(TTSConfig(backend=engine))
+    return EngineVoicesDTO(
+        engine=engine, voices=list(tts.list_voices()), default=tts.default_voice()
+    )
+
+
+@router.get("/meta", response_model=MetaDTO)
+def get_meta() -> MetaDTO:
+    from slidesonnet.narration import transitions as trans
+    from slidesonnet.tts import available_backends
+
+    installed = set(available_backends())
+    return MetaDTO(
+        transitions=[
+            TransitionFamilyDTO(key=f.key, label=f.label, options=list(f.options))
+            for f in trans.FAMILIES
+        ],
+        aliases=dict(trans._ALIASES),
+        engines=[
+            EngineDTO(name=n, paid=b.paid, realtime=b.realtime, installed=n in installed)
+            for n, b in sorted(BACKENDS.items())
+        ],
+        speeds=[1.0, 1.25, 1.5, 2.0],
+    )
 
 
 # ---- events (SSE) ----------------------------------------------------------------------

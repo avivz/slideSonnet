@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **A new deck editor (preview).** `slidesonnet edit --frontend vue` opens the
+  redesigned editor: the player sits right under the slide, deck-wide tools
+  (engine, voices, generate, export) are at the top of the console, the
+  filmstrip labels each slide's state, and typing is saved as you go — no need
+  to leave the field. If someone else edits the narration file while you're
+  typing on the same slide, both versions are shown and you choose. Generation
+  is shared between tabs and keeps going if you reload.
 - **Review tools in the editor.** "Start review" (or `slidesonnet review
   snapshot`) makes the deck as it is now the base. From then on the console's
   **Review** tab (beside **Audio**, badged when something on this slide waits

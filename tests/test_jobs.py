@@ -445,3 +445,24 @@ def test_cancel_all_aborts_the_running_clip_without_requeue(
         assert handle.done.is_set()
 
     asyncio.run(body())
+
+
+def test_cancel_owned_drops_only_clips_nobody_else_wants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Leaving a deck drops *that tab's* queued clips; another tab's requests stay."""
+
+    async def body() -> None:
+        queue, engine, _ = _make_queue(tmp_path, monkeypatch)
+        mine = queue.enqueue({("a", 0)}, owner="tab-1")
+        shared = queue.enqueue({("b", 0)}, owner="tab-1")
+        queue.enqueue({("b", 0)}, owner="tab-2")  # tab 2 wants b as well
+        assert queue.cancel_owned("tab-1") == 1  # a dropped; b is still wanted
+        assert mine[0].done.is_set() and not shared[0].done.is_set()
+        assert queue.handle_for("a", 0) is None and queue.handle_for("b", 0) is not None
+        queue.start()
+        await queue.drain()
+        queue.stop()
+        assert engine.calls == 1  # only b was synthesized
+
+    asyncio.run(body())

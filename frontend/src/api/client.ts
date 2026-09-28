@@ -10,6 +10,31 @@ export type LibrarySectionDTO = Schemas['LibrarySectionDTO']
 export type DeckStatsDTO = Schemas['DeckStatsDTO']
 export type DeckSnapshot = Schemas['DeckSnapshot']
 export type JobDTO = Schemas['JobDTO']
+export type PageDTO = Schemas['PageDTO']
+export type BlockDTO = Schemas['BlockDTO']
+export type SpeechDTO = Schemas['SpeechDTO']
+export type PauseDTO = Schemas['PauseDTO']
+export type SegmentDTO = SpeechDTO | PauseDTO
+export type TransitionDTO = Schemas['TransitionDTO']
+export type DiagnosticDTO = Schemas['DiagnosticDTO']
+export type SaveResponse = Schemas['SaveResponse']
+export type MetaDTO = Schemas['MetaDTO']
+export type EngineVoicesDTO = Schemas['EngineVoicesDTO']
+export type PagesDTO = Schemas['PagesDTO']
+export type GenerationStatusDTO = Schemas['GenerationStatusDTO']
+export type ClipRef = Schemas['ClipRef']
+export type Backend = Schemas['EngineVoicesDTO']['engine']
+export type DeckCommand =
+  | Schemas['AttachOrphan']
+  | Schemas['AppendOrphan']
+  | Schemas['DeleteOrphan']
+  | Schemas['EditVoices']
+export type JobRequest =
+  | Schemas['GenerateJob']
+  | Schemas['PreviewJob']
+  | Schemas['ExportJob']
+  | Schemas['RenderPagesJob']
+  | Schemas['WarmJob']
 
 export const API_PREFIX = '/api/v1'
 export const SESSION_HEADER = 'X-SlideSonnet-Session'
@@ -115,6 +140,71 @@ export class ApiClient {
 
   job(id: string): Promise<JobDTO> {
     return this.get(`/jobs/${encodeURIComponent(id)}`)
+  }
+
+  jobs(options: { deck?: string; active?: boolean } = {}): Promise<JobDTO[]> {
+    const q = new URLSearchParams()
+    if (options.deck) q.set('deck', options.deck)
+    if (options.active) q.set('active', 'true')
+    return this.get(`/jobs?${q.toString()}`)
+  }
+
+  snapshot(token: string, engine?: string | null): Promise<DeckSnapshot> {
+    const q = engine ? `?engine=${encodeURIComponent(engine)}` : ''
+    return this.get(`/decks/${encodeURIComponent(token)}${q}`)
+  }
+
+  meta(): Promise<MetaDTO> {
+    return this.get('/meta')
+  }
+
+  pages(token: string): Promise<PagesDTO> {
+    return this.get(`/decks/${encodeURIComponent(token)}/pages`)
+  }
+
+  engineVoices(engine: string): Promise<EngineVoicesDTO> {
+    return this.get(`/engines/${encodeURIComponent(engine)}/voices`)
+  }
+
+  exportBlockers(token: string): Promise<string[]> {
+    return this.get(`/decks/${encodeURIComponent(token)}/export-blockers`)
+  }
+
+  saveSlide(
+    token: string,
+    slideId: string,
+    body: Schemas['SlideEdit'],
+  ): Promise<SaveResponse> {
+    return this.send('PATCH', `/decks/${encodeURIComponent(token)}/slides/${encodeURIComponent(slideId)}`, body)
+  }
+
+  command(token: string, body: DeckCommand): Promise<SaveResponse> {
+    return this.send('POST', `/decks/${encodeURIComponent(token)}/commands`, body)
+  }
+
+  startJob(token: string, body: JobRequest): Promise<JobDTO> {
+    return this.send('POST', `/decks/${encodeURIComponent(token)}/jobs`, body)
+  }
+
+  cancelJob(id: string): Promise<JobDTO> {
+    return this.send('POST', `/jobs/${encodeURIComponent(id)}/cancel`)
+  }
+
+  generation(token: string, engine?: string | null): Promise<GenerationStatusDTO> {
+    const q = engine ? `?engine=${encodeURIComponent(engine)}` : ''
+    return this.get(`/decks/${encodeURIComponent(token)}/generation${q}`)
+  }
+
+  generate(token: string, body: Schemas['GenerateRequest']): Promise<GenerationStatusDTO> {
+    return this.send('POST', `/decks/${encodeURIComponent(token)}/generation`, body)
+  }
+
+  cancelGeneration(token: string, body: Schemas['CancelGenerationRequest']): Promise<Schemas['CountDTO']> {
+    return this.send('POST', `/decks/${encodeURIComponent(token)}/generation/cancel`, body)
+  }
+
+  focus(token: string, body: Schemas['FocusRequest']): Promise<Schemas['CountDTO']> {
+    return this.send('POST', `/decks/${encodeURIComponent(token)}/focus`, body)
   }
 }
 

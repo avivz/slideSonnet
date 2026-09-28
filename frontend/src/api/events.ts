@@ -29,6 +29,8 @@ export const EVENT_TYPES = [
   'job.updated',
   'job.progress',
   'job.finished',
+  'generation.changed',
+  'generation.failed',
 ] as const
 
 export class EventStream {

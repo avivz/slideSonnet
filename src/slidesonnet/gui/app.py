@@ -2848,17 +2848,27 @@ def _retarget_deck_log(pdf_path: Path) -> None:
     )
 
 
-def register_pages(registry: DeckRegistry) -> None:
-    """Register the library (``/``, the Vue app) and the per-deck editor page (NiceGUI).
+def register_pages(registry: DeckRegistry, *, frontend: str = "nicegui") -> None:
+    """Register the library (``/``, the Vue app) and the per-deck editor page.
 
-    One parameterized route serves every deck: switching decks is a navigation,
-    so the page teardown NiceGUI already does (job queue stopped on disconnect,
-    timers dropped with the client) is the whole of the cleanup.
+    *frontend* picks the deck editor while the Vue one is being finished:
+    ``nicegui`` (this module's editor) or ``vue`` (the browser app, which then
+    owns ``/d/{token}`` too). Both are served by the same process and API.
     """
     set_registry(registry)
     backend = install_api(app, registry)
     install_frontend(app)
+    backend.on_deck_open = _retarget_deck_log
     app.on_shutdown(backend.shutdown)
+
+    if frontend == "vue":
+        from slidesonnet.server.frontend import app_shell
+
+        @app.get("/d/{token}", include_in_schema=False)
+        def _vue_deck(token: str) -> Any:  # pyright: ignore[reportUnusedFunction]
+            return app_shell()
+
+        return
 
     @ui.page("/d/{token}")
     def _deck(token: str) -> None:  # pyright: ignore[reportUnusedFunction]
@@ -2879,8 +2889,9 @@ def run_editor(
     open_browser: bool = True,
     browser: str | None = None,
     app_window: bool = False,
+    frontend: str = "nicegui",
 ) -> None:
-    """Launch the NiceGUI editor, opening the deck library at ``/`` (blocking).
+    """Launch the editor, opening the deck library at ``/`` (blocking).
 
     *pdf_path* is the deck to highlight in the library (and it is registered even
     when it sits outside *root*); pass ``None`` to open the library alone.
@@ -2901,7 +2912,7 @@ def run_editor(
     result = registry.rescan()
     if pdf_path is not None:
         registry.register(pdf_path, sidecar_path=sidecar_path)
-    register_pages(registry)
+    register_pages(registry, frontend=frontend)
     _backend().allow_host(host)
 
     logger.info(

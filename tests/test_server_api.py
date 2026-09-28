@@ -409,3 +409,67 @@ def test_export_explains_blockers_and_runs_a_draft(
     assert job["status"] == "succeeded"
     assert job["result"] == {"video": "d.draft.mp4", "duration": 3.0, "draft": True}
     assert seen["draft"] is True and seen["keep_scratch"] is True
+
+
+# ---- the per-deck generation queue ---------------------------------------------------------
+def test_generation_queue_generates_and_reports_status(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.audio import synth as synth_mod
+
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: _StubTTS(cfg.backend))
+    token = _token(client)
+    r = client.post(
+        f"/api/v1/decks/{token}/generation",
+        json={"targets": [{"slide_id": "intro", "speech_index": 0}], "owner": "tab-1"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["queued"] == 1
+    for _ in range(200):
+        status = client.get(f"/api/v1/decks/{token}/generation").json()
+        if status["total"] and status["done"] == status["total"] and not status["inflight"]:
+            break
+        time.sleep(0.02)
+    assert status["done"] == 1
+    clips = _snapshot(client, token)["pages"][0]["clips"]
+    assert clips[0]["cached"] is True and clips[0]["bytes"] > 0
+
+
+def test_generation_cancel_by_owner_and_paid_gate(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = _token(client)
+    paid = client.post(f"/api/v1/decks/{token}/generation", json={"engine": "inworld"})
+    assert paid.status_code == 403
+    assert paid.json()["error"]["code"] == "paid_confirmation_required"
+
+    import threading
+
+    gate = threading.Event()
+    monkeypatch.setattr(
+        "slidesonnet.server.generation.api.synthesize_deck", lambda *a, **k: gate.wait(5) and 0
+    )
+    client.post(f"/api/v1/decks/{token}/generation", json={"owner": "tab-1"})  # both clips
+    dropped = client.post(
+        f"/api/v1/decks/{token}/generation/cancel", json={"owner": "tab-1"}
+    ).json()["count"]
+    gate.set()
+    assert dropped == 1  # the queued clip went; the running one finishes
+    assert (
+        client.post(f"/api/v1/decks/{token}/focus", json={"slide_id": "middle"}).status_code == 200
+    )
+
+
+def test_meta_voices_pages_and_snapshot_extras(client: TestClient) -> None:
+    meta = client.get("/api/v1/meta").json()
+    wipe = next(f for f in meta["transitions"] if f["key"] == "wipe")
+    assert ["Left", "wipeleft"] in wipe["options"] and meta["aliases"] == {"crossfade": "fade"}
+    voices = client.get("/api/v1/engines/kokoro/voices").json()
+    assert voices["default"] in voices["voices"]
+    token = _token(client)
+    pages = client.get(f"/api/v1/decks/{token}/pages").json()
+    assert len(pages["images"]) == 3
+    snap = _snapshot(client, token)
+    assert snap["silence"]["start"] >= 0 and snap["silence"]["end"] >= 0
+    assert snap["neighbours"] == {"prev": None, "next": None}  # a one-deck library
+    assert snap["pages"][0]["clips"] == [{"cached": False, "seconds": None, "bytes": None}]

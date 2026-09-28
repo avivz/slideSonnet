@@ -1,14 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import LibraryView from './features/library/LibraryView.vue'
 import NotFoundView from './components/NotFoundView.vue'
+import LibraryView from './features/library/LibraryView.vue'
 
-// The deck editor (/d/:token) is still the NiceGUI page during the migration,
-// so links to it are ordinary page loads, not router navigations.
+// The deck editor is loaded on demand: the library opens without it.
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', name: 'library', component: LibraryView },
+    { path: '/d/:token', name: 'deck', component: () => import('./features/editor/EditorView.vue') },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
   ],
 })

@@ -14,6 +14,7 @@ import logging
 import secrets
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -24,6 +25,7 @@ from fastapi.routing import APIRoute
 
 from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.server.events import EventBus
+from slidesonnet.server.generation import GenerationHub
 from slidesonnet.server.jobs import JobManager
 from slidesonnet.server.revisions import SourceRevisions
 
@@ -53,11 +55,21 @@ class ServerContext:
     registry: DeckRegistry
     bus: EventBus = field(default_factory=EventBus)
     jobs: JobManager | None = None
+    generation_hub: GenerationHub | None = None
     session_token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     allowed_hosts: set[str] = field(default_factory=lambda: set(LOOPBACK_HOSTS))
+    #: Called with a deck's PDF when a client opens it (points the run-log at it).
+    on_deck_open: Callable[[Path], None] | None = None
+    last_opened: str | None = None
     #: Decks a client has opened, with the revisions last announced for each.
     watched: dict[str, SourceRevisions | None] = field(default_factory=dict)
     _watch_task: asyncio.Task[None] | None = None
+
+    def generation(self) -> GenerationHub:
+        """Per-deck clip generation queues (create and use on the event loop)."""
+        if self.generation_hub is None:
+            self.generation_hub = GenerationHub(self.bus)
+        return self.generation_hub
 
     def job_manager(self) -> JobManager:
         if self.jobs is None:
@@ -108,6 +120,9 @@ class ServerContext:
         if self._watch_task is not None:
             self._watch_task.cancel()
             self._watch_task = None
+        if self.generation_hub is not None:
+            self.generation_hub.shutdown()
+            self.generation_hub = None
         if self.jobs is not None:
             self.jobs.shutdown()
             self.jobs = None

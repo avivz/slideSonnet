@@ -298,6 +298,14 @@ Phase 6 — it is scaffolding, not a deliverable.
 Checkpoint: every editor item in the parity inventory checked; the Vue editor
 becomes the default; maintainer uses it on a real course deck.
 
+*As built:* behind `--frontend vue` until the review panel lands (Phase 5),
+since the default can only flip once nothing the NiceGUI editor offers is
+missing. Built to the design brief (transport attached to the stage,
+deck-wide actions at the top of the console, labelled filmstrip badges, one
+footer line) rather than to a separately approved editor mockup, per the
+maintainer's "keep implementing" instruction — the running editor is the
+mockup to redirect.
+
 ### Phase 5 — Review in Vue
 
 - Port the full review surface (`gui/review_panel.py`, `gui/review.py`) over

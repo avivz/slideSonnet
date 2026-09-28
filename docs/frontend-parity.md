@@ -100,6 +100,38 @@ Bug closed: **B2** — no playback tick reaches Python; the stage flips on the
 audio clock in the browser, and Python hears one `ssslide` event per slide
 change (to move the editor along, deferred while a field is focused).
 
+### Phase 4 — the editor in Vue (`migration/phase-4`)
+
+Opt-in while Phase 5 brings over the review panel: `slidesonnet edit
+--frontend vue` (or `SLIDESONNET_FRONTEND=vue`). The default flips when the
+review tab is in (end of Phase 5); the flag goes in Phase 6.
+
+Backend additions: the per-deck **generation queue** (`server/generation.py` —
+`gui/jobs.JobQueue` owned by the server, one per deck × engine, shared by tabs,
+with owner-scoped cancel for "leaving drops only my clips"), `/meta`
+(transition gallery, engines), `/engines/{e}/voices`, `/decks/{t}/pages`,
+generation status/enqueue/cancel/focus routes, `warm` and nearest-first
+`render_pages` jobs, and snapshot extras (per-clip audio, resolved voice
+labels, silence defaults, model warm, neighbours, page aspect).
+
+Frontend: `stores/editor.ts` (drafts, autosave, rebase/conflict),
+`stores/generation.ts` (queue + auto-generate), `stores/player.ts` (preview
+jobs + the Phase 3 controller + following), `features/playback/transport.ts`
+(the play-button state machine), and the editor components.
+
+New tests: Vitest `editorStore.test.ts` (7), `transport.test.ts` (10 cases),
+`editorComponents.test.ts` (9); browser `test_browser_vue.py` (7 journeys:
+navigation keys, typing autosave without blur, **B1 end to end** — an outside
+edit while typing shows both versions and overwrites neither, block editing,
+generation badge, real-audio transport + deck follow, keyboard deck
+switching); `test_server_api.py` generation/meta tests (3); `test_jobs.py`
+owner cancel (1).
+
+Rows now implemented in Vue (their boxes flip when NiceGUI is removed in
+Phase 6, together with the retired tests): navigation, layout/panes, narration
+editing and saving, transitions, voices/engines, generation/auto-build/jobs,
+playback, diagnostics/orphans/live files, export. Not yet: review (Phase 5).
+
 ## How to read the Tests column
 
 - **keep** — UI-free logic (`gui/state.py`, `gui/library.py`, `gui/jobs.py`,
