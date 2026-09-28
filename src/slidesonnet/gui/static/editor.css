@@ -17,7 +17,7 @@ body{
   font-family:"IBM Plex Mono",ui-monospace,monospace}
 .ss-wordmark{
   font-family:"Bricolage Grotesque",sans-serif;font-size:19px;font-weight:800;
-  letter-spacing:.01em;color:var(--ss-text)}
+  letter-spacing:.01em;color:var(--ss-text);text-decoration:none}
 .ss-accent{color:var(--ss-accent)}
 .ss-header{
   background:rgba(21,26,34,.92)!important;border-bottom:1px solid var(--ss-line);

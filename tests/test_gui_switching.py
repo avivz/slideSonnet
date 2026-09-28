@@ -80,6 +80,9 @@ def test_media_urls_are_namespaced_per_deck(tmp_path: Path) -> None:
 async def test_editor_header_names_the_current_deck(user: User, course: Path) -> None:
     await user.open(deck_url(deck_token(course / "week01" / "intro.pdf")))
     await user.should_see("week01 / intro")
+    # the wordmark is the way back to the (Vue) library
+    marks = [e for e in user.find(ui.html).elements if "ss-wordmark" in str(e.content)]
+    assert marks and 'href="/"' in str(marks[0].content)
 
 
 async def test_deck_forward_moves_to_the_next_deck_in_library_order(
