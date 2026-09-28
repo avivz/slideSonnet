@@ -80,14 +80,17 @@ def _isolate_deck_services() -> Iterator[None]:
     ``slidesonnet.server.decks`` keeps one service per deck path; a later test
     reusing a tmp path must not inherit an earlier test's lock or prune timer.
     """
+    from slidesonnet.server import previews
     from slidesonnet.server.decks import reset_services
     from slidesonnet.server.review import reset_review_models
 
     reset_services()
     reset_review_models()
+    previews._SILENCES.clear()
     yield
     reset_services()
     reset_review_models()
+    previews._SILENCES.clear()
 
 
 class _GuardedInworld:

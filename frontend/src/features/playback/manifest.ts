@@ -25,6 +25,17 @@ export interface MorphStep {
   to: string | null
 }
 
+/** Where one utterance plays in the track (seconds). */
+export interface SpeechSpan {
+  slide_id: string
+  /** The utterance's position among the slide's spoken lines. */
+  index: number
+  start: number
+  end: number
+  /** The silent stretches inside it (a breath, a clip's tail), absolute times. */
+  silences: [number, number][]
+}
+
 export interface PreviewManifest {
   artifact_id: string
   /** The slide a single-slide preview plays, or null for the whole deck. */
@@ -38,4 +49,6 @@ export interface PreviewManifest {
   cues: Cue[]
   pages: PageImage[]
   transitions: MorphStep[]
+  /** Every utterance's span, for following the spoken word. */
+  speech: SpeechSpan[]
 }

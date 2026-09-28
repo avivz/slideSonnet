@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { PlaybackController, type Frame, type MediaLike, type Scheduler } from '@/features/playback/controller'
-import { cueAt, cueStart, formatClock } from '@/features/playback/cues'
+import { cueAt, cueStart, formatClock, nextInScope } from '@/features/playback/cues'
 import { StageOverlay, Transport } from '@/features/playback/dom'
 import type { PreviewManifest } from '@/features/playback/manifest'
 import { activeStep, effect, morphFrame } from '@/features/playback/morph'
@@ -11,6 +11,17 @@ const CUES = [
   { start: 4, slide_id: 'b' },
   { start: 7, slide_id: 'c' },
 ]
+
+describe('playing the deck inside a chosen conversation', () => {
+  const cues = [
+    { start: 0, slide_id: 'a' }, { start: 3, slide_id: 'b' }, { start: 6, slide_id: 'c' }, { start: 9, slide_id: 'd' },
+  ]
+  const scope = new Set(['a', 'c'])
+  it('jumps over a slide outside it to the next one inside, and ends after the last', () => {
+    expect(nextInScope(cues, 'b', scope)).toBe(6) // b is out: on to c
+    expect(nextInScope(cues, 'd', scope)).toBeNull() // nothing in scope after d: stop
+  })
+})
 
 describe('cues', () => {
   it.each([
@@ -121,6 +132,7 @@ function manifest(overrides: Partial<PreviewManifest> = {}): PreviewManifest {
     media_url: '/t.wav', duration: 10, start_at: 0, cues: CUES,
     pages: CUES.map((c) => ({ slide_id: c.slide_id, image_url: `/${c.slide_id}.png` })),
     transitions: [{ at: 4, dur: 0.5, kind: 'fade', from: '/a.png', to: '/b.png' }],
+    speech: [],
     ...overrides,
   }
 }

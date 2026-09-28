@@ -53,6 +53,15 @@ function stored(key: string, fallback: number): number {
     return fallback
   }
 }
+/** An on/off choice this browser remembers ('1' / '0'); `fallback` until one is made. */
+function storedFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === '1'
+  } catch {
+    return fallback
+  }
+}
 function remember(key: string, value: number | boolean): void {
   try {
     localStorage.setItem(key, String(value))
@@ -62,8 +71,8 @@ function remember(key: string, value: number | boolean): void {
 }
 const stripWidth = ref(stored('ss.stripWidth', 168))
 const consoleWidth = ref(stored('ss.consoleWidth', 300))
-const stripOpen = ref(stored('ss.stripOpen', 1) === 1)
-const consoleOpen = ref(stored('ss.consoleOpen', 1) === 1)
+const stripOpen = ref(storedFlag('ss.stripOpen', true))
+const consoleOpen = ref(storedFlag('ss.consoleOpen', true))
 const narrow = ref(false)
 const overlay = ref<'strip' | 'console' | null>(null)
 
@@ -149,7 +158,7 @@ function onSplitKey(event: KeyboardEvent): void {
 const mainStyle = computed(() => ({ '--stage-px': `${stagePx.value}px` }))
 
 // the narration below the slide: this slide's editor, or the whole deck as one script
-const scriptView = ref(stored('ss.scriptView', 0) === 1)
+const scriptView = ref(storedFlag('ss.scriptView', true)) // the script is the default view
 function setScriptView(on: boolean): void {
   scriptView.value = on
   remember('ss.scriptView', on ? 1 : 0)

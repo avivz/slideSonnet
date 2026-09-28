@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ScriptView from '@/features/editor/ScriptView.vue'
 import { AUTOSAVE_MS, useEditorStore } from '@/stores/editor'
+import { usePlayerStore } from '@/stores/player'
 
 import { FakeServer, speech } from './fakeServer'
 
@@ -39,6 +40,16 @@ describe('script view', () => {
     expect(server.narration.b?.segments.find((s) => s.kind === 'speech')).toMatchObject({ text: 'New words for b.' })
   })
 
+  it('marks the word being spoken in its line', async () => {
+    await setup(new FakeServer({ a: 'Now change one behaviour.', b: 'World.' }))
+    const w = mount(ScriptView, { attachTo: document.body })
+    expect(w.find('mark').exists()).toBe(false)
+    usePlayerStore().spoken = { slideId: 'a', index: 0, start: 4, end: 10 }
+    await flushPromises()
+    // everything said so far in the line, up to and including the word
+    expect(w.get('[data-testid="script-slide-a"] mark').text()).toBe('Now change')
+  })
+
   it('shows pauses inline, editable, between the lines', async () => {
     const server = new FakeServer()
     server.narration.a = {
@@ -47,7 +58,8 @@ describe('script view', () => {
     }
     const { editor } = await setup(server)
     const w = mount(ScriptView, { attachTo: document.body })
-    const pause = w.get('[data-testid="script-pause-a-1"]')
+    // a pause sits at the end of the line before it, not on a row of its own
+    const pause = w.get('[data-testid="script-line-a-0"] [data-testid="script-pause-a-1"]')
     expect((pause.element as HTMLInputElement).value).toBe('0.7')
     await pause.setValue('1.2')
     await pause.trigger('change')

@@ -58,6 +58,9 @@ def browser_type_launch_args(browser_type_launch_args: dict[str, object]) -> dic
 def _fast_timeouts(page: Page) -> None:
     page.set_default_timeout(10_000)
     page.set_default_navigation_timeout(15_000)
+    # these journeys drive the per-slide editor; the script view (the default) is
+    # covered by its component tests
+    page.add_init_script("try { localStorage.setItem('ss.scriptView', '0') } catch {}")
 
 
 @pytest.fixture

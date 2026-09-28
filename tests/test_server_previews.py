@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from slidesonnet.api import SpeechSpan
 from slidesonnet.audio.track import Cue
 from slidesonnet.narration.model import Deck, PageNarration, Transition
 from slidesonnet.server.previews import (
@@ -101,6 +102,7 @@ def test_manifest_starts_a_deck_preview_at_the_current_slide() -> None:
         id="abc", path=Path("abc.wav"), duration=9.0,
         cues=[Cue(0.0, "a"), Cue(4.0, "b"), Cue(7.0, "c")], slide_id=None,
         narration_revision="n1", pdf_revision="p1", engine="kokoro",
+        speech=[SpeechSpan("b", 0, 4.3, 6.1)], silences=[[(5.5, 6.1)]],
     )  # fmt: skip
     m = preview_manifest(
         art, _deck({}), IMAGES, media_url=lambda p: f"/u/{p.name}", track_url="/t/abc.wav",
@@ -108,9 +110,37 @@ def test_manifest_starts_a_deck_preview_at_the_current_slide() -> None:
     ).to_json()  # fmt: skip
     assert m["start_at"] == 4.0 and m["media_url"] == "/t/abc.wav"
     assert m["cues"][1] == {"start": 4.0, "slide_id": "b"}
+    assert m["speech"] == [
+        {"slide_id": "b", "index": 0, "start": 4.3, "end": 6.1, "silences": [[5.5, 6.1]]}
+    ]
     assert m["pages"][2] == {"slide_id": "c", "image_url": "/u/c.png"}
     # a page not rendered yet keeps every later page on its own image
     gap = preview_manifest(
         art, _deck({}), [IMAGES[0], None, IMAGES[2]], media_url=lambda p: p.name, track_url="t"
     ).to_json()
     assert [pg["image_url"] for pg in gap["pages"]] == ["a.png", None, "c.png"]
+
+
+def test_silences_inside_an_utterance_are_found_in_the_track(tmp_path: Path) -> None:
+    """Clips carry their own silences (a comma's breath, ~0.5 s of tail on Inworld):
+    the word-follower may only advance while the voice actually speaks."""
+    import math
+    import struct
+    import wave
+
+    from slidesonnet.server.voicing import silences_in
+
+    rate = 16000
+    samples = [
+        int(8000 * math.sin(2 * math.pi * 220 * i / rate)) if i < rate or i >= 1.5 * rate else 0
+        for i in range(2 * rate)
+    ]  # speech 0-1 s, silence 1-1.5 s, speech 1.5-2 s
+    track = tmp_path / "t.wav"
+    with wave.open(str(track), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(struct.pack(f"<{len(samples)}h", *samples))
+    (gaps,) = silences_in(track, [SpeechSpan("a", 0, 0.0, 2.0)])
+    ((start, end),) = gaps
+    assert abs(start - 1.0) < 0.03 and abs(end - 1.5) < 0.03

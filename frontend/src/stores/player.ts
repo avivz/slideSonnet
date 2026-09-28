@@ -9,8 +9,11 @@ import { waitForJob } from '@/api/jobs'
 import { PlaybackController, type Frame } from '@/features/playback/controller'
 import type { PreviewManifest } from '@/features/playback/manifest'
 import { Transport, type TrackKey } from '@/features/playback/transport'
+import { nextInScope } from '@/features/playback/cues'
+import { spanAt, voicedFraction, wordAt } from '@/features/playback/words'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
+import { useReviewStore } from '@/stores/review'
 
 export const SPEEDS = [1, 1.25, 1.5, 2] as const
 
@@ -34,6 +37,24 @@ export const usePlayerStore = defineStore('player', () => {
   let jobId: string | null = null
   let abandonWait: (() => void) | null = null
   const frameListeners = new Set<(f: Frame) => void>()
+  /** The word being spoken: a line (by its place among the slide's spoken lines) and a character range. */
+  const spoken = ref<{ slideId: string; index: number; start: number; end: number } | null>(null)
+
+  function updateSpoken(f: Frame): void {
+    const spans = controller?.manifest?.speech ?? []
+    let next: typeof spoken.value = null
+    const span = f.loaded ? spanAt(spans, f.time) : null
+    if (span) {
+      const line = editor.draftFor(span.slide_id)?.middle.filter((seg) => seg.kind === 'speech')[span.index]
+      const range = line ? wordAt(line.text, voicedFraction(span, f.time)) : null
+      if (range) next = { slideId: span.slide_id, index: span.index, start: range[0], end: range[1] }
+    }
+    const now = spoken.value
+    // a new value only when the word moves: frames come ~60 times a second
+    if (next?.slideId !== now?.slideId || next?.index !== now?.index || next?.start !== now?.start) {
+      spoken.value = next
+    }
+  }
 
   /** Bind the player to its <audio> element (the PlayerBar mounts one). */
   function attach(element: HTMLAudioElement): () => void {
@@ -42,6 +63,7 @@ export const usePlayerStore = defineStore('player', () => {
       onFrame: (f) => {
         frame.value = f
         transport.playing = f.playing
+        updateSpoken(f)
         for (const l of frameListeners) l(f)
       },
       onSlide: follow,
@@ -61,6 +83,14 @@ export const usePlayerStore = defineStore('player', () => {
 
   function follow(slideId: string): void {
     if (transport.loadedKey !== 'deck') return
+    // inside a chosen conversation the deck plays only its slides
+    const scope = useReviewStore().scope
+    if (scope !== null && !scope.has(slideId)) {
+      const next = controller?.manifest ? nextInScope(controller.manifest.cues, slideId, scope) : null
+      if (next === null) controller?.pause()
+      else controller?.seek(next)
+      return
+    }
     if (editing.value) {
       pendingFollow = slideId
       return
@@ -77,6 +107,14 @@ export const usePlayerStore = defineStore('player', () => {
       pendingFollow = null
       follow(slide)
     }
+  }
+
+  /** Where the deck starts: this slide, or the chosen conversation's first slide when this one is outside it. */
+  function startSlide(): string | null {
+    const scope = useReviewStore().scope
+    const here = editor.currentId
+    if (scope === null || scope.has(here)) return here || null
+    return editor.pages.find((p) => scope.has(p.slide_id))?.slide_id ?? (here || null)
   }
 
   /** A play button: the slide (`key` = its id) or the whole deck (`'deck'`). */
@@ -112,7 +150,7 @@ export const usePlayerStore = defineStore('player', () => {
         slide_id: key === 'deck' ? null : key,
         engine: editor.activeEngine,
         allow_paid: allowPaid,
-        start_slide: editor.currentId || null,
+        start_slide: startSlide(),
         single_slide_transitions: generation.singleSlideTransitions,
       })
       jobId = job.id
@@ -210,6 +248,6 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     transport, frame, speed, building, editing,
-    attach, onFrame, press, stop, cycleSpeed, seekFraction, setEditing, setConfirm,
+    spoken, attach, onFrame, press, stop, cycleSpeed, seekFraction, setEditing, setConfirm,
   }
 })

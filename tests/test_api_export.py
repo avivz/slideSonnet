@@ -136,6 +136,10 @@ def test_build_preview_whole_deck(tmp_path: Path, pipeline: dict[str, Any]) -> N
     assert "intro-title" in cue_ids and "euler-setup" in cue_ids
     assert preview.total_duration > 0
     assert preview.track == tmp_path / "track.wav"
+    # each utterance's span in the track, for following the spoken word
+    first, second = preview.speech
+    assert (first.slide_id, first.index, second.slide_id) == ("intro-title", 0, "euler-setup")
+    assert first.end - first.start == pytest.approx(2.0) and second.start >= first.end
 
 
 def test_build_preview_only_id_restricts_synthesis_and_cues(

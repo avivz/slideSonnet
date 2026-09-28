@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from slidesonnet import api
+from slidesonnet.api import SpeechSpan
 from slidesonnet.audio.track import Cue
 from slidesonnet.cache import render_dir
 from slidesonnet.config import load_config
@@ -55,6 +56,28 @@ class PreviewArtifact:
     narration_revision: str
     pdf_revision: str
     engine: str | None
+    speech: list[SpeechSpan] = field(default_factory=list)
+    #: Per utterance, the silent stretches inside it (absolute track times).
+    silences: list[list[tuple[float, float]]] = field(default_factory=list)
+
+
+#: Silences per built track (artifacts are immutable, so their id is the key).
+_SILENCES: dict[str, list[list[tuple[float, float]]]] = {}
+_SILENCES_KEPT = 16
+
+
+def _silences(
+    artifact_id: str, track: Path, speech: list[SpeechSpan]
+) -> list[list[tuple[float, float]]]:
+    found = _SILENCES.get(artifact_id)
+    if found is None:
+        from slidesonnet.server.voicing import silences_in
+
+        found = silences_in(track, speech)
+        if len(_SILENCES) >= _SILENCES_KEPT:
+            _SILENCES.pop(next(iter(_SILENCES)))
+        _SILENCES[artifact_id] = found
+    return found
 
 
 def previews_dir(pdf_path: Path) -> Path:
@@ -150,6 +173,8 @@ def build_preview_artifact(
         narration_revision=revisions.narration,
         pdf_revision=revisions.pdf,
         engine=engine,
+        speech=list(preview.speech),
+        silences=_silences(artifact_id, path, list(preview.speech)),
     )
 
 
@@ -251,6 +276,7 @@ class PreviewManifest:
     cues: list[dict[str, Any]] = field(default_factory=list)
     pages: list[dict[str, Any]] = field(default_factory=list)
     transitions: list[dict[str, Any]] = field(default_factory=list)
+    speech: list[dict[str, Any]] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -265,6 +291,7 @@ class PreviewManifest:
             "cues": self.cues,
             "pages": self.pages,
             "transitions": self.transitions,
+            "speech": self.speech,
         }
 
 
@@ -325,4 +352,18 @@ def preview_manifest(
         cues=[{"start": start, "slide_id": sid} for start, sid in cues],
         pages=[{"slide_id": sid, "image_url": image_for(sid)} for sid in dict.fromkeys(page_ids)],
         transitions=steps,
+        speech=[
+            {
+                "slide_id": sp.slide_id,
+                "index": sp.index,
+                "start": sp.start,
+                "end": sp.end,
+                "silences": [list(g) for g in gaps],
+            }
+            for sp, gaps in zip(
+                artifact.speech,
+                artifact.silences or [[] for _ in artifact.speech],
+                strict=True,
+            )
+        ],
     )
