@@ -179,13 +179,12 @@ def test_cached_durations_estimates_when_uncached(tmp_path: Path, monkeypatch) -
     assert cached.all_estimated is True
 
 
-def test_cached_durations_probes_cached_audio(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_cached_durations_uses_real_clip_lengths(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
     deck = _deck()
     synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)  # populate the cache
-    monkeypatch.setattr(synth_mod, "get_duration", lambda path: 9.9)
     cached = synth_mod.cached_durations(deck, Config(), tmp_path, fallback_wpm=60.0)
-    assert cached.per_page == [[9.9], []]  # real (probed) duration, not the wpm estimate
+    assert cached.per_page == [[1.25], []]  # the clip's real length, not the wpm estimate
     assert cached.estimated == []
     assert cached.all_estimated is False
 
@@ -203,9 +202,37 @@ def test_cached_durations_flags_a_partial_cache(tmp_path: Path, monkeypatch) -> 
         },
     )
     synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_ids={"a"})
-    monkeypatch.setattr(synth_mod, "get_duration", lambda path: 9.9)
     cached = synth_mod.cached_durations(deck, Config(), tmp_path, fallback_wpm=60.0)
-    assert cached.per_page == [[9.9], [2.0]]  # probed, then guessed
+    assert cached.per_page == [[1.25], [2.0]]  # real, then guessed
     assert [r.slide_id for r in cached.estimated] == ["b"]
     assert cached.total == 2
     assert cached.all_estimated is False
+
+
+def test_a_clip_length_is_saved_when_made_and_reused(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Measuring an MP3 decodes it (~0.1 s each), so every play re-measured the
+    whole deck. The engine reports a new clip's exact length; it is saved beside
+    the clip in the pool and reused until the file itself changes."""
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    deck = _deck()
+    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)  # FakeEngine: 1.25 s
+    measured: list[Path] = []
+    monkeypatch.setattr(synth_mod, "get_duration", lambda p: measured.append(p) or 2.5)
+    for _ in range(2):
+        assert synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)[("a", 0)].duration == 1.25
+        assert synth_mod.cached_durations(deck, Config(), tmp_path).per_page[0] == [1.25]
+    assert measured == []
+
+    (clip,) = tmp_path.glob("*.wav")
+    clip.write_bytes(b"RIFFa longer take")  # changed on disk: measure it (once)
+    for _ in range(2):
+        assert synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)[("a", 0)].duration == 2.5
+    assert measured == [clip]
+
+
+def test_an_unreadable_saved_length_file_is_ignored(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
+    synth_mod.synthesize(_deck(), Config(), audio_dir=tmp_path)
+    (tmp_path / "durations.json").write_text("{not json")
+    monkeypatch.setattr(synth_mod, "get_duration", lambda p: 3.0)
+    assert synth_mod.synthesize(_deck(), Config(), audio_dir=tmp_path)[("a", 0)].duration == 3.0

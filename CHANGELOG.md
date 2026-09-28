@@ -15,7 +15,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   keeps going if you reload. The **Review** tab has everything it had before —
   conversations, before/after pictures, word-level narration changes, removed
   slides — and also lists slides a conversation names that aren't in the PDF
-  yet. For now `--frontend nicegui` still opens the previous editor.
+  yet. `slidesonnet edit deck.pdf` now opens that deck directly (a folder still
+  opens the library).
 - **Review tools in the editor.** "Start review" (or `slidesonnet review
   snapshot`) makes the deck as it is now the base. From then on the console's
   **Review** tab (beside **Audio**, badged when something on this slide waits
@@ -94,8 +95,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   hides them. Phases get equal shares of the percentage for now.
 
 ### Changed
-- **A new deck library.** Decks are cards with a narration progress bar and a
-  status (*complete*, *N to narrate*, *N errors*). Type to filter — **/** or
+- **The editor starts on Inworld** when a deck's `slidesonnet.toml` doesn't
+  name an engine (a deck that names one keeps it). Anything that would spend
+  API credits still asks first; the command line keeps the free Kokoro default.
+- **The editor gives the height to the work.** There are no full-width bars:
+  the deck's name, its neighbours, errors (only when there are some) and the
+  keyboard shortcuts (?) sit atop the slides column, the save status sits by
+  the slide id, and each side pane folds away from a tab on its divider. The
+  slide stays in view above a draggable divider while only the narration
+  scrolls. Each narration line shows just its text — voice, pace and note fold
+  behind ⋯ and are named only when they differ from the deck's defaults — and
+  a pause is a thin rule.
+- **A new deck library.** Decks are listed one per row with their size. Type to filter — **/** or
   **Ctrl+K** jumps to the search box, ↑/↓ pick a deck, **Enter** opens it. A
   folder with a single deck no longer gets a heading of its own, and PDFs
   without narration are listed last with the command that starts a narration
@@ -151,7 +162,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   mtime, which made every mtime-based freshness check downstream (make,
   watchers, rsync) treat the subtitles as newer than what they came from.
 
+### Removed
+- **The previous editor and its NiceGUI dependency.** The editor now runs on a
+  small web server (FastAPI + Uvicorn) and needs no NiceGUI; `--frontend` is
+  gone. `slidesonnet doctor` checks the editor's server and that its browser
+  interface is built.
+
 ### Fixed
+- **Playing a deck no longer re-measures every clip.** Each clip's length is
+  saved beside it in the audio pool (`durations.json`) the moment it's made,
+  so replaying a 55-slide deck takes a fraction of a second instead of ~14 s.
+- **A recompiled PDF shows up in the editor.** Its new page pictures are
+  rendered; before, the old slides stayed on screen.
+- **Saving while a PDF recompiles no longer errors.** While the PDF is missing
+  or half-written, the editor keeps showing the last good version and picks up
+  the new one when it lands.
+- **Right-to-left narration** (Hebrew, Arabic) now lays out correctly in the
+  editor, review notes, and conflict dialog.
 - **The preview's slide changes land exactly on the audio.** During a
   whole-deck preview the slide on screen now changes in the browser, in step
   with the sound, instead of waiting for the editor to catch up — and it keeps

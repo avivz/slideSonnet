@@ -79,15 +79,18 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   box-shadow: 0 10px 30px rgb(0 0 0 / 35%);
 }
+/* both pictures shrink with the slide area's height (less their captions),
+   rather than overflowing it and being cut off */
 .compare {
+  --pic-h: calc(var(--stage-h, 50vh) - 22px);
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
-  width: 100%;
+  width: min(100%, calc(2 * var(--pic-h) * var(--deck-ar-n, 1.7778) + var(--space-3)));
 }
 .compare.only {
   grid-template-columns: 1fr;
-  width: min(100%, calc(var(--stage-h, 50vh) * var(--deck-ar-n, 1.7778)));
+  width: min(100%, calc(var(--pic-h) * var(--deck-ar-n, 1.7778)));
 }
 .side {
   display: grid;

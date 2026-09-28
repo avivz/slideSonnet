@@ -72,6 +72,27 @@ describe('review store', () => {
     expect(review.step(1)).toBe(false) // no conversation chosen: ordinary slide stepping
   })
 
+  it('choosing a conversation shows one of its slides, even one since removed', async () => {
+    const { editor, review } = await setup()
+    review.data = {
+      ...REVIEW,
+      conversations: [
+        ...REVIEW.conversations,
+        { id: 'c3', slides: ['gone'], origin: 'requested', status: 'closed', turn: 'agent', is_deck: false, messages: [] },
+      ],
+    }
+    review.select('c3') // its only slide was deleted: show it from the base
+    expect([review.viewingRemoved, editor.currentId]).toEqual(['gone', 'a'])
+    review.select('c1') // already on one of c1's slides: stay
+    expect(review.viewingRemoved).toBe('gone')
+    review.select('c2')
+    expect([review.viewingRemoved, editor.currentId]).toEqual([null, 'c'])
+    review.toggle('c2') // choosing it again: back to every slide, staying here
+    expect([review.filter, editor.currentId]).toEqual([null, 'c'])
+    review.toggle('c1')
+    expect(review.filter).toBe('c1')
+  })
+
   it('jumps to the next slide waiting for you', async () => {
     const { editor, review } = await setup()
     review.nextYourTurn()
@@ -97,5 +118,23 @@ describe('review panel', () => {
       { type: 'reply', conversation: 'c1', text: 'Looks good.' },
       { type: 'accept', conversation: 'c1' },
     ])
+  })
+
+  it('keeps a half-written note with the slide it was started on', async () => {
+    // playback (or the arrows) can move the editor mid-sentence: the note must
+    // neither follow to the new slide nor be lost
+    const { editor, sent } = await setup()
+    const w = mount(ReviewPanel, { attachTo: document.body })
+    await flushPromises()
+    await w.get('[data-testid="slide-note"]').setValue('Too long.')
+    editor.goToSlide('b')
+    await flushPromises()
+    expect((w.get('[data-testid="slide-note"]').element as HTMLTextAreaElement).value).toBe('')
+    editor.goToSlide('a')
+    await flushPromises()
+    const note = w.get('[data-testid="slide-note"]')
+    expect((note.element as HTMLTextAreaElement).value).toBe('Too long.')
+    await note.trigger('keydown', { key: 'Enter' })
+    await vi.waitFor(() => expect(sent).toEqual([{ type: 'comment', slides: ['a'], text: 'Too long.' }]))
   })
 })

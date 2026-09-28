@@ -1,8 +1,7 @@
-"""Launching the editor: browser/app-window resolution and the dev server argv.
+"""Opening the editor in a browser: desktop, WSL, or a chromeless app window.
 
-Pure plumbing, no NiceGUI imports — how to open a URL on a desktop, under WSL
-(prefer ``wslview``; never launch a Linux browser), or as a chromeless
-Chromium app window, plus the ``edit --dev`` reload-server invocation.
+Pure plumbing — how to open a URL on a desktop, under WSL (prefer ``wslview``;
+never launch a Linux browser), or as a chromeless Chromium app window.
 """
 
 from __future__ import annotations
@@ -12,7 +11,6 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -38,16 +36,17 @@ def browser_invocation(
 ) -> tuple[list[str] | None, bool]:
     """Decide how to open the editor URL.
 
-    Returns ``(opener, use_nicegui_show)``:
+    Returns ``(opener, use_default)``:
     - ``opener`` is a command (argv list) we launch ourselves with the URL
       (substituted for ``{url}`` if present, else appended), or ``None`` if we
       won't open a browser ourselves.
-    - ``use_nicegui_show`` is whether to let NiceGUI open its default browser.
+    - ``use_default`` is whether to open the desktop's default browser
+      (Python's ``webbrowser``).
 
     An explicit ``--browser`` / ``SLIDESONNET_BROWSER`` wins. Under WSL we prefer
     ``wslview`` (opens the *Windows* default browser) and otherwise refuse to
-    launch a Linux browser — just print the URL. On a normal desktop we let
-    NiceGUI handle it.
+    launch a Linux browser — just print the URL. On a normal desktop we use
+    the default browser.
     """
     chosen = browser or env_browser
     if chosen:
@@ -119,42 +118,6 @@ def app_invocation(
             return None
         base = [exe]
     return [*base, "--app={url}"]
-
-
-def dev_invocation(
-    pdf_path: Path | None,
-    *,
-    root: Path | None = None,
-    sidecar_path: Path | None,
-    host: str,
-    port: int,
-    browser: str | None = None,
-    app_window: bool = False,
-    no_browser: bool = False,
-) -> tuple[list[str], dict[str, str]]:
-    """Argv + extra env to launch the auto-reload dev server (``edit --dev``).
-
-    NiceGUI's reload mode re-imports its entry module in a child process, so it
-    needs a ``python -m``-runnable module (``slidesonnet.gui.devserver``) rather
-    than the console-script entry point; parameters travel via environment.
-    """
-    env = {
-        "SLIDESONNET_DEV_HOST": host,
-        "SLIDESONNET_DEV_PORT": str(port),
-    }
-    if pdf_path is not None:
-        env["SLIDESONNET_DEV_PDF"] = str(pdf_path.resolve())
-    if root is not None:
-        env["SLIDESONNET_DEV_ROOT"] = str(root.resolve())
-    if sidecar_path is not None:
-        env["SLIDESONNET_DEV_SIDECAR"] = str(sidecar_path.resolve())
-    if browser:
-        env["SLIDESONNET_DEV_BROWSER"] = browser
-    if app_window:
-        env["SLIDESONNET_DEV_APP"] = "1"
-    if no_browser:
-        env["SLIDESONNET_DEV_NO_BROWSER"] = "1"
-    return [sys.executable, "-m", "slidesonnet.gui.devserver"], env
 
 
 def launch_browser(opener: list[str], url: str) -> None:

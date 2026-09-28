@@ -5,9 +5,9 @@ inside the Python package, so an installed wheel or sdist needs no Node. A
 source checkout that hasn't been built yet gets a plain page saying how to
 build it, instead of a blank screen or a 404.
 
-Only real app routes get the shell (``/`` for now; the deck routes join as
-their screens move over). Unknown ``/ui/`` paths are real 404s, never the
-shell, so a missing asset fails loudly.
+Only real app routes get the shell (``/`` and ``/d/{token}``), so a refresh
+on either works. Unknown ``/ui/`` and ``/api/`` paths are real 404s, never the
+shell, so a missing asset or endpoint fails loudly.
 """
 
 from __future__ import annotations
@@ -56,6 +56,11 @@ def frontend_router() -> APIRouter:
 
     @router.get("/")
     def library_page() -> Response:
+        return app_shell()
+
+    @router.get("/d/{token}")
+    def deck_page(token: str) -> Response:
+        # the app routes this itself; an unknown token shows its own error there
         return app_shell()
 
     @router.get(ASSET_PREFIX + "/{path:path}")

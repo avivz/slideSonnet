@@ -13,32 +13,18 @@ import pytest
 
 from slidesonnet.tts.base import TTSEngine
 
-# NiceGUI's in-process `user` fixture (no selenium). The combined plugin pulls
-# in selenium for the `screen` fixture, so load only the user plugin.
-pytest_plugins = ["nicegui.testing.user_plugin"]
-
 _SENTINEL_KEY = "unit-test-no-real-calls"
 
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Auto-mark slow GUI tests, then sort the browser tier last.
+    """Sort the browser tier last (stable).
 
-    Any test using NiceGUI's in-process ``user`` fixture spins up (and tears
-    down) a server per test — ~0.8 s of pure lifecycle overhead and ~95 % of the
-    unit tier's wall time. Tag those ``gui`` so a fast inner loop can skip them
-    with ``-m "not gui"`` (see CLAUDE.md). ``tryfirst`` guarantees the marks land
-    before pytest's own ``-m`` deselection reads them.
-
-    Browser tests then sort last (stable): Playwright's sync API parks a running
-    asyncio loop in the main thread for the life of its session-scoped fixtures,
-    so once one browser test has run, any later pytest-asyncio setup — every
-    nicegui ``user`` test — dies with "Runner.run() cannot be called from a
+    Playwright's sync API parks a running asyncio loop in the main thread for
+    the life of its session-scoped fixtures, so an async test collected after
+    a browser test would die with "Runner.run() cannot be called from a
     running event loop".
     """
-    for item in items:
-        if "user" in getattr(item, "fixturenames", ()):
-            item.add_marker("gui")
     items.sort(key=lambda item: item.get_closest_marker("browser") is not None)
 
 
@@ -120,6 +106,15 @@ class _GuardedInworld:
 
 
 @pytest.fixture(autouse=True)
+def _editor_starts_on_kokoro(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The editor starts on paid Inworld when a deck names no engine; tests run on
+    the free engine unless they opt in (``engines.EDITOR_DEFAULT_ENGINE``)."""
+    from slidesonnet.server import engines
+
+    monkeypatch.setattr(engines, "EDITOR_DEFAULT_ENGINE", "kokoro")
+
+
+@pytest.fixture(autouse=True)
 def _no_pool_env() -> Iterator[None]:
     """Keep ``SLIDESONNET_AUDIO_DIR`` out of every test unless it sets it itself.
 
@@ -165,9 +160,9 @@ def _stub_page_rasterize(
 ) -> Iterator[None]:
     """Replace per-test pdftoppm rasterization with stub PNGs in the unit tier.
 
-    GUI unit tests would otherwise shell out to pdftoppm for every test (the
-    suite's main time sink) — and silently exercise a different code path in
-    CI, where poppler isn't installed. Real rasterization stays covered by the
+    Unit tests that render pages (the editor API, review captures) would
+    otherwise shell out to pdftoppm — slow, and a different code path in CI,
+    where poppler isn't installed. Real rasterization stays covered by the
     integration tier (test_pdf_reader.py), which this fixture leaves alone.
     """
     if request.node.get_closest_marker("integration") or request.node.get_closest_marker("browser"):
@@ -209,9 +204,9 @@ _TINY_WAV = _silent_wav_bytes()
 
 class _StubTTS(TTSEngine):
     """Writes a tiny WAV instead of synthesizing — lets unit-tier tests drive the
-    generation/preview path without a real engine. Reports the configured backend
-    as its ``name()`` so the content-addressed cache path matches what the status
-    scan computes (both go through ``synth.create_tts``)."""
+    generation path without a real engine (patch it in for ``synth.create_tts``).
+    Reports the configured backend as its ``name()`` so the content-addressed
+    cache path matches what the status scan computes."""
 
     def __init__(self, backend: str) -> None:
         self._backend = backend
@@ -226,40 +221,6 @@ class _StubTTS(TTSEngine):
 
     def cache_key(self) -> str:
         return "stub"
-
-
-@pytest.fixture(autouse=True)
-def _stub_tts_synthesis(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[None]:
-    """Replace real TTS synthesis with a stub for GUI unit tests.
-
-    A GUI test that plays/generates would otherwise shell out to a real engine
-    (Kokoro) — slow locally, and broken in CI where ``kokoro``/``torch`` aren't
-    installed (the deck-synthesis path raises "kokoro package not installed",
-    erroring the test). This patches only ``synth.create_tts`` (the actual
-    synthesis chokepoint), so ``state.py``'s engine construction — voice lists,
-    model-warmup status — keeps its real behavior.
-
-    Scope is the ``gui`` marker (auto-applied to any ``user``-fixture test): the
-    tests that exercise synthesis *internals* — cache-key, pace→speed, clean's
-    keep-set — are non-GUI (``test_kokoro``/``test_clean``/``test_synth``) and
-    must keep the real engine, so they're left alone. Real GUI-with-Kokoro
-    coverage stays in the integration tier.
-    """
-    skip = (
-        request.node.get_closest_marker("gui") is None
-        or request.node.get_closest_marker("integration") is not None
-        or request.node.get_closest_marker("browser") is not None
-    )
-    if skip:
-        yield
-        return
-
-    from slidesonnet.audio import synth as synth_mod
-
-    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: _StubTTS(cfg.backend))
-    yield
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"

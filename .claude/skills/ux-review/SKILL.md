@@ -10,7 +10,7 @@ You are a CLI UX reviewer. Evaluate slideSonnet's command-line interface against
 
 slideSonnet (v1) renders a **PDF + `.narration` sidecar** into a narrated video.
 The CLI is `sty`, `init`, `check`, `tts`, `export`, `subs`, `edit`, `clean`,
-`doctor`; a NiceGUI editor (`slidesonnet edit`) complements it.
+`doctor`; a browser editor (`slidesonnet edit`) complements it.
 
 ## Review Framework
 

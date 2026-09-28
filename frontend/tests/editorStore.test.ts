@@ -118,3 +118,14 @@ it('opening another deck never reuses the previous deck’s drafts', async () =>
   await opening
   expect(store.draftFor('a')?.middle[0]?.text).toBe('Deck two.')
 })
+
+it('a recompiled PDF drops the old page images; a render in progress keeps them', async () => {
+  const { store, server } = await setup()
+  expect(store.images[0]).toBe('/img/p/a.png')
+  server.imagesRendered = false // same PDF, its render still filling in: keep what we show
+  await store.refresh()
+  expect(store.images[0]).toBe('/img/p/a.png')
+  server.pdfRev = 'p2' // recompiled: the old pictures are of another PDF
+  await store.refresh()
+  expect(store.images).toEqual([null, null, null])
+})

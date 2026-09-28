@@ -40,6 +40,9 @@ from slidesonnet.tts import AUTO_PRUNE_BACKENDS
 logger = logging.getLogger(__name__)
 
 INDEX_FILENAME = "index.jsonl"
+#: Saved clip lengths (see :mod:`slidesonnet.audio.durations`) — housekeeping, not a clip.
+DURATIONS_FILENAME = "durations.json"
+_HOUSEKEEPING = frozenset({INDEX_FILENAME, DURATIONS_FILENAME})
 TRASH_DIRNAME = "trash"
 _SNIPPET_CHARS = 80
 
@@ -200,7 +203,8 @@ def plan_prune(pool: Path, decks: Sequence[Path], keep: PoolKeep = "current") ->
             continue
         parsed = parse_audio_filename(f.name)
         if parsed is None:
-            plan.unknown.append(f)
+            if f.name not in _HOUSEKEEPING:
+                plan.unknown.append(f)
             continue
         th, backend, _ = parsed
         if keep == "api":
@@ -301,7 +305,7 @@ def pool_status(pool: Path) -> PoolStatus:
             continue
         parsed = parse_audio_filename(f.name)
         if parsed is None:
-            if f.name != INDEX_FILENAME:
+            if f.name not in _HOUSEKEEPING:
                 unknown_n += 1
                 unknown_b += f.stat().st_size
             continue

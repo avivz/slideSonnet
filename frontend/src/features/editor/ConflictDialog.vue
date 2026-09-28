@@ -32,11 +32,11 @@ async function copyMine(): Promise<void> {
     <div class="versions">
       <section>
         <h3 class="section-title">Your version (not saved)</h3>
-        <p class="text" data-testid="conflict-mine">{{ editor.conflict?.mine || '(empty)' }}</p>
+        <p class="text" dir="auto" data-testid="conflict-mine">{{ editor.conflict?.mine || '(empty)' }}</p>
       </section>
       <section>
         <h3 class="section-title">On disk now</h3>
-        <p class="text" data-testid="conflict-theirs">{{ editor.conflict?.theirs || '(empty)' }}</p>
+        <p class="text" dir="auto" data-testid="conflict-theirs">{{ editor.conflict?.theirs || '(empty)' }}</p>
       </section>
     </div>
     <template #actions>

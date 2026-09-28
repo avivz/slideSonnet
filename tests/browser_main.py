@@ -1,18 +1,11 @@
-"""Real-server NiceGUI launcher for the Playwright browser-journey tests.
+"""Real-server launcher for the Playwright browser journeys (``tests/test_browser_journeys.py``).
 
-Started as a subprocess by ``tests/test_browser_journeys.py``. It serves the
-actual editor — real websocket, real DOM/focus/blur lifecycle — with two
-test-only twists, neither of which touches production code:
-
-- **Markers in the DOM.** NiceGUI's ``.mark()`` is server-side metadata only
-  (consumed by ``ElementFilter``); nothing reaches the browser. We wrap it so
-  every marker also lands as a CSS class (``ss-marker-<name>``) that Playwright
-  can target, surviving destructive re-renders of the block editor.
-- **Stub TTS (default).** ``create_tts`` is replaced — in every module that
-  imported it by name — with a deterministic engine that writes a short silent
-  wav instantly. ``name()`` returns ``"kokoro"`` so cache filenames and
-  extensions look exactly like the local engine's. Set
-  ``SLIDESONNET_TEST_REAL_TTS=1`` to skip the patching (the kokoro journey).
+Started as a subprocess. It serves the actual editor — the production app on
+Uvicorn, the built frontend, real SSE and media — with one test-only twist:
+**stub TTS.** ``create_tts`` is replaced with a deterministic engine that
+writes a short silent WAV instantly; ``name()`` returns ``"kokoro"`` so cache
+filenames and extensions look exactly like the local engine's. Set
+``SLIDESONNET_TEST_REAL_TTS=1`` to keep the real engine.
 
 Environment:
     SLIDESONNET_EDIT_PDF           deck to edit (required)
@@ -21,7 +14,6 @@ Environment:
     SLIDESONNET_TEST_PORT          port to serve on (default 8666)
     SLIDESONNET_TEST_REAL_TTS      "1" -> keep the real TTS engine
     SLIDESONNET_TEST_STUB_SECONDS  stub clip length in seconds (default 1.0)
-    SLIDESONNET_TEST_FRONTEND      "vue" -> serve the Vue editor (library at /, decks at /d/{token})
 """
 
 from __future__ import annotations
@@ -30,12 +22,10 @@ import os
 import wave
 from pathlib import Path
 
-from nicegui import ui
-from nicegui.element import Element
+import uvicorn
 
-from slidesonnet.gui.app import build_editor, register_pages, set_registry
-from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.models import TTSConfig
+from slidesonnet.server.run import build_registry, editor_app
 from slidesonnet.tts.base import TTSEngine
 
 _SAMPLE_RATE = 24_000
@@ -64,8 +54,6 @@ class StubEngine(TTSEngine):
     def cache_key(self) -> str:
         return "stub"
 
-    # the editor's voice picker asks the engine; impersonate Kokoro's set so
-    # voice journeys (pick af_bella, see the default placeholder) work stubbed
     def list_voices(self) -> tuple[str, ...]:
         from slidesonnet.tts.kokoro import KOKORO_VOICES
 
@@ -78,7 +66,6 @@ class StubEngine(TTSEngine):
 def _patch_tts(seconds: float) -> None:
     """Replace ``create_tts`` everywhere it was imported with a stub factory."""
     import slidesonnet.audio.synth as synth_mod
-    import slidesonnet.gui.state as state_mod
     import slidesonnet.tts as tts_mod
 
     def factory(_cfg: TTSConfig) -> TTSEngine:
@@ -86,54 +73,20 @@ def _patch_tts(seconds: float) -> None:
 
     tts_mod.create_tts = factory  # type: ignore[assignment]
     synth_mod.create_tts = factory  # type: ignore[assignment]
-    state_mod.create_tts = factory  # type: ignore[assignment]
 
 
-def _expose_markers() -> None:
-    """Make ``.mark()`` also emit an ``ss-marker-<name>`` CSS class."""
-    original = Element.mark
+if __name__ == "__main__":
+    from slidesonnet.server import engines
 
-    def mark_with_classes(self: Element, *markers: str) -> Element:
-        original(self, *markers)
-        self._classes.extend(f"ss-marker-{m}" for m in self._markers)
-        return self
-
-    Element.mark = mark_with_classes  # type: ignore[method-assign, assignment]
-
-
-if __name__ in {"__main__", "__mp_main__"}:
-    _expose_markers()
+    engines.EDITOR_DEFAULT_ENGINE = "kokoro"  # the journeys run on the free engine
     if os.environ.get("SLIDESONNET_TEST_REAL_TTS") != "1":
         _patch_tts(float(os.environ.get("SLIDESONNET_TEST_STUB_SECONDS", "1.0")))
-    _pdf = Path(os.environ["SLIDESONNET_EDIT_PDF"])
-    _lib_root = os.environ.get("SLIDESONNET_LIB_ROOT")
-    if os.environ.get("SLIDESONNET_TEST_FRONTEND") == "vue":
-        # The Vue editor at /d/{token}, the library at / — production routing.
-        _registry = DeckRegistry(Path(_lib_root) if _lib_root else _pdf.parent)
-        _registry.rescan()
-        _registry.register(_pdf)
-        register_pages(_registry, frontend="vue")
-    elif _lib_root:
-        # Production routing: library at "/", decks at "/d/{token}" — what the
-        # deck-switching journeys need (real neighbours, real navigation).
-        _registry = DeckRegistry(Path(_lib_root))
-        _registry.rescan()
-        _registry.register(_pdf)
-        register_pages(_registry)
-    else:
-        # Default: one deck straight at "/", the shape every other journey opens.
-        _registry = DeckRegistry(_pdf.parent)
-        _registry.register(_pdf)
-        set_registry(_registry)
-
-        @ui.page("/")
-        def index() -> None:
-            build_editor(_pdf)
-
-    ui.run(
+    pdf = Path(os.environ["SLIDESONNET_EDIT_PDF"])
+    lib_root = os.environ.get("SLIDESONNET_LIB_ROOT")
+    registry = build_registry(pdf, sidecar_path=None, root=Path(lib_root) if lib_root else None)
+    uvicorn.run(
+        editor_app(registry, host="127.0.0.1"),
         host="127.0.0.1",
         port=int(os.environ.get("SLIDESONNET_TEST_PORT", "8666")),
-        title="slideSonnet (browser tests)",
-        reload=False,
-        show=False,
+        log_level="warning",
     )

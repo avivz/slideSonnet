@@ -3,7 +3,7 @@
 // deck), this slide's conversations (reply / accept / reopen, and a note box
 // that opens a new one), and every conversation (click one to focus on its
 // slides). Every note is sent to the agent at once.
-import { computed } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 import type { ConversationDTO } from '@/api/client'
 import { useEditorStore } from '@/stores/editor'
@@ -46,6 +46,13 @@ const listed = computed(() =>
 )
 const pendingHere = computed(() => Object.keys(review.data?.pending ?? {}))
 
+// Unsent notes stay with what they're about: moving to another slide (the
+// arrows, or playback following along) neither carries a note along nor loses it.
+const deckOpen = ref(false) // whole-deck notes are occasional: start folded away
+const deckCount = computed(() => review.deckConversation?.messages.length ?? 0)
+const slideNotes = reactive(new Map<string, string>())
+const replies = reactive(new Map<string, string>())
+
 function time(at: string): string {
   return at.slice(11, 16)
 }
@@ -67,49 +74,63 @@ function time(at: string): string {
     </template>
 
     <template v-else>
-      <div class="row">
-        <h3 class="section-title">Review</h3>
-        <span class="spacer"></span>
-        <span v-if="review.comparing" class="dim-text small">comparing…</span>
-        <button
-          class="btn quiet small"
-          type="button"
-          :disabled="review.closedCount === 0"
-          title="Make accepted changes the new starting point"
-          data-testid="review-clear"
-          @click="review.command({ type: 'clear' })"
-        >
-          Clear accepted ({{ review.closedCount }})
-        </button>
-      </div>
-      <label v-if="review.closedCount || review.showClosed" class="check small">
-        <input v-model="review.showClosed" type="checkbox" data-testid="review-show-closed" />
-        Show closed ({{ review.closedCount }})
-      </label>
-      <p v-if="review.data.final_build" class="warn-text small">
-        Final build — comparison paused until the next normal compile.
-      </p>
-      <p v-if="pendingHere.length" class="warn-text small" data-testid="review-pending">
-        Not in the PDF yet: {{ pendingHere.map((s) => `@${s}`).join(', ') }} — compile, or fix the id.
-      </p>
+      <header class="head">
+        <div class="row">
+          <h2 class="head-title">Review</h2>
+          <span class="spacer"></span>
+          <span v-if="review.comparing" class="dim-text small">comparing…</span>
+          <button
+            class="btn quiet small"
+            type="button"
+            :disabled="review.closedCount === 0"
+            title="Make accepted changes the new starting point"
+            data-testid="review-clear"
+            @click="review.command({ type: 'clear' })"
+          >
+            Clear accepted ({{ review.closedCount }})
+          </button>
+        </div>
+        <div class="row">
+          <label v-if="review.closedCount || review.showClosed" class="check small">
+            <input v-model="review.showClosed" type="checkbox" data-testid="review-show-closed" />
+            Show closed ({{ review.closedCount }})
+          </label>
+          <span class="spacer"></span>
+          <button
+            v-if="review.deckConversation"
+            class="btn quiet small"
+            type="button"
+            :aria-expanded="deckOpen"
+            data-testid="deck-toggle"
+            @click="deckOpen = !deckOpen"
+          >
+            {{ deckOpen ? '▾' : '▸' }} Note on the whole deck{{ deckCount ? ` (${deckCount})` : '' }}
+          </button>
+        </div>
+        <div v-if="deckOpen && review.deckConversation" class="deck">
+          <ul v-if="deckCount" class="messages">
+            <li v-for="(m, i) in review.deckConversation.messages" :key="i" :class="m.author">
+              <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
+              <span class="text" dir="auto">{{ m.text }}</span>
+            </li>
+          </ul>
+          <NoteBox
+            test-id="deck-note"
+            placeholder="Instructions for the agent about the whole deck…"
+            @send="(text) => review.command({ type: 'reply', conversation: 'deck', text })"
+          />
+        </div>
+        <p v-if="review.data.final_build" class="warn-text small">
+          Final build — comparison paused until the next normal compile.
+        </p>
+        <p v-if="pendingHere.length" class="warn-text small" data-testid="review-pending">
+          Not in the PDF yet: {{ pendingHere.map((s) => `@${s}`).join(', ') }} — compile, or fix the id.
+        </p>
+      </header>
 
-      <details v-if="review.deckConversation" class="deck" open>
-        <summary class="section-title">Deck</summary>
-        <ul class="messages">
-          <li v-for="(m, i) in review.deckConversation.messages" :key="i" :class="m.author">
-            <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
-            <span class="text">{{ m.text }}</span>
-          </li>
-        </ul>
-        <NoteBox
-          test-id="deck-note"
-          placeholder="Instructions for the agent about the whole deck…"
-          @send="(text) => review.command({ type: 'reply', conversation: 'deck', text })"
-        />
-      </details>
 
-      <section v-if="subject" class="slide">
-        <h3 class="section-title">
+      <section v-if="subject" class="box slide">
+        <h3 class="box-title">
           This slide <span class="mono">@{{ subject }}</span>
           <span v-if="review.viewingRemoved" class="err-text"> · removed</span>
         </h3>
@@ -119,13 +140,15 @@ function time(at: string): string {
           <ul class="messages">
             <li v-for="(m, i) in c.messages" :key="i" :class="m.author">
               <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
-              <span class="text">{{ m.text }}</span>
+              <span class="text" dir="auto">{{ m.text }}</span>
             </li>
           </ul>
           <template v-if="c.status === 'open'">
             <NoteBox
+              :model-value="replies.get(c.id) ?? ''"
               :test-id="`reply-${c.id}`"
               placeholder="Reply…"
+              @update:model-value="(v) => replies.set(c.id, v)"
               @send="(text) => review.command({ type: 'reply', conversation: c.id, text })"
             />
             <button
@@ -149,37 +172,48 @@ function time(at: string): string {
           </button>
         </article>
         <NoteBox
+          :model-value="slideNotes.get(subject) ?? ''"
           test-id="slide-note"
           placeholder="New note for the agent about this slide…"
+          @update:model-value="(v) => slideNotes.set(subject, v)"
           @send="(text) => review.command({ type: 'comment', slides: [subject], text })"
         />
       </section>
 
-      <section v-if="listed.length" class="list">
+      <section v-if="listed.length" class="box list">
         <div class="row">
-          <h3 class="section-title">Conversations</h3>
-          <span class="spacer"></span>
+          <h3 class="box-title">Conversations</h3>
+        </div>
+        <div class="rows">
           <button
-            v-if="review.filter"
-            class="btn quiet small"
+            class="conv-row all"
+            :class="{ active: review.filter === null }"
             type="button"
-            data-testid="conv-filter-clear"
+            :aria-pressed="review.filter === null"
+            data-testid="conv-row-all"
             @click="review.filter = null"
           >
-            Show all slides
+            <span class="conv-id">All slides</span>
+            <span class="conv-state">no conversation chosen</span>
+          </button>
+          <button
+            v-for="c in listed"
+            :key="c.id"
+            class="conv-row"
+            :class="{ active: c.id === review.filter }"
+            type="button"
+            :aria-pressed="c.id === review.filter"
+            :title="c.id === review.filter ? 'Click again to see all slides' : 'Show this conversation’s slides'"
+            :data-testid="`conv-row-${c.id}`"
+            @click="review.toggle(c.id)"
+          >
+            <span class="conv-id mono">{{ c.id }}</span>
+            <span class="conv-state" :class="c.status === 'closed' ? 'closed' : c.turn">
+              {{ turnLabel(c) }}{{ originLabel(c) }}
+            </span>
+            <span class="conv-slides mono">{{ c.slides.map((s) => `@${s}`).join(' ') }}</span>
           </button>
         </div>
-        <button
-          v-for="c in listed"
-          :key="c.id"
-          class="conv-row"
-          :class="{ active: c.id === review.filter }"
-          type="button"
-          :data-testid="`conv-row-${c.id}`"
-          @click="review.select(c.id)"
-        >
-          {{ c.id }} · {{ turnLabel(c) }}{{ originLabel(c) }} · {{ c.slides.map((s) => `@${s}`).join(' ') }}
-        </button>
       </section>
       <p v-if="editor.snapshot && !review.data" class="dim-text small">Comparing…</p>
     </template>
@@ -212,12 +246,34 @@ function time(at: string): string {
   font-size: var(--text-sm);
   color: var(--dim);
 }
-.deck summary {
-  cursor: pointer;
-  margin-bottom: var(--space-2);
+.head {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
 }
-.slide,
-.list {
+.head-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text);
+}
+/* each part of the panel sits in its own box */
+.box {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.box-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.deck {
   display: grid;
   gap: var(--space-2);
 }
@@ -252,20 +308,48 @@ function time(at: string): string {
 .messages .agent .text {
   color: var(--accent);
 }
+.rows {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  overflow: hidden;
+}
 .conv-row {
-  padding: 3px var(--space-2);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--space-2);
+  padding: var(--space-2);
+  background: var(--surface);
+  border: 0;
+  border-top: 1px solid var(--line);
   color: var(--text);
   font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
 }
+.conv-row:first-child {
+  border-top: 0;
+}
 .conv-row:hover {
   background: var(--raised);
 }
 .conv-row.active {
-  border-color: var(--accent);
+  background: var(--raised);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.conv-id {
+  font-weight: 600;
+}
+.conv-state {
+  color: var(--dim);
+}
+.conv-state.author {
+  color: var(--warn);
+}
+.conv-slides {
+  grid-column: 1 / -1;
+  font-size: var(--text-xs);
+  color: var(--dim);
+  overflow-wrap: anywhere;
 }
 </style>

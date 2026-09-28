@@ -1,4 +1,4 @@
-// The library's pure logic: filtering, grouping, and what a card says.
+// The library's pure logic: filtering, grouping, and what a deck row says.
 // (Ported from gui/library_view.py and gui/app.py::_filter_decks.)
 import type { DeckStatsDTO, LibraryDTO, LibraryDeckDTO } from '@/api/client'
 
@@ -57,27 +57,11 @@ export function subPath(deck: LibraryDeckDTO, underHeading: boolean): string {
   return redundant.has(deck.group) ? '' : deck.group
 }
 
-export type Tone = 'ok' | 'partial' | 'bad' | 'pending'
-
-export interface CardStatus {
-  text: string
-  tone: Tone
-  /** 0..1 share of slides with narration, or `null` while unknown. */
-  progress: number | null
-}
-
-/** What a deck card's status line says: size first, then what's left. */
-export function cardStatus(stats: DeckStatsDTO | 'error' | undefined): CardStatus {
-  if (stats === undefined) return { text: '…', tone: 'pending', progress: null }
-  if (stats === 'error') return { text: 'unreadable', tone: 'bad', progress: null }
-  const slides = `${stats.slides} slide${stats.slides === 1 ? '' : 's'}`
-  const progress = stats.slides > 0 ? Math.min(1, stats.narrated / stats.slides) : 0
-  if (stats.errors > 0) {
-    return { text: `${slides} · ${stats.errors} error${stats.errors === 1 ? '' : 's'}`, tone: 'bad', progress }
-  }
-  const complete = stats.slides > 0 && stats.narrated >= stats.slides
-  if (complete) return { text: `${slides} · complete`, tone: 'ok', progress }
-  return { text: `${slides} · ${stats.slides - stats.narrated} to narrate`, tone: 'partial', progress }
+/** A deck row's size: `49 slides`, blank while unknown. */
+export function sizeText(stats: DeckStatsDTO | 'error' | undefined): string {
+  if (stats === undefined) return ''
+  if (stats === 'error') return 'can’t be read'
+  return `${stats.slides} slide${stats.slides === 1 ? '' : 's'}`
 }
 
 /** `3 decks` / `1 deck` / `no decks`. */

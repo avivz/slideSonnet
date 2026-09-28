@@ -155,14 +155,26 @@ export const useReviewStore = defineStore('review', () => {
     return true // the end of the conversation (or strip): stay put
   }
 
+  /** Focus on a conversation and show one of its slides (staying put when already on one). */
   function select(conversation: string): void {
     filter.value = conversation
-    const conv = conversations.value.find((c) => c.id === conversation)
-    const target = conv?.slides.find((s) => editor.pages.some((p) => p.slide_id === s))
-    if (target && target !== editor.currentId) {
+    const slides = conversations.value.find((c) => c.id === conversation)?.slides ?? []
+    if (slides.includes(subject.value)) return
+    const live = slides.find((s) => editor.pages.some((p) => p.slide_id === s))
+    if (live) {
       leaveRemoved()
-      editor.goToSlide(target)
+      editor.goToSlide(live)
+      return
     }
+    // every slide it names was deleted since the review started: show one from the base
+    const gone = slides.find((s) => removed.value.includes(s))
+    if (gone) viewRemoved(gone)
+  }
+
+  /** The list's click: choose a conversation, or choose it again to see every slide. */
+  function toggle(conversation: string): void {
+    if (filter.value === conversation) filter.value = null
+    else select(conversation)
   }
 
   function nextYourTurn(): void {
@@ -183,6 +195,6 @@ export const useReviewStore = defineStore('review', () => {
     deckConversation, slideConversations, changes, removed, subject, scope, waitingHere, closedCount,
     strip,
     conversationsFor, badge, refresh, command, fileUnrequested, viewRemoved, leaveRemoved,
-    leaveFilterFor, step, select, nextYourTurn,
+    leaveFilterFor, step, select, toggle, nextYourTurn,
   }
 })

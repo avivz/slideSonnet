@@ -72,6 +72,8 @@ class TTSConfig:
     """TTS backend configuration."""
 
     backend: Backend = "kokoro"
+    #: Whether the deck's slidesonnet.toml named the backend (else it's the default).
+    backend_configured: bool = False
     kokoro_voice: str = "am_echo"
     kokoro_speed: float = 1.0
     # CustomVoice ships ready-to-use named speakers (works out of the box); a

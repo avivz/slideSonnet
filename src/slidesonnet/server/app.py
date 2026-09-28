@@ -1,18 +1,19 @@
-"""Mounting the backend on a FastAPI app.
+"""The editor's FastAPI app: :func:`create_app` mounts the API, media, and frontend.
 
-During the migration :func:`install_api` mounts the API, media, and events on
-NiceGUI's own FastAPI app (one process, one origin, one port) — safely even
-after that app has started. :func:`create_api_app` builds a plain FastAPI app
-with the same routers: what the API tests use today, and what the editor runs
-on once NiceGUI is gone.
+One process, one origin, one port. :func:`install_api` stays idempotent (it
+asks the app whether its routes are present) so a rebuilt app never ends up
+with duplicate routes.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
-from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.server.context import API_PREFIX, ServerContext, context_of
+from slidesonnet.server.library import DeckRegistry
 
 
 def _mounted(app: FastAPI) -> bool:
@@ -50,11 +51,13 @@ def install_frontend(app: FastAPI) -> None:
         app.include_router(frontend_router())
 
 
-def create_api_app(registry: DeckRegistry) -> FastAPI:
-    """A plain FastAPI app serving the API and media (tests; post-NiceGUI serving)."""
-    from collections.abc import AsyncIterator
-    from contextlib import asynccontextmanager
+def create_app(registry: DeckRegistry, *, host: str | None = None) -> FastAPI:
+    """The editor's web app: the API, media, and the bundled frontend.
 
+    Everything the process serves — explicit lifetimes, no process-global app:
+    the context (jobs, generation queues, event bus) lives on ``app.state`` and
+    is shut down with the app.
+    """
     holder: list[ServerContext] = []
 
     @asynccontextmanager
@@ -63,9 +66,17 @@ def create_api_app(registry: DeckRegistry) -> FastAPI:
         for ctx in holder:
             ctx.shutdown()
 
-    app = FastAPI(title="slideSonnet", version="1", lifespan=lifespan)
-    ctx = install_api(app, registry)
+    app = FastAPI(
+        title="slideSonnet", version="1", lifespan=lifespan, docs_url=None, redoc_url=None
+    )
+    ctx = install_api(app, registry, host=host)
     install_frontend(app)
-    ctx.allowed_hosts.add("testserver")
     holder.append(ctx)
+    return app
+
+
+def create_api_app(registry: DeckRegistry) -> FastAPI:
+    """:func:`create_app` for the test client (which calls itself ``testserver``)."""
+    app = create_app(registry)
+    context_of(app).allowed_hosts.add("testserver")
     return app

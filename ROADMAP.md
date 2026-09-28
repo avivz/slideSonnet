@@ -102,16 +102,14 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    unsaved typing too (other slide: kept on screen; same slide: handed back with
    Copy / Keep my version, never auto-saved). What remains is the deck-level
    checks section. *Appetite:* half a day. **[agent]**
-6. [ ] **Frontend migration to Vue — phased.** *(Plan: `docs/frontend-migration.md`;
-   inventory: `docs/frontend-parity.md`; started 2026-09-28.)* Seven phases,
-   each its own branch merged only after a maintainer checkpoint: 0 baseline +
-   inventory + draft-loss fix (done), 1 service layer + `/api/v1` + jobs inside
-   the NiceGUI app, 2 toolchain/packaging + library in Vue, 3 browser-owned
-   playback (1–3 built on stacked branches `migration/phase-{1,2,3}`, awaiting
-   the maintainer's checkpoint), 4 editor, 5 review, 6 remove NiceGUI. Includes a **layout redesign**
-   (mockups approved per screen before its port) and a **smaller test suite**
-   (~330 frontend-facing tests → ~220; browser tier stays local). Item 4's
-   "play before fully generated" fits naturally into Phase 3. **[agent→human]**
+6. [x] **Frontend migration to Vue — phased.** *(Plan: `docs/frontend-migration.md`;
+   inventory + numbers: `docs/frontend-parity.md`.)* All seven phases built on
+   stacked branches `migration/phase-{1..6}` (2026-09-28), awaiting the
+   maintainer's review before merging: service layer + `/api/v1` + jobs,
+   Vue toolchain/packaging + library, browser-owned playback, the editor,
+   review, and NiceGUI removed. Unit tier 148 s → 35 s; B1–B5 fixed. Open:
+   per-screen mockup approval (built to the design brief instead), optional
+   IndexedDB draft recovery. **[human review]**
 ## Next — toward 1.0 final
 
 1. [ ] **Unify logging across the project** (from inbox; reaffirmed 2026-06-19 as

@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from slidesonnet.audio.durations import ClipDurations
 from slidesonnet.config import Config
 from slidesonnet.hashing import audio_cache_path_or_alt, audio_path, parse_audio_filename
 from slidesonnet.models import ProgressFn, TTSConfig, resolve_voice
@@ -120,22 +121,30 @@ def synthesize(
     ]
     engines: dict[float, TTSEngine] = {}
     results: dict[tuple[str, int], SynthResult] = {}
+    lengths = _clip_lengths(audio_dir)
 
     for i, ref in enumerate(refs):
         engine = engine_for_pace(config.tts, ref.pace, engines)
         target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
         cached = None if force else audio_cache_path_or_alt(target)
         if cached is not None:
-            result = SynthResult(path=cached, duration=get_duration(cached), from_cache=True)
+            result = SynthResult(path=cached, duration=lengths.get(cached), from_cache=True)
         else:
             duration = engine.synthesize(ref.text, target, ref.voice)
+            lengths.record(target, duration)
             result = SynthResult(path=target, duration=duration, from_cache=False)
         results[(ref.slide_id, ref.speech_index)] = result
         if progress is not None:
             progress("tts", i + 1, len(refs), ref.slide_id)
 
+    lengths.save()
     _record_index(audio_dir, deck, refs, results)
     return results
+
+
+def _clip_lengths(audio_dir: Path) -> ClipDurations:
+    # a lambda, not get_duration itself: tests patch this module's get_duration
+    return ClipDurations(audio_dir, lambda clip: get_duration(clip))
 
 
 def _record_index(
@@ -301,16 +310,18 @@ def cached_durations(
     refs = speech_refs(deck, config)
     by_page: dict[int, dict[int, float]] = {}
     estimated: list[SpeechRef] = []
+    lengths = _clip_lengths(audio_dir)
     for ref in refs:
         engine = engine_for_pace(config.tts, ref.pace, engines)
         target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
         cached = audio_cache_path_or_alt(target)
         if cached is not None:
-            dur = get_duration(cached)
+            dur = lengths.get(cached)
         else:
             dur = estimate_speech_seconds(ref.text, fallback_wpm)
             estimated.append(ref)
         by_page.setdefault(ref.page_index, {})[ref.speech_index] = dur
+    lengths.save()
 
     out: list[list[float]] = []
     for page_index, slide_id in enumerate(deck.pages):

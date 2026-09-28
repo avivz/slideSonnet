@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from slidesonnet.gui.library import (
+from slidesonnet.server.library import (
     DeckEntry,
     DeckRegistry,
     ScanLimits,
@@ -165,32 +165,21 @@ def test_registry_keeps_an_explicit_sidecar_override(tmp_path: Path) -> None:
     assert resolved is not None and resolved.sidecar_path == other.resolve()
 
 
-def test_registry_neighbours_wrap_around(tmp_path: Path) -> None:
+def test_registry_neighbours_wrap_lone_and_unknown(tmp_path: Path) -> None:
     """Alt+←/→ steps through the library and wraps, so an audit pass never dead-ends."""
     for name in ("w1", "w2", "w3"):
         _deck(tmp_path / name, "d")
     reg = DeckRegistry(tmp_path)
     reg.rescan()
-    labels = [e.label for e in reg.entries()]
-    assert labels == ["w1/d", "w2/d", "w3/d"]
+    assert [e.label for e in reg.entries()] == ["w1/d", "w2/d", "w3/d"]
     first = reg.entries()[0]
     assert reg.neighbour(first.token, +1).label == "w2/d"  # type: ignore[union-attr]
     assert reg.neighbour(first.token, -1).label == "w3/d"  # type: ignore[union-attr]
-
-
-def test_registry_neighbour_of_a_lone_deck_is_itself(tmp_path: Path) -> None:
-    _deck(tmp_path, "solo")
-    reg = DeckRegistry(tmp_path)
-    reg.rescan()
-    token = reg.entries()[0].token
-    assert reg.neighbour(token, 1) is not None
-    assert reg.neighbour(token, 1).token == token  # type: ignore[union-attr]
-
-
-def test_registry_neighbour_of_an_unknown_token_is_none(tmp_path: Path) -> None:
-    reg = DeckRegistry(tmp_path)
-    reg.rescan()
     assert reg.neighbour("deadbeef", 1) is None
+    solo = DeckRegistry(tmp_path / "w1")
+    solo.rescan()
+    token = solo.entries()[0].token
+    assert solo.neighbour(token, 1).token == token  # type: ignore[union-attr]
 
 
 def test_rescan_picks_up_a_new_deck(tmp_path: Path) -> None:

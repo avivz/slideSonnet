@@ -196,3 +196,18 @@ export function compose(families: Families, family: string, direction: string | 
 export function directionsFor(families: Families, family: string): string[] {
   return families.find((x) => x.key === family)?.options.map(([label]) => label) ?? []
 }
+
+/**
+ * `next` with the segment keys of `prev` wherever the kinds line up.
+ *
+ * A newer version of a slide (an outside edit, or our own save echoed back)
+ * would otherwise get fresh keys, rebuilding every card: an open line's
+ * settings would fold shut and the page would jump.
+ */
+export function keepKeys(prev: EditBlock, next: EditBlock): EditBlock {
+  next.middle.forEach((seg, i) => {
+    const old = prev.middle[i]
+    if (old !== undefined && old.kind === seg.kind) seg.key = old.key
+  })
+  return next
+}

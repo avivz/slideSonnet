@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { cardStatus, countText, displayGroups, filterDecks, subPath } from '@/features/library/library'
+import { countText, displayGroups, filterDecks, sizeText, subPath } from '@/features/library/library'
 
 import { deck, library } from './fixtures'
 
@@ -42,19 +42,15 @@ describe('subPath', () => {
   })
 })
 
-describe('cardStatus', () => {
-  const s = (slides: number, narrated: number, errors = 0) => ({
-    token: 't', slides, narrated, errors, warnings: 0,
-  })
+describe('sizeText', () => {
+  const s = (slides: number) => ({ token: 't', slides, narrated: 0, errors: 0, warnings: 0 })
   it.each([
-    [undefined, '…', 'pending', null],
-    ['error' as const, 'unreadable', 'bad', null],
-    [s(49, 49), '49 slides · complete', 'ok', 1],
-    [s(49, 38), '49 slides · 11 to narrate', 'partial', 38 / 49],
-    [s(1, 0), '1 slide · 1 to narrate', 'partial', 0],
-    [s(12, 12, 2), '12 slides · 2 errors', 'bad', 1],
-  ])('%j', (stats, text, tone, progress) => {
-    expect(cardStatus(stats)).toEqual({ text, tone, progress })
+    [undefined, ''],
+    ['error' as const, 'can’t be read'],
+    [s(49), '49 slides'],
+    [s(1), '1 slide'],
+  ])('%j → %j', (stats, text) => {
+    expect(sizeText(stats)).toBe(text)
   })
 })
 

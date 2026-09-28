@@ -12,13 +12,14 @@ from slidesonnet.config import Config
 from slidesonnet.deck import relativize_voice_files
 from slidesonnet.diagnostics import Diagnostic, voice_diagnostics
 from slidesonnet.exceptions import SlideSonnetError
-from slidesonnet.gui.library import DeckEntry, DeckRegistry
 from slidesonnet.hashing import audio_cache_path_or_alt
 from slidesonnet.models import Backend, ProgressFn, resolve_voice
 from slidesonnet.pdf.reader import open_render, page_aspect
 from slidesonnet.review import ops as review_ops
 from slidesonnet.server import editing
 from slidesonnet.server.decks import LoadedDeck, deck_service
+from slidesonnet.server.engines import editor_engine
+from slidesonnet.server.library import DeckEntry, DeckRegistry
 from slidesonnet.server.media import media_url
 from slidesonnet.server.schemas import (
     AudioStatusDTO,
@@ -85,7 +86,7 @@ def deck_snapshot(
     service = deck_service(entry.pdf_path, entry.sidecar_path)
     loaded = service.load()
     deck, config = loaded.deck, loaded.config
-    active: Backend = engine or config.tts.backend
+    active: Backend = engine or editor_engine(config)
     active_config = with_engine(config, active)
     diags = all_diagnostics(loaded, active)
 
@@ -138,7 +139,7 @@ def deck_snapshot(
             narration=rev.narration, pdf=rev.pdf, config=rev.config, review=rev.review
         ),
         engine=active,
-        default_engine=config.tts.backend,
+        default_engine=editor_engine(config),
         engines=[
             EngineDTO(name=n, paid=s.paid, realtime=s.realtime, installed=n in installed)
             for n, s in sorted(BACKENDS.items())

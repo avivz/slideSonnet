@@ -62,20 +62,6 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   `Backend` Literal in models.py (a test pins them in sync).
 - **video/composer.py** — FFmpeg: `compose_segment`, `compose_silent_segment`,
   `concatenate_segments`, `concatenate_audio`, `get_duration`.
-- **gui/state.py** — UI-free `EditorState` (nav, edit→sidecar, save, TTS, preview, export).
-- **gui/app.py** — NiceGUI view; `build_editor`, `register_pages`, `run_editor`. Previews
-  are backend jobs producing immutable tracks; playback visuals (slide flips on cue
-  boundaries, transitions, scrubber, clock) run in the browser module
-  `frontend/src/features/playback/` (loaded from `/ui/embed/playback.js`), which reports
-  only slide changes back (`ssslide`).
-  Routes: `/` (library) and `/d/{token}` (one deck) — switching decks is a page
-  navigation, so NiceGUI's own teardown (job queue stopped on disconnect, timers
-  dropped with the client) is the whole cleanup. Media is served per deck from
-  `/ssmedia/{token}/…`.
-- **gui/library.py** — UI-free deck discovery + `DeckRegistry`: `deck_token` (sha1 of the
-  resolved path), a capped downward scan for `*.pdf` + sibling `<stem>.narration`, natural
-  sort, neighbour lookup. Only registered decks resolve, so a URL can't open arbitrary files.
-- **gui/theme.py** — palette + head assets shared by both pages.
 - **review/** — the agent review loop (spec: `dev/DESIGN-review.md`).
   `versions.py` captures a `DeckVersion` (per slide id: pixel hash at 150 dpi,
   page text, narration block); `diff.py` compares two by id (new/deleted/edited/
@@ -93,9 +79,17 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   SSE), `previews` (immutable preview tracks + manifest), `media`, `snapshots`,
   `schemas` (Pydantic DTOs → OpenAPI → `frontend/src/api/schema.d.ts`), `routes`
   (`/api/v1`), `frontend` (serves the built Vue app from `server/static/`).
-  Mounted on NiceGUI's FastAPI app during the migration (`install_api`).
+  `app.create_app` builds the FastAPI app; `run` serves it on Uvicorn (browser/WSL/
+  app-window opening via `launch`, `--dev` reload). `library` (deck discovery +
+  `DeckRegistry`: `deck_token` = sha1 of the resolved path, capped downward scan,
+  natural sort, neighbours — only registered decks resolve), `queue` (per-clip
+  generation queue: dedup, nearest-first priority, preemption), `generation` (one
+  queue per deck × engine), `review` / `review_model` (review read model + author
+  commands over `review/ops`).
 - **frontend/** — the Vue 3 + TypeScript app (Vite, Pinia, Vitest); builds into
-  `src/slidesonnet/server/static/`. Owns `/` (library) so far.
+  `src/slidesonnet/server/static/`: the library (`/`), the deck editor (`/d/{token}`,
+  drafts + autosave + conflicts in `stores/editor.ts`), review, and the browser-owned
+  preview player (`features/playback/`).
 - **api.py** — typed entry points mirroring the CLI: `sty_text`/`write_sty`,
   `init_sidecar`, `check_deck`, `synthesize_deck`, `export`, `write_subs`, `build_preview`.
 - **cli.py** — Click commands: `sty`, `init`, `check`, `tts`, `export`, `subs`, `edit`,

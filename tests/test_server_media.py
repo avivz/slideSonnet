@@ -13,8 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from slidesonnet.cache import render_dir
-from slidesonnet.gui.library import DeckRegistry, deck_token
 from slidesonnet.server.app import create_api_app
+from slidesonnet.server.library import DeckRegistry, deck_token
 from slidesonnet.server.media import is_content_stamp
 from tests.conftest import simple_narration, write_pdf
 

@@ -17,9 +17,9 @@ from fastapi.testclient import TestClient
 
 from slidesonnet.api import Preview
 from slidesonnet.audio.track import Cue
-from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.server.app import create_api_app
 from slidesonnet.server.context import SESSION_HEADER
+from slidesonnet.server.library import DeckRegistry
 from tests.conftest import _StubTTS, simple_narration, write_pdf
 
 SIDECAR = "@intro\nHello there.\n@middle\nIn the middle.\n@gone\nFrom a dropped slide.\n"
@@ -473,3 +473,37 @@ def test_meta_voices_pages_and_snapshot_extras(client: TestClient) -> None:
     assert snap["silence"]["start"] >= 0 and snap["silence"]["end"] >= 0
     assert snap["neighbours"] == {"prev": None, "next": None}  # a one-deck library
     assert snap["pages"][0]["clips"] == [{"cached": False, "seconds": None, "bytes": None}]
+
+
+def test_a_pdf_caught_mid_recompile_is_a_readable_retry(client: TestClient, deck: Path) -> None:
+    """While the PDF is missing or half-written, the editor keeps its last good view."""
+    token = _token(client)
+    good = deck.read_bytes()
+    deck.write_bytes(b"%PDF-1.5 garbage truncated")  # pdflatex mid-write
+    r = client.get(f"/api/v1/decks/{token}")
+    assert r.status_code == 503 and r.json()["error"]["code"] == "deck_unavailable"
+    deck.unlink()
+    assert client.get(f"/api/v1/decks/{token}").status_code == 503
+    deck.write_bytes(good)
+    assert client.get(f"/api/v1/decks/{token}").status_code == 200
+
+
+def test_the_editor_starts_on_inworld_unless_the_deck_chooses(
+    client: TestClient, deck: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inworld is the editor's starting engine (conftest pins Kokoro for the rest
+    of the suite); a deck whose slidesonnet.toml names an engine keeps it. The
+    CLI is unaffected: its default stays the free Kokoro."""
+    from slidesonnet.server import engines
+
+    monkeypatch.setattr(engines, "EDITOR_DEFAULT_ENGINE", "inworld")
+    token = _token(client)
+    snap = client.get(f"/api/v1/decks/{token}").json()
+    assert (snap["engine"], snap["default_engine"]) == ("inworld", "inworld")
+    # a job naming no engine runs on the same one — so it asks before billing
+    r = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "generate"})
+    assert r.json()["error"]["code"] == "paid_confirmation_required"
+
+    (deck.parent / "slidesonnet.toml").write_text('[tts]\nbackend = "kokoro"\n', encoding="utf-8")
+    snap = client.get(f"/api/v1/decks/{token}").json()
+    assert (snap["engine"], snap["default_engine"]) == ("kokoro", "kokoro")

@@ -74,11 +74,12 @@ Layout (built in Phase 2):
 - **Header:** wordmark · scan-root folder name · a search field (focus with
   `/` or Ctrl+K; Enter opens the highlighted deck; ↑/↓ move the highlight) ·
   rescan · deck count.
-- **Body:** a responsive grid of deck cards (1–3 columns by width). A card
-  shows the deck name, the part of its path the heading doesn't already say,
-  a narration progress bar (`narrated / slides`), and a status chip
-  (*complete*, *N to narrate*, *N errors*). Cards are links: the whole card
-  opens the deck, and middle-click opens it in a new tab.
+- **Body:** a plain list of decks, one row each: the deck name, the part of
+  its path the heading doesn't already say, and its size (*N slides*). The
+  library is for picking a deck, so it shows no progress or status (a
+  progress bar and a *complete* chip were tried and read as unexplained).
+  Rows are links: the whole row opens the deck, and middle-click opens it in
+  a new tab.
 - **Sections:** folders that hold two or more decks get a heading with a
   count; single-deck folders are gathered into one untitled group at the top
   instead of each getting a heading of its own.

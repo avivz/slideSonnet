@@ -33,14 +33,14 @@ describe('LibraryView', () => {
     document.body.innerHTML = ''
   })
 
-  it('lists decks as links into the editor, with their status filled in', async () => {
+  it('lists decks as links into the editor, with their size filled in', async () => {
     const { wrapper } = await mountLibrary()
     expect(wrapper.get('[data-testid="library-count"]').text()).toBe('4 decks')
     const card = wrapper.get('[data-testid="deck-card-l"]')
     expect(card.attributes('href')).toBe('/d/l')
-    expect(card.text()).toContain('4 slides · complete')
-    expect(wrapper.get('[data-testid="deck-card-i"]').text()).toContain('3 to narrate')
-    expect(wrapper.get('[data-testid="deck-card-p"]').text()).toContain('unreadable')
+    expect(card.text()).toContain('4 slides')
+    expect(card.text()).not.toMatch(/complete|narrate/)
+    expect(wrapper.get('[data-testid="deck-card-p"]').text()).toContain('can’t be read')
     expect(wrapper.findAll('h2').map((h) => h.text())).toEqual(['week02 2'])
   })
 
@@ -50,7 +50,7 @@ describe('LibraryView', () => {
     const { wrapper } = await mountLibrary()
     const input = wrapper.get('[data-testid="library-search"]')
     await input.setValue('week02')
-    expect(wrapper.findAll('a.card')).toHaveLength(2)
+    expect(wrapper.findAll('a.row')).toHaveLength(2)
     await input.trigger('keydown', { key: 'ArrowDown' })
     await input.trigger('keydown', { key: 'Enter' })
     expect(assign).toHaveBeenCalledWith('/d/p')

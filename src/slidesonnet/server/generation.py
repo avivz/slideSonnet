@@ -1,6 +1,6 @@
 """Per-deck clip generation, owned by the server and shared by every editor tab.
 
-Each (deck, engine) pair gets one :class:`~slidesonnet.gui.jobs.JobQueue`: one
+Each (deck, engine) pair gets one :class:`~slidesonnet.server.queue.JobQueue`: one
 worker, content-addressed dedup (two requests for the same clip — a
 double-click, two tabs — synthesize once), and distance priority (the clip
 nearest the slide someone is looking at goes next; a tab reports where it is
@@ -24,13 +24,13 @@ from slidesonnet import api
 from slidesonnet.cache import resolve_audio_dir
 from slidesonnet.config import Config
 from slidesonnet.exceptions import SlideSonnetError
-from slidesonnet.gui.jobs import JobHandle, JobQueue, Target
-from slidesonnet.gui.library import DeckEntry
 from slidesonnet.models import Backend
 from slidesonnet.narration.model import Deck
 from slidesonnet.server.decks import deck_service
 from slidesonnet.server.engines import engine_lock
 from slidesonnet.server.events import EventBus
+from slidesonnet.server.library import DeckEntry
+from slidesonnet.server.queue import JobHandle, JobQueue, Target
 from slidesonnet.timing import word_count
 from slidesonnet.tts import BACKENDS
 

@@ -338,6 +338,29 @@ keeps the old one reachable until Phase 6 deletes it).
 Checkpoint: NiceGUI absent from runtime and test harness; packaged install
 smoke test passes; all parity items checked.
 
+*As built:* see *Phase 6* and *Final numbers* in `docs/frontend-parity.md`.
+Preferences: nothing to migrate — both `auto_build` and
+`single_slide_transitions` were reset to off at the start of every NiceGUI
+session, and the Vue editor starts them off the same way. Pane sizes are new
+browser-local conveniences.
+
+## Outcome and known limitations
+
+All seven phases are built (stacked branches `migration/phase-1` … `phase-6`
+on top of `main`). Deliberate deviations and open ends:
+
+- **Mockups were not approved per screen.** The maintainer asked for the
+  phases to be implemented before review, so the library and editor were
+  built straight to `docs/frontend-design.md`; the running screens are the
+  mockups to approve or redirect.
+- **Draft recovery after a crash (IndexedDB, rule 7) is not built.** It was
+  marked optional; `beforeunload` warns and autosave keeps the window small.
+- **A PDF that MuPDF can "repair" mid-write** (a truncated file it can still
+  open) briefly shows pages without slide ids until the recompile finishes;
+  an unreadable or missing PDF keeps the last good view.
+- **Saves cost ~0.1 s on a 200-page deck on WSL**, mostly the durable
+  `fsync`; typing never waits on it.
+
 ## Code to read and preserve
 
 | Existing code | Migration treatment |
