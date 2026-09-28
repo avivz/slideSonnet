@@ -19,10 +19,11 @@ Phases may be split further; they may not be merged into one big-bang branch.
 
 The finished product still launches with `slidesonnet edit`, works locally,
 and supports the library, narration editor, review workflow, preview,
-generation, and export. Keep the current visual design and information layout
-recognizable. The port fixes known interaction bugs (below) but is not a
-product redesign — new UX (waveform timing, drag-reorder, etc.) comes after,
-on the new stack.
+generation, and export. The port fixes known interaction bugs (below) and
+**revisits the layout**: each Vue screen is built to an approved redesign
+rather than copied pixel for pixel (see *Layout redesign*). Parity means
+*behavior* parity; the look and arrangement may change. Genuinely new
+features (waveform timing, drag-reorder, etc.) come after, on the new stack.
 
 Retain the Python CLI, PDF processing, sidecar format, review records, TTS
 engines, audio cache, shared pool, subtitle timing, and FFmpeg export pipeline.
@@ -66,7 +67,7 @@ Each fix lands with a regression test in the phase that fixes it.
 | Build | Vite; npm with a committed lockfile and a documented supported Node version |
 | Navigation | Vue Router; retain `/` and `/d/{token}` URLs |
 | Shared UI state | Pinia; separate server snapshots, local drafts, jobs, and playback |
-| Presentation | Port existing CSS tokens/layout; semantic HTML and accessible controls |
+| Presentation | Redesigned layout on a small token set (color, type, spacing) derived from today's theme; semantic HTML and accessible controls |
 | Backend | FastAPI routes + explicit Pydantic request/response models |
 | Commands | HTTP JSON API under `/api/v1`; TypeScript DTOs generated from OpenAPI |
 | Updates | Server-Sent Events (SSE) for source changes and job progress |
@@ -184,8 +185,51 @@ playing their own tracks.
 - Makefile/dev startup: Vite dev server proxying `/api` and SSE (no buffering)
   to the Python server.
 
+Also in Phase 2: the design brief and token set, and the approved library
+mockup the library port is built to.
+
 Checkpoint: `pip install` of the built wheel in a clean venv, no Node on PATH,
 opens the Vue library and navigates into the NiceGUI editor and back.
+
+### Layout redesign (runs alongside Phases 2–5)
+
+The redesign happens screen by screen, just ahead of each screen's port, so
+every Vue screen ships once in its new form (no port-then-redesign churn).
+
+1. **Design brief (Phase 2, before the library port).** Starting from the
+   Phase 0 reference screenshots, list the layout problems and goals for each
+   screen, and fix a token set (palette, type scale, spacing, radii) plus
+   the shared components (buttons, fields, cards, dialogs, panes).
+2. **Mockups per screen.** Before porting a screen, produce a clickable
+   HTML mockup (2–3 directions for the editor, fewer for smaller screens),
+   using the real deck content from the screenshots. The maintainer picks
+   one or asks for changes. No port starts on an unapproved layout.
+3. **Build to the approved mockup.** Checkpoints compare the result to the
+   mockup, not to the old UI.
+
+Constraints: dark theme stays the default; slide aspect ratio and a large
+slide view stay central; keyboard flows (arrows, Ctrl+K, Alt+←/→, Ctrl+S)
+keep working; every behavior in the parity inventory stays reachable. Moving
+a control is fine; dropping one needs the maintainer's approval, recorded in
+the inventory.
+
+Starting observations from the Phase 0 screenshots (`dev/frontend-baseline/`):
+
+- **Library:** decks are a plain list with a one-line status; the top-level
+  folder is repeated as a section header over a single deck; PDFs in cache
+  folders (`*/cache/slides`) show up as phantom "no narration yet" decks
+  (a discovery bug, fixed in the library port).
+- **Header:** the deck name reads `basel-problem / basel-problem` when the
+  folder and deck share a name.
+- **Editor:** the transport (play, deck play, stop, speed, scrubber) sits
+  at the bottom of the narration column, below the fold on long slides.
+  Engine, voices, auto-generate, *Generate missing*, and *Export* are stacked
+  at the bottom of the right console with a large empty area above them.
+  Transition-in, start silence, utterances, and end silence all get equal
+  visual weight; the utterance text is what matters most.
+- **Filmstrip:** thumbnails carry tiny status dots that are hard to read.
+- **Narrow windows:** the footer hints wrap into several lines; the console
+  collapses, but its controls have no alternative home.
 
 ### Phase 3 — Browser-owned playback controller
 
@@ -207,6 +251,7 @@ seek/speed/pause/stop verified; Vitest covers cue lookup and the controller.
 
 ### Phase 4 — Editor in Vue
 
+Starts from the approved editor mockup (see *Layout redesign*).
 Largest phase; split into sub-branches as needed (e.g. 4a view + navigation +
 layout, 4b narration editing + drafts, 4c voices/generation/diagnostics/export).
 While incomplete, the Vue editor is reachable only behind a temporary opt-in
