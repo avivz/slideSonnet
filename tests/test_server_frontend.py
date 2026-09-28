@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.server import frontend
 from slidesonnet.server.app import create_api_app
+from slidesonnet.server.library import DeckRegistry
 
 
 @pytest.fixture

@@ -92,6 +92,7 @@ watch(
       <textarea
         ref="area"
         class="text"
+        dir="auto"
         rows="2"
         placeholder="Spoken words…"
         aria-label="Spoken words"
@@ -131,7 +132,7 @@ watch(
         <label class="opt direction">
           <span class="label">Director's note</span>
           <input
-            class="field" placeholder="how to speak it (optional)" :value="seg.direction" :disabled="disabled"
+            class="field" dir="auto" placeholder="how to speak it (optional)" :value="seg.direction" :disabled="disabled"
             :data-testid="`udirect-${index}`" @input="onDirection" @blur="emit('commit')"
           />
         </label>

@@ -15,7 +15,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   keeps going if you reload. The **Review** tab has everything it had before —
   conversations, before/after pictures, word-level narration changes, removed
   slides — and also lists slides a conversation names that aren't in the PDF
-  yet. For now `--frontend nicegui` still opens the previous editor.
+  yet. `slidesonnet edit deck.pdf` now opens that deck directly (a folder still
+  opens the library).
 - **Review tools in the editor.** "Start review" (or `slidesonnet review
   snapshot`) makes the deck as it is now the base. From then on the console's
   **Review** tab (beside **Audio**, badged when something on this slide waits
@@ -151,7 +152,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   mtime, which made every mtime-based freshness check downstream (make,
   watchers, rsync) treat the subtitles as newer than what they came from.
 
+### Removed
+- **The previous editor and its NiceGUI dependency.** The editor now runs on a
+  small web server (FastAPI + Uvicorn) and needs no NiceGUI; `--frontend` is
+  gone. `slidesonnet doctor` checks the editor's server and that its browser
+  interface is built.
+
 ### Fixed
+- **Saving while a PDF recompiles no longer errors.** While the PDF is missing
+  or half-written, the editor keeps showing the last good version and picks up
+  the new one when it lands.
+- **Right-to-left narration** (Hebrew, Arabic) now lays out correctly in the
+  editor, review notes, and conflict dialog.
 - **The preview's slide changes land exactly on the audio.** During a
   whole-deck preview the slide on screen now changes in the browser, in step
   with the sound, instead of waiting for the editor to catch up — and it keeps

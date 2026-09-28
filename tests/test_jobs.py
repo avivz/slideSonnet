@@ -15,8 +15,8 @@ import pytest
 from slidesonnet.audio import synth as synth_mod
 from slidesonnet.config import Config
 from slidesonnet.exceptions import GenerationCancelled
-from slidesonnet.gui.jobs import JobHandle, JobQueue
 from slidesonnet.narration.model import Deck, PageNarration, Segment
+from slidesonnet.server.queue import JobHandle, JobQueue
 from slidesonnet.tts.base import TTSEngine
 
 

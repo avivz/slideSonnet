@@ -1,7 +1,7 @@
 // Plain-DOM views for the playback controller: the stage overlay (the playing
 // slide plus transitions, drawn over the stage) and the transport (scrubber +
-// time label). Framework-free so the NiceGUI editor can host them today; the
-// Vue editor wraps the same controller in components later.
+// time label). Framework-free: the stage overlay is plain DOM driven per
+// animation frame, which is cheaper than re-rendering components 60 times a second.
 import { formatClock } from './cues'
 import type { Frame } from './controller'
 import type { LayerStyle } from './morph'

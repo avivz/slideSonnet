@@ -1,5 +1,4 @@
 # The sdist carries the *built* frontend, so installing it never needs Node.
 # (Build it first: `make frontend`.) The frontend sources stay in git only.
 recursive-include src/slidesonnet/server/static *
-recursive-include src/slidesonnet/gui/static *
 prune frontend

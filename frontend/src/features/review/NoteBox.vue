@@ -25,6 +25,7 @@ function onKey(event: KeyboardEvent): void {
     <textarea
       v-model="text"
       class="field"
+      dir="auto"
       rows="2"
       :placeholder="placeholder"
       :aria-label="placeholder"

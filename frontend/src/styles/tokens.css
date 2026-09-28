@@ -1,5 +1,5 @@
 /* slideSonnet design tokens — the one place colors, type, space, and radii live.
-   Derived from the NiceGUI editor's palette (gui/static/editor.css) so the
+   Derived from the previous editor's palette so the
    product stays recognizably itself. See docs/frontend-design.md. */
 :root {
   color-scheme: dark;

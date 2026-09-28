@@ -17,9 +17,9 @@ from fastapi.testclient import TestClient
 
 from slidesonnet.api import Preview
 from slidesonnet.audio.track import Cue
-from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.server.app import create_api_app
 from slidesonnet.server.context import SESSION_HEADER
+from slidesonnet.server.library import DeckRegistry
 from tests.conftest import _StubTTS, simple_narration, write_pdf
 
 SIDECAR = "@intro\nHello there.\n@middle\nIn the middle.\n@gone\nFrom a dropped slide.\n"
@@ -473,3 +473,16 @@ def test_meta_voices_pages_and_snapshot_extras(client: TestClient) -> None:
     assert snap["silence"]["start"] >= 0 and snap["silence"]["end"] >= 0
     assert snap["neighbours"] == {"prev": None, "next": None}  # a one-deck library
     assert snap["pages"][0]["clips"] == [{"cached": False, "seconds": None, "bytes": None}]
+
+
+def test_a_pdf_caught_mid_recompile_is_a_readable_retry(client: TestClient, deck: Path) -> None:
+    """While the PDF is missing or half-written, the editor keeps its last good view."""
+    token = _token(client)
+    good = deck.read_bytes()
+    deck.write_bytes(b"%PDF-1.5 garbage truncated")  # pdflatex mid-write
+    r = client.get(f"/api/v1/decks/{token}")
+    assert r.status_code == 503 and r.json()["error"]["code"] == "deck_unavailable"
+    deck.unlink()
+    assert client.get(f"/api/v1/decks/{token}").status_code == 503
+    deck.write_bytes(good)
+    assert client.get(f"/api/v1/decks/{token}").status_code == 200

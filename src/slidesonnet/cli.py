@@ -5,7 +5,6 @@ from __future__ import annotations
 import difflib
 import logging
 import os
-import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -566,8 +565,8 @@ def pool_migrate_cmd(decks: tuple[Path, ...], roots: tuple[Path, ...], apply: bo
     from slidesonnet.cache import default_audio_dir, resolve_audio_dir
     from slidesonnet.clean import retire_legacy_audio
     from slidesonnet.config import load_config
-    from slidesonnet.gui.library import discover_decks
     from slidesonnet.hashing import parse_audio_filename
+    from slidesonnet.server.library import discover_decks
 
     if not decks and not roots:
         raise click.UsageError("name the decks to migrate: --root <course dir> and/or DECK.pdf ...")
@@ -660,7 +659,6 @@ def pool_prune_cmd(
     """
     from slidesonnet.cache import resolve_audio_dir
     from slidesonnet.config import load_config
-    from slidesonnet.gui.library import discover_decks
     from slidesonnet.pool import (
         apply_prune,
         load_index,
@@ -669,6 +667,7 @@ def pool_prune_cmd(
     from slidesonnet.pool import (
         empty_trash as run_empty_trash,
     )
+    from slidesonnet.server.library import discover_decks
 
     if not decks and not roots:
         raise click.UsageError(
@@ -762,13 +761,6 @@ def pool_prune_cmd(
     help="Auto-restart the editor when slideSonnet's own source code changes "
     "(for hacking on slideSonnet itself).",
 )
-@click.option(
-    "--frontend",
-    type=click.Choice(["vue", "nicegui"]),
-    default=None,
-    help="Which deck editor to serve: the new one (vue, the default) or the old one "
-    "(nicegui) while it is being retired. Also via SLIDESONNET_FRONTEND. Temporary.",
-)
 @click.pass_context
 def edit(
     ctx: click.Context,
@@ -781,7 +773,6 @@ def edit(
     browser: str | None,
     app_window: bool,
     dev: bool,
-    frontend: str | None,
 ) -> None:
     """Launch the narration editor.
 
@@ -804,37 +795,26 @@ def edit(
       slidesonnet edit deck.pdf --browser '/mnt/c/.../msedge.exe --app={url}'
     """
     pdf, scan_root = _split_edit_target(target, root)
-    from slidesonnet.gui import app as gui_app
-    from slidesonnet.gui.app import run_editor
-    from slidesonnet.gui.launch import dev_invocation
-
-    if dev:
-        argv, extra_env = dev_invocation(
-            pdf,
-            root=scan_root,
-            sidecar_path=narration,
-            host=host,
-            port=port,
-            browser=browser,
-            app_window=app_window,
-            no_browser=no_browser,
-        )
-        # The reload server is a fresh process that never re-enters this group, so
-        # carry the console level and log-file choice across the exec via env.
-        env = {**os.environ, **extra_env}
-        env[ENV_LEVEL] = logging.getLevelName(logging.root.level)
-        if ctx.obj.get("no_log_file"):
-            env["SLIDESONNET_DEV_NO_LOG_FILE"] = "1"
-        elif ctx.obj.get("log_file") is not None:
-            env["SLIDESONNET_DEV_LOG_FILE"] = str(Path(ctx.obj["log_file"]).resolve())
-        os.execve(sys.executable, argv, env)
+    from slidesonnet.server import run as server_run
 
     if pdf is not None:
         _attach_deck_logging(ctx, pdf)
-    gui_app.set_log_preferences(
+    server_run.set_log_preferences(
         override=ctx.obj.get("log_file"), disabled=ctx.obj.get("no_log_file", False)
     )
-    run_editor(
+    if dev:
+        server_run.run_dev(
+            pdf,
+            sidecar_path=narration,
+            root=scan_root,
+            host=host,
+            port=port,
+            open_browser=not no_browser,
+            browser=browser,
+            app_window=app_window,
+        )
+        return
+    server_run.run_editor(
         pdf,
         sidecar_path=narration,
         root=scan_root,
@@ -843,7 +823,6 @@ def edit(
         open_browser=not no_browser,
         browser=browser,
         app_window=app_window,
-        frontend=frontend or os.environ.get("SLIDESONNET_FRONTEND", "vue"),
     )
 
 

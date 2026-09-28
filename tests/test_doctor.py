@@ -7,17 +7,19 @@ import importlib.util
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from slidesonnet.doctor import (
     CheckResult,
     _get_cli_version,
+    check_editor_interface,
     check_ffmpeg,
     check_inworld_api_key,
-    check_nicegui,
     check_pymupdf,
     check_python,
+    check_uvicorn,
     print_report,
     run_all_checks,
 )
@@ -75,9 +77,9 @@ def test_cli_tool_unknown_version(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_python_package_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
-    result = check_nicegui()
+    result = check_uvicorn()
     assert result.status == "missing"
-    assert result.hint == "pip install nicegui"
+    assert result.hint == "pip install uvicorn"
 
 
 def test_python_package_version_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,9 +87,19 @@ def test_python_package_version_fallback(monkeypatch: pytest.MonkeyPatch) -> Non
         raise importlib.metadata.PackageNotFoundError(dist)
 
     monkeypatch.setattr(importlib.metadata, "version", no_version)
-    result = check_nicegui()
+    result = check_uvicorn()
     assert result.status == "ok"
     assert result.version == "installed"
+
+
+def test_unbuilt_editor_interface_says_how_to_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.server import frontend
+
+    monkeypatch.setattr(frontend, "STATIC_DIR", tmp_path)
+    result = check_editor_interface()
+    assert result.status == "missing" and "make frontend" in result.hint
 
 
 def test_inworld_api_key_set(monkeypatch: pytest.MonkeyPatch) -> None:

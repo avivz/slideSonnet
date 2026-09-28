@@ -12,8 +12,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.server.app import create_api_app
+from slidesonnet.server.library import DeckRegistry
 
 
 def api_schema() -> dict[str, Any]:

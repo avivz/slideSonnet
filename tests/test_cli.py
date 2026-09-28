@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -480,104 +479,56 @@ def test_clean_keep_nothing_yes_skips_prompt(
     assert "Removed 1 files" in result.output
 
 
-def test_edit_invokes_run_editor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import slidesonnet.gui.app as gui_app
-
-    pdf = _copy_pdf(tmp_path)
-    seen: dict[str, Any] = {}
-
-    def fake_run_editor(pdf_path: Path, **kwargs: Any) -> None:
-        seen.update(kwargs, pdf_path=pdf_path)
-
-    monkeypatch.setattr(gui_app, "run_editor", fake_run_editor)
-    result = CliRunner().invoke(main, ["edit", str(pdf), "--no-browser", "--port", "9999", "--app"])
-    assert result.exit_code == 0
-    assert seen["pdf_path"] == pdf
-    assert seen["port"] == 9999
-    assert seen["open_browser"] is False
-    assert seen["app_window"] is True
-
-
-def test_edit_scans_the_decks_own_folder_by_default(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("where", "args", "expect_pdf", "expect_root"),
+    [
+        ("deck", ["--port", "9999", "--app"], "deck", "."),  # the deck's own folder by default
+        ("course", [], None, "course"),  # a folder of decks: the library, nothing preselected
+        ("deep", ["--root", "."], "deep", "."),  # a deck while browsing a wider tree
+        (None, [], None, "."),  # no target: the current folder
+    ],
+)
+def test_edit_resolves_what_to_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    where: str | None,
+    args: list[str],
+    expect_pdf: str | None,
+    expect_root: str,
 ) -> None:
-    import slidesonnet.gui.app as gui_app
-
-    pdf = _copy_pdf(tmp_path)
-    seen: dict[str, Any] = {}
-    monkeypatch.setattr(gui_app, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
-    result = CliRunner().invoke(main, ["edit", str(pdf), "--no-browser"])
-    assert result.exit_code == 0
-    assert seen["pdf_path"] == pdf
-    assert seen["root"] == tmp_path.resolve()
-
-
-def test_edit_accepts_a_folder_of_decks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`edit <dir>` opens the library for that tree with no deck preselected."""
-    import slidesonnet.gui.app as gui_app
+    import slidesonnet.server.run as server_run
 
     course = tmp_path / "course"
     course.mkdir()
-    seen: dict[str, Any] = {}
-    monkeypatch.setattr(gui_app, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
-    result = CliRunner().invoke(main, ["edit", str(course), "--no-browser"])
-    assert result.exit_code == 0
-    assert seen["pdf_path"] is None
-    assert seen["root"] == course.resolve()
-
-
-def test_edit_root_overrides_the_scanned_folder(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A deck can be opened while browsing a wider tree."""
-    import slidesonnet.gui.app as gui_app
-
     deep = tmp_path / "week01"
     deep.mkdir()
-    pdf = _copy_pdf(deep)
+    targets = {"deck": _copy_pdf(tmp_path), "course": course, "deep": _copy_pdf(deep)}
     seen: dict[str, Any] = {}
-    monkeypatch.setattr(gui_app, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
-    result = CliRunner().invoke(main, ["edit", str(pdf), "--root", str(tmp_path), "--no-browser"])
-    assert result.exit_code == 0
-    assert seen["pdf_path"] == pdf
-    assert seen["root"] == tmp_path.resolve()
+    monkeypatch.setattr(server_run, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
+    monkeypatch.chdir(tmp_path)
+    argv = ["edit", *([str(targets[where])] if where else []), "--no-browser", *args]
+    result = CliRunner().invoke(main, [a if a != "." else str(tmp_path) for a in argv])
+    assert result.exit_code == 0, result.output
+    assert seen["pdf_path"] == (targets[expect_pdf] if expect_pdf else None)
+    root = {"course": course.resolve(), ".": tmp_path.resolve()}[expect_root]
+    assert seen["root"] == root
+    assert seen["open_browser"] is False
+    if where == "deck":
+        assert seen["port"] == 9999 and seen["app_window"] is True
 
 
-def test_edit_with_no_target_scans_the_current_folder(
+def test_edit_dev_runs_the_reloading_server(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import slidesonnet.gui.app as gui_app
-
-    seen: dict[str, Any] = {}
-    monkeypatch.setattr(gui_app, "run_editor", lambda p=None, **kw: seen.update(kw, pdf_path=p))
-    monkeypatch.chdir(tmp_path)
-    result = CliRunner().invoke(main, ["edit", "--no-browser"])
-    assert result.exit_code == 0
-    assert seen["pdf_path"] is None
-    assert seen["root"] == tmp_path.resolve()
-
-
-def test_edit_dev_execs_devserver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import slidesonnet.gui.app as gui_app
-    import slidesonnet.gui.launch as gui_launch
+    import slidesonnet.server.run as server_run
 
     pdf = _copy_pdf(tmp_path)
-    argv = [sys.executable, "-m", "slidesonnet.gui.devserver"]
-    extra_env = {"SLIDESONNET_DEV_PDF": str(pdf)}
-    monkeypatch.setattr(gui_launch, "dev_invocation", lambda *a, **kw: (argv, extra_env))
-    execve_calls: list[tuple[str, list[str], dict[str, str]]] = []
-    monkeypatch.setattr(
-        os, "execve", lambda path, args, env: execve_calls.append((path, args, env))
-    )
-    # The fake execve returns (the real one never does), so stub run_editor too.
-    monkeypatch.setattr(gui_app, "run_editor", lambda *a, **kw: None)
-
-    result = CliRunner().invoke(main, ["edit", str(pdf), "--dev"])
-    assert result.exit_code == 0
-    path, args, env = execve_calls[0]
-    assert path == sys.executable
-    assert args == argv
-    assert env["SLIDESONNET_DEV_PDF"] == str(pdf)
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(server_run, "run_dev", lambda p, **kw: seen.update(kw, pdf_path=p))
+    monkeypatch.setattr(server_run, "run_editor", lambda *a, **kw: seen.update(plain=True))
+    result = CliRunner().invoke(main, ["edit", str(pdf), "--dev", "--port", "8123"])
+    assert result.exit_code == 0, result.output
+    assert seen["pdf_path"] == pdf and seen["port"] == 8123 and "plain" not in seen
 
 
 def test_doctor_exits_nonzero_when_core_missing(monkeypatch: pytest.MonkeyPatch) -> None:

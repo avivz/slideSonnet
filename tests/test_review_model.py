@@ -7,8 +7,8 @@ from pathlib import Path
 import fitz
 
 from slidesonnet.deck import load_deck
-from slidesonnet.gui.review import ReviewModel, word_diff
 from slidesonnet.review import ops
+from slidesonnet.server.review_model import ReviewModel, word_diff
 from tests.conftest import simple_narration, write_pdf
 
 
@@ -55,7 +55,7 @@ def test_changes_badges_and_conversations(tmp_path: Path) -> None:
 
 
 def test_page_capture_is_cached_until_the_pdf_changes(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from slidesonnet.gui import review as review_mod
+    from slidesonnet.server import review_model as review_mod
 
     pdf = _deck(tmp_path, ["a"])
     model = ReviewModel(pdf)

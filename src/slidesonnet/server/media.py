@@ -21,8 +21,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from slidesonnet.cache import render_dir
-from slidesonnet.gui.library import DeckRegistry, deck_token
 from slidesonnet.review.base import base_dir
+from slidesonnet.server.library import DeckRegistry, deck_token
 from slidesonnet.server.previews import PREVIEWS_DIRNAME
 
 MEDIA_PREFIX = "/ssmedia"

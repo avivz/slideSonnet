@@ -23,10 +23,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 
-from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.server.events import EventBus
 from slidesonnet.server.generation import GenerationHub
 from slidesonnet.server.jobs import JobManager
+from slidesonnet.server.library import DeckRegistry
 from slidesonnet.server.revisions import SourceRevisions
 
 logger = logging.getLogger(__name__)

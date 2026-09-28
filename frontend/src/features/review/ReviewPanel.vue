@@ -98,7 +98,7 @@ function time(at: string): string {
         <ul class="messages">
           <li v-for="(m, i) in review.deckConversation.messages" :key="i" :class="m.author">
             <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
-            <span class="text">{{ m.text }}</span>
+            <span class="text" dir="auto">{{ m.text }}</span>
           </li>
         </ul>
         <NoteBox
@@ -119,7 +119,7 @@ function time(at: string): string {
           <ul class="messages">
             <li v-for="(m, i) in c.messages" :key="i" :class="m.author">
               <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
-              <span class="text">{{ m.text }}</span>
+              <span class="text" dir="auto">{{ m.text }}</span>
             </li>
           </ul>
           <template v-if="c.status === 'open'">

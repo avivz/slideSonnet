@@ -90,7 +90,7 @@ async function remove(): Promise<void> {
           <AppIcon name="trash" :size="15" />
         </button>
       </header>
-      <p class="text">{{ o.text }}</p>
+      <p class="text" dir="auto">{{ o.text }}</p>
       <footer>
         <button
           class="btn quiet"

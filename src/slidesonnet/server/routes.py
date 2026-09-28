@@ -21,8 +21,7 @@ from slidesonnet.audio.synth import ref_cache_status
 from slidesonnet.cache import resolve_audio_dir
 from slidesonnet.config import load_config
 from slidesonnet.deck import resolve_voice_files
-from slidesonnet.exceptions import ConfigError, SlideSonnetError
-from slidesonnet.gui.library import DeckEntry
+from slidesonnet.exceptions import ConfigError, ParserError, SlideSonnetError
 from slidesonnet.models import Backend, VoiceConfig
 from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import Deck
@@ -40,6 +39,7 @@ from slidesonnet.server.engines import engine_lock
 from slidesonnet.server.events import Event, EventBus, Subscription
 from slidesonnet.server.generation import DeckGeneration
 from slidesonnet.server.jobs import Job, JobContext
+from slidesonnet.server.library import DeckEntry
 from slidesonnet.server.media import media_url
 from slidesonnet.server.previews import build_preview_artifact, preview_manifest
 from slidesonnet.server.schemas import (
@@ -109,7 +109,14 @@ def _service(entry: DeckEntry) -> DeckService:
 
 
 def _load_error(exc: Exception) -> ApiError:
+    if isinstance(exc, ParserError | RuntimeError | OSError):
+        # the PDF is missing or half-written (a recompile in progress): try again shortly
+        return ApiError(503, "deck_unavailable", "The PDF is being rewritten — trying again.")
     return ApiError(422, "deck_file_error", f"The deck's files have an error: {exc}")
+
+
+#: Errors reading a deck: a malformed sidecar/config (422) or a PDF mid-recompile (503).
+LOAD_ERRORS = (SidecarError, ConfigError, ParserError, RuntimeError, OSError)
 
 
 # ---- session / library ------------------------------------------------------------
@@ -131,7 +138,7 @@ def get_deck_stats(request: Request, token: str) -> DeckStatsDTO:
     entry = _entry(_ctx(request), token)
     try:
         return snapshots.deck_stats(entry)
-    except (SidecarError, ConfigError) as exc:
+    except LOAD_ERRORS as exc:
         raise _load_error(exc) from exc
 
 
@@ -142,7 +149,7 @@ def get_deck(request: Request, token: str, engine: Backend | None = None) -> Dec
     entry = _entry(ctx, token)
     try:
         snap = snapshots.deck_snapshot(entry, engine=engine, registry=ctx.registry)
-    except (SidecarError, ConfigError) as exc:
+    except LOAD_ERRORS as exc:
         raise _load_error(exc) from exc
     ctx.watch(token, _service(entry).revisions())
     if ctx.on_deck_open is not None and ctx.last_opened != token:
@@ -163,7 +170,7 @@ def _save(ctx: ServerContext, entry: DeckEntry, expected: str, mutate: Any) -> S
         ) from exc
     except editing.EditError as exc:
         raise ApiError(422, "invalid_edit", str(exc)) from exc
-    except (SidecarError, ConfigError) as exc:
+    except LOAD_ERRORS as exc:
         raise _load_error(exc) from exc
     if result.changed:
         ctx.announce_write(entry.token, service.revisions())
@@ -434,7 +441,7 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
                 render_pages_work(entry, body.near),
                 dedupe_key=f"pages:{token}",
             )
-    except (SidecarError, ConfigError) as exc:
+    except LOAD_ERRORS as exc:
         raise _load_error(exc) from exc
     return job_dto(job)
 
@@ -598,7 +605,7 @@ def get_review(request: Request, token: str) -> ReviewDTO:
     entry = _entry(_ctx(request), token)
     try:
         return ReviewDTO.model_validate(review_service.review_snapshot(entry))
-    except (SidecarError, ConfigError) as exc:
+    except LOAD_ERRORS as exc:
         raise _load_error(exc) from exc
 
 

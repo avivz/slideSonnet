@@ -138,8 +138,23 @@ def check_pymupdf() -> CheckResult:
     )
 
 
-def check_nicegui() -> CheckResult:
-    return _check_python_package("nicegui", "nicegui", "pip install nicegui", "GUI editor")
+def check_uvicorn() -> CheckResult:
+    return _check_python_package("uvicorn", "uvicorn", "pip install uvicorn", "Editor server")
+
+
+def check_editor_interface() -> CheckResult:
+    """The editor's browser interface ships built; a source checkout builds it once."""
+    from slidesonnet.server.frontend import is_built
+
+    if is_built():
+        return CheckResult("editor interface", "ok", "built", "", "The editor in your browser")
+    return CheckResult(
+        "editor interface",
+        "missing",
+        "",
+        "make frontend (needs Node 20.19+; installed copies come with it built)",
+        "The editor in your browser",
+    )
 
 
 def check_kokoro() -> CheckResult:
@@ -183,7 +198,7 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
             "Core (always required)",
             [check_ffmpeg(), check_ffprobe(), check_pdftoppm(), check_pymupdf()],
         ),
-        ("Editor GUI", [check_nicegui()]),
+        ("Editor", [check_uvicorn(), check_editor_interface()]),
         ("Beamer toolchain (for compiling your deck)", [check_latexmk(), check_pdflatex()]),
         (
             "TTS backends (at least one required)",

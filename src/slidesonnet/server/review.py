@@ -4,7 +4,7 @@ The on-disk format and the CLI are untouched: every write goes through
 :mod:`slidesonnet.review.ops` as the author, exactly as ``slidesonnet review``
 and the NiceGUI panel did. Capturing the current pages (a raster hash of every
 page) is the slow part, so each deck keeps one
-:class:`~slidesonnet.gui.review.ReviewModel`, which caches that capture until
+:class:`~slidesonnet.server.review_model.ReviewModel`, which caches that capture until
 the PDF changes. Blocking — call off the event loop.
 """
 
@@ -15,11 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from slidesonnet.gui.library import DeckEntry
-from slidesonnet.gui.review import EditorReviewStatus, ReviewModel
 from slidesonnet.review import ops
 from slidesonnet.server.decks import deck_service
+from slidesonnet.server.library import DeckEntry
 from slidesonnet.server.media import base_media_url
+from slidesonnet.server.review_model import EditorReviewStatus, ReviewModel
 
 #: A reload that files more unrequested slides than this points the user at them.
 MASS_EDIT_THRESHOLD = 5

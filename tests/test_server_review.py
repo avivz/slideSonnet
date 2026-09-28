@@ -9,10 +9,10 @@ import fitz
 import pytest
 from fastapi.testclient import TestClient
 
-from slidesonnet.gui.library import DeckRegistry
 from slidesonnet.review import ops
 from slidesonnet.server.app import create_api_app
 from slidesonnet.server.context import SESSION_HEADER
+from slidesonnet.server.library import DeckRegistry
 from tests.conftest import simple_narration, write_pdf
 
 

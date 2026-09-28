@@ -40,8 +40,8 @@ deck.narration  ──(@slide-id blocks)────┘                       (p
 | **pdftoppm** | Yes | Rasterize PDF pages to images | `sudo apt install poppler-utils` |
 | **latexmk + pdflatex** | To compile your deck | Build the Beamer PDF (your job, not the tool's) | `sudo apt install latexmk texlive-latex-base` |
 
-PyMuPDF (PDF id extraction) and NiceGUI (the editor) install as Python
-dependencies. After installing, run `slidesonnet doctor`.
+PyMuPDF (PDF id extraction) and the editor's web server (FastAPI + Uvicorn)
+install as Python dependencies; the editor's browser interface comes built. After installing, run `slidesonnet doctor`.
 
 ### Install for use
 
@@ -145,10 +145,11 @@ grammar, and the optional `slidesonnet.toml` config — is in
 
 ## The editor
 
-`slidesonnet edit deck.pdf` opens a local [NiceGUI](https://nicegui.io/) app:
-page through the deck, edit narration beside each slide, set voice/pace, generate
-per-slide TTS, and **preview the whole deck**. The preview plays one pre-rendered
-track with the pauses baked in and flips the slide image on cue — so the preview
+`slidesonnet edit deck.pdf` opens the editor in your browser (a local server —
+nothing leaves your machine): page through the deck, edit narration beside each
+slide, set voice/pace, generate per-slide TTS, and **preview the whole deck**.
+Typing is saved as you go. The preview plays one pre-rendered track with the
+pauses baked in and changes the slide on the audio's own clock — so the preview
 is sample-accurate to the exported video. A diagnostics panel flags duplicate,
 missing, orphan, or `auto-…` ids.
 

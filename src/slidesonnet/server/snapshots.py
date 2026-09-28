@@ -12,13 +12,13 @@ from slidesonnet.config import Config
 from slidesonnet.deck import relativize_voice_files
 from slidesonnet.diagnostics import Diagnostic, voice_diagnostics
 from slidesonnet.exceptions import SlideSonnetError
-from slidesonnet.gui.library import DeckEntry, DeckRegistry
 from slidesonnet.hashing import audio_cache_path_or_alt
 from slidesonnet.models import Backend, ProgressFn, resolve_voice
 from slidesonnet.pdf.reader import open_render, page_aspect
 from slidesonnet.review import ops as review_ops
 from slidesonnet.server import editing
 from slidesonnet.server.decks import LoadedDeck, deck_service
+from slidesonnet.server.library import DeckEntry, DeckRegistry
 from slidesonnet.server.media import media_url
 from slidesonnet.server.schemas import (
     AudioStatusDTO,

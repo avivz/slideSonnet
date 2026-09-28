@@ -80,8 +80,8 @@ Uses cached audio durations where available, else the timing model. Never trigge
 slidesonnet edit deck.pdf [--narration PATH] [--host H] [--port P] [--no-browser]
 ```
 
-Local NiceGUI app: page nav, narration editing, per-slide TTS, whole-deck preview
-(silence-respecting), diagnostics panel.
+Local browser editor: page nav, narration editing (saved as you type), per-slide
+TTS, whole-deck preview (silence-respecting), diagnostics, review.
 
 ### `slidesonnet clean` — prune the cache
 
@@ -102,7 +102,8 @@ slidesonnet clean deck.pdf [--keep nothing|api|current|exact] [-y]
 slidesonnet doctor
 ```
 
-Checks ffmpeg/ffprobe/pdftoppm/PyMuPDF (core), NiceGUI, latexmk/pdflatex (to
+Checks ffmpeg/ffprobe/pdftoppm/PyMuPDF (core), the editor (server + built
+interface), latexmk/pdflatex (to
 compile your deck), kokoro/elevenlabs, and `ELEVENLABS_API_KEY`. Exit 1 if a core
 dependency is missing.
 
