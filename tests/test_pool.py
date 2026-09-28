@@ -11,6 +11,7 @@ from slidesonnet.hashing import audio_filename
 from slidesonnet.narration.format import serialize_sidecar
 from slidesonnet.narration.model import PageNarration, Segment
 from slidesonnet.pool import (
+    DURATIONS_FILENAME,
     INDEX_FILENAME,
     TRASH_DIRNAME,
     IndexRecord,
@@ -186,6 +187,7 @@ def test_status_counts_by_backend_and_trash(tmp_path: Path) -> None:
     _put(pool, "c.inworld.d.mp3", b"345")
     _put(pool, "e.kokoro.f.wav", b"6")
     _put(pool, "stray.txt", b"789")
+    _put(pool, DURATIONS_FILENAME, b"{}")  # pool housekeeping, not a stray
     _put(pool / TRASH_DIRNAME, "g.inworld.h.mp3", b"0")
     st = pool_status(pool)
     assert st.by_backend == {"inworld": (2, 5), "kokoro": (1, 1)}
