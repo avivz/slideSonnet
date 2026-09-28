@@ -13,6 +13,7 @@ bug spelled out in the reason.
 from __future__ import annotations
 
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -235,7 +236,9 @@ def test_editing_during_deck_playback_defers_the_cue_flip(
 
     A cue flip rebuilds the block editor, destroying the textarea under the
     user's fingers (history: text used to be truncated mid-word at the flip).
-    The flip is deferred while a field is focused; following resumes on blur.
+    The editor's follow is deferred while a field is focused — but the stage
+    still shows the slide being heard: the browser player flips it on the audio
+    clock by itself, with no server round trip (B2).
     """
     pdf = _prep(tmp_path, "@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     page.goto(editor_server(pdf, stub_seconds=2.0))
@@ -252,6 +255,10 @@ def test_editing_during_deck_playback_defers_the_cue_flip(
     # and the textarea kept every keystroke
     expect(page.locator(".ss-counter")).to_have_text("Slide 1 / 6")
     expect(box).to_have_value(sentence)
+    # …while the stage has moved on with the audio (slide 2 and beyond)
+    expect(page.locator(".ss-morph.ss-on img").first).to_have_attribute(
+        "src", re.compile(r"page-0*[2-9]\.png")
+    )
     marked(page, "stop").click()  # focus leaves the field: blur commits the edit
     assert _eventually(lambda: sentence in _sidecar(tmp_path)), (
         f"typed sentence missing from the sidecar; it has: {_sidecar(tmp_path)!r}"
@@ -280,7 +287,7 @@ def test_transition_morph_overlay_runs_during_deck_preview(
     def overlay_on() -> bool:
         return bool(
             page.evaluate(
-                "() => document.querySelector('.ss-morph')?.classList.contains('ss-on') ?? false"
+                "() => document.querySelector('.ss-morph')?.hasAttribute('data-morph') ?? false"
             )
         )
 
@@ -312,7 +319,7 @@ def test_single_slide_preview_transitions_gated_by_the_toggle(
     def overlay_on() -> bool:
         return bool(
             page.evaluate(
-                "() => document.querySelector('.ss-morph')?.classList.contains('ss-on') ?? false"
+                "() => document.querySelector('.ss-morph')?.hasAttribute('data-morph') ?? false"
             )
         )
 
@@ -718,7 +725,7 @@ def test_transport_play_stop_and_deck_cue_flip(
     marked(page, "stop").click()
     expect(play).to_contain_text("play_arrow")
     expect(page.locator(".ss-time")).to_have_text("")  # stop resets the transport
-    expect(marked(page, "seek")).to_have_attribute("aria-disabled", "true")
+    expect(marked(page, "seek")).to_have_attribute("data-loaded", "false")
 
     # deck preview: the stage image flips on the cue boundary
     stage_img = page.locator(".ss-stage-img img")

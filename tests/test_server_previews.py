@@ -109,3 +109,8 @@ def test_manifest_starts_a_deck_preview_at_the_current_slide() -> None:
     assert m["start_at"] == 4.0 and m["media_url"] == "/t/abc.wav"
     assert m["cues"][1] == {"start": 4.0, "slide_id": "b"}
     assert m["pages"][2] == {"slide_id": "c", "image_url": "/u/c.png"}
+    # a page not rendered yet keeps every later page on its own image
+    gap = preview_manifest(
+        art, _deck({}), [IMAGES[0], None, IMAGES[2]], media_url=lambda p: p.name, track_url="t"
+    ).to_json()
+    assert [pg["image_url"] for pg in gap["pages"]] == ["a.png", None, "c.png"]

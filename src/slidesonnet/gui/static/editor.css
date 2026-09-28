@@ -108,7 +108,12 @@ body{
 .ss-vsep{width:1px;height:20px;background:var(--ss-line);margin:0 8px}
 .ss-audio{display:none}  /* invisible sound pipe — the transport buttons are the UI */
 .ss-seek{flex:1 1 0;min-width:60px}
-.ss-time{font-size:11px;color:var(--ss-dim);white-space:nowrap}
+/* drawn by the browser playback module (/ui/embed/playback.js) */
+.ss-transport{display:flex;align-items:center;gap:10px;width:100%}
+.ss-scrub{flex:1 1 0;min-width:40px;accent-color:var(--ss-accent);height:4px;cursor:pointer}
+.ss-scrub:disabled{opacity:.35;cursor:default}
+.ss-time{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ss-dim);
+  white-space:nowrap;min-width:0}
 .ss-speed{font-size:11px;color:var(--ss-dim);min-width:44px;padding:0 6px}
 /* unattached-narration tray: a distinct warning-tinted panel so it stands out
    from the plain console sections around it */

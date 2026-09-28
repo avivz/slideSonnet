@@ -63,8 +63,11 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **video/composer.py** — FFmpeg: `compose_segment`, `compose_silent_segment`,
   `concatenate_segments`, `concatenate_audio`, `get_duration`.
 - **gui/state.py** — UI-free `EditorState` (nav, edit→sidecar, save, TTS, preview, export).
-- **gui/app.py** — NiceGUI view; `build_editor`, `register_pages`, `run_editor`. Whole-deck
-  preview plays one assembled track and flips the page image on cue-sheet boundaries.
+- **gui/app.py** — NiceGUI view; `build_editor`, `register_pages`, `run_editor`. Previews
+  are backend jobs producing immutable tracks; playback visuals (slide flips on cue
+  boundaries, transitions, scrubber, clock) run in the browser module
+  `frontend/src/features/playback/` (loaded from `/ui/embed/playback.js`), which reports
+  only slide changes back (`ssslide`).
   Routes: `/` (library) and `/d/{token}` (one deck) — switching decks is a page
   navigation, so NiceGUI's own teardown (job queue stopped on disconnect, timers
   dropped with the client) is the whole cleanup. Media is served per deck from

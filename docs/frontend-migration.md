@@ -271,6 +271,14 @@ Starting observations from the Phase 0 screenshots (`dev/frontend-baseline/`):
 Checkpoint: preview in the real editor follows audio with no round trip;
 seek/speed/pause/stop verified; Vitest covers cue lookup and the controller.
 
+*As built:* the NiceGUI editor keeps its `<audio>` element (Python sets the
+immutable track URL and presses play/pause), loads `/ui/embed/playback.js`,
+and hands it the preview manifest. The browser draws the playing slide over
+the stage during a deck preview (so the stage keeps up with the audio even
+while the editor's follow waits for a focused field to let go), plays the
+transitions, and draws the scrubber and clock. Python's per-tick
+`on_timeupdate` is gone; it receives one `ssslide` event per slide change.
+
 ### Phase 4 — Editor in Vue
 
 Starts from the approved editor mockup (see *Layout redesign*).

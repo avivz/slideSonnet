@@ -157,7 +157,7 @@ def build_preview_artifact(
 def morph_schedule(
     cues: Sequence[Cue],
     deck: Deck,
-    images: Sequence[Path],
+    images: Sequence[Path | None],
     media_url: Callable[[Path], str],
 ) -> list[dict[str, Any]]:
     """Per-boundary morph steps for a whole-deck preview.
@@ -177,16 +177,18 @@ def morph_schedule(
         if not tr.is_animated:
             continue
         ia, ib = index.get(a_sid), index.get(b_sid)
-        if ia is None or ib is None or ia >= len(images) or ib >= len(images):
-            continue  # filmstrip not rasterized (no pdftoppm) — fall back to a flip
+        a_img = images[ia] if ia is not None and ia < len(images) else None
+        b_img = images[ib] if ib is not None and ib < len(images) else None
+        if a_img is None or b_img is None:
+            continue  # page not rasterized (no pdftoppm) — fall back to a flip
         span = b_start - a_start
         steps.append(
             {
                 "at": b_start,
                 "dur": max(0.05, min(tr.seconds, span)),
                 "kind": tr.kind,
-                "from": media_url(images[ia]),
-                "to": media_url(images[ib]),
+                "from": media_url(a_img),
+                "to": media_url(b_img),
             }
         )
     return steps
@@ -196,7 +198,7 @@ def single_slide_morph(
     block: PageNarration,
     incoming: Transition,
     index: int,
-    images: Sequence[Path],
+    images: Sequence[Path | None],
     total: float,
     media_url: Callable[[Path], str],
     *,
@@ -215,7 +217,8 @@ def single_slide_morph(
         return []
 
     def url(j: int) -> str | None:
-        return media_url(images[j]) if 0 <= j < len(images) else None
+        image = images[j] if 0 <= j < len(images) else None
+        return media_url(image) if image is not None else None
 
     here = url(index)
     if here is None:  # no rasterized image — nothing to morph
@@ -268,7 +271,7 @@ class PreviewManifest:
 def preview_manifest(
     artifact: PreviewArtifact,
     deck: Deck,
-    images: Sequence[Path],
+    images: Sequence[Path | None],
     *,
     media_url: Callable[[Path], str],
     track_url: str,
@@ -277,14 +280,16 @@ def preview_manifest(
 ) -> PreviewManifest:
     """The manifest for *artifact*: cues, page images, and the transition schedule.
 
-    A deck preview starts at *start_slide*'s cue (the slide the user is on), so
-    playing the deck from slide 7 doesn't rewind to slide 1.
+    *images* is indexed like ``deck.pages``, with ``None`` for a page not
+    rendered yet. A deck preview starts at *start_slide*'s cue (the slide the
+    user is on), so playing the deck from slide 7 doesn't rewind to slide 1.
     """
     by_id = {sid: i for i, sid in enumerate(deck.pages)}
 
     def image_for(sid: str) -> str | None:
         i = by_id.get(sid)
-        return media_url(images[i]) if i is not None and i < len(images) else None
+        image = images[i] if i is not None and i < len(images) else None
+        return media_url(image) if image is not None else None
 
     if artifact.slide_id is None:
         cues = artifact.cues

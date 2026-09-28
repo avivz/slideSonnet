@@ -277,11 +277,7 @@ def preview_work(entry: DeckEntry, req: PreviewJob, engine: Backend) -> Any:
             service, slide_id=req.slide_id, engine=engine, progress=ctx.progress
         )
         loaded = service.load()
-        images = [
-            p
-            for p in snapshots.ensure_page_images(entry.pdf_path, len(loaded.deck.pages))
-            if p is not None
-        ]
+        images = snapshots.ensure_page_images(entry.pdf_path, len(loaded.deck.pages))
         manifest = preview_manifest(
             artifact,
             loaded.deck,

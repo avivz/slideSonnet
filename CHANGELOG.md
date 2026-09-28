@@ -142,6 +142,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   watchers, rsync) treat the subtitles as newer than what they came from.
 
 ### Fixed
+- **The preview's slide changes land exactly on the audio.** During a
+  whole-deck preview the slide on screen now changes in the browser, in step
+  with the sound, instead of waiting for the editor to catch up — and it keeps
+  up even while you're typing on another slide (the editor itself still waits
+  until you leave the field). Dragging the position slider and changing speed
+  respond at once.
 - **No more phantom decks from old cache folders.** PDFs inside a deck's
   leftover `cache/` folder (from slideSonnet before 1.0) were listed in the
   library as decks without narration.

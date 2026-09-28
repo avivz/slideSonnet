@@ -77,6 +77,29 @@ The library layout follows `docs/frontend-design.md` — built to that brief
 without a separately approved mockup, because the maintainer asked for
 Phases 1–3 before reviewing; it is the thing to react to at this checkpoint.
 
+### Phase 3 — browser-owned playback (`migration/phase-3`)
+
+New: `frontend/src/features/playback/` — `cues.ts`, `morph.ts` (the
+transition effects, ported from `gui/static/morph.html`, which is deleted),
+`controller.ts` (one `<audio>` clock; slide, overlay, scrubber, and clock
+derived per animation frame), `dom.ts`, and `embed.ts`, built to
+`/ui/embed/playback.js` and loaded by the NiceGUI editor. 23 Vitest tests
+(cue lookup table, effects table, controller: slide reporting, seeks both
+ways, seek-to-slide, start-at, rate pinning, pause/resume/stop, stale plays,
+hidden-tab resync, listener cleanup; overlay and transport DOM).
+
+| Test(s) | Now | Why |
+|---|---|---|
+| `test_gui.py::test_seek_bar_tracks_position_and_resets_on_stop` | dropped | position and clock are drawn in the browser; covered by `playback.test.ts` (transport) and browser `test_transport_play_stop_and_deck_cue_flip` |
+| `test_gui.py` player-reset tests (5) | keep; assert the transport's `data-loaded` instead of the old slider | the Python side still owns load/stop |
+| `test_gui.py::test_deck_playback_cue_flip_saves_*`, `test_cue_flip_is_deferred_*` | keep until Phase 4; driven by the `ssslide` event instead of `timeupdate` | the NiceGUI editor still follows the player (once per slide now) |
+| browser `test_editing_during_deck_playback_*` | extended | now also asserts the stage shows the playing slide while the editor's follow is deferred — the B2 regression check |
+| browser morph journeys (2) | check `data-morph` on the overlay | the overlay also holds the playing slide during deck previews now |
+
+Bug closed: **B2** — no playback tick reaches Python; the stage flips on the
+audio clock in the browser, and Python hears one `ssslide` event per slide
+change (to move the editor along, deferred while a field is focused).
+
 ## How to read the Tests column
 
 - **keep** — UI-free logic (`gui/state.py`, `gui/library.py`, `gui/jobs.py`,
