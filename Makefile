@@ -35,8 +35,16 @@ $(FRONTEND)/node_modules: $(FRONTEND)/package-lock.json
 
 frontend-deps: $(FRONTEND)/node_modules
 
+STATIC := src/slidesonnet/server/static
+
+# Builds beside the folder a running editor serves, then swaps it in: an editor
+# left running never sends a half-written file (a reload picks the new build up).
 frontend: frontend-deps
-	cd $(FRONTEND) && npm run build
+	cd $(FRONTEND) && npx vue-tsc -b && npx vite build --outDir ../$(STATIC).next --emptyOutDir
+	rm -rf $(STATIC).old
+	if [ -d $(STATIC) ]; then mv $(STATIC) $(STATIC).old; fi
+	mv $(STATIC).next $(STATIC)
+	rm -rf $(STATIC).old
 
 # Vite on :5173 with hot reload, proxying /api, /ssmedia and the editor to a
 # running `slidesonnet edit --no-browser` on :8080.
@@ -113,4 +121,5 @@ purge-examples:
 clean:
 	rm -rf dist/ *.egg-info/ src/slidesonnet/server/static/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name .slidesonnet -exec rm -rf {} + 2>/dev/null || true
+	@# every deck cache goes, except its review base (not regenerable: what was already seen)
+	find . -type d -name .slidesonnet -prune -exec sh -c 'for d; do find "$$d" -mindepth 1 -maxdepth 1 ! -name review -exec rm -rf {} +; rmdir "$$d" 2>/dev/null || true; done' _ {} + 2>/dev/null || true

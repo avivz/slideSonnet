@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 import pymupdf
@@ -168,18 +171,16 @@ def rasterize(
             return existing
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Clear any stale page images (and the stamp describing them) so the
-    # returned list — and what the stamp claims — is exactly this render.
+    # The stamp goes first (the old images no longer describe this PDF); the old
+    # images stay up until the new ones replace them, and any extra go after, so
+    # the returned list — and what the stamp claims — is exactly this render.
     (out_dir / RENDER_STAMP_NAME).unlink(missing_ok=True)
+    fresh = set(_pdftoppm(["-r", str(dpi), str(pdf_path)], out_dir, prefix))
     for stale in out_dir.glob(f"{prefix}-*.png"):
-        stale.unlink()
+        if stale not in fresh:
+            stale.unlink()
 
-    cmd = ["pdftoppm", "-png", "-r", str(dpi), str(pdf_path), str(out_dir / prefix)]
-    run_tool(
-        cmd, error_cls=ParserError, install_hint="poppler-utils", fail_message="pdftoppm failed"
-    )
-
-    pages = sorted(out_dir.glob(f"{prefix}-*.png"), key=_numeric_suffix)
+    pages = sorted(fresh, key=_numeric_suffix)
     if not pages:
         raise ParserError(f"pdftoppm produced no images for {pdf_path}")
     write_render_stamp(pdf_path, out_dir, dpi=dpi, prefix=prefix, count=len(pages))
@@ -224,11 +225,30 @@ def render_page_range(
     File names match a whole-deck :func:`rasterize` (pdftoppm pads page numbers
     to the document's page count), so the two can fill the same directory.
     """
-    cmd = [
-        "pdftoppm", "-png", "-r", str(dpi), "-f", str(first + 1), "-l", str(last + 1),
-        str(pdf_path), str(out_dir / prefix),
-    ]  # fmt: skip
-    run_tool(
-        cmd, error_cls=ParserError, install_hint="poppler-utils", fail_message="pdftoppm failed"
-    )
+    args = ["-r", str(dpi), "-f", str(first + 1), "-l", str(last + 1), str(pdf_path)]
+    _pdftoppm(args, out_dir, prefix)
     return {i: p for i, p in _page_files(out_dir, prefix).items() if first <= i <= last}
+
+
+def _pdftoppm(args: list[str], out_dir: Path, prefix: str) -> list[Path]:
+    """Run pdftoppm into a scratch dir, then move each image into *out_dir* whole.
+
+    The editor serves *out_dir* while it renders (a recompile re-renders every
+    page): an image pdftoppm is still writing must never be sent. A rename in
+    the same directory tree replaces a file in one step.
+    """
+    scratch = Path(tempfile.mkdtemp(dir=out_dir, prefix=".render-"))
+    try:
+        run_tool(
+            ["pdftoppm", "-png", *args, str(scratch / prefix)],
+            error_cls=ParserError,
+            install_hint="poppler-utils",
+            fail_message="pdftoppm failed",
+        )
+        placed = []
+        for image in scratch.glob(f"{prefix}-*.png"):
+            os.replace(image, out_dir / image.name)
+            placed.append(out_dir / image.name)
+        return placed
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)

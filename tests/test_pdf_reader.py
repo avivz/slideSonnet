@@ -97,6 +97,32 @@ def test_rasterize_no_output_raises_and_clears_stale(
     assert not stale.exists()  # stale page images are cleared before rendering
 
 
+def test_page_images_appear_whole_never_half_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The editor sends page images while pdftoppm renders (a recompile): pdftoppm
+    writes elsewhere and each finished image is moved into place in one step."""
+    out = tmp_path / "pages"
+    out.mkdir()
+    old = out / "page-1.png"
+    old.write_bytes(b"the previous render")
+    written_in: list[Path] = []
+
+    def fake_pdftoppm(cmd: list[str], **kw: object) -> object:
+        prefix = Path(cmd[-1])
+        written_in.append(prefix.parent)
+        (prefix.parent / f"{prefix.name}-1.png").write_bytes(b"the new render")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("slidesonnet.proc.subprocess.run", fake_pdftoppm)
+    pages = render_page_range(MARKED, out, 0, 0)
+    assert written_in and all(d != out for d in written_in)  # never where images are served
+    assert pages[0].read_bytes() == b"the new render" and pages[0].parent == out
+    assert sorted(p.name for p in out.iterdir()) == ["page-1.png"]  # no scratch left behind
+    rasterize(MARKED, out)
+    assert all(d != out for d in written_in)
+
+
 @pytest.mark.integration
 def test_rasterize(tmp_path: Path) -> None:
     pages = rasterize(MARKED, tmp_path, dpi=72)
