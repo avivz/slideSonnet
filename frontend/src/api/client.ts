@@ -24,6 +24,17 @@ export type PagesDTO = Schemas['PagesDTO']
 export type GenerationStatusDTO = Schemas['GenerationStatusDTO']
 export type ClipRef = Schemas['ClipRef']
 export type Backend = Schemas['EngineVoicesDTO']['engine']
+export type ReviewDTO = Schemas['ReviewDTO']
+export type ConversationDTO = Schemas['ConversationDTO']
+export type ReviewOutcomeDTO = Schemas['ReviewOutcomeDTO']
+export type ReviewCommand =
+  | Schemas['ReviewStart']
+  | Schemas['ReviewComment']
+  | Schemas['ReviewReply']
+  | Schemas['ReviewAccept']
+  | Schemas['ReviewReopen']
+  | Schemas['ReviewClear']
+  | Schemas['ReviewFileUnrequested']
 export type DeckCommand =
   | Schemas['AttachOrphan']
   | Schemas['AppendOrphan']
@@ -201,6 +212,14 @@ export class ApiClient {
 
   cancelGeneration(token: string, body: Schemas['CancelGenerationRequest']): Promise<Schemas['CountDTO']> {
     return this.send('POST', `/decks/${encodeURIComponent(token)}/generation/cancel`, body)
+  }
+
+  review(token: string): Promise<ReviewDTO> {
+    return this.get(`/decks/${encodeURIComponent(token)}/review`)
+  }
+
+  reviewCommand(token: string, body: ReviewCommand): Promise<ReviewOutcomeDTO> {
+    return this.send('POST', `/decks/${encodeURIComponent(token)}/review/commands`, body)
   }
 
   focus(token: string, body: Schemas['FocusRequest']): Promise<Schemas['CountDTO']> {

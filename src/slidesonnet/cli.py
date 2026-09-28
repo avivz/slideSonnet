@@ -766,8 +766,8 @@ def pool_prune_cmd(
     "--frontend",
     type=click.Choice(["vue", "nicegui"]),
     default=None,
-    help="Which deck editor to serve while the new one is being finished "
-    "(default: nicegui; also via SLIDESONNET_FRONTEND). Temporary.",
+    help="Which deck editor to serve: the new one (vue, the default) or the old one "
+    "(nicegui) while it is being retired. Also via SLIDESONNET_FRONTEND. Temporary.",
 )
 @click.pass_context
 def edit(
@@ -843,7 +843,7 @@ def edit(
         open_browser=not no_browser,
         browser=browser,
         app_window=app_window,
-        frontend=frontend or os.environ.get("SLIDESONNET_FRONTEND", "nicegui"),
+        frontend=frontend or os.environ.get("SLIDESONNET_FRONTEND", "vue"),
     )
 
 

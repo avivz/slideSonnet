@@ -2889,7 +2889,7 @@ def run_editor(
     open_browser: bool = True,
     browser: str | None = None,
     app_window: bool = False,
-    frontend: str = "nicegui",
+    frontend: str = "vue",
 ) -> None:
     """Launch the editor, opening the deck library at ``/`` (blocking).
 

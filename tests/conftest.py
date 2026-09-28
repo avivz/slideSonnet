@@ -95,10 +95,13 @@ def _isolate_deck_services() -> Iterator[None]:
     reusing a tmp path must not inherit an earlier test's lock or prune timer.
     """
     from slidesonnet.server.decks import reset_services
+    from slidesonnet.server.review import reset_review_models
 
     reset_services()
+    reset_review_models()
     yield
     reset_services()
+    reset_review_models()
 
 
 class _GuardedInworld:

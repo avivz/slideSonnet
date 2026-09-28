@@ -132,6 +132,28 @@ Phase 6, together with the retired tests): navigation, layout/panes, narration
 editing and saving, transitions, voices/engines, generation/auto-build/jobs,
 playback, diagnostics/orphans/live files, export. Not yet: review (Phase 5).
 
+### Phase 5 — review in Vue (`migration/phase-5`)
+
+Backend: `server/review.py` — one cached `ReviewModel` per deck, a read model
+(`GET /decks/{t}/review`: conversations, changes, unfiled, **pending** —
+declared in an open conversation but in neither base nor PDF — badges, base
+order, base images, word diffs) and typed author commands (`POST
+.../review/commands`: start, comment, reply, accept, reopen, clear,
+file_unrequested; comment and reply send at once, as before). On-disk format
+and CLI untouched (`review/ops.py` does every write).
+
+Frontend: `stores/review.ts` (strip with removed slides after their old
+predecessor, conversation filter, arrows within it, next-your-turn, removed
+slide view), `ReviewPanel.vue`, compare view on the stage (D toggles
+before-only), narration word diff, filmstrip review badges and moved marks,
+console Audio | Review tabs with a waiting count.
+
+Tests: `test_server_review.py` (2: a full round incl. pending ids; filing +
+refusals), Vitest `review.test.ts` (4), browser `test_a_review_round_with_the_agent`.
+
+The Vue editor is now the default (`--frontend nicegui` opens the old one
+until Phase 6).
+
 ## How to read the Tests column
 
 - **keep** — UI-free logic (`gui/state.py`, `gui/library.py`, `gui/jobs.py`,

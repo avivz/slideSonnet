@@ -8,13 +8,24 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { StageOverlay } from '@/features/playback/dom'
 import { useEditorStore } from '@/stores/editor'
 import { usePlayerStore } from '@/stores/player'
+import { useReviewStore } from '@/stores/review'
 
 import PlayerBar from './PlayerBar.vue'
 
 const editor = useEditorStore()
 const player = usePlayerStore()
 const stage = ref<HTMLElement | null>(null)
+const review = useReviewStore()
 const image = computed(() => editor.images[editor.index] ?? null)
+/** Under review: the base version of this slide (changed look), or of a removed one. */
+const before = computed(() => {
+  const sid = review.subject
+  if (!review.active || !sid) return null
+  const change = review.changes.get(sid)
+  if (review.viewingRemoved === null && !change?.image) return null
+  return review.data?.base_images[sid] ?? null
+})
+const beforeOnly = computed(() => review.beforeOnly || review.viewingRemoved !== null)
 let stopListening: (() => void) | null = null
 let overlay: StageOverlay | null = null
 
@@ -32,7 +43,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="stage-wrap">
-    <div ref="stage" class="stage" data-testid="stage">
+    <div v-if="before" class="compare" :class="{ only: beforeOnly }" data-testid="compare">
+      <figure class="side">
+        <figcaption class="section-title">{{ review.viewingRemoved ? 'Removed' : 'Before' }}</figcaption>
+        <img :src="before" alt="The slide as it was when the review started" data-testid="stage-before" />
+      </figure>
+      <figure v-if="!beforeOnly" class="side">
+        <figcaption class="section-title">Now</figcaption>
+        <img v-if="image" :src="image" :alt="`Slide ${editor.index + 1} now`" />
+      </figure>
+    </div>
+    <div v-show="!before" ref="stage" class="stage" data-testid="stage">
       <img v-if="image" class="slide" :src="image" :alt="`Slide ${editor.index + 1}`" data-testid="stage-img" />
       <div v-else class="placeholder mono">{{ editor.currentId || `page ${editor.index + 1}` }} · rendering…</div>
       <slot name="overlay" />
@@ -57,6 +78,29 @@ onBeforeUnmount(() => {
   background: var(--raised);
   border-radius: 8px;
   box-shadow: 0 10px 30px rgb(0 0 0 / 35%);
+}
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  width: 100%;
+}
+.compare.only {
+  grid-template-columns: 1fr;
+  width: min(100%, calc(var(--stage-h, 50vh) * var(--deck-ar-n, 1.7778)));
+}
+.side {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+.side img {
+  width: 100%;
+  aspect-ratio: var(--deck-ar, 16 / 9);
+  object-fit: contain;
+  object-position: 50% 0;
+  background: var(--raised);
+  border-radius: 6px;
 }
 .slide {
   width: 100%;
