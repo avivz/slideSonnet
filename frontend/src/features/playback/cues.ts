@@ -25,6 +25,16 @@ export function cueStart(cues: readonly Cue[], slideId: string): number | null {
   return cue ? cue.start : null
 }
 
+/**
+ * The deck track reached `slideId`, outside the chosen conversation's slides
+ * (`scope`): the start of the next slide inside it, or null when none is left.
+ */
+export function nextInScope(cues: readonly Cue[], slideId: string, scope: ReadonlySet<string>): number | null {
+  const here = cues.findIndex((c) => c.slide_id === slideId)
+  const next = cues.slice(here + 1).find((c) => scope.has(c.slide_id))
+  return next ? next.start : null
+}
+
 /** `m:ss` for a playback position. */
 export function formatClock(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds))

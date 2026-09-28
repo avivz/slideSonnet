@@ -21,6 +21,7 @@ import DeckHead from './DeckHead.vue'
 import DeckSwitcher from './DeckSwitcher.vue'
 import FilmStrip from './FilmStrip.vue'
 import NarrationEditor from './NarrationEditor.vue'
+import ScriptView from './ScriptView.vue'
 import SlideStage from './SlideStage.vue'
 import VoicesDialog from './VoicesDialog.vue'
 
@@ -52,6 +53,15 @@ function stored(key: string, fallback: number): number {
     return fallback
   }
 }
+/** An on/off choice this browser remembers ('1' / '0'); `fallback` until one is made. */
+function storedFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === '1'
+  } catch {
+    return fallback
+  }
+}
 function remember(key: string, value: number | boolean): void {
   try {
     localStorage.setItem(key, String(value))
@@ -61,8 +71,8 @@ function remember(key: string, value: number | boolean): void {
 }
 const stripWidth = ref(stored('ss.stripWidth', 168))
 const consoleWidth = ref(stored('ss.consoleWidth', 300))
-const stripOpen = ref(stored('ss.stripOpen', 1) === 1)
-const consoleOpen = ref(stored('ss.consoleOpen', 1) === 1)
+const stripOpen = ref(storedFlag('ss.stripOpen', true))
+const consoleOpen = ref(storedFlag('ss.consoleOpen', true))
 const narrow = ref(false)
 const overlay = ref<'strip' | 'console' | null>(null)
 
@@ -146,6 +156,13 @@ function onSplitKey(event: KeyboardEvent): void {
   setStageHeight(Math.max(MIN_PART, Math.min(mainHeight.value - MIN_PART, stagePx.value + step)))
 }
 const mainStyle = computed(() => ({ '--stage-px': `${stagePx.value}px` }))
+
+// the narration below the slide: this slide's editor, or the whole deck as one script
+const scriptView = ref(storedFlag('ss.scriptView', true)) // the script is the default view
+function setScriptView(on: boolean): void {
+  scriptView.value = on
+  remember('ss.scriptView', on ? 1 : 0)
+}
 
 function onResize(): void {
   narrow.value = window.innerWidth < 1100
@@ -403,7 +420,24 @@ function pick(deck: LibraryDeckDTO): void {
           @pointerdown="startSplit"
           @keydown="onSplitKey"
         ></div>
-        <div class="narration-area"><NarrationEditor @voices="voicesOpen = true" /></div>
+        <div class="narration-area">
+          <div class="view-switch" role="group" aria-label="Narration view">
+            <button
+              type="button" :class="{ on: !scriptView }" :aria-pressed="!scriptView" data-testid="view-slide"
+              title="Edit this slide's narration" @click="setScriptView(false)"
+            >
+              Slide
+            </button>
+            <button
+              type="button" :class="{ on: scriptView }" :aria-pressed="scriptView" data-testid="view-script"
+              title="The whole deck's narration as one script" @click="setScriptView(true)"
+            >
+              Script
+            </button>
+          </div>
+          <ScriptView v-if="scriptView" />
+          <NarrationEditor v-else @voices="voicesOpen = true" />
+        </div>
       </main>
       <div
         class="divider d2" role="separator" aria-orientation="vertical" aria-label="Resize the console"
@@ -632,6 +666,32 @@ function pick(deck: LibraryDeckDTO): void {
 }
 .stage-area > * {
   width: 100%; /* the slide is sized by the area's height, not a fixed cap */
+}
+.view-switch {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-self: end !important;
+  width: auto !important;
+  margin-bottom: var(--space-1);
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+}
+.view-switch button {
+  padding: 1px var(--space-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--dim);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.view-switch button.on {
+  background: var(--raised);
+  color: var(--text);
 }
 .narration-area > * {
   width: min(100%, 980px); /* long text lines are hard to read */

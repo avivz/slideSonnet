@@ -506,6 +506,18 @@ class Preview:
     track: Path
     cues: list[Cue] = field(default_factory=list)
     total_duration: float = 0.0
+    #: Every utterance's span in the track (the editor follows the spoken word).
+    speech: list[SpeechSpan] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SpeechSpan:
+    """Where one utterance plays in a preview track, in seconds."""
+
+    slide_id: str
+    index: int  # the utterance's position among the slide's spoken lines
+    start: float
+    end: float
 
 
 def build_preview(
@@ -552,4 +564,14 @@ def build_preview(
     track, _ = render_audio_track(
         timeline, page_speech_clips(deck, results), render_dir=rdir, progress=progress
     )
-    return Preview(track=track, cues=timeline.cue_sheet(), total_duration=timeline.total_duration)
+    speech = [
+        SpeechSpan(page.slide_id, i, page_start + st.start, page_start + st.end)
+        for page_start, page in zip(timeline.page_starts, timeline.pages, strict=True)
+        for i, st in enumerate(page.speech_timings)
+    ]
+    return Preview(
+        track=track,
+        cues=timeline.cue_sheet(),
+        total_duration=timeline.total_duration,
+        speech=speech,
+    )
