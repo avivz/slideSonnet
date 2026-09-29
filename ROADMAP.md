@@ -11,7 +11,7 @@ landed: two independent reviews (ours: 6 code + 2 UX agents; Astra's) merged int
 Now #1 and Next #7–#8 below point at its tiers; tick items off there.
 
 **Demo status:** basel-problem HQ Inworld render shipped (YouTube). Showcase is
-still Kokoro-only (Next #5). The demo PDFs are final (`\\ssfinal`) builds as of 1.0.0a3.
+still Kokoro-only (Next #5). The demo PDFs are final (`\ssfinal`) builds as of 1.0.0a3.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
