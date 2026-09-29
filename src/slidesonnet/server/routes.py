@@ -427,7 +427,7 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
                 token,
                 inputs,
                 export_work(entry, draft=body.draft, engine=engine),
-                dedupe_key=f"export:{token}",
+                dedupe_key=f"export:{token}:{engine}:{body.draft}",
             )
         elif isinstance(body, WarmJob):
             engine = _resolve_engine(entry, body.engine)

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import threading
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,6 +65,7 @@ class ServerContext:
     #: Decks a client has opened, with the revisions last announced for each.
     watched: dict[str, SourceRevisions | None] = field(default_factory=dict)
     _watch_task: asyncio.Task[None] | None = None
+    _jobs_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def generation(self) -> GenerationHub:
         """Per-deck clip generation queues (create and use on the event loop)."""
@@ -72,9 +74,11 @@ class ServerContext:
         return self.generation_hub
 
     def job_manager(self) -> JobManager:
-        if self.jobs is None:
-            self.jobs = JobManager(self.bus)
-        return self.jobs
+        """The job manager, created on first use (sync routes run on many threads)."""
+        with self._jobs_lock:
+            if self.jobs is None:
+                self.jobs = JobManager(self.bus)
+            return self.jobs
 
     def allow_host(self, host: str) -> None:
         if host and host not in ("0.0.0.0", "::"):
@@ -123,9 +127,10 @@ class ServerContext:
         if self.generation_hub is not None:
             self.generation_hub.shutdown()
             self.generation_hub = None
-        if self.jobs is not None:
-            self.jobs.shutdown()
-            self.jobs = None
+        with self._jobs_lock:
+            jobs, self.jobs = self.jobs, None
+        if jobs is not None:
+            jobs.shutdown()
         flush_all_prunes()
 
 

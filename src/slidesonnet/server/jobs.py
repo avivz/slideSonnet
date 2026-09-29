@@ -11,6 +11,10 @@ active :mod:`slidesonnet.cancellation` scope, so engines that can abort
 mid-clip do, external tools are killed (:mod:`slidesonnet.proc`), and the work
 function itself checks :meth:`JobContext.check_cancelled` between steps.
 ``cancelling`` (asked) is reported separately from ``cancelled`` (stopped).
+
+Every status transition happens under the manager's lock, and a finished job's
+status is final: a cancel racing a job's completion can't leave it stuck in
+``cancelling``.
 """
 
 from __future__ import annotations
@@ -135,7 +139,12 @@ class JobManager:
                 raise RuntimeError("the job manager is shut down")
             if dedupe_key is not None:
                 for existing in self._jobs.values():
-                    if existing.dedupe_key == dedupe_key and existing.active:
+                    # a job being cancelled won't deliver: a new request starts afresh
+                    if (
+                        existing.dedupe_key == dedupe_key
+                        and existing.active
+                        and not existing.cancel_event.is_set()
+                    ):
                         return existing
             job = Job(
                 id=uuid.uuid4().hex[:12],
@@ -199,16 +208,34 @@ class JobManager:
         return n
 
     def shutdown(self, *, timeout: float = 10.0) -> None:
-        """Cancel everything and wait for workers (bounded), so nothing outlives the server."""
+        """Cancel everything and wait for workers (bounded), so nothing outlives the server.
+
+        Jobs that never started are settled as cancelled at once, so nobody
+        waiting on them hangs.
+        """
         with self._lock:
             self._closed = True
             active = [j for j in self._jobs.values() if j.active]
         for job in active:
             self.cancel(job.id)
+            with self._lock:
+                future = self._futures.get(job.id)
+            if future is not None and future.cancel():  # never started: it never will
+                self._settle(job, "cancelled")
+                self._finish(job)
         deadline = time.monotonic() + timeout
         for job in active:
             job.done_event.wait(max(0.0, deadline - time.monotonic()))
         self._pool.shutdown(wait=False, cancel_futures=True)
+        with self._lock:
+            dropped = [
+                j
+                for j in self._jobs.values()
+                if j.active and (f := self._futures.get(j.id)) is not None and f.cancelled()
+            ]
+        for job in dropped:  # queued work the pool just dropped
+            if self._settle(job, "cancelled"):
+                self._finish(job)
 
     # ---- internals --------------------------------------------------------
     def _require(self, job_id: str) -> Job:
@@ -217,35 +244,44 @@ class JobManager:
             raise KeyError(job_id)
         return job
 
+    def _settle(self, job: Job, status: JobStatus) -> bool:
+        """Move *job* to a terminal *status* unless it already has one."""
+        with self._lock:
+            if not job.active:
+                return False
+            job.status = status
+            job.finished_at = time.time()
+            return True
+
     def _run(self, job: Job, work: Work) -> None:
         with self._lock:
-            if job.cancel_event.is_set():
-                job.status = "cancelled"
-                job.finished_at = time.time()
-                cancelled_before_start = True
-            else:
+            if not job.active:  # settled already (shutdown)
+                return
+            cancelled_before_start = job.cancel_event.is_set()
+            if not cancelled_before_start:
                 job.status = "running"
                 job.started_at = time.time()
-                cancelled_before_start = False
         if cancelled_before_start:
+            self._settle(job, "cancelled")
             self._finish(job)
             return
         self._publish(job, "job.updated")
         ctx = JobContext(job, self)
+        status: JobStatus
         try:
             with cancel_scope(job.cancel_event):
                 result = work(ctx)
         except GenerationCancelled:
-            job.status = "cancelled"
+            status = "cancelled"
         except Exception as exc:
             logger.exception("job %s (%s) failed", job.id, job.kind)
-            job.status = "failed"
+            status = "failed"
             job.exception = exc
             job.error = JobError(code=type(exc).__name__, message=str(exc) or type(exc).__name__)
         else:  # work that ran to completion succeeded, even if a cancel arrived late
             job.result = result
-            job.status = "succeeded"
-        job.finished_at = time.time()
+            status = "succeeded"
+        self._settle(job, status)
         self._finish(job)
 
     def _finish(self, job: Job) -> None:

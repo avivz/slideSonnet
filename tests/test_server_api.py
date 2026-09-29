@@ -8,6 +8,7 @@ approval, backend-owned jobs, immutable preview artifacts (B4), and ranged media
 from __future__ import annotations
 
 import json
+import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -461,6 +462,31 @@ def test_export_explains_blockers_and_runs_a_draft(
     assert job["status"] == "succeeded"
     assert job["result"] == {"video": "d.draft.mp4", "duration": 3.0, "draft": True}
     assert seen["draft"] is True and seen["keep_scratch"] is True
+
+
+def test_an_export_with_another_engine_is_not_merged_into_the_running_one(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet import api as api_mod
+
+    gate = threading.Event()
+
+    def slow_export(pdf_path: Path, output: Path, **kw: Any) -> api_mod.ExportResult:
+        gate.wait(5)
+        return api_mod.ExportResult(video=output, duration=1.0)
+
+    monkeypatch.setattr("slidesonnet.api.export", slow_export)
+    monkeypatch.setattr("slidesonnet.server.routes._uncached", lambda *a, **k: set())
+    token = _token(client)
+    url = f"/api/v1/decks/{token}/jobs"
+    try:
+        ids = [
+            client.post(url, json={"kind": "export", "draft": True, "engine": e}).json()["id"]
+            for e in ("kokoro", "kokoro", "qwen3")
+        ]
+    finally:
+        gate.set()
+    assert ids[0] == ids[1] != ids[2]
 
 
 # ---- the per-deck generation queue ---------------------------------------------------------
