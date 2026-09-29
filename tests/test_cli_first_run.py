@@ -53,8 +53,18 @@ def test_sty_into_missing_folder(tmp_path: Path) -> None:
     _one_line_error(_run("sty", "-o", str(tmp_path / "nope" / "x.sty")), "x.sty", "folder")
 
 
-def test_verbose_adds_the_traceback(tmp_path: Path) -> None:
-    result = _run("-v", "sty", "-o", str(tmp_path / "nope" / "x.sty"))
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["-v", "sty", "-o", "{bad}"],
+        ["sty", "-o", "{bad}", "-v"],  # after the subcommand too
+        ["sty", "--verbose", "-o", "{bad}"],
+        ["review", "reply", "{pdf}", "c99", "hi", "-v"],  # and in a nested group
+    ],
+)
+def test_verbose_adds_the_traceback(tmp_path: Path, args: list[str]) -> None:
+    pdf, bad = prep_marked_deck(tmp_path), tmp_path / "nope" / "x.sty"
+    result = _run(*(a.format(pdf=pdf, bad=bad) for a in args))
     assert result.exit_code != 0
     assert "Traceback" in result.output
 

@@ -263,7 +263,7 @@ slidesonnet doctor
 ```
 
 Errors print one line saying what went wrong and how to fix it; add `-v`
-before the command (`slidesonnet -v check …`) for the full traceback.
+(`slidesonnet check … -v`, before or after the command) for the full traceback.
 
 `--audio-dir DIR` before any command (or `SLIDESONNET_AUDIO_DIR`, or
 `[cache] audio_dir` in `slidesonnet.toml`) points it at a **shared speech-clip

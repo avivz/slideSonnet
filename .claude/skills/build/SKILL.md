@@ -11,8 +11,8 @@ plain-text **`<deck>.narration`** sidecar into a narrated MP4 with subtitles.
 There is no playlist, no `build` command, no MARP — you bring the PDF.
 
 Engines: `kokoro` (local, free, the default), `inworld` (cloud, **paid per
-clip**), `qwen3` (local GPU, slow). Errors print one line; put `-v` before the
-command (`slidesonnet -v export …`) to see the traceback.
+clip**), `qwen3` (local GPU, slow). Errors print one line; add `-v` (before or
+after the command: `slidesonnet export … -v`) to see the traceback.
 
 ## Command reference
 

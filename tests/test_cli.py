@@ -150,8 +150,11 @@ def _copy_pdf(tmp_path: Path) -> Path:
     return pdf
 
 
-def test_init_quiet_suppresses_path(tmp_path: Path) -> None:
-    result = CliRunner().invoke(main, ["--quiet", "init", str(_copy_pdf(tmp_path))])
+@pytest.mark.parametrize("where", ["before", "after"])
+def test_init_quiet_suppresses_path(tmp_path: Path, where: str) -> None:
+    args = ["init", str(_copy_pdf(tmp_path))]
+    args = ["--quiet", *args] if where == "before" else [*args, "-q"]
+    result = CliRunner().invoke(main, args)
     assert result.exit_code == 0
     assert result.output.strip() == ""
     assert (tmp_path / "marked.narration").exists()
@@ -255,8 +258,13 @@ def test_log_file_override_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert not (tmp_path / ".slidesonnet" / "slidesonnet.log").exists()
 
 
-def test_quiet_and_verbose_conflict(tmp_path: Path) -> None:
-    result = CliRunner().invoke(main, ["--quiet", "--verbose", "init", str(_copy_pdf(tmp_path))])
+@pytest.mark.parametrize(
+    "flags",
+    [(["--quiet", "--verbose"], []), (["-q"], ["-v"]), ([], ["--verbose", "--quiet"])],
+)
+def test_quiet_and_verbose_conflict(tmp_path: Path, flags: tuple[list[str], list[str]]) -> None:
+    before, after = flags
+    result = CliRunner().invoke(main, [*before, "init", str(_copy_pdf(tmp_path)), *after])
     assert result.exit_code != 0
     assert "mutually exclusive" in result.output
 

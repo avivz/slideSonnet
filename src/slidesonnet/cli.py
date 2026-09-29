@@ -118,10 +118,58 @@ class _PdfPath(click.Path):
 _PDF_ARG = click.argument("pdf", type=_PdfPath())
 
 
-@click.group(cls=_SuggestGroup, invoke_without_command=True)
+def _apply_verbosity(ctx: click.Context) -> None:
+    """Set the console log level from the ``-q``/``-v`` seen so far (kept on the root)."""
+    obj = ctx.find_root().ensure_object(dict)
+    try:
+        level = resolve_console_level(
+            quiet=obj.get("quiet", False),
+            verbose=obj.get("verbose", False),
+            env=os.environ.get(ENV_LEVEL),
+        )
+    except ValueError as e:
+        raise click.UsageError(str(e)) from e
+    configure_console_logging(level)
+
+
+def _verbosity_flag(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    # Recorded on the root before anything can fail, so -v shows tracebacks.
+    if value and param.name is not None:
+        ctx.find_root().ensure_object(dict)[param.name] = True
+        _apply_verbosity(ctx)
+
+
+def _verbosity_options() -> list[click.Option]:
+    """``-q``/``-v``: the same flags on the group and, via _add_verbosity_options,
+    after any subcommand (``slidesonnet export deck.pdf -v``)."""
+    return [
+        click.Option(
+            ["--quiet", "-q"],
+            is_flag=True,
+            expose_value=False,
+            callback=_verbosity_flag,
+            help="Suppress progress output (errors still shown)",
+        ),
+        click.Option(
+            ["--verbose", "-v"],
+            is_flag=True,
+            expose_value=False,
+            callback=_verbosity_flag,
+            help="Show debug-level detail in the console",
+        ),
+    ]
+
+
+def _add_verbosity_options(group: click.Group) -> None:
+    """Give every command under *group* (nested groups included) the ``-q``/``-v`` flags."""
+    for command in group.commands.values():
+        command.params.extend(_verbosity_options())
+        if isinstance(command, click.Group):
+            _add_verbosity_options(command)
+
+
+@click.group(cls=_SuggestGroup, invoke_without_command=True, params=_verbosity_options())
 @click.version_option(version=__version__)
-@click.option("--quiet", "-q", is_flag=True, help="Suppress progress output (errors still shown)")
-@click.option("--verbose", "-v", is_flag=True, help="Show debug-level detail in the console")
 @click.option(
     "--log-file",
     type=click.Path(path_type=Path),
@@ -143,8 +191,6 @@ _PDF_ARG = click.argument("pdf", type=_PdfPath())
 @click.pass_context
 def main(
     ctx: click.Context,
-    quiet: bool,
-    verbose: bool,
     log_file: Path | None,
     no_log_file: bool,
     audio_dir: Path | None,
@@ -164,13 +210,7 @@ def main(
          without --draft.
     """
     ctx.ensure_object(dict)
-    ctx.obj["verbose"] = verbose  # before anything can fail: -v shows tracebacks
-    try:
-        level = resolve_console_level(quiet=quiet, verbose=verbose, env=os.environ.get(ENV_LEVEL))
-    except ValueError as e:
-        raise click.UsageError(str(e)) from e
-    configure_console_logging(level)
-    ctx.obj["quiet"] = quiet
+    _apply_verbosity(ctx)  # -q/-v given here were recorded while parsing
     ctx.obj["log_file"] = log_file
     ctx.obj["no_log_file"] = no_log_file
     ctx.obj["audio_dir_flag"] = audio_dir is not None
@@ -1083,3 +1123,4 @@ def _register_review() -> None:
 
 
 _register_review()
+_add_verbosity_options(main)
