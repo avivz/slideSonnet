@@ -10,7 +10,7 @@ describe('ApiClient', () => {
   it('maps error bodies to ApiError with the stable code', async () => {
     const fetch = vi.fn(async () => json(404, { error: { code: 'unknown_deck', message: 'No such deck.' } }))
     const client = new ApiClient({ fetch })
-    await expect(client.deck('x')).rejects.toMatchObject({ status: 404, code: 'unknown_deck', message: 'No such deck.' })
+    await expect(client.snapshot('x')).rejects.toMatchObject({ status: 404, code: 'unknown_deck', message: 'No such deck.' })
   })
 
   it('reports a non-JSON failure without inventing a code', async () => {

@@ -146,19 +146,8 @@ export class ApiClient {
     return this.get(`/decks/${encodeURIComponent(token)}/stats`)
   }
 
-  deck(token: string): Promise<DeckSnapshot> {
-    return this.get(`/decks/${encodeURIComponent(token)}`)
-  }
-
   job(id: string): Promise<JobDTO> {
     return this.get(`/jobs/${encodeURIComponent(id)}`)
-  }
-
-  jobs(options: { deck?: string; active?: boolean } = {}): Promise<JobDTO[]> {
-    const q = new URLSearchParams()
-    if (options.deck) q.set('deck', options.deck)
-    if (options.active) q.set('active', 'true')
-    return this.get(`/jobs?${q.toString()}`)
   }
 
   snapshot(token: string, engine?: string | null): Promise<DeckSnapshot> {
