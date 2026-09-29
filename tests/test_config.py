@@ -8,7 +8,6 @@ import pytest
 
 from slidesonnet.config import Config, default_config_path, load_config
 from slidesonnet.exceptions import ConfigError
-from slidesonnet.models import TTSConfig
 
 
 def test_missing_config_is_all_defaults(tmp_path: Path) -> None:
@@ -130,7 +129,25 @@ send_direction = true
     assert cfg.tts.inworld_language == "en-US"
     assert cfg.tts.inworld_text_normalization is False
     assert cfg.tts.inworld_send_direction is True
-    assert TTSConfig().inworld_send_direction is False  # opt-in: old decks sound the same
+
+
+@pytest.mark.parametrize(
+    ("toml", "sent", "warns"),
+    [
+        ("", True, False),  # on by default, and no warning for a default
+        ('model = "inworld-tts-1.5-max"', True, False),
+        ("send_direction = false", False, False),
+        ('model = "inworld-tts-1.5-max"\nsend_direction = true', True, True),
+    ],
+)
+def test_send_direction_is_on_unless_turned_off(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, toml: str, sent: bool, warns: bool
+) -> None:
+    (tmp_path / "slidesonnet.toml").write_text(f"[tts.inworld]\n{toml}\n", encoding="utf-8")
+    with caplog.at_level("WARNING"):
+        cfg = load_config(tmp_path / "deck.pdf")
+    assert cfg.tts.inworld_send_direction is sent
+    assert any("send_direction" in r.message for r in caplog.records) is warns
 
 
 def test_blank_inworld_delivery_settings_mean_unset(tmp_path: Path) -> None:

@@ -80,7 +80,7 @@ class Config:
 
         Inline pronunciation fixes resolve per engine, the dictionary applies,
         and for Inworld the request text is finished (brackets, and the
-        ``direct:`` note when ``send_direction`` is on). This is what the audio
+        ``direct:`` note, unless ``send_direction = false``). This is what the audio
         cache hashes, so it changes only when what the engine hears changes.
         """
         backend = backend or self.tts.backend
@@ -200,13 +200,18 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
         tts = TTSConfig(**kwargs)
     except ValueError as e:
         raise ConfigError(f"slidesonnet.toml [tts]: {e}") from e
-    _warn_unused_inworld_settings(tts)
+    _warn_unused_inworld_settings(tts, direction_asked="send_direction" in inworld)
     return tts
 
 
-def _warn_unused_inworld_settings(tts: TTSConfig) -> None:
-    """Say so when an Inworld setting has no effect on the chosen model."""
-    if not (tts.inworld_delivery_mode or tts.inworld_send_direction):
+def _warn_unused_inworld_settings(tts: TTSConfig, *, direction_asked: bool) -> None:
+    """Say so when an Inworld setting the toml sets has no effect on the chosen model.
+
+    *direction_asked* is whether the toml itself sets ``send_direction`` (it is on
+    by default, and a default the author never wrote is not worth a warning).
+    """
+    send_direction = direction_asked and tts.inworld_send_direction
+    if not (tts.inworld_delivery_mode or send_direction):
         return
     from slidesonnet.tts.inworld import follows_directions, is_tts2_family
 
@@ -217,7 +222,7 @@ def _warn_unused_inworld_settings(tts: TTSConfig) -> None:
             "models; %s ignores it",
             model,
         )
-    if tts.inworld_send_direction and not follows_directions(model):
+    if send_direction and not follows_directions(model):
         logger.warning(
             "slidesonnet.toml [tts.inworld] send_direction: only inworld-tts-2 follows "
             "director's notes; with %s they are not sent",

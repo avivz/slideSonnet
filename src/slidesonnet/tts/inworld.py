@@ -13,8 +13,9 @@ Delivery controls:
   (:mod:`slidesonnet.narration.spoken`);
 * :func:`request_text` turns an utterance into the exact text Inworld gets: on
   the inworld-tts-2 family square brackets are stage directions, so stray ones
-  are sent as round brackets; and with ``send_direction = true`` a ``direct:``
-  note leads the line as a ``[...]`` direction (inworld-tts-2 itself only).
+  are sent as round brackets; and (unless ``send_direction = false``) a
+  ``direct:`` note leads the line as a ``[...]`` direction (inworld-tts-2 itself
+  only).
   Synthesis hashes that text, so a changed note re-keys exactly that clip.
 """
 

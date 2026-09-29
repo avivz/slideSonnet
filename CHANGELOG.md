@@ -213,9 +213,10 @@ regression test.
     dictionary now works the same way: its IPA entries go to Inworld only, so
     Kokoro and Qwen3 say "Mengoli" instead of reading `/menˈɡoːli/` out (their
     lines with such a word re-generate once, for free).
-  - **Director's notes reach Inworld:** with `send_direction = true` under
-    `[tts.inworld]`, a line's `direct:` note is performed by `inworld-tts-2`. Off by
-    default; the editor's note field says only Inworld follows it.
+  - **Director's notes reach Inworld:** a line's `direct:` note is performed by
+    `inworld-tts-2` (other models are never sent it). Lines with a note
+    re-generate once; `send_direction = false` under `[tts.inworld]` opts out. The
+    editor's note field says only Inworld follows it.
   - **`temperature`, `delivery_mode` (stable/balanced/creative), `language` and
     `text_normalization`** under `[tts.inworld]`, sent only when set.
   - **Square brackets are said, not swallowed:** `inworld-tts-2` drops anything in

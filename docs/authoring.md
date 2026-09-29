@@ -89,7 +89,7 @@ transitions:
   utterance:               # voice/pace/direct are optional
     voice: narrator
     pace: slow             # slow | normal | fast
-    # direct: a director's note (Inworld follows it once send_direction is on)
+    # direct: a director's note (Inworld's inworld-tts-2 follows it)
     direct: warm, unhurried
     text: We want the sum of one over n squared, as [Mengoli](/menˈɡoːli/) asked.
   pause: 0.8
@@ -181,7 +181,7 @@ api_key_env = "INWORLD_API_KEY"   # the environment variable holding the key
 # delivery_mode = "stable"   # example: stable | balanced | creative (inworld-tts-2)
 # language = "en-US"         # example: skip Inworld's language detection
 # text_normalization = false # example: say "Dr." / "1999" exactly as written
-send_direction = false       # true: Inworld performs each line's direct: note
+send_direction = true        # false: don't send lines' direct: notes to Inworld
 
 [tts.qwen3]
 model = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
@@ -238,11 +238,11 @@ Choose one per run with `--engine`, or per deck with `[tts] backend`.
   lines. Both work the same way: a respelling (`DYKE-struh`) is said by every
   engine, while IPA (`/menˈɡoːli/`) goes to Inworld only — Kokoro and Qwen3 say
   the word as written instead. Captions always show the word as written.
-- **Director's notes.** With `send_direction = true` under `[tts.inworld]`, a
-  line's `direct:` note (e.g. `warm, unhurried`) is sent ahead of it as an
-  Inworld stage direction. Only `inworld-tts-2` follows notes; Kokoro and Qwen3
-  ignore them. It is off by default, so turning it on changes how existing
-  lines with notes sound (and re-generates just those clips).
+- **Director's notes.** A line's `direct:` note (e.g. `warm, unhurried`) is sent
+  ahead of it as an Inworld stage direction. Only `inworld-tts-2` follows notes,
+  so only it is sent them; other Inworld models, Kokoro and Qwen3 ignore them.
+  `send_direction = false` under `[tts.inworld]` stops sending them. Lines
+  without a note sound (and are cached) exactly as before.
 - **Square brackets.** `inworld-tts-2` reads any `[...]` as a direction and
   drops it, so slideSonnet sends brackets in the narration as round ones
   (`[0, 1]` is said as "(0, 1)"); sound tags such as `[sigh]` and `[laugh]`

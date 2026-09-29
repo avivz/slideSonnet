@@ -236,7 +236,13 @@ _AICODE_DICTIONARY = {"Claude": "/klɔːd/", "npx": "N-P-X"}
 
 
 def test_existing_inworld_clips_keep_their_names() -> None:
-    assert _aicode_names("inworld", _AICODE_DICTIONARY) == _PRE_DELIVERY_NAMES["inworld"]
+    """Director's notes are sent by default: only the line with a note re-keys."""
+    pinned = _PRE_DELIVERY_NAMES["inworld"]
+    names = _aicode_names("inworld", _AICODE_DICTIONARY)
+    assert [names[0], names[2]] == [pinned[0], pinned[2]]
+    assert names[1] != pinned[1]
+    opted_out = _aicode_names("inworld", _AICODE_DICTIONARY, inworld_send_direction=False)
+    assert opted_out == pinned
 
 
 def test_kokoro_says_the_plain_word_for_a_dictionary_ipa_value() -> None:
@@ -249,7 +255,7 @@ def test_kokoro_says_the_plain_word_for_a_dictionary_ipa_value() -> None:
 
 
 def test_each_engine_is_sent_its_own_form_of_a_line() -> None:
-    """Inline fixes resolve per engine; a note is sent only when the deck opts in."""
+    """Inline fixes resolve per engine; a note is sent unless the deck opts out."""
     deck = _delivery_deck(
         Segment.speech("Ask [Mengoli](/menˈɡoːli/) about [0, 1].", direction="warmly")
     )
@@ -260,11 +266,10 @@ def test_each_engine_is_sent_its_own_form_of_a_line() -> None:
         return ref.text
 
     assert sent("kokoro") == "Ask Mengoli about [0, 1]."
-    assert sent("inworld") == "Ask /menˈɡoːli/ about (0, 1)."
-    assert sent("inworld", inworld_send_direction=True) == "[warmly] Ask /menˈɡoːli/ about (0, 1)."
-    assert sent("inworld", inworld_model="inworld-tts-1.5-max", inworld_send_direction=True) == (
-        "Ask /menˈɡoːli/ about [0, 1]."
-    )
+    assert sent("inworld") == "[warmly] Ask /menˈɡoːli/ about (0, 1)."
+    assert sent("inworld", inworld_send_direction=False) == "Ask /menˈɡoːli/ about (0, 1)."
+    assert sent("inworld", inworld_model="inworld-tts-2-flash") == "Ask /menˈɡoːli/ about (0, 1)."
+    assert sent("inworld", inworld_model="inworld-tts-1.5-max") == "Ask /menˈɡoːli/ about [0, 1]."
 
 
 def test_an_unreadable_saved_length_file_is_ignored(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

@@ -74,8 +74,9 @@ function onPace(value: string): void {
   emit('patch', { pace: value as EditSeg['pace'] }, true)
 }
 const DIRECTION_HINT =
-  'Only Inworld follows these notes (e.g. “warm, unhurried”), and only once the deck turns them on: ' +
-  'send_direction = true under [tts.inworld] in slidesonnet.toml. Kokoro and Qwen3 ignore them.'
+  'Only Inworld’s inworld-tts-2 voice follows these notes (e.g. “warm, unhurried”); ' +
+  'other Inworld models, Kokoro and Qwen3 ignore them. To stop sending them, set ' +
+  'send_direction = false under [tts.inworld] in slidesonnet.toml.'
 function onDirection(event: Event): void {
   emit('patch', { direction: (event.target as HTMLInputElement).value }, false)
 }

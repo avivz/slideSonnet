@@ -111,8 +111,9 @@ class TTSConfig:
     #: Whether Inworld expands numbers/abbreviations; unset lets Inworld decide.
     inworld_text_normalization: bool | None = None
     #: Send each line's ``direct:`` note to Inworld as a stage direction
-    #: (inworld-tts-2 only). Off by default, so existing decks sound the same.
-    inworld_send_direction: bool = False
+    #: (inworld-tts-2 only; the other models never get it). On by default; a line
+    #: without a note is sent exactly as before, so only noted lines re-key.
+    inworld_send_direction: bool = True
     #: The deck's directory, whose ``.env`` supplies the API key (see :mod:`slidesonnet.env`).
     #: Not part of any cache key; None falls back to the cwd's ``.env``.
     env_dir: Path | None = None
