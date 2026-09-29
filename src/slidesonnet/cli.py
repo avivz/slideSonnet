@@ -417,42 +417,90 @@ def subs(
     type=click.Choice(["nothing", "api", "current", "exact"]),
     default="api",
     show_default=True,
-    help="What cached audio to preserve",
+    help=(
+        "Which of this deck's speech clips to keep. "
+        "api: paid (Inworld) clips only, drop local ones. "
+        "current: clips for text the deck still says, on any engine. "
+        "exact: only clips the deck would use with its current engine settings. "
+        "nothing: none. At every level, clips another deck in the same folder still "
+        "says are kept, and paid clips go to .slidesonnet/audio/trash/, never deleted"
+    ),
 )
-@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt for --keep nothing")
-def clean(pdf: Path, keep: str, yes: bool) -> None:
+@click.option("--dry-run", is_flag=True, help="Show what would be removed; change nothing")
+@click.option(
+    "--yes", "-y", is_flag=True, help="Don't ask before trashing paid clips or --keep nothing"
+)
+@_NARRATION_OPT
+def clean(pdf: Path, keep: str, dry_run: bool, yes: bool, narration: Path | None) -> None:
     """Prune the deck's own audio/render cache (.slidesonnet/ beside the PDF).
 
     Render scratch and logs always go. What happens to cached speech clips
-    depends on --keep. When the deck's clips live in a shared pool (see
-    "slidesonnet pool status"), --keep only governs the local directory: the
-    pool is never touched here — "slidesonnet pool prune" does that, with every
-    deck that uses the pool in view. The review base (what you've already seen,
-    for "slidesonnet review") is kept at every level.
+    depends on --keep. The clip folder is shared by every deck in the same
+    folder, so a clip any of them still says is always kept. Paid clips are
+    moved to .slidesonnet/audio/trash/ (move one back to restore it), and you
+    are asked first unless --yes. When the deck's clips live in a shared pool
+    (see "slidesonnet pool status"), the pool is never touched here —
+    "slidesonnet pool prune" does that, with every deck that uses the pool in
+    view. The review base (what you've already seen, for "slidesonnet review")
+    is kept at every level.
     """
     from slidesonnet.cache import cache_root
-    from slidesonnet.clean import clean as run_clean
+    from slidesonnet.clean import apply_clean, plan_clean
 
     if not cache_root(pdf).exists():
         click.echo("Nothing to clean.")
         return
-    if keep == "nothing" and not yes:
+    with _cli_errors():
+        plan = plan_clean(pdf, keep, sidecar_path=narration)  # type: ignore[arg-type]
+    remove, paid = plan.remove, plan.paid_to_trash
+    slow = len(plan.to_trash) - len(paid)
+    if dry_run:
+        click.echo(
+            f"Would remove {len(remove)} files ({_mb(sum(f.stat().st_size for f in remove))})"
+        )
+        if plan.to_trash:
+            click.echo(
+                f"Would move {len(paid)} paid and {slow} slow-to-make clip(s) to {plan.trash_dir}:"
+            )
+            for f in plan.to_trash:
+                click.echo(f"    {f.name}")
+        if plan.prune is not None:
+            click.echo(f"Would keep {len(plan.kept_paid)} paid clip(s)")
+        click.echo("Dry run: nothing was changed.")
+        _say_pool_left_alone(plan.pool)
+        return
+    if not yes and paid:
         click.confirm(
-            "Delete ALL of this deck's cached audio (including paid API audio)?",
+            f"Move {len(paid)} paid clip(s) to {plan.trash_dir}? (Regenerating them would "
+            "cost API credits; move them back from the trash to restore.)",
             default=False,
             abort=True,
         )
-    result = run_clean(pdf, keep=keep)  # type: ignore[arg-type]
-    if result.removed_files == 0:
-        click.echo("Nothing to remove.")
+    elif not yes and keep == "nothing":
+        click.confirm("Remove every speech clip only this deck uses?", default=False, abort=True)
+    with _cli_errors():
+        result = apply_clean(plan)
+    if result.removed_files == 0 and result.trashed_files == 0:
+        msg = "Nothing to remove"
     else:
         msg = f"Removed {result.removed_files} files ({result.removed_mb:.1f} MB)"
-        if result.kept_files:
-            msg += f", kept {result.kept_files}"
-        click.echo(msg)
-    if result.pool is not None:
+    if plan.prune is not None:
+        msg += f", kept {result.kept_paid} paid clip(s)"
+        if result.kept_files > result.kept_paid:
+            msg += f" and {result.kept_files - result.kept_paid} other(s)"
+    click.echo(msg + ".")
+    if result.trashed_files:
         click.echo(
-            f"Speech clips live in the shared pool {result.pool}, which this command "
+            f"Moved {result.trashed_files} paid/slow clip(s) to {result.trash_dir} "
+            "(move one back to restore it)."
+        )
+    _say_pool_left_alone(result.pool)
+
+
+def _say_pool_left_alone(pool: Path | None) -> None:
+    if pool is not None:
+        click.echo(
+            f"Speech clips live in the shared pool {pool}, which this command "
             "never touches. To prune orphaned clips across every deck that uses it: "
             "slidesonnet pool prune --root <course dir>"
         )
@@ -563,7 +611,7 @@ def pool_migrate_cmd(decks: tuple[Path, ...], roots: tuple[Path, ...], apply: bo
     the same step "slidesonnet clean" performs for one deck; migrate does it
     for a whole course at once.
     """
-    from slidesonnet.cache import default_audio_dir, resolve_audio_dir
+    from slidesonnet.cache import default_audio_dir, paths_overlap, resolve_audio_dir
     from slidesonnet.clean import retire_legacy_audio
     from slidesonnet.config import load_config
     from slidesonnet.hashing import parse_audio_filename
@@ -585,7 +633,7 @@ def pool_migrate_cmd(decks: tuple[Path, ...], roots: tuple[Path, ...], apply: bo
                 unpooled.append(deck)
                 continue
             legacy = default_audio_dir(deck)
-            if legacy in seen_local or not legacy.is_dir():
+            if legacy in seen_local or not legacy.is_dir() or paths_overlap(legacy, res.path):
                 continue
             seen_local.add(legacy)
             clips = [
@@ -659,8 +707,10 @@ def pool_prune_cmd(
     per-directory caches) are each pruned against their own decks.
     """
     from slidesonnet.cache import resolve_audio_dir
+    from slidesonnet.clean import sibling_decks
     from slidesonnet.config import load_config
     from slidesonnet.pool import (
+        DeckRoot,
         apply_prune,
         load_index,
         plan_prune,
@@ -687,13 +737,18 @@ def pool_prune_cmd(
         raise click.ClickException("no decks found under the given roots; nothing to keep by")
 
     by_pool: dict[Path, list[Path]] = {}
+    protect: dict[Path, list[DeckRoot]] = {}
     with _cli_errors():
         for deck in sorted({p.resolve() for p in found}):
-            by_pool.setdefault(resolve_audio_dir(deck, load_config(deck)).path, []).append(deck)
+            res = resolve_audio_dir(deck, load_config(deck))
+            by_pool.setdefault(res.path, []).append(deck)
+            if not res.shared:  # a folder's own clip dir: every deck in it is a root
+                protect.setdefault(res.path, []).extend(sibling_decks(deck))
 
     for pool_dir, members in by_pool.items():
+        extra = [r for r in dict.fromkeys(protect.get(pool_dir, [])) if r.pdf not in members]
         with _cli_errors():
-            plan = plan_prune(pool_dir, members, keep=keep)  # type: ignore[arg-type]
+            plan = plan_prune(pool_dir, members, keep=keep, protect=extra)  # type: ignore[arg-type]
         click.echo(f"Pool {pool_dir}  (used by {len(members)} deck(s))")
         kept_b = sum(f.stat().st_size for f in plan.kept)
         del_b = sum(f.stat().st_size for f in plan.delete)

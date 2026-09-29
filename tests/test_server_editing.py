@@ -273,10 +273,13 @@ def test_slide_status_per_page(tmp_path: Path) -> None:
 
 
 # ---- bookkeeping after a save ---------------------------------------------------------------
-def test_saves_are_noted_in_review_and_prune_local_audio(tmp_path: Path) -> None:
+def test_saves_are_noted_in_review_and_prune_local_audio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from slidesonnet.cache import audio_dir
     from slidesonnet.hashing import audio_filename
     from slidesonnet.review import ops
+    from slidesonnet.server import decks
 
     pdf = prep_marked_deck(tmp_path, "@intro-title\nOriginal narration line.\n")
     ad = audio_dir(pdf)
@@ -290,6 +293,10 @@ def test_saves_are_noted_in_review_and_prune_local_audio(tmp_path: Path) -> None
     _edit(pdf, lambda d: editing.apply_block_edit(d, "intro-title", [Segment.speech("Take one.")]))
     assert not ops.review_path(pdf).exists()
     deck_service(pdf).flush_prune()  # the sweep is debounced off the save path
+    assert (ad / stale).exists()  # just orphaned: kept through the grace period
+    monkeypatch.setattr(decks, "SWEEP_GRACE_S", 0.0)
+    deck_service(pdf).schedule_prune()
+    deck_service(pdf).flush_prune()
     assert not (ad / stale).exists() and (ad / paid).exists()  # paid audio is never swept
 
     # under review: the author's own edit is filed, not flagged later as unrequested
@@ -297,3 +304,24 @@ def test_saves_are_noted_in_review_and_prune_local_audio(tmp_path: Path) -> None
     _edit(pdf, lambda d: editing.apply_block_edit(d, "intro-title", [Segment.speech("Take two.")]))
     convs = ops.load(pdf).slide_conversations()
     assert [(c.origin, c.slides) for c in convs] == [("author-edits", ["intro-title"])]
+
+
+def test_the_sweep_keeps_clips_of_the_narration_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Editing with --narration: a clip generated for the override sidecar is live."""
+    from slidesonnet.cache import audio_dir
+    from slidesonnet.hashing import audio_filename
+    from slidesonnet.server import decks
+
+    monkeypatch.setattr(decks, "SWEEP_GRACE_S", 0.0)
+    pdf = prep_marked_deck(tmp_path)
+    override = tmp_path / "draft.narration"
+    override.write_text(simple_narration("@intro-title\nDraft line.\n"), encoding="utf-8")
+    clip = audio_dir(pdf) / audio_filename("Draft line.", "kokoro", "kokoro:am_echo")
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"fresh")
+    svc = deck_service(pdf, override)
+    svc.schedule_prune()  # what a finished generation does
+    svc.flush_prune()
+    assert clip.exists()

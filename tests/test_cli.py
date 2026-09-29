@@ -11,8 +11,8 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
+import slidesonnet.clean as clean_mod
 from slidesonnet.api import ExportResult
-from slidesonnet.clean import CleanResult
 from slidesonnet.cli import main
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.logging_setup import (
@@ -421,62 +421,46 @@ def test_clean_without_cache(tmp_path: Path) -> None:
     assert "Nothing to clean." in result.output
 
 
-def test_clean_reports_removed_and_kept(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _cached_deck(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """A deck with no narration and one cheap + one paid clip cached."""
     pdf = _copy_pdf(tmp_path)
-    (tmp_path / ".slidesonnet").mkdir()
-    monkeypatch.setattr(
-        "slidesonnet.clean.clean",
-        lambda p, keep: CleanResult(removed_files=3, removed_bytes=2 * 1024 * 1024, kept_files=2),
-    )
-    result = CliRunner().invoke(main, ["clean", str(pdf), "--keep", "current"])
-    assert result.exit_code == 0
-    assert "Removed 3 files (2.0 MB), kept 2" in result.output
+    ad = tmp_path / ".slidesonnet" / "audio"
+    ad.mkdir(parents=True)
+    local, paid = ad / "aaaa.kokoro.bbbb.wav", ad / "cccc.inworld.dddd.mp3"
+    local.write_bytes(b"x")
+    paid.write_bytes(b"paid")
+    return pdf, local, paid
 
 
-def test_clean_nothing_to_remove(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    pdf = _copy_pdf(tmp_path)
-    (tmp_path / ".slidesonnet").mkdir()
-    monkeypatch.setattr("slidesonnet.clean.clean", lambda p, keep: CleanResult())
-    result = CliRunner().invoke(main, ["clean", str(pdf)])
-    assert result.exit_code == 0
-    assert "Nothing to remove." in result.output
-
-
-def test_clean_keep_nothing_prompts_and_aborts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("args", "answer", "local_gone", "paid_where", "says"),
+    [
+        (["--keep", "api"], None, True, "kept", "Removed 1 files (0.0 MB), kept 1 paid clip(s)."),
+        (["--keep", "nothing"], "n\n", False, "kept", "Aborted"),  # asks before trashing paid
+        (["--keep", "nothing", "--yes"], None, True, "trash", "Moved 1 paid/slow clip(s)"),
+        (["--keep", "nothing", "--dry-run"], None, False, "kept", "Would move 1 paid"),
+    ],
+)
+def test_clean_trashes_paid_clips_only_when_confirmed(
+    tmp_path: Path,
+    args: list[str],
+    answer: str | None,
+    local_gone: bool,
+    paid_where: str,
+    says: str,
 ) -> None:
-    pdf = _copy_pdf(tmp_path)
-    (tmp_path / ".slidesonnet").mkdir()
-    called = False
-
-    def fake_clean(p: Path, keep: str) -> CleanResult:
-        nonlocal called
-        called = True
-        return CleanResult()
-
-    monkeypatch.setattr("slidesonnet.clean.clean", fake_clean)
-    result = CliRunner().invoke(main, ["clean", str(pdf), "--keep", "nothing"], input="n\n")
-    assert result.exit_code != 0
-    assert "Aborted" in result.output
-    assert called is False
+    pdf, local, paid = _cached_deck(tmp_path)
+    result = CliRunner().invoke(main, ["clean", str(pdf), *args], input=answer)
+    assert says in result.output, result.output
+    assert local.exists() != local_gone
+    assert paid.exists() == (paid_where == "kept")
+    assert (paid.parent / "trash" / paid.name).exists() == (paid_where == "trash")
 
 
-def test_clean_keep_nothing_yes_skips_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    pdf = _copy_pdf(tmp_path)
-    (tmp_path / ".slidesonnet").mkdir()
-    seen: dict[str, str] = {}
-
-    def fake_clean(p: Path, keep: str) -> CleanResult:
-        seen["keep"] = keep
-        return CleanResult(removed_files=1, removed_bytes=10, kept_files=0)
-
-    monkeypatch.setattr("slidesonnet.clean.clean", fake_clean)
-    result = CliRunner().invoke(main, ["clean", str(pdf), "--keep", "nothing", "--yes"])
-    assert result.exit_code == 0
-    assert seen["keep"] == "nothing"
-    assert "Removed 1 files" in result.output
+def test_clean_help_explains_each_keep_level() -> None:
+    out = CliRunner().invoke(main, ["clean", "--help"]).output
+    assert all(f"{level}:" in out for level in ("api", "current", "exact", "nothing"))
+    assert "--dry-run" in out
 
 
 @pytest.mark.parametrize(
@@ -556,10 +540,13 @@ def test_audio_dir_flag_pins_the_pool_for_the_subcommand(
 
     monkeypatch.delenv(AUDIO_DIR_ENV, raising=False)
     seen: dict[str, str | None] = {}
-    monkeypatch.setattr(
-        "slidesonnet.clean.clean",
-        lambda p, keep: seen.update(env=os.environ.get(AUDIO_DIR_ENV)) or CleanResult(),
-    )
+    real_plan = clean_mod.plan_clean
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        seen.update(env=os.environ.get(AUDIO_DIR_ENV))
+        return real_plan(*args, **kwargs)
+
+    monkeypatch.setattr(clean_mod, "plan_clean", spy)
     pdf = _copy_pdf(tmp_path)
     (tmp_path / ".slidesonnet").mkdir()
     result = CliRunner().invoke(main, ["--audio-dir", str(tmp_path / "pool"), "clean", str(pdf)])
@@ -572,10 +559,7 @@ def test_clean_says_when_a_pool_was_left_alone(
 ) -> None:
     pdf = _copy_pdf(tmp_path)
     (tmp_path / ".slidesonnet").mkdir()
-    monkeypatch.setattr(
-        "slidesonnet.clean.clean",
-        lambda p, keep: CleanResult(removed_files=1, removed_bytes=10, pool=tmp_path / "pool"),
-    )
+    monkeypatch.setenv("SLIDESONNET_AUDIO_DIR", str(tmp_path / "pool"))
     result = CliRunner().invoke(main, ["clean", str(pdf), "--keep", "current"])
     assert result.exit_code == 0, result.output
     assert "pool" in result.output and "pool prune" in result.output
@@ -633,6 +617,23 @@ def test_pool_prune_is_a_dry_run_unless_applied(
     assert not orphan.exists()
     assert (pool / "trash" / orphan.name).exists()
     assert "trash" in applied.output
+
+
+def test_pool_prune_of_one_deck_spares_its_folder_siblings(tmp_path: Path) -> None:
+    """Without a pool, a folder's decks share .slidesonnet/audio/: naming one deck
+    must not orphan the clips of the deck beside it."""
+    from slidesonnet.hashing import audio_filename
+
+    pdf = _copy_pdf(tmp_path)
+    (tmp_path / "other.pdf").write_bytes(MARKED.read_bytes())
+    (tmp_path / "other.narration").write_text(simple_narration("@intro-title\nMine.\n"))
+    ad = tmp_path / ".slidesonnet" / "audio"
+    ad.mkdir(parents=True)
+    sibling = ad / audio_filename("Mine.", "kokoro", "k")
+    sibling.write_bytes(b"x")
+    result = CliRunner().invoke(main, ["pool", "prune", str(pdf), "--apply"])
+    assert result.exit_code == 0, result.output
+    assert sibling.exists()
 
 
 def test_pool_prune_needs_roots_or_decks(tmp_path: Path) -> None:

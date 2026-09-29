@@ -230,7 +230,7 @@ slidesonnet subs   deck.pdf -o OUT.srt [--engine ...] [--format srt|vtt]
         [--timing ...] [--allow-estimates]    # export already writes these
 slidesonnet edit   [deck.pdf|FOLDER] [--root DIR]   launch the editor
 slidesonnet review comment|reply|title|list|status|wait|...   review conversations
-slidesonnet clean  deck.pdf [--keep nothing|api|current|exact]   # this deck's cache only
+slidesonnet clean  deck.pdf [--keep nothing|api|current|exact] [--dry-run]   # paid clips → trash
 slidesonnet pool   status  [deck.pdf]               which clip pool a deck uses, and why
 slidesonnet pool   migrate --root DIR [--apply]     move old local caches into the pool
 slidesonnet pool   prune   --root DIR [--apply] [--keep current|exact|api] [--empty-trash]

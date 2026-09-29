@@ -31,11 +31,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.hashing import parse_audio_filename
-from slidesonnet.tts import AUTO_PRUNE_BACKENDS
+from slidesonnet.tts import API_BACKENDS, AUTO_PRUNE_BACKENDS
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,8 @@ TRASH_DIRNAME = "trash"
 _SNIPPET_CHARS = 80
 
 PoolKeep = Literal["api", "current", "exact"]
+#: Prune levels: the pool's, plus ``nothing`` (per-deck ``clean --keep nothing``).
+PruneKeep = Literal["nothing", "api", "current", "exact"]
 
 
 class PoolError(SlideSonnetError):
@@ -144,7 +146,7 @@ class PrunePlan:
     """What a prune would do; nothing has been touched yet."""
 
     pool: Path
-    keep: PoolKeep
+    keep: PruneKeep
     decks: list[Path]
     kept: list[Path] = field(default_factory=list)
     delete: list[Path] = field(default_factory=list)  # cheap local clips
@@ -165,39 +167,65 @@ class PruneResult:
     trash_dir: Path | None = None
 
 
-def _live_names(pool: Path, decks: Sequence[Path], keep: PoolKeep) -> tuple[set[str], set[str]]:
-    """(text hashes, exact filenames) every deck still expects — the GC roots."""
+class DeckRoot(NamedTuple):
+    """A deck as a GC root: its PDF and the sidecar to read (None = the default)."""
+
+    pdf: Path
+    sidecar: Path | None = None
+
+
+def _as_root(deck: Path | DeckRoot) -> DeckRoot:
+    return deck if isinstance(deck, DeckRoot) else DeckRoot(deck)
+
+
+def _live_names(
+    pool: Path, decks: Sequence[DeckRoot], keep: PruneKeep, protect: Sequence[DeckRoot]
+) -> tuple[set[str], set[str]]:
+    """(text hashes, exact filenames) the decks still expect — the GC roots.
+
+    *decks* count under *keep*; *protect* always counts under ``current``.
+    """
     from slidesonnet.clean import current_filenames, current_text_hashes
 
     hashes: set[str] = set()
     names: set[str] = set()
-    for deck in decks:
+    for root, level in [*((d, keep) for d in decks), *((d, "current") for d in protect)]:
         try:
-            if keep == "current":
-                hashes |= current_text_hashes(deck)
-            elif keep == "exact":
-                names |= current_filenames(deck)
+            if level == "current":
+                hashes |= current_text_hashes(root.pdf, root.sidecar)
+            elif level == "exact":
+                names |= current_filenames(root.pdf, root.sidecar)
         except Exception as e:  # any load failure: the deck can't vouch for its clips
             raise PoolError(
-                f"can't read {deck} ({e}); refusing to prune {pool} without knowing "
+                f"can't read {root.pdf} ({e}); refusing to prune {pool} without knowing "
                 "which clips it still needs"
             ) from e
     return hashes, names
 
 
-def plan_prune(pool: Path, decks: Sequence[Path], keep: PoolKeep = "current") -> PrunePlan:
+def plan_prune(
+    pool: Path,
+    decks: Sequence[Path | DeckRoot],
+    keep: PruneKeep = "current",
+    *,
+    protect: Sequence[DeckRoot] = (),
+) -> PrunePlan:
     """Decide each clip's fate under *keep*, given every deck that uses *pool*.
 
     ``api``: keep only paid-backend clips (no decks needed). ``current``: keep a
     clip whose utterance text (+ voice) some deck still says, on any engine.
     ``exact``: keep only clips some deck would synthesize under its *current*
-    engine config. A deck that fails to load aborts the plan (:class:`PoolError`)
-    rather than silently counting as "uses nothing".
+    engine config. ``nothing``: keep no clip for *decks*. Whatever the level, a
+    clip a *protect* deck currently says is kept — that is how a per-deck clean
+    spares the other decks sharing its folder's audio dir. A deck that fails to
+    load aborts the plan (:class:`PoolError`) rather than silently counting as
+    "uses nothing".
     """
-    plan = PrunePlan(pool=pool, keep=keep, decks=list(decks))
+    roots = [_as_root(d) for d in decks]
+    plan = PrunePlan(pool=pool, keep=keep, decks=[r.pdf for r in roots])
     if not pool.is_dir():
         return plan
-    hashes, names = _live_names(pool, decks, keep)
+    hashes, names = _live_names(pool, roots, keep, protect)
     for f in sorted(pool.iterdir()):
         if not f.is_file():
             continue
@@ -207,12 +235,7 @@ def plan_prune(pool: Path, decks: Sequence[Path], keep: PoolKeep = "current") ->
                 plan.unknown.append(f)
             continue
         th, backend, _ = parsed
-        if keep == "api":
-            live = _is_paid(backend)
-        elif keep == "current":
-            live = th in hashes
-        else:
-            live = f.name in names
+        live = th in hashes or f.name in names or (keep == "api" and is_paid(backend))
         if live:
             plan.kept.append(f)
         elif backend in AUTO_PRUNE_BACKENDS:
@@ -222,9 +245,7 @@ def plan_prune(pool: Path, decks: Sequence[Path], keep: PoolKeep = "current") ->
     return plan
 
 
-def _is_paid(backend: str) -> bool:
-    from slidesonnet.tts import API_BACKENDS
-
+def is_paid(backend: str) -> bool:
     return backend in API_BACKENDS
 
 

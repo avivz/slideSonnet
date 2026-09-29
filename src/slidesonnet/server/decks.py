@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from slidesonnet.atomic import atomic_write_text
+from slidesonnet.clean import SWEEP_GRACE_S, prune_local_orphans
 from slidesonnet.config import Config, default_config_path, load_config
 from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, load_deck, sidecar_text
 from slidesonnet.diagnostics import Diagnostic
@@ -79,6 +81,8 @@ class DeckService:
         self._pages_lock = threading.Lock()
         self._prune_timer: threading.Timer | None = None
         self._prune_lock = threading.Lock()
+        #: Clip name → when the sweep first saw it orphaned (monotonic clock).
+        self._orphaned_since: dict[str, float] = {}
 
     # ---- revisions ------------------------------------------------------
     def narration_revision(self) -> str:
@@ -192,25 +196,36 @@ class DeckService:
             timer, self._prune_timer = self._prune_timer, None
         if timer is not None:
             timer.cancel()
-            self._prune_now()
+            self._prune_now(reschedule=False)
 
     def _run_prune(self) -> None:
         with self._prune_lock:
             self._prune_timer = None
-        self._prune_now()
+        self._prune_now(reschedule=True)
 
-    def _prune_now(self) -> None:
-        """Reclaim local clips orphaned by recent edits (cheap to regenerate).
+    def _prune_now(self, *, reschedule: bool) -> None:
+        """Reclaim cheap local clips that stayed orphaned past the grace period.
 
         Best-effort: failures are logged and swallowed. Paid audio is untouched.
+        Orphans still inside their grace period get a follow-up sweep when it
+        ends (*reschedule*), so they go even if no further save happens.
         """
+        grace = SWEEP_GRACE_S
         try:
-            from slidesonnet.clean import prune_local_orphans
-
             with self._write_lock:  # never sweep against a half-applied edit
-                prune_local_orphans(self.pdf_path)
+                prune_local_orphans(
+                    self.pdf_path,
+                    self.sidecar_path,
+                    orphaned_since=self._orphaned_since,
+                    grace_s=grace,
+                    now=time.monotonic(),
+                )
+                pending = min(self._orphaned_since.values(), default=None)
         except Exception:
             logger.warning("Could not prune stale audio for %s", self.pdf_path, exc_info=True)
+            return
+        if reschedule and pending is not None:
+            self.schedule_prune(max(pending + grace - time.monotonic(), PRUNE_DELAY_S))
 
 
 _services: dict[Path, DeckService] = {}

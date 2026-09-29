@@ -96,6 +96,13 @@ def audio_dir(pdf_path: Path, config: Config | None = None) -> Path:
     return resolve_audio_dir(pdf_path, config).path
 
 
+def paths_overlap(a: Path, b: Path) -> bool:
+    """True when *a* and *b* are the same directory or one contains the other
+    (after resolving symlinks and ``..``) — removing one would remove the other."""
+    ra, rb = a.resolve(), b.resolve()
+    return ra == rb or ra in rb.parents or rb in ra.parents
+
+
 def adopt_legacy_audio(pdf_path: Path, pool: Path) -> int:
     """Copy clips from the deck's old local cache into *pool*; return how many.
 

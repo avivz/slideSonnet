@@ -1,16 +1,28 @@
 """Selective cache cleanup with graduated preservation levels.
 
-nothing — remove the entire .slidesonnet cache (except the review base: no level drops it)
-api     — keep cloud (paid, e.g. Inworld) audio, drop local Kokoro audio + renders
-current — keep audio for the current sidecar text (any engine), drop orphans + renders
-exact   — keep only audio matching the current text + active TTS config
+Render scratch and logs always go. ``--keep`` decides which speech clips of
+*this deck* survive:
+
+nothing — none
+api     — paid (API-backend, e.g. Inworld) clips only
+current — clips for text the deck still says, on any engine
+exact   — only clips the deck would use under its current engine config
+
+**One clip GC.** The default ``<folder>/.slidesonnet/audio/`` is shared by every
+deck in the folder, so it is treated as an implicit pool whose members are the
+sibling ``*.pdf`` files that have a ``<stem>.narration``. Whatever the level, a
+clip a sibling still says is kept, and the decision is made by
+:func:`slidesonnet.pool.plan_prune` — the same mark-and-sweep ``pool prune``
+uses. If a sibling can't be read, nothing is planned (fail conservatively).
+Paid and slow-to-make clips are never deleted outright: they are moved to
+``audio/trash/``, exactly like a pool prune.
 
 When the deck's clips live in a **shared pool** (``[cache] audio_dir`` or
 ``SLIDESONNET_AUDIO_DIR``, see :mod:`slidesonnet.cache`), the audio levels above
 are meaningless for one deck: a clip this deck no longer says may be exactly the
 one another deck still needs. A per-deck clean then touches only the deck's own
-``.slidesonnet/`` (renders, logs, and any legacy local clips after copying them
-into the pool) and reports the pool it left alone. Pruning the pool itself is
+scratch (renders, logs, and any legacy local clips after copying them into the
+pool) and reports the pool it left alone. Pruning the pool itself is
 :mod:`slidesonnet.pool`'s job, which considers every deck at once.
 """
 
@@ -18,217 +30,296 @@ from __future__ import annotations
 
 import logging
 import shutil
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from slidesonnet.audio.synth import engine_for_pace
 from slidesonnet.cache import (
-    REVIEW_DIRNAME,
     adopt_legacy_audio,
     cache_root,
     default_audio_dir,
+    paths_overlap,
     render_dir,
     resolve_audio_dir,
 )
 from slidesonnet.config import Config, load_config
-from slidesonnet.deck import load_deck
+from slidesonnet.deck import default_sidecar_path, load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
 from slidesonnet.models import VoiceConfig, resolve_voice
 from slidesonnet.narration.format import parse_sidecar
 from slidesonnet.narration.model import Pace, PageNarration
-from slidesonnet.tts import API_BACKENDS, AUTO_PRUNE_BACKENDS
+from slidesonnet.pool import (
+    TRASH_DIRNAME,
+    DeckRoot,
+    PoolError,
+    PrunePlan,
+    apply_prune,
+    is_paid,
+    plan_prune,
+)
 from slidesonnet.tts.base import TTSEngine
 
 logger = logging.getLogger(__name__)
 
 KeepLevel = Literal["nothing", "api", "current", "exact"]
 
+#: How long the automatic sweep leaves a cheap clip alone after it became an
+#: orphan — long enough to try a voice or a wording and change your mind.
+SWEEP_GRACE_S = 600.0
+
 
 @dataclass
 class CleanResult:
     removed_files: int = 0
     removed_bytes: int = 0
+    #: Speech clips left in place.
     kept_files: int = 0
     #: The shared pool this clean deliberately did not touch (None = no pool).
     pool: Path | None = None
+    #: Paid / slow clips moved to the trash instead of being deleted.
+    trashed_files: int = 0
+    trash_dir: Path | None = None
+    kept_paid: int = 0
+    #: Sweep only: orphans left alone because they are still in their grace period.
+    deferred_files: int = 0
 
     @property
     def removed_mb(self) -> float:
         return self.removed_bytes / (1024 * 1024)
 
 
-def _count_dir(path: Path) -> tuple[int, int]:
-    count = 0
-    total = 0
-    if not path.exists():
-        return 0, 0
-    for f in path.rglob("*"):
-        if f.is_file():
-            count += 1
-            total += f.stat().st_size
-    return count, total
+@dataclass
+class CleanPlan:
+    """What a clean would do; nothing has been touched yet."""
+
+    pdf: Path
+    keep: KeepLevel
+    #: Removed whole: the deck's render dir and the run logs.
+    scratch: list[Path] = field(default_factory=list)
+    #: The audio GC over the folder's shared clip dir (None in pool mode).
+    prune: PrunePlan | None = None
+    #: Pool mode: the shared pool, left alone.
+    pool: Path | None = None
+    #: Pool mode: the legacy local clip dir, copied into the pool then dropped.
+    legacy: Path | None = None
+
+    @property
+    def remove(self) -> list[Path]:
+        """Every file that would be deleted (legacy local clips: after being
+        copied into the pool)."""
+        files = [f for p in self.scratch for f in _files(p)]
+        if self.legacy is not None:
+            files += _files(self.legacy)
+        if self.prune is not None:
+            files += self.prune.delete
+        return files
+
+    @property
+    def to_trash(self) -> list[Path]:
+        return list(self.prune.quarantine) if self.prune is not None else []
+
+    @property
+    def paid_to_trash(self) -> list[Path]:
+        return [f for f in self.to_trash if _paid_clip(f)]
+
+    @property
+    def kept_paid(self) -> list[Path]:
+        return [f for f in self.prune.kept if _paid_clip(f)] if self.prune is not None else []
+
+    @property
+    def trash_dir(self) -> Path | None:
+        return self.prune.pool / TRASH_DIRNAME if self.prune is not None else None
 
 
-def clean(pdf_path: Path, keep: KeepLevel = "api") -> CleanResult:
-    """Clean the deck's cache with the given preservation level.
+def _paid_clip(f: Path) -> bool:
+    parsed = parse_audio_filename(f.name)
+    return parsed is not None and is_paid(parsed[1])
 
-    With a shared pool configured, only the deck's own ``.slidesonnet/`` is
-    touched (see the module docstring) and the result names the pool.
-    """
+
+def _files(path: Path) -> list[Path]:
+    if path.is_file():
+        return [path]
+    return [f for f in path.rglob("*") if f.is_file()] if path.is_dir() else []
+
+
+def _size(files: list[Path]) -> int:
+    return sum(f.stat().st_size for f in files)
+
+
+def sibling_decks(pdf_path: Path) -> list[DeckRoot]:
+    """The other decks sharing *pdf_path*'s folder (and so its default clip dir):
+    every ``*.pdf`` beside it with a ``<stem>.narration``."""
+    pdf = pdf_path.resolve()
+    return [
+        DeckRoot(p)
+        for p in sorted(pdf.parent.iterdir())
+        if p.suffix.lower() == ".pdf" and p != pdf and default_sidecar_path(p).is_file()
+    ]
+
+
+def _own_roots(pdf_path: Path, sidecar_path: Path | None) -> list[DeckRoot]:
+    """The deck itself as a GC root — under the sidecar actually being edited and,
+    when that is an override, also its default sidecar (someone may still use it)."""
+    pdf = pdf_path.resolve()
+    if sidecar_path is None or sidecar_path.resolve() == default_sidecar_path(pdf):
+        return [DeckRoot(pdf)]
+    return [DeckRoot(pdf, sidecar_path.resolve()), DeckRoot(pdf)]
+
+
+def plan_clean(
+    pdf_path: Path, keep: KeepLevel = "api", *, sidecar_path: Path | None = None
+) -> CleanPlan:
+    """Decide what ``clean`` would remove. Raises :class:`PoolError` when a deck in
+    the folder can't be read (nothing is planned without knowing what it uses)."""
+    from slidesonnet.logging_setup import LOG_FILENAME
+
     root = cache_root(pdf_path)
-    if not root.exists():
-        return CleanResult()
-
-    files_before, bytes_before = _count_dir(root)
+    logs = sorted(p for p in root.glob(f"{LOG_FILENAME}*") if p.is_file())
+    plan = CleanPlan(pdf=pdf_path, keep=keep, scratch=[render_dir(pdf_path), *logs])
     res = resolve_audio_dir(pdf_path, load_config(pdf_path))
+    if res.shared:
+        plan.pool = res.path
+        legacy = default_audio_dir(pdf_path)
+        if legacy.is_dir() and not paths_overlap(legacy, res.path):
+            plan.legacy = legacy
+        return plan
+    own = _own_roots(pdf_path, sidecar_path) if keep in ("current", "exact") else []
+    plan.prune = plan_prune(res.path, own, keep, protect=sibling_decks(pdf_path))
+    return plan
 
-    if keep == "nothing":
-        if res.shared:
-            adopt_legacy_audio(pdf_path, res.path)  # never lose a clip the pool lacks
-        _remove_all_but_review(root)
-    elif res.shared:
-        _remove_logs(pdf_path)
-        _remove_renders(pdf_path)
-        retire_legacy_audio(pdf_path, res.path)
-    else:
-        _remove_logs(pdf_path)
-        _remove_renders(pdf_path)
-        if keep == "api":
-            _keep_api(pdf_path)
-        elif keep == "current":
-            _keep_hashes(pdf_path, current_text_hashes(pdf_path))
-        elif keep == "exact":
-            _keep_filenames(pdf_path, current_filenames(pdf_path))
 
-    files_after, bytes_after = _count_dir(root)
-    return CleanResult(
-        removed_files=files_before - files_after,
-        removed_bytes=bytes_before - bytes_after,
-        kept_files=files_after,
-        pool=res.path if res.shared else None,
-    )
+def apply_clean(plan: CleanPlan) -> CleanResult:
+    """Carry out *plan*: delete scratch and cheap clips, park paid / slow ones in trash."""
+    result = CleanResult(pool=plan.pool)
+    for path in plan.scratch:
+        files = _files(path)
+        result.removed_files += len(files)
+        result.removed_bytes += _size(files)
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+    _rmdir_if_empty(render_dir(plan.pdf).parent)  # the shared render/ root
+    if plan.legacy is not None and plan.pool is not None:
+        files = _files(plan.legacy)
+        result.removed_bytes += _size(files)
+        result.removed_files += len(files)
+        retire_legacy_audio(plan.pdf, plan.pool)
+    if plan.prune is not None:
+        pruned = apply_prune(plan.prune)
+        result.removed_files += pruned.deleted_files
+        result.removed_bytes += pruned.deleted_bytes
+        result.trashed_files = pruned.quarantined_files
+        result.trash_dir = pruned.trash_dir
+        result.kept_files = len(plan.prune.kept)
+        result.kept_paid = len(plan.kept_paid)
+        if plan.keep == "nothing":
+            _rmdir_if_empty(plan.prune.pool)
+    _rmdir_if_empty(cache_root(plan.pdf))
+    return result
+
+
+def clean(
+    pdf_path: Path, keep: KeepLevel = "api", *, sidecar_path: Path | None = None
+) -> CleanResult:
+    """Plan and apply a clean of the deck's cache at the given preservation level.
+
+    With a shared pool configured, only the deck's own scratch is touched (see
+    the module docstring) and the result names the pool.
+    """
+    if not cache_root(pdf_path).exists():
+        return CleanResult()
+    return apply_clean(plan_clean(pdf_path, keep, sidecar_path=sidecar_path))
+
+
+def _rmdir_if_empty(path: Path) -> None:
+    if path.is_dir() and not any(path.iterdir()):
+        path.rmdir()
 
 
 def retire_legacy_audio(pdf_path: Path, pool: Path) -> int:
     """Move the deck-local clips into the pool: copy, then drop the local dir.
 
-    Adoption copies every recognizable clip that the pool lacks, so removing
-    the local dir afterwards loses nothing recognizable; unrecognized files
-    (never clips) go with it, as they would under any clean. Returns how many
-    clips the pool gained. Used by per-deck ``clean`` in pool mode and by
-    ``pool migrate`` for a whole course.
+    Adoption copies every recognizable clip that the pool lacks (and the local
+    trash into the pool's), so removing the local dir afterwards loses nothing
+    recognizable; unrecognized files (never clips) go with it, as they would
+    under any clean. Returns how many clips the pool gained. Used by per-deck
+    ``clean`` in pool mode and by ``pool migrate`` for a whole course.
+
+    Refuses (returns 0, deletes nothing) when the pool and the local dir are
+    the same directory or one contains the other: the rmtree would take the
+    pool with it.
     """
     legacy = default_audio_dir(pdf_path)
     if not legacy.is_dir():
         return 0
+    if paths_overlap(legacy, pool):
+        logger.warning("not retiring %s: it overlaps the pool %s", legacy, pool)
+        return 0
     adopted = adopt_legacy_audio(pdf_path, pool)
+    trash = legacy / TRASH_DIRNAME
+    if trash.is_dir():  # parked paid clips from an earlier clean: keep them parked
+        (pool / TRASH_DIRNAME).mkdir(parents=True, exist_ok=True)
+        for f in trash.iterdir():
+            dst = pool / TRASH_DIRNAME / f.name
+            if f.is_file() and not dst.exists():
+                shutil.move(str(f), str(dst))
     shutil.rmtree(legacy)
     return adopted
 
 
-def prune_local_orphans(pdf_path: Path) -> CleanResult:
-    """Drop cheap-to-regenerate audio whose utterance is no longer in the sidecar.
+def prune_local_orphans(
+    pdf_path: Path,
+    sidecar_path: Path | None = None,
+    *,
+    orphaned_since: dict[str, float] | None = None,
+    grace_s: float = 0.0,
+    now: float | None = None,
+) -> CleanResult:
+    """Drop cheap-to-regenerate clips that no deck in the folder says any more.
 
-    Called automatically after a sidecar edit: when text or a pinned voice
-    changes, its old clip's ``text_hash`` falls out of the current set and the
-    file becomes dead weight. Only backends flagged ``auto_prune_orphans`` (real-
-    time local audio like Kokoro — cheap to regenerate) are reclaimed eagerly.
-    Paid audio (Inworld — would re-bill) **and** expensive free-but-slow local
-    audio (Qwen3 — seconds per clip) are kept, so an unrelated edit never silently
-    discards minutes of own-voice generation. Renders are left alone, and
-    unrecognized filenames are kept — an automatic, silent sweep should only
-    delete clips it is certain it produced and that are trivial to remake.
+    Called automatically after a sidecar edit or a generated clip. Only
+    backends flagged ``auto_prune_orphans`` (real-time local audio like Kokoro)
+    are reclaimed; paid (Inworld) and slow (Qwen3) clips, renders and
+    unrecognized names are never touched. The live set covers every narrated
+    deck in the folder plus *sidecar_path* (the ``--narration`` override the
+    editor is working on), so a sibling deck's clips and a clip just generated
+    for the override both survive. A deck that can't be read makes the sweep
+    do nothing.
+
+    *orphaned_since* (clip name → when it was first seen orphaned, on the
+    *now* clock) carries state between sweeps: an orphan is deleted only after
+    it stayed orphaned for *grace_s*, and a clip that becomes live again
+    forgets its clock — so trying a voice and reverting costs nothing.
     """
     res = resolve_audio_dir(pdf_path, load_config(pdf_path))
     if res.shared:
         # Another deck on the pool may still say what this one just edited away.
         return CleanResult(pool=res.path)
-    ad = res.path
-    if not ad.exists():
+    try:
+        own = _own_roots(pdf_path, sidecar_path)
+        plan = plan_prune(res.path, own, "current", protect=sibling_decks(pdf_path))
+    except PoolError as e:
+        logger.warning("Not sweeping orphaned clips: %s", e)
         return CleanResult()
-
-    current = current_text_hashes(pdf_path)
-    result = CleanResult()
-    for f in ad.iterdir():
-        if not f.is_file():
+    since = orphaned_since if orphaned_since is not None else {}
+    at = time.monotonic() if now is None else now
+    orphans = {f.name: f for f in plan.delete}
+    for name in [n for n in since if n not in orphans]:
+        del since[name]  # live again (or gone): its grace clock starts over next time
+    result = CleanResult(kept_files=len(plan.kept))
+    for name, f in orphans.items():
+        if at - since.setdefault(name, at) < grace_s:
+            result.deferred_files += 1
             continue
-        parsed = parse_audio_filename(f.name)
-        if parsed is None or parsed[1] not in AUTO_PRUNE_BACKENDS or parsed[0] in current:
-            result.kept_files += 1
-            continue
-        result.removed_bytes += f.stat().st_size
-        f.unlink()
-        result.removed_files += 1
-    return result
-
-
-def _remove_all_but_review(root: Path) -> None:
-    """Empty the deck's cache, except the review base (the record of what the author
-    has already seen: not regenerable, so no clean level drops it)."""
-    for child in root.iterdir():
-        if child.name == REVIEW_DIRNAME and child.is_dir():
-            continue
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink()
-    if not any(root.iterdir()):
-        root.rmdir()
-
-
-def _remove_logs(pdf_path: Path) -> None:
-    """Drop the run log and its rotated backups — a disposable diagnostic artifact."""
-    from slidesonnet.logging_setup import LOG_FILENAME
-
-    root = cache_root(pdf_path)
-    for log in root.glob(f"{LOG_FILENAME}*"):
-        if log.is_file():
-            log.unlink()
-
-
-def _remove_renders(pdf_path: Path) -> None:
-    rd = render_dir(pdf_path)
-    if rd.exists():
-        shutil.rmtree(rd)
-    parent = rd.parent  # the shared render/ root; drop it once no deck uses it
-    if parent.exists() and not any(parent.iterdir()):
-        parent.rmdir()
-
-
-def _keep_api(pdf_path: Path) -> None:
-    ad = default_audio_dir(pdf_path)
-    if not ad.exists():
-        return
-    for f in ad.iterdir():
-        if not f.is_file():
-            continue
-        parsed = parse_audio_filename(f.name)
-        if parsed and parsed[1] in API_BACKENDS:
-            continue
-        f.unlink()
-
-
-def _keep_hashes(pdf_path: Path, hashes: set[str]) -> None:
-    ad = default_audio_dir(pdf_path)
-    if not ad.exists():
-        return
-    for f in ad.iterdir():
-        if not f.is_file():
-            continue
-        parsed = parse_audio_filename(f.name)
-        if parsed and parsed[0] in hashes:
-            continue
-        f.unlink()
-
-
-def _keep_filenames(pdf_path: Path, filenames: set[str]) -> None:
-    ad = default_audio_dir(pdf_path)
-    if not ad.exists():
-        return
-    for f in ad.iterdir():
-        if f.is_file() and f.name not in filenames:
+        del since[name]
+        if f.is_file():
+            result.removed_bytes += f.stat().st_size
             f.unlink()
+            result.removed_files += 1
+    return result
 
 
 def _review_base_blocks(pdf_path: Path) -> list[PageNarration]:
@@ -248,7 +339,7 @@ def _review_base_blocks(pdf_path: Path) -> list[PageNarration]:
 
 
 def _speech_plan(
-    pdf_path: Path,
+    pdf_path: Path, sidecar_path: Path | None = None
 ) -> tuple[Config, list[tuple[str, str | None, Pace | None]], dict[str, VoiceConfig]]:
     """Config, speech rows, and the voice map synthesis sees — so clean predicts
     the exact cache keys synthesis writes.
@@ -262,7 +353,7 @@ def _speech_plan(
     voice id — is mistaken for an orphan and deleted.
     """
     config = load_config(pdf_path)
-    deck, _ = load_deck(pdf_path)
+    deck, _ = load_deck(pdf_path, sidecar_path=sidecar_path)
     voices = {**config.voices, **deck.voices}
     rows: list[tuple[str, str | None, Pace | None]] = []
     for block in [*deck.narration.values(), *_review_base_blocks(pdf_path)]:
@@ -273,14 +364,14 @@ def _speech_plan(
     return config, rows, voices
 
 
-def current_text_hashes(pdf_path: Path) -> set[str]:
+def current_text_hashes(pdf_path: Path, sidecar_path: Path | None = None) -> set[str]:
     """text_hashes for current utterances across all backends (engine-agnostic).
 
     A named preset contributes every per-backend voice id it maps to (plus the
     bare default-voice variant), so a clip on any engine — including paid Inworld,
     whose name resolves to a concrete voice id — is recognized as current.
     """
-    _config, rows, voices = _speech_plan(pdf_path)
+    _config, rows, voices = _speech_plan(pdf_path, sidecar_path)
     hashes: set[str] = set()
     for text, preset, _pace in rows:
         voice_ids: set[str | None] = {None}
@@ -294,7 +385,7 @@ def current_text_hashes(pdf_path: Path) -> set[str]:
     return hashes
 
 
-def current_filenames(pdf_path: Path) -> set[str]:
+def current_filenames(pdf_path: Path, sidecar_path: Path | None = None) -> set[str]:
     """Expected audio filenames for the current text + active engine config.
 
     Mirrors the synthesis path: a paced utterance embeds its multiplied speed
@@ -302,7 +393,7 @@ def current_filenames(pdf_path: Path) -> set[str]:
     engine, not the base one; and the voice is resolved against the deck preamble
     + config presets for the active backend (default voice included).
     """
-    config, rows, voices = _speech_plan(pdf_path)
+    config, rows, voices = _speech_plan(pdf_path, sidecar_path)
     engines: dict[float, TTSEngine] = {}
     names: set[str] = set()
     for text, preset, pace in rows:
