@@ -9,7 +9,8 @@ import { useEditorStore } from '@/stores/editor'
 
 // `inline`: one line (the narrow top bar); otherwise the name gets a line of its own
 defineProps<{ label: string; hasPrev: boolean; hasNext: boolean; inline?: boolean }>()
-const emit = defineEmits<{ switch: []; step: [delta: 1 | -1] }>()
+// `orphans`: the errors are narration whose slide is gone — show the unattached narration
+const emit = defineEmits<{ switch: []; step: [delta: 1 | -1]; orphans: [] }>()
 
 const editor = useEditorStore()
 const helpOpen = ref(false)
@@ -18,6 +19,7 @@ const errors = computed(() => editor.errorCount)
 function firstError(): void {
   const i = editor.pages.findIndex((p) => p.status === 'error')
   if (i >= 0) editor.go(i)
+  else emit('orphans')
 }
 
 const SHORTCUTS: [string, string][] = [
@@ -64,7 +66,7 @@ const SHORTCUTS: [string, string][] = [
       <span class="text">{{ label }}</span>
     </button>
     <button
-      v-if="errors" class="errors mono" type="button" title="Go to the first slide with an error"
+      v-if="errors" class="errors mono" type="button" title="Show the first error"
       data-testid="error-pill" @click="firstError"
     >
       <AppIcon name="error" :size="13" /> {{ errors }} error{{ errors === 1 ? '' : 's' }}

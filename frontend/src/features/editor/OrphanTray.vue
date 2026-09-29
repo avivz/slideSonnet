@@ -139,6 +139,18 @@ async function remove(): Promise<void> {
   border-left: 3px solid var(--warn);
   border-radius: var(--radius-card);
 }
+/* the error pill led here: a brief glow says "this one" */
+.tray.flash {
+  animation: glow 1.6s ease-out;
+}
+@keyframes glow {
+  from {
+    box-shadow: 0 0 0 3px var(--warn);
+  }
+  to {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
 .title {
   display: flex;
   align-items: center;

@@ -2,7 +2,7 @@
 // The deck editor page (/d/:token). Layout: filmstrip | stage + narration |
 // console, each side pane resizable and collapsible; below 900 px the side
 // panes fold away and open as overlays.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { LibraryDeckDTO } from '@/api/client'
@@ -384,6 +384,20 @@ onBeforeUnmount(() => {
   void generation.leave()
 })
 
+/** The error pill, for narration whose slide is gone: bring the Unattached narration panel into view. */
+async function showOrphans(): Promise<void> {
+  consoleTab.value = 'audio'
+  if (narrow.value) overlay.value = 'console'
+  else if (!consoleOpen.value) toggle('console')
+  await nextTick()
+  const tray = document.querySelector<HTMLElement>('[data-testid="orphan-tray"]')
+  if (!tray) return
+  tray.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  tray.classList.remove('flash')
+  void tray.offsetWidth // restart the highlight when asked twice
+  tray.classList.add('flash')
+}
+
 function pick(deck: LibraryDeckDTO): void {
   void leaveTo(deck)
 }
@@ -403,7 +417,7 @@ function pick(deck: LibraryDeckDTO): void {
       </button>
       <DeckHead
         class="bar-head" inline :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
-        @switch="switcherOpen = true" @step="stepDeck"
+        @switch="switcherOpen = true" @step="stepDeck" @orphans="showOrphans"
       />
       <button
         class="icon-btn console-toggle" :class="{ on: overlay === 'console' }" type="button"
@@ -425,7 +439,7 @@ function pick(deck: LibraryDeckDTO): void {
       <div class="pane strip" :class="{ overlay: narrow && overlay === 'strip', hidden: narrow ? overlay !== 'strip' : !stripOpen }">
         <DeckHead
           v-if="!narrow" :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
-          @switch="switcherOpen = true" @step="stepDeck"
+          @switch="switcherOpen = true" @step="stepDeck" @orphans="showOrphans"
         />
         <FilmStrip />
       </div>

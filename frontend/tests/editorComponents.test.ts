@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ConsolePanel from '@/features/editor/ConsolePanel.vue'
+import DeckHead from '@/features/editor/DeckHead.vue'
 import NarrationEditor from '@/features/editor/NarrationEditor.vue'
 import OrphanTray from '@/features/editor/OrphanTray.vue'
 import VoicesDialog from '@/features/editor/VoicesDialog.vue'
@@ -249,6 +250,19 @@ describe('voices and unattached narration', () => {
       default_voice: 'narrator',
       renames: { lecturer: 'narrator' },
     })
+  })
+
+  it('the error pill leads to the slide with the error, or to the unattached narration', async () => {
+    const server = new FakeServer()
+    const { editor } = await setup(server)
+    const snap = editor.snapshot!
+    editor.snapshot = { ...snap, diagnostics: [{ code: 'orphan', severity: 'error', message: 'x', slide_id: 'gone' }] }
+    const w = mount(DeckHead, { props: { label: 'deck', hasPrev: false, hasNext: false } })
+    await w.get('[data-testid="error-pill"]').trigger('click')
+    expect(w.emitted('orphans')).toHaveLength(1) // no slide to go to: the tray instead
+    editor.snapshot = { ...editor.snapshot, pages: snap.pages.map((p, i) => (i === 1 ? { ...p, status: 'error' } : p)) }
+    await w.get('[data-testid="error-pill"]').trigger('click')
+    expect([editor.currentId, w.emitted('orphans')?.length]).toEqual(['b', 1])
   })
 
   it('attaches unattached narration to an empty slide', async () => {
