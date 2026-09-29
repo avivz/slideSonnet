@@ -8,10 +8,10 @@ slideSonnet (v1.x) is a **PDF + narration-sidecar editor**. You bring a finished
 PDF whose Beamer source stamped a stable `\ssid` slide-id onto every page; the
 spoken narration lives in a human-readable, git-diffable `<deck>.narration`
 sidecar keyed to those ids. The tool synthesizes speech (Kokoro local / Inworld
-cloud, content-addressed cache), composites video with FFmpeg, writes SRT/VTT
+cloud / Qwen3 local, into a content-addressed clip pool), composites video with FFmpeg, writes SRT/VTT
 subtitles, and ships a browser editor (`slidesonnet edit`: Vue 3 frontend in
 `frontend/`, FastAPI backend in `src/slidesonnet/server/`) with a silence-aware
-whole-deck preview. The CLI/`slidesonnet.api` make the whole pipeline scriptable.
+preview player (Play all goes slide by slide; "Watch as video" builds the whole deck). The CLI/`slidesonnet.api` make the whole pipeline scriptable.
 
 > The pre-1.0 source→video pipeline (MARP/Beamer parsers, doit build graph,
 > playlists, inline `\say`/`<!-- say -->`) was **removed** in the v1 rewrite.
@@ -37,7 +37,7 @@ Items flow from inbox → roadmap during `/pm` triage. The `/pm` skill reads bot
 
 ```bash
 make install                           # Editable install with Kokoro + dev tools
-make test                              # All tests (needs ffmpeg, pdftoppm, kokoro)
+make test                              # All tests (needs ffmpeg, pdftoppm, kokoro; the browser tier also a built frontend + Playwright)
 make test-unit                         # Unit tests only (fast, no external deps; CI's tier)
 make test-browser                      # Real-browser editor journeys (local only; builds the frontend)
 make lint                              # Ruff check + format --check
@@ -52,6 +52,7 @@ make showcase                          # Compile + render showcase (Kokoro)
 make demos                             # Both demos
 make check-basel / make check-showcase # Run id reconciliation on a demo
 make clean-basel / make clean-showcase # slidesonnet clean (keeps API audio)
+make clean-examples                    # Both of the above
 make purge-examples                    # clean --keep nothing on both demos
 make clean                             # Remove build artifacts + __pycache__ (never deck caches)
 slidesonnet clean <deck.pdf>                       # Default: --keep api
@@ -64,9 +65,9 @@ slidesonnet clean <deck.pdf> --keep nothing        # Nuke the deck's cache
 ## Testing Rules
 
 - **NEVER run tests or builds against Inworld** — it costs real money (API credits). Use `--engine kokoro` for integration testing, and mocked unit tests (a fake `TTSEngine`) for Inworld functionality. The test suite enforces this with an autouse conftest guard (sentinel API key + fail-fast fake client) — mock `slidesonnet.tts.inworld.InworldClient` when a test needs a client.
-- **Prefer `make clean-*` over `make purge-*`** — clean keeps cached API audio (which costs money to regenerate), purge nukes everything. Only use purge when explicitly asked.
+- **Prefer `make clean-examples` (or `clean-basel`/`clean-showcase`) over `make purge-examples`** — clean keeps cached API audio (which costs money to regenerate), purge nukes everything. Only use purge when explicitly asked.
 - **No heavy tests in CI** — GitHub Actions free tier has limited minutes, and we stay on it. CI runs lint, typecheck, the fast unit tier (`pytest -m "not integration and not browser"`), and the wheel build only. Heavy tests are local-only: `integration` (`make test`, external tools) and `browser` (real-browser Playwright GUI journeys).
-- **The unit tier is fast now** (~25 s; it was ~150 s while the NiceGUI in-process tests existed), so run `make test-unit` freely; `make test-frontend` (Vitest) takes a few seconds.
+- **The unit tier is fast now** (~35–50 s; it was ~150 s while the NiceGUI in-process tests existed), so run `make test-unit` freely; `make test-frontend` (Vitest) takes a few seconds.
 - **Tests must be order-independent.** Don't rely on collection order or on state another test left behind. Process-wide caches (e.g. `slidesonnet.tts.qwen3._MODEL_CACHE`) are reset between tests by an autouse `conftest` fixture; if you add another global/warm-model cache, reset it there too rather than writing an order-dependent assertion.
 
 ## Example Videos
@@ -93,7 +94,7 @@ Version is set in `src/slidesonnet/__init__.py`. Update it before tagging.
 ## Code Conventions
 
 - Python 3.13+, line length 100 (Ruff)
-- `mypy --strict` must pass on all source files. Untyped external libraries (inworld_tts, dotenv, kokoro, fitz) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
+- `mypy --strict` must pass on all source files. Untyped external libraries (inworld_tts, dotenv, kokoro, pymupdf, qwen_tts, torch, …) are ignored via `[[tool.mypy.overrides]]` in pyproject.toml. All new code must have full type annotations.
 - Heavy tests are local-only (never in CI): `@pytest.mark.integration` (export/render and previews with real Kokoro) and `@pytest.mark.browser` (real-browser Playwright journeys against the production frontend + server, `tests/test_browser_journeys.py`). Editor logic is tested at the lowest level that can see it: Python API/service tests (FastAPI test client) and Vitest store/component tests (`frontend/tests`, `make test-frontend`); the browser tier is only for focus, timing, media, and navigation.
 - External tool dependencies: ffmpeg, ffprobe, pdftoppm, kokoro (Python package); latexmk + pdflatex to compile your own deck (use `slidesonnet doctor` to check)
 - **The editor** (`docs/frontend-migration.md` has the history): the backend lives in `src/slidesonnet/server/` (services, `/api/v1`, jobs, SSE, served by Uvicorn via `server/run.py`); the Vue app in `frontend/` (Vue 3 + strict TS + Pinia, Vitest). A source checkout needs Node ≥ 20.19 to build the frontend (`make frontend`; `make install` does it when npm is present); installed wheels/sdists ship it built. After changing an API schema, run `make api-types` (CI fails on drift).
