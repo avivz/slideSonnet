@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ConsolePanel from '@/features/editor/ConsolePanel.vue'
 import DeckHead from '@/features/editor/DeckHead.vue'
+import FilmStrip from '@/features/editor/FilmStrip.vue'
 import NarrationEditor from '@/features/editor/NarrationEditor.vue'
 import OrphanTray from '@/features/editor/OrphanTray.vue'
 import VoicesDialog from '@/features/editor/VoicesDialog.vue'
@@ -276,5 +277,30 @@ describe('voices and unattached narration', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="attach-confirm"]')!.click()
     await flushPromises()
     expect(server.commands[0]).toMatchObject({ type: 'attach_orphan', orphan_id: 'gone', target_id: 'b' })
+  })
+})
+
+describe('filmstrip', () => {
+  it('holds every thumbnail through a recompile and swaps each in place', async () => {
+    const server = new FakeServer()
+    const { editor } = await setup(server)
+    const w = mount(FilmStrip)
+    const thumbs = () => w.findAll('img').map((img) => img.element)
+    const before = thumbs()
+    expect(before.map((img) => img.getAttribute('src'))).toEqual(['/img/p/a.png', '/img/p/b.png', '/img/p/c.png'])
+    server.pdfRev = 'p2' // recompiled; its pages not rendered yet
+    server.imagesRendered = false
+    await editor.refresh()
+    await flushPromises()
+    expect(thumbs()).toEqual(before) // the same elements, still showing the old pictures: no blank strip
+    expect(before.map((img) => img.getAttribute('src'))).toEqual(['/img/p/a.png', '/img/p/b.png', '/img/p/c.png'])
+    before[2]!.dispatchEvent(new Event('error')) // never loaded, and the recompile deleted it
+    await flushPromises()
+    expect(w.get('[data-testid="thumb-2"] .fallback').text()).toBe('c') // the label, not a broken picture
+    server.imagesRendered = true
+    await editor.refreshPages()
+    await flushPromises()
+    expect(thumbs().slice(0, 2)).toEqual(before.slice(0, 2)) // each swaps its picture in place (the browser holds the old until the new loads)
+    expect(thumbs().map((img) => img.getAttribute('src'))).toEqual(['/img/p2/a.png', '/img/p2/b.png', '/img/p2/c.png'])
   })
 })

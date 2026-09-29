@@ -98,7 +98,13 @@ watch(
           :title="review.active ? 'Ctrl-click: tag for a new conversation' : undefined"
           @click="onThumb($event, item.index, item.slideId)"
         >
-          <img v-if="editor.images[item.index]" :src="editor.images[item.index] as string" alt="" loading="lazy" />
+          <img
+            v-if="editor.images[item.index]"
+            :src="editor.images[item.index] as string"
+            alt=""
+            loading="lazy"
+            @error="editor.imageFailed(editor.images[item.index] as string)"
+          />
           <span v-else class="fallback mono">{{ item.slideId || `page ${item.index + 1}` }}</span>
           <span class="num mono">{{ item.index + 1 }}</span>
           <span v-if="status(item.index) !== 'ready'" class="badge" :class="status(item.index)">

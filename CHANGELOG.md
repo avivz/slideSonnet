@@ -124,6 +124,8 @@ regression test.
 - The error pill leads to the Unattached narration panel when the error belongs to
   no slide; an empty slide in the Script view offers "+ Add a line".
 - Every confirmation uses the editor's own dialog, and "Clear accepted" asks first.
+- **A recompiled PDF no longer blanks the filmstrip and the slide.** Each slide
+  keeps its last picture until its new one is rendered, then swaps it in place.
 
 ### Security (September 2026 review)
 - **Slide images and audio (`/ssmedia`) get the same Host check as the API**,

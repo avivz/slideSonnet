@@ -275,12 +275,12 @@ watch(
     else if (now[0] !== before[0]) void review.refresh()
   },
 )
-// a recompiled PDF drops its old page images: render the new ones (once per change)
+// a recompiled PDF's pages aren't rendered yet (the old pictures stand in): render them (once per change)
 let renderAsked = ''
 watch(
   () => editor.snapshot?.revisions.pdf,
   (pdfRev) => {
-    if (!pdfRev || pdfRev === renderAsked || !editor.images.some((img) => img === null)) return
+    if (!pdfRev || pdfRev === renderAsked || !editor.pages.some((p) => p.image_url === null)) return
     renderAsked = pdfRev
     if (editor.token) {
       void editor.client

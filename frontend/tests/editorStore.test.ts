@@ -120,15 +120,24 @@ it('opening another deck never reuses the previous deck’s drafts', async () =>
   expect(store.draftFor('a')?.middle[0]?.text).toBe('Deck two.')
 })
 
-it('a recompiled PDF drops the old page images; a render in progress keeps them', async () => {
+it('a recompiled PDF keeps each slide’s old picture until its new one is rendered', async () => {
   const { store, server } = await setup()
   expect(store.images[0]).toBe('/img/p/a.png')
   server.imagesRendered = false // same PDF, its render still filling in: keep what we show
   await store.refresh()
   expect(store.images[0]).toBe('/img/p/a.png')
-  server.pdfRev = 'p2' // recompiled: the old pictures are of another PDF
+  // recompiled with slide c moved to the front, nothing of it rendered yet: every
+  // slide keeps its last picture (by slide id, not position) — no blank strip
+  server.pdfRev = 'p2'
+  server.pages = ['c', 'a', 'b']
   await store.refresh()
-  expect(store.images).toEqual([null, null, null])
+  expect(store.images).toEqual(['/img/p/c.png', '/img/p/a.png', '/img/p/b.png'])
+  server.pages = ['c', 'a', 'b', 'new'] // a slide the old build never had: nothing to hold
+  await store.refresh()
+  expect(store.images[3]).toBeNull()
+  server.imagesRendered = true // the render lands: the new pictures replace the old
+  await store.refreshPages()
+  expect(store.images).toEqual(['/img/p2/c.png', '/img/p2/a.png', '/img/p2/b.png', '/img/p2/new.png'])
 })
 
 // ---- save and session soundness ----------------------------------------------------

@@ -228,11 +228,13 @@ export const useEditorStore = defineStore('editor', () => {
     if (before !== undefined && newRevision !== before && !ownRevisions.has(newRevision)) {
       externalChanges.value++
     }
-    // while a render fills in, keep showing what we have; a recompiled PDF's old
-    // pictures are of another build (and deleted), so they go
-    const samePdf = snapshot.value?.revisions.pdf === snap.revisions.pdf
+    // while a render fills in, keep showing what we have — after a recompile too:
+    // each slide holds its last picture (by id, as pages may move) until its new
+    // one is rendered, so the strip and stage never blank
+    const key = (p: { slide_id: string }, i: number): string => p.slide_id || `#${i}` // unmarked: by place
+    const shown = new Map((snapshot.value?.pages ?? []).map((p, i) => [key(p, i), images.value[i]]))
     snapshot.value = snap
-    images.value = snap.pages.map((p, i) => p.image_url ?? (samePdf ? images.value[i] : null) ?? null)
+    images.value = snap.pages.map((p, i) => p.image_url ?? shown.get(key(p, i)) ?? null)
     if (inFlight.value === 0) revision.value = newRevision
     for (const [slideId, draft] of drafts) {
       const theirs = serverBlock(snap, slideId)
@@ -410,10 +412,16 @@ export const useEditorStore = defineStore('editor', () => {
     const epoch = loadEpoch.value
     try {
       const fresh = (await client.value.pages(token.value)).images
-      if (epoch === loadEpoch.value) images.value = fresh
+      // a page not rendered yet keeps the picture it shows
+      if (epoch === loadEpoch.value) images.value = fresh.map((url, i) => url ?? images.value[i] ?? null)
     } catch {
       // keep what we have
     }
+  }
+
+  /** A picture that failed to load (an old one a recompile deleted): show none until the new one. */
+  function imageFailed(url: string): void {
+    if (images.value.includes(url)) images.value = images.value.map((u) => (u === url ? null : u))
   }
 
   async function setEngine(next: Backend | null): Promise<void> {
@@ -462,7 +470,7 @@ export const useEditorStore = defineStore('editor', () => {
     client, token, snapshot, meta, engine, activeEngine, index, loadError, drafts, saveState,
     conflict, conflicts, flashMessage, revision, images, externalChanges, loadEpoch, pages, page,
     currentId, errorCount, diagnosticsHere, dirtySlides, hasUnsaved,
-    open, refresh, refreshPages, draftFor, isDirty, touch, flush, ensureSaved, onSaved,
+    open, refresh, refreshPages, imageFailed, draftFor, isDirty, touch, flush, ensureSaved, onSaved,
     resolveConflict, go, goToSlide, setEngine, command, flash,
   }
 })

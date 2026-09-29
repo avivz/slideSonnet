@@ -146,6 +146,41 @@ def test_navigate_with_buttons_keys_and_filmstrip(
     expect(counter).to_have_text("Slide 1 / 6")
 
 
+def test_a_recompile_keeps_the_filmstrip_up_until_the_new_pictures_land(
+    page: Page, server: Server, tmp_path: Path
+) -> None:
+    """No blank strip on a recompile: each thumbnail holds its picture until the new one."""
+    import pymupdf
+
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    page.goto(server(pdf))
+    thumbs = page.locator("nav.strip .thumb img")
+    all_loaded = (
+        "() => { const imgs = [...document.querySelectorAll('nav.strip .thumb img')];"
+        " return imgs.length === 6 && imgs.every((i) => i.complete && i.naturalWidth > 0) }"
+    )
+    page.wait_for_function(all_loaded, timeout=20_000)
+    old = [thumbs.nth(i).get_attribute("src") for i in range(6)]
+    page.evaluate(
+        """() => {
+          window.__fewest = 6
+          const strip = document.querySelector('nav.strip')
+          new MutationObserver(() => {
+            const shown = [...strip.querySelectorAll('.thumb img')].filter((i) => i.naturalWidth > 0)
+            window.__fewest = Math.min(window.__fewest, shown.length)
+          }).observe(strip, { subtree: true, childList: true, attributes: true })
+        }"""
+    )
+    doc = pymupdf.open(pdf)  # the author recompiles
+    doc[1].insert_text((40, 200), "a new line on the slide", fontsize=16)
+    doc.saveIncr()
+    doc.close()
+    for i in range(6):  # every page re-rendered, and each new picture swapped in
+        expect(thumbs.nth(i)).not_to_have_attribute("src", old[i] or "", timeout=20_000)
+    page.wait_for_function(all_loaded)
+    assert page.evaluate("window.__fewest") == 6  # never a blank or broken tile on the way
+
+
 def test_typing_autosaves_without_leaving_the_field(
     page: Page, server: Server, tmp_path: Path
 ) -> None:

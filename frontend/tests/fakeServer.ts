@@ -144,7 +144,7 @@ export class FakeServer {
       return { changed: true, revision: this.revision }
     }
     c.engineVoices = async (engine) => ({ engine: engine as 'kokoro', voices: engine === 'kokoro' ? ['am_echo', 'af_bella'] : [], default: engine === 'kokoro' ? 'am_echo' : null })
-    c.pages = async () => ({ images: this.pages.map((id) => `/img/${id}.png`) })
+    c.pages = async () => ({ images: this.pages.map((id) => (this.imagesRendered ? `/img/${this.pdfRev}/${id}.png` : null)) })
     return c
   }
 

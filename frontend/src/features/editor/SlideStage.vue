@@ -56,7 +56,14 @@ onBeforeUnmount(() => {
       </figure>
     </div>
     <div v-show="!before" ref="stage" class="stage" data-testid="stage">
-      <img v-if="image" class="slide" :src="image" :alt="`Slide ${editor.index + 1}`" data-testid="stage-img" />
+      <img
+        v-if="image"
+        class="slide"
+        :src="image"
+        :alt="`Slide ${editor.index + 1}`"
+        data-testid="stage-img"
+        @error="editor.imageFailed(image)"
+      />
       <div v-else class="placeholder mono">{{ editor.currentId || `page ${editor.index + 1}` }} · rendering…</div>
       <slot name="overlay" />
     </div>
