@@ -7,10 +7,14 @@ exported video, the preview cue sheet, and the subtitles.
 
 from __future__ import annotations
 
+import contextvars
+import dataclasses
 import hashlib
 import json
 import logging
+import wave
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -262,7 +266,13 @@ def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
 #: under the render dir (``pages/`` — the rasterized slides) is reused by the
 #: editor filmstrip and the next export, so it is not scratch.
 _SCRATCH_DIRS = ("silence", "segments")
-_SCRATCH_FILES = ("track.wav", "track.cache.json", "silent.mp4")
+_SCRATCH_FILES = (
+    "track.wav",
+    "track.cache.json",
+    "silent.mp4",
+    "track.m4a",
+    "track.m4a.json",
+)
 _SCRATCH_GLOBS = ("page-*.wav",)
 
 
@@ -298,6 +308,63 @@ def prune_render_scratch(render_dir: Path) -> int:
             freed += sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
             shutil.rmtree(d)
     return freed
+
+
+#: The quick export (``--fast``): at most 720 lines, a quick x264 preset, a
+#: slightly higher crf. The timing knobs (fps, lead/tail silence) are left alone,
+#: so the audio track and the subtitles are exactly the full export's.
+FAST_MAX_HEIGHT = 720
+FAST_PRESET = "veryfast"
+FAST_CRF = 26
+
+
+def fast_video(video: VideoConfig) -> VideoConfig:
+    """*video* with the quick export's picture settings (720p at most, same aspect)."""
+    w, h = (int(n) for n in video.resolution.split("x"))
+    if h > FAST_MAX_HEIGHT:
+        w, h = round(w * FAST_MAX_HEIGHT / h / 2) * 2, FAST_MAX_HEIGHT
+    return dataclasses.replace(video, resolution=f"{w}x{h}", preset=FAST_PRESET, crf=FAST_CRF)
+
+
+def track_aac(track: Path, render_dir: Path) -> Path:
+    """The deck track encoded for the MP4 (``track.m4a``), reused while the track is unchanged.
+
+    Keyed on the track's bytes, so a quick export after a slide-only change skips
+    the audio encode — the longest step left once the video is one pass. The
+    encoder settings are :func:`~slidesonnet.video.composer.mux_audio`'s, so the
+    sound is the full export's.
+    """
+    from slidesonnet.video import composer
+
+    out = render_dir / "track.m4a"
+    key_path = render_dir / "track.m4a.json"
+    digest = hashlib.sha256()
+    with track.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    key = digest.hexdigest()
+    if out.exists() and _read_manifest(key_path).get("track") == key:
+        return out
+    key_path.unlink(missing_ok=True)  # un-certify before replacing
+    with composer.partial_output(out) as partial:
+        composer.encode_aac(track, partial)
+    _write_manifest(key_path, {"track": key})
+    return out
+
+
+def wav_seconds(path: Path) -> float:
+    """A page WAV's length from its header, without an ffprobe per page.
+
+    The quick export's measure (ffprobe costs ~0.1 s a call, a few seconds on a
+    long deck); anything :mod:`wave` can't read falls back to ffprobe.
+    """
+    from slidesonnet.video import composer
+
+    try:
+        with wave.open(str(path), "rb") as w:
+            return w.getnframes() / w.getframerate()
+    except (OSError, EOFError, wave.Error):
+        return composer.get_duration(path)
 
 
 def transition_morph_seconds(transitions: list[Transition], page_fulls: list[float]) -> list[float]:
@@ -386,8 +453,13 @@ def compose_video(
     transitions: list[Transition] | None = None,
     audio_track: Path | None = None,
     progress: ProgressFn | None = None,
+    fast: bool = False,
 ) -> Path:
     """Compose page images into the final MP4, with centered-overlay transitions.
+
+    *fast* makes the quick export instead (:func:`_compose_fast`): every
+    boundary a cut, the stills encoded in one pass at :func:`fast_video`'s
+    settings, the same audio track.
 
     *transitions* (when given) holds the boundary transition between page ``i``
     and ``i+1`` at index ``i`` (length ``len(pages) - 1``). An animated
@@ -410,18 +482,30 @@ def compose_video(
     from slidesonnet.video import composer
 
     v = config.video
-    seg_dir = render_dir / "segments"
-    seg_dir.mkdir(parents=True, exist_ok=True)
     boundaries = transitions or []
     n = len(timeline.pages)
 
     # Real on-screen length of each page: the synthesized audio when audible,
     # else the timing model. The morph geometry and the muxed track both align
     # to these, so the centered overlay never shifts the timeline.
+    measure = wav_seconds if fast else composer.get_duration
     fulls = [
-        page.duration if page_audios is None else composer.get_duration(page_audios[i])
+        page.duration if page_audios is None else measure(page_audios[i])
         for i, page in enumerate(timeline.pages)
     ]
+    if fast:
+        return _compose_fast(
+            timeline,
+            page_images,
+            output,
+            fulls,
+            video=fast_video(v),
+            render_dir=render_dir,
+            audio_track=audio_track if page_audios is not None else None,
+            progress=progress,
+        )
+    seg_dir = render_dir / "segments"
+    seg_dir.mkdir(parents=True, exist_ok=True)
     morph = transition_morph_seconds(
         [*boundaries] + [Transition()] * (n - 1 - len(boundaries)), fulls
     )
@@ -497,5 +581,78 @@ def compose_video(
             concatenate_segments(pieces, silent_video, on_time=ffmpeg_pass("concat"))
             report("concat", total_s, total_s)
             composer.mux_audio(silent_video, audio_track, partial, on_time=ffmpeg_pass("mux"))
+            report("mux", total_s, total_s)
+    return output
+
+
+def _compose_fast(
+    timeline: DeckTimeline,
+    page_images: list[Path],
+    output: Path,
+    fulls: list[float],
+    *,
+    video: VideoConfig,
+    render_dir: Path,
+    audio_track: Path | None,
+    progress: ProgressFn | None,
+) -> Path:
+    """The quick export: one slideshow pass (cuts only), the track's AAC made alongside.
+
+    The full export encodes ``duration × fps`` identical frames per slide and a
+    clip per transition; here each still is a handful of long frames (see
+    :func:`~slidesonnet.video.composer.compose_slideshow`), so the picture takes
+    about a second. The audio is the same track, encoded as the full export
+    encodes it (:func:`track_aac`, reused while unchanged) on a second thread,
+    then both streams are copied into the MP4. Reports the same phases as the
+    full export: ``video`` counts slides as ffmpeg reaches them, ``concat`` has
+    nothing to join, ``mux`` is the copy.
+    """
+    from slidesonnet.video import composer
+
+    n = len(timeline.pages)
+    starts = [sum(fulls[:i]) for i in range(1, n)]  # where slides 2..n come on
+    total_s = max(1, round(sum(fulls)))
+
+    def report(phase: str, done: int, total: int, label: str = "") -> None:
+        if progress is not None:
+            progress(phase, done, total, label)
+
+    def on_video(t: float) -> None:
+        done = sum(1 for s in starts if s <= t)
+        report("video", done, n, timeline.pages[done].slide_id if done < n else "")
+
+    report("video", 0, n)
+    render_dir.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with ThreadPoolExecutor(max_workers=1) as pool, composer.partial_output(output) as partial:
+        # The worker runs in this context, so a cancel reaches its ffmpeg too.
+        aac = (
+            pool.submit(contextvars.copy_context().run, track_aac, audio_track, render_dir)
+            if audio_track is not None
+            else None
+        )
+        silent = partial if aac is None else render_dir / "silent.mp4"
+        composer.compose_slideshow(
+            page_images,
+            fulls,
+            silent,
+            scratch=render_dir,
+            resolution=video.resolution,
+            crf=video.crf,
+            preset=video.preset,
+            on_time=on_video if progress is not None else None,
+        )
+        report("video", n, n, timeline.pages[-1].slide_id if n else "")
+        report("concat", total_s, total_s)  # one pass: nothing to join
+        if aac is not None:
+            report("mux", 0, total_s)
+            composer.mux_copy(
+                silent,
+                aac.result(),
+                partial,
+                on_time=(lambda t: report("mux", min(total_s, int(t)), total_s))
+                if progress is not None
+                else None,
+            )
             report("mux", total_s, total_s)
     return output

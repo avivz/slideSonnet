@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import math
 import os
 import secrets
 import shutil
@@ -252,6 +253,106 @@ def mux_audio(
         "aac",
         "-b:a",
         "192k",
+        str(output),
+    ]
+    _run_ffmpeg(cmd, on_time=on_time)
+
+
+def compose_slideshow(
+    images: list[Path],
+    durations: list[float],
+    output: Path,
+    *,
+    scratch: Path,
+    resolution: str,
+    crf: int,
+    preset: str,
+    max_frame_seconds: float = 1.0,
+    on_time: Callable[[float], None] | None = None,
+) -> None:
+    """Encode *images* as one silent, variable-frame-rate video in a single pass.
+
+    The quick export's video: each still is shown for its duration as a few long
+    frames (none longer than *max_frame_seconds*, so seeking and players that
+    expect a steady picture cope) rather than ``duration × fps`` identical ones,
+    which is what makes the full-quality encode slow. The concat demuxer places
+    every entry on its own clock, so the error stays under one of its ticks
+    (1/25 s) however long the deck. Its list file goes in *scratch* under a
+    unique name, as in :func:`concatenate_segments`.
+    """
+    logger.debug("slideshow: %d stills → %s", len(images), output.name)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    scratch.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    shown: Path | None = None
+    for image, seconds in zip(images, durations, strict=True):
+        if seconds <= 0:
+            continue
+        chunks = max(1, math.ceil(seconds / max_frame_seconds - 1e-9))
+        entry = f"file {_concat_quote(image.resolve())}\nduration {seconds / chunks:.6f}\n"
+        lines.extend([entry] * chunks)
+        shown = image
+    if shown is not None:  # the demuxer ignores the last entry's duration: repeat it
+        lines.append(f"file {_concat_quote(shown.resolve())}\n")
+    fd, name = tempfile.mkstemp(dir=scratch, prefix=".slideshow-", suffix=".txt")
+    listing = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(listing),
+            "-an",
+            "-c:v",
+            "libx264",
+            "-tune",
+            "stillimage",
+            "-vf",
+            _scale_pad_filter(resolution),
+            "-fps_mode",
+            "vfr",
+            "-preset",
+            preset,
+            "-crf",
+            str(crf),
+            str(output),
+        ]
+        _run_ffmpeg(cmd, on_time=on_time)
+    finally:
+        listing.unlink(missing_ok=True)
+
+
+def encode_aac(audio: Path, output: Path) -> None:
+    """Encode *audio* to AAC with the settings :func:`mux_audio` uses (same sound)."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["ffmpeg", "-y", "-i", str(audio), "-vn", "-c:a", "aac", "-b:a", "192k", str(output)]
+    _run_ffmpeg(cmd)
+
+
+def mux_copy(
+    video: Path, audio: Path, output: Path, *, on_time: Callable[[float], None] | None = None
+) -> None:
+    """Put *video*'s picture and *audio*'s (already encoded) sound in one file, copying both."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video),
+        "-i",
+        str(audio),
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-c",
+        "copy",
         str(output),
     ]
     _run_ffmpeg(cmd, on_time=on_time)

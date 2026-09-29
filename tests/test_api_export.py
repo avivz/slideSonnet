@@ -51,9 +51,11 @@ def pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         transitions: Any = None,
         audio_track: Any = None,
         progress: Any = None,
+        fast: bool = False,
     ) -> Path:
         calls["compose"].append(
             {
+                "fast": fast,
                 "progress": progress,
                 "output": output,
                 "page_audios": page_audios,
@@ -68,7 +70,7 @@ def pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     monkeypatch.setattr("slidesonnet.audio.synth.synthesize", fake_synth)
     monkeypatch.setattr("slidesonnet.render.render_audio_track", fake_track)
     monkeypatch.setattr("slidesonnet.render.compose_video", fake_compose)
-    monkeypatch.setattr("slidesonnet.api._images", lambda pdf, rdir: [tmp_path / "p.png"])
+    monkeypatch.setattr("slidesonnet.api._images", lambda pdf, rdir, **kw: [tmp_path / "p.png"])
     return calls
 
 

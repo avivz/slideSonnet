@@ -462,6 +462,17 @@ def draft_output(output: Path) -> Path:
     return output.with_name(f"{output.stem}.draft{output.suffix}")
 
 
+def fast_output(output: Path) -> Path:
+    """``deck.mp4`` → ``deck.fast.mp4`` (unchanged if it already says fast).
+
+    A quick export never lands on the full-quality file's name, so it can't
+    silently replace a finished video.
+    """
+    if output.stem.endswith(".fast"):
+        return output
+    return output.with_name(f"{output.stem}.fast{output.suffix}")
+
+
 def export_blockers(pdf_path: Path) -> list[str]:
     """Why *pdf_path* isn't ready for a final video; empty when it is.
 
@@ -503,6 +514,7 @@ def export(
     draft: bool = False,
     approve: ApproveFn | None = None,
     approved_clips: Collection[str] | None = None,
+    fast: bool = False,
 ) -> ExportResult:
     """Render the deck to a narrated (or silent) MP4 with optional subtitles.
 
@@ -513,10 +525,15 @@ def export(
     ``<name>.draft.mp4`` instead of *output*. *approve* is consulted before any
     synthesis, and *approved_clips* pins it, as in :func:`synthesize_deck`.
 
+    *fast* trades picture quality for speed (720p, cuts for every transition,
+    one encoding pass — see :func:`slidesonnet.render.fast_video`) and writes
+    ``<name>.fast.mp4``. The audio and subtitles are the full export's.
+
     On success the render intermediates (decoded page audio, assembled track,
     per-slide clips) are deleted unless *keep_scratch* is true — or, when it is
-    ``None``, unless ``[video] keep_scratch`` is set in the config. A failed
-    render always leaves them for debugging.
+    ``None``, unless ``[video] keep_scratch`` is set in the config (a *fast*
+    export keeps them by default: the next one reuses the assembled audio). A
+    failed render always leaves them for debugging.
     """
     from slidesonnet.audio.synth import (
         page_speech_clips,
@@ -541,6 +558,8 @@ def export(
         reasons = export_blockers(pdf_path)
         if reasons:
             raise ExportRefused(reasons)
+    if fast:
+        output = fast_output(output)  # deck.draft.fast.mp4 for both
     deck, config, load_diags = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
 
@@ -579,7 +598,8 @@ def export(
     ]
     compose_video(
         timeline,
-        _images(pdf_path, rdir),
+        # a quick export reuses an unchanged PDF's page images; the full one re-renders
+        _images(pdf_path, rdir, reuse=fast),
         output,
         config=config,
         page_audios=page_audios,
@@ -587,10 +607,12 @@ def export(
         transitions=boundaries,
         audio_track=audio_track,
         progress=progress,
+        fast=fast,
     )
 
     subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)
-    if not (config.video.keep_scratch if keep_scratch is None else keep_scratch):
+    keep = keep_scratch if keep_scratch is not None else (fast or config.video.keep_scratch)
+    if not keep:
         freed = prune_render_scratch(rdir)
         logger.debug("pruned %.1f MB of render scratch under %s", freed / 1e6, rdir)
     return ExportResult(
@@ -722,10 +744,10 @@ def _write_if_changed(path: Path, text: str) -> bool:
     return True
 
 
-def _images(pdf_path: Path, rdir: Path) -> list[Path]:
+def _images(pdf_path: Path, rdir: Path, *, reuse: bool = False) -> list[Path]:
     from slidesonnet.pdf.reader import rasterize
 
-    return rasterize(pdf_path, rdir / "pages")
+    return rasterize(pdf_path, rdir / "pages", reuse=reuse)
 
 
 @dataclass

@@ -487,6 +487,14 @@ def tts(
         "or review conversations still open). Writes <name>.draft.mp4."
     ),
 )
+@click.option(
+    "--fast",
+    is_flag=True,
+    help=(
+        "Quick look: 720p, plain cuts instead of transitions, encoded in one quick pass. "
+        "Same audio and subtitles. Writes <name>.fast.mp4."
+    ),
+)
 @_YES_OPT
 @click.pass_context
 def export(
@@ -502,6 +510,7 @@ def export(
     sub_granularity: str,
     keep_scratch: bool,
     draft: bool,
+    fast: bool,
     yes: bool,
 ) -> None:
     """Render the narrated (or silent) video with optional subtitles.
@@ -537,6 +546,7 @@ def export(
             progress=progress,
             draft=draft,
             approve=_paid_gate(yes),
+            fast=fast,
         )
     logger.info(progress.summary())
     kind = "silent " if result.silent else ""

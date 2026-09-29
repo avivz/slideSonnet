@@ -6,6 +6,7 @@ Never uses a paid cloud engine. Marked integration so CI's unit-only run skips t
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,37 @@ def test_centered_transition_with_audio_muxes_track(tmp_path: Path) -> None:
     api.export(wipe, out_wipe, engine="kokoro")
     assert get_duration(out_wipe, stream="audio") > 0
     assert get_duration(out_wipe) == pytest.approx(get_duration(out_cut), abs=0.2)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("kokoro") is None,
+    reason="kokoro not installed",
+)
+def test_fast_export_is_720p_with_the_full_exports_audio(tmp_path: Path) -> None:
+    """--fast: a separate 720p file, as long as the full one, with the same audio bytes."""
+    _, wipe = _prep_pair(tmp_path)
+    full = api.export(wipe, tmp_path / "deck.mp4", engine="kokoro")
+    fast = api.export(wipe, tmp_path / "deck.mp4", engine="kokoro", fast=True)
+    assert fast.video.name == "deck.fast.mp4" and full.video.exists()
+
+    def probe(path: Path, *args: str) -> str:
+        return subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", str(path), *args, "-f", "md5", "-"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+
+    assert probe(fast.video, "-map", "0:a", "-c", "copy") == probe(
+        full.video, "-map", "0:a", "-c", "copy"
+    )
+    assert get_duration(fast.video) == pytest.approx(get_duration(full.video), abs=0.1)
+    height = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=height",
+         "-of", "csv=p=0", str(fast.video)],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    assert height.strip() == "720"
 
 
 @pytest.mark.skipif(
