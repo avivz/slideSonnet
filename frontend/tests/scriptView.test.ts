@@ -44,6 +44,16 @@ describe('script view', () => {
     expect(server.narration.b?.segments.find((s) => s.kind === 'speech')).toMatchObject({ text: 'New words for b.' })
   })
 
+  it('a slide without narration offers to add a line, and puts the cursor in it', async () => {
+    const { editor, server } = await setup()
+    const w = mount(ScriptView, { attachTo: document.body })
+    await w.get('[data-testid="script-add-c"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(w.get('[data-testid="script-text-c-0"]').element)
+    expect(editor.currentId).toBe('c') // the slide shows above
+    expect(server.saves).toHaveLength(0) // nothing said yet: nothing written
+  })
+
   it('while a line is typed in, playback and auto-generate leave it alone', async () => {
     await setup()
     const player = usePlayerStore()

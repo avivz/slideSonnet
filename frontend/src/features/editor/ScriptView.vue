@@ -12,7 +12,7 @@ import { useReviewStore } from '@/stores/review'
 
 import LineFailure from './LineFailure.vue'
 import NarrationDiff from './NarrationDiff.vue'
-import { speechIndexes, type EditSeg } from './narration'
+import { newSpeech, speechIndexes, type EditSeg } from './narration'
 import { useEditingFocus } from './useEditingFocus'
 
 const editor = useEditorStore()
@@ -42,6 +42,17 @@ function enter(index: number): void {
     review.leaveRemoved()
     editor.go(index)
   }
+}
+/** A slide with nothing to say: a first line, with the cursor in it (it's written once it has words). */
+async function addLine(index: number, slideId: string): Promise<void> {
+  const middle = editor.draftFor(slideId)?.middle
+  if (!middle) return
+  enter(index)
+  middle.push(newSpeech())
+  const j = middle.length - 1
+  await nextTick()
+  const want = `script-text-${slideId}-${j}`
+  ;[...(root.value?.querySelectorAll<HTMLElement>('textarea') ?? [])].find((el) => el.dataset.testid === want)?.focus()
 }
 function onText(slideId: string, seg: EditSeg, event: Event): void {
   seg.text = (event.target as HTMLTextAreaElement).value
@@ -201,7 +212,15 @@ function retry(slideId: string, seg: EditSeg): void {
             />
           </label>
         </template>
-        <p v-if="!spoken(page.slide_id)" class="none">No narration yet — open the slide to add a line.</p>
+        <p v-if="!spoken(page.slide_id)" class="none">
+          No narration yet ·
+          <button
+            class="add" type="button" :data-testid="`script-add-${page.slide_id}`"
+            @click="addLine(i, page.slide_id)"
+          >
+            + Add a line
+          </button>
+        </p>
         <NarrationDiff
           v-if="diffOf(page.slide_id)"
           class="changes"
@@ -360,6 +379,18 @@ function retry(slideId: string, seg: EditSeg): void {
   padding: var(--space-1) var(--space-2);
   font-size: var(--text-sm);
   line-height: 1.5;
+}
+.add {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  font-size: inherit;
+  font-style: normal;
+  cursor: pointer;
+}
+.add:hover {
+  text-decoration: underline;
 }
 .none {
   margin: 0;
