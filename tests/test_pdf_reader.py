@@ -154,6 +154,26 @@ def _pdf(tmp_path: Path, body: bytes = b"%PDF-1.4\n") -> Path:
     return pdf
 
 
+def test_a_recompile_during_rendering_is_not_stamped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stamp certifies the PDF as it was when rendering *began*: if it changes
+    while pdftoppm runs, the images may be of the old build, so nothing is stamped
+    and the next open renders again."""
+    pdf = tmp_path / "deck.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+
+    def recompile_midway(cmd: list[str], **kw: object) -> object:
+        prefix = Path(cmd[-1])
+        (prefix.parent / f"{prefix.name}-1.png").write_bytes(b"old build")
+        pdf.write_bytes(MARKED.read_bytes() + b"\n% recompiled\n")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr("slidesonnet.proc.subprocess.run", recompile_midway)
+    rasterize(pdf, tmp_path / "pages")
+    assert cached_pages(pdf, tmp_path / "pages") is None
+
+
 def test_cached_pages_returns_the_existing_render(tmp_path: Path) -> None:
     pdf = _pdf(tmp_path)
     pages = tmp_path / "pages"

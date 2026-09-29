@@ -114,9 +114,22 @@ def _render_identity(pdf_path: Path, *, dpi: int, prefix: str) -> dict[str, obje
     return {"mtime_ns": st.st_mtime_ns, "size": st.st_size, "dpi": dpi, "prefix": prefix}
 
 
-def write_render_stamp(pdf_path: Path, out_dir: Path, *, dpi: int, prefix: str, count: int) -> None:
-    """Record that *out_dir* holds *count* page images rendered from *pdf_path*."""
-    stamp = {**_render_identity(pdf_path, dpi=dpi, prefix=prefix), "count": count}
+def write_render_stamp(
+    pdf_path: Path,
+    out_dir: Path,
+    *,
+    dpi: int,
+    prefix: str,
+    count: int,
+    identity: dict[str, object] | None = None,
+) -> None:
+    """Record that *out_dir* holds *count* page images rendered from *pdf_path*.
+
+    *identity* is the PDF's :func:`_render_identity` taken when rendering began;
+    without it the PDF is read now.
+    """
+    ident = identity if identity is not None else _render_identity(pdf_path, dpi=dpi, prefix=prefix)
+    stamp = {**ident, "count": count}
     try:
         (out_dir / RENDER_STAMP_NAME).write_text(json.dumps(stamp), encoding="utf-8")
     except OSError as exc:  # a missing stamp only costs a re-render
@@ -175,6 +188,8 @@ def rasterize(
     # images stay up until the new ones replace them, and any extra go after, so
     # the returned list — and what the stamp claims — is exactly this render.
     (out_dir / RENDER_STAMP_NAME).unlink(missing_ok=True)
+    # What the stamp will certify is the PDF as it was when pdftoppm *started*.
+    before = _render_identity(pdf_path, dpi=dpi, prefix=prefix)
     fresh = set(_pdftoppm(["-r", str(dpi), str(pdf_path)], out_dir, prefix))
     for stale in out_dir.glob(f"{prefix}-*.png"):
         if stale not in fresh:
@@ -183,7 +198,16 @@ def rasterize(
     pages = sorted(fresh, key=_numeric_suffix)
     if not pages:
         raise ParserError(f"pdftoppm produced no images for {pdf_path}")
-    write_render_stamp(pdf_path, out_dir, dpi=dpi, prefix=prefix, count=len(pages))
+    try:
+        after: dict[str, object] | None = _render_identity(pdf_path, dpi=dpi, prefix=prefix)
+    except OSError:
+        after = None
+    if after == before:
+        write_render_stamp(
+            pdf_path, out_dir, dpi=dpi, prefix=prefix, count=len(pages), identity=before
+        )
+    else:  # recompiled mid-render: these images may be the old build's
+        logger.debug("%s changed while rendering; not stamping %s", pdf_path.name, out_dir)
     return pages
 
 
