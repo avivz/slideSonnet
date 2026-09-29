@@ -60,9 +60,3 @@ def test_no_conflict_when_sides_agree() -> None:
     blocks = [_block("a", tout=CROSSFADE), _block("b", tin=CROSSFADE)]
     diags = diagnose(["a", "b"], blocks)
     assert not any(d.code == "transition-conflict" for d in diags)
-
-
-def test_has_nondefault_transitions_flag() -> None:
-    assert not _block("a").has_nondefault_transitions
-    assert _block("a", tout=CROSSFADE).has_nondefault_transitions
-    assert _block("a", tin=CROSSFADE).has_nondefault_transitions

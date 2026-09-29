@@ -85,9 +85,7 @@ def test_parse_transitions() -> None:
 
 def test_silent_slide_is_pause_only() -> None:
     overview = parse_sidecar(SAMPLE)[1]
-    assert overview.is_silent
     assert overview.segments == [Segment.pause(3)]
-    assert overview.total_pause_seconds == 3
 
 
 def test_default_transitions_not_serialized() -> None:

@@ -64,23 +64,6 @@ def test_only_ids_restricts(tmp_path: Path, monkeypatch) -> None:  # type: ignor
     assert engine.calls == 0  # page b has no speech, page a skipped
 
 
-def test_uncached_targets_lists_missing_then_shrinks(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
-    deck = _deck()
-    targets = synth_mod.uncached_targets(deck, Config(), tmp_path)
-    assert len(targets) == 1  # one speech segment across the deck, nothing cached
-    targets[0].parent.mkdir(parents=True, exist_ok=True)
-    targets[0].write_bytes(b"RIFFfake")
-    assert synth_mod.uncached_targets(deck, Config(), tmp_path) == []
-
-
-def test_uncached_targets_only_ids(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
-    deck = _deck()
-    assert synth_mod.uncached_targets(deck, Config(), tmp_path, only_ids={"b"}) == []
-    assert len(synth_mod.uncached_targets(deck, Config(), tmp_path, only_ids={"a"})) == 1
-
-
 def _two_line_deck() -> Deck:
     return Deck(
         pdf_path=Path("x.pdf"),
@@ -101,25 +84,6 @@ def test_only_segments_targets_one_utterance(tmp_path: Path, monkeypatch) -> Non
     results = synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_segments={("a", 1)})
     assert engine.calls == 1
     assert set(results) == {("a", 1)}
-
-
-def test_cached_speech_flags_align_to_speech_segments(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
-    deck = _two_line_deck()
-    assert synth_mod.cached_speech_flags(deck, Config(), tmp_path, "a") == [False, False]
-    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_segments={("a", 1)})
-    assert synth_mod.cached_speech_flags(deck, Config(), tmp_path, "a") == [False, True]
-    assert synth_mod.cached_speech_flags(deck, Config(), tmp_path, "b") == [False]
-
-
-def test_ungenerated_ids_shrink_as_slides_complete(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: FakeEngine())
-    deck = _two_line_deck()
-    assert synth_mod.ungenerated_ids(deck, Config(), tmp_path) == {"a", "b"}
-    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_ids={"b"})
-    assert synth_mod.ungenerated_ids(deck, Config(), tmp_path) == {"a"}
-    synth_mod.synthesize(deck, Config(), audio_dir=tmp_path, only_ids={"a"})
-    assert synth_mod.ungenerated_ids(deck, Config(), tmp_path) == set()
 
 
 def test_synthesize_second_run_hits_cache(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -176,7 +140,6 @@ def test_cached_durations_estimates_when_uncached(tmp_path: Path, monkeypatch) -
     # ...and it says so, instead of passing the guess off as the real timeline.
     assert [r.slide_id for r in cached.estimated] == ["a"]
     assert cached.total == 1
-    assert cached.all_estimated is True
 
 
 def test_cached_durations_uses_real_clip_lengths(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -186,7 +149,6 @@ def test_cached_durations_uses_real_clip_lengths(tmp_path: Path, monkeypatch) ->
     cached = synth_mod.cached_durations(deck, Config(), tmp_path, fallback_wpm=60.0)
     assert cached.per_page == [[1.25], []]  # the clip's real length, not the wpm estimate
     assert cached.estimated == []
-    assert cached.all_estimated is False
 
 
 def test_cached_durations_flags_a_partial_cache(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -206,7 +168,6 @@ def test_cached_durations_flags_a_partial_cache(tmp_path: Path, monkeypatch) -> 
     assert cached.per_page == [[1.25], [2.0]]  # real, then guessed
     assert [r.slide_id for r in cached.estimated] == ["b"]
     assert cached.total == 2
-    assert cached.all_estimated is False
 
 
 def test_a_clip_length_is_saved_when_made_and_reused(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

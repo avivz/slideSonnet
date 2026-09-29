@@ -191,28 +191,6 @@ class PageNarration:
             tail=self.tail,
         )
 
-    def leading_silence(self, default: float) -> float:
-        """The slide's start hold: an explicit leading ``pause`` block, else *default*.
-
-        A pause as the *first* block is the slide's start silence; with no leading
-        pause the slide opens on *default* (the deck's ``pre_silence``). See
-        :func:`slidesonnet.render.build_timeline`.
-        """
-        if self.segments and self.segments[0].is_pause:
-            return self.segments[0].seconds
-        return default
-
-    def trailing_silence(self, default: float) -> float:
-        """The slide's end hold: an explicit trailing ``pause`` block, else *default*.
-
-        A pause as the *last* block is the slide's end silence (the hold the
-        boundary transition plays over); with no trailing pause the slide holds
-        for *default* (the deck's ``tail_seconds``).
-        """
-        if self.segments and self.segments[-1].is_pause:
-            return self.segments[-1].seconds
-        return default
-
     @property
     def speech_segments(self) -> list[Segment]:
         return [s for s in self.segments if s.is_speech]
@@ -225,20 +203,6 @@ class PageNarration:
     @property
     def has_speech(self) -> bool:
         return any(s.is_speech and s.text.strip() for s in self.segments)
-
-    @property
-    def is_silent(self) -> bool:
-        """True when the block holds the slide with no spoken words (pauses only / empty)."""
-        return not self.has_speech
-
-    @property
-    def total_pause_seconds(self) -> float:
-        return sum(s.seconds for s in self.segments if s.is_pause)
-
-    @property
-    def has_nondefault_transitions(self) -> bool:
-        """True if either transition differs from a plain cut."""
-        return self.transition_in.is_animated or self.transition_out.is_animated
 
     @property
     def is_empty(self) -> bool:
@@ -289,8 +253,3 @@ class Deck:
             default_voice=self.default_voice,
             preamble_source=self.preamble_source,
         )
-
-    @property
-    def ordered_narration(self) -> list[PageNarration]:
-        """Narration blocks in PDF page order (empty blocks for un-narrated pages)."""
-        return [self.page_narration(sid) for sid in self.pages]

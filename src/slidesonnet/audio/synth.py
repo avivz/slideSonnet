@@ -207,47 +207,6 @@ def ref_cache_status(deck: Deck, config: Config, audio_dir: Path) -> list[tuple[
     ]
 
 
-def uncached_targets(
-    deck: Deck,
-    config: Config,
-    audio_dir: Path,
-    *,
-    only_ids: set[str] | None = None,
-) -> list[Path]:
-    """Cache paths of speech segments that have no cached audio yet.
-
-    Never synthesizes — lets callers count (or pre-create) what a synthesis
-    run would actually generate, e.g. to warn before spending API credits.
-    """
-    return [
-        target
-        for ref, target in _ref_targets(deck, config, audio_dir)
-        if (only_ids is None or ref.slide_id in only_ids)
-        and audio_cache_path_or_alt(target) is None
-    ]
-
-
-def cached_speech_flags(deck: Deck, config: Config, audio_dir: Path, slide_id: str) -> list[bool]:
-    """Aligned to *slide_id*'s speech segments: True where cached audio exists.
-
-    Never synthesizes — drives the editor's per-utterance generated indicator.
-    """
-    return [
-        audio_cache_path_or_alt(target) is not None
-        for ref, target in _ref_targets(deck, config, audio_dir)
-        if ref.slide_id == slide_id
-    ]
-
-
-def ungenerated_ids(deck: Deck, config: Config, audio_dir: Path) -> set[str]:
-    """Slide-ids that still have at least one speech segment without cached audio."""
-    return {
-        ref.slide_id
-        for ref, target in _ref_targets(deck, config, audio_dir)
-        if audio_cache_path_or_alt(target) is None
-    }
-
-
 def page_speech_durations(
     deck: Deck,
     results: dict[tuple[str, int], SynthResult],
@@ -282,11 +241,6 @@ class CachedDurations:
     per_page: list[list[float]]
     estimated: list[SpeechRef]
     total: int
-
-    @property
-    def all_estimated(self) -> bool:
-        """True when the deck has speech and *none* of it was found in the cache."""
-        return self.total > 0 and len(self.estimated) == self.total
 
 
 def cached_durations(

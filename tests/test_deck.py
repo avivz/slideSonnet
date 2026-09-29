@@ -45,7 +45,7 @@ def test_load_deck_disambiguates_duplicate_ids(tmp_path: Path) -> None:
     deck, diags = load_deck(pdf)
     assert deck.pages == ["twin", "twin-2"]
     assert deck.page_narration("twin").speech_text == "Hello."
-    assert deck.page_narration("twin-2").is_silent  # its own (empty) narration slot
+    assert not deck.page_narration("twin-2").has_speech  # its own (empty) narration slot
     assert not any(d.severity == "error" for d in diags)  # a warning now, not an error
     assert any(d.code == "duplicate-id" and "renamed" in d.message for d in diags)
 
@@ -105,21 +105,6 @@ def test_save_deck_keeps_orphan_blocks(tmp_path: Path) -> None:
     save_deck(deck)
     text = deck.sidecar_path.read_text(encoding="utf-8")
     assert "@ghost" in text and "Boo." in text  # orphan not silently dropped
-
-
-def test_ordered_narration_fills_unnarrated_pages() -> None:
-    from slidesonnet.narration.model import Deck
-
-    deck = Deck(
-        pdf_path=Path("x.pdf"),
-        sidecar_path=Path("x.narration"),
-        pages=["a", "b"],
-        narration={"a": PageNarration("a", [Segment.speech("Hi a.")])},
-    )
-    blocks = deck.ordered_narration
-    assert [b.slide_id for b in blocks] == ["a", "b"]
-    assert blocks[0].speech_text == "Hi a."
-    assert blocks[1].is_silent  # un-narrated page gets an empty block
 
 
 def test_restricted_to_is_one_page_view() -> None:

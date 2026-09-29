@@ -81,15 +81,6 @@ def test_edge_pause_replaces_default_lead_and_tail() -> None:
     assert durs["both"] == pytest.approx(2.0 + 1.0 + 3.0)  # both explicit
 
 
-def test_leading_and_trailing_silence_helpers() -> None:
-    speech_only = PageNarration("a", [Segment.speech("hi")])
-    assert speech_only.leading_silence(0.3) == pytest.approx(0.3)
-    assert speech_only.trailing_silence(0.5) == pytest.approx(0.5)
-    bracketed = PageNarration("b", [Segment.pause(1.0), Segment.speech("hi"), Segment.pause(2.0)])
-    assert bracketed.leading_silence(0.3) == pytest.approx(1.0)
-    assert bracketed.trailing_silence(0.5) == pytest.approx(2.0)
-
-
 def test_subtitles_segment_granularity() -> None:
     tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
     entries = subtitle_entries(_deck(), tl, granularity="segment")
