@@ -88,7 +88,7 @@ def test_the_synthesis_path_points_the_engine_at_the_deck_env(
     pdf = prep_marked_deck(tmp_path)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env").write_text("SS_PROBE=from_deck_dir\n", encoding="utf-8")
-    _deck, config = api._load(pdf, None, None, "kokoro")
+    _deck, config, _diags = api._load(pdf, None, None, "kokoro")
     assert config.tts.env_dir == pdf.resolve().parent
     create_tts(config.tts)
     assert "SS_PROBE" not in os.environ  # nothing leaks into the process for the next deck
