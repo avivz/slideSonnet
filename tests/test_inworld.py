@@ -14,8 +14,9 @@ def test_default_model_is_inworld_tts_2():
     assert TTSConfig().inworld_model == "inworld-tts-2"
 
 
-def test_missing_api_key(monkeypatch):
+def test_missing_api_key(monkeypatch, tmp_path):
     """Init succeeds without API key; synthesize() raises TTSError."""
+    monkeypatch.chdir(tmp_path)  # no .env with a key reachable from the cwd
     monkeypatch.delenv("INWORLD_API_KEY", raising=False)
     config = TTSConfig(backend="inworld", inworld_voice="Ashley")
 

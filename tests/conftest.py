@@ -141,9 +141,9 @@ def _no_pool_env() -> Iterator[None]:
 def _no_real_inworld(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Make a real Inworld call impossible from any test.
 
-    The API key env var is pinned to a sentinel (so doctor's ``load_dotenv()``
-    can't leak a real key from ``.env``), and the SDK client class is replaced
-    with one that fails fast on construction.
+    The API key env var is pinned to a sentinel (a process variable beats any
+    ``.env``, so a developer's real key in one is never read), and the SDK
+    client class is replaced with one that fails fast on construction.
     """
     monkeypatch.setenv("INWORLD_API_KEY", _SENTINEL_KEY)
     monkeypatch.setattr("slidesonnet.tts.inworld.InworldClient", _GuardedInworld)

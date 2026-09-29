@@ -15,8 +15,8 @@ so several checkouts (git worktrees of one course, say) or a whole course share
 one pool of clips. Resolution order, first match wins:
 
 1. ``--audio-dir`` on the command line (sets the env var for the process);
-2. the ``SLIDESONNET_AUDIO_DIR`` environment variable (a shell export or a
-   course ``.env``);
+2. the ``SLIDESONNET_AUDIO_DIR`` environment variable (a shell export), or
+   the same key in the deck's (or course's) ``.env`` (:mod:`slidesonnet.env`);
 3. ``[cache] audio_dir`` in ``slidesonnet.toml`` (relative to the toml);
 4. the default ``<deck dir>/.slidesonnet/audio/``.
 
@@ -80,7 +80,9 @@ class AudioDirResolution:
 
 def resolve_audio_dir(pdf_path: Path, config: Config | None = None) -> AudioDirResolution:
     """Apply the resolution order documented in the module docstring."""
-    env = os.environ.get(AUDIO_DIR_ENV, "").strip()
+    from slidesonnet.env import getenv
+
+    env = (getenv(AUDIO_DIR_ENV, pdf_path.resolve().parent) or "").strip()
     if env:
         return AudioDirResolution(Path(env).expanduser().resolve(), "env")
     default = default_audio_dir(pdf_path)

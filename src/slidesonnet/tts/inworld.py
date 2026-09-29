@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from slidesonnet.env import getenv
 from slidesonnet.exceptions import TTSError
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
@@ -47,6 +48,7 @@ class InworldTTS(TTSEngine):
 
     def __init__(self, config: TTSConfig) -> None:
         self._api_key_env: str = config.inworld_api_key_env
+        self._env_dir: Path | None = config.env_dir
         self._client: _InworldClientType | None = None
         self.voice: str = config.inworld_voice
         self.model: str = config.inworld_model
@@ -57,7 +59,7 @@ class InworldTTS(TTSEngine):
         if self._client is not None:
             return self._client
 
-        api_key = os.environ.get(self._api_key_env, "")
+        api_key = getenv(self._api_key_env, self._env_dir) or ""
         if not api_key:
             raise TTSError(
                 f"Environment variable '{self._api_key_env}' not set. Add it to your .env file."

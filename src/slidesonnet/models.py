@@ -12,6 +12,7 @@ import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 #: Progress callback for long-running pipeline stages: ``(phase, done, total, label)``.
@@ -97,6 +98,9 @@ class TTSConfig:
     inworld_voice: str = "Simon"  # built-in default voice; any Inworld voice name (see library)
     inworld_model: str = "inworld-tts-2"  # default model; override per deck via [tts.inworld] model
     inworld_speed: float = 1.0  # base speaking_rate; per-utterance :pace multiplies this
+    #: The deck's directory, whose ``.env`` supplies the API key (see :mod:`slidesonnet.env`).
+    #: Not part of any cache key; None falls back to the cwd's ``.env``.
+    env_dir: Path | None = None
 
     def __post_init__(self) -> None:
         _require_positive("kokoro_speed", self.kokoro_speed)

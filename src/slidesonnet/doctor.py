@@ -176,10 +176,9 @@ def check_inworld() -> CheckResult:
 
 
 def _check_api_key(env: str, engine: str) -> CheckResult:
-    from slidesonnet.env import load_env
+    from slidesonnet.env import getenv
 
-    load_env()
-    if os.environ.get(env):
+    if getenv(env):
         return CheckResult(env, "ok", "set", "", f"Only needed for {engine} TTS")
     return CheckResult(
         env, "missing", "", "Add to .env or export in shell", f"Only for {engine} TTS"
