@@ -105,6 +105,26 @@ regression test.
   a PDF, unreadable PDFs and unwritable paths.
 - **`doctor` requires Python 3.13**, as the package does.
 
+**Editor experience**
+- **Your own edits no longer pile up as review items**: a slide only you changed
+  shows no "accepted" badge, changes box or conversation link.
+- **The Review tab counts what waits for you across the whole deck**, and a banner
+  says where the agent is waiting ("Show" opens it). The whole-deck conversation
+  says "your turn" only when something waits.
+- **A line whose audio couldn't be generated says so until you retry it**, in plain
+  words (missing API key, engine not installed, unknown voice), with the engine's
+  own message one click away.
+- **After an export the console keeps "Video saved next to the PDF: deck.mp4 ·
+  6 min 33 s long"** until dismissed.
+- **Export stays reachable down to 900 px wide** (the narrow toggle reads "Audio &
+  export"), and on a phone the player bar wraps instead of pushing the scrubber off
+  screen.
+- Picking an engine says "Now using Kokoro for previews and export (this session
+  only)" instead of "Generating with kokoro" while idle.
+- The error pill leads to the Unattached narration panel when the error belongs to
+  no slide; an empty slide in the Script view offers "+ Add a line".
+- Every confirmation uses the editor's own dialog, and "Clear accepted" asks first.
+
 ### Security (September 2026 review)
 - **Slide images and audio (`/ssmedia`) get the same Host check as the API**,
   blocking DNS-rebinding reads.

@@ -27,8 +27,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 1. [ ] **Fix the review's Tier 1–3 findings** (`dev/REVIEW-TODO.md`).
    **Status 2026-09-29:** batches (a)–(f) below are **done and on `main`** (each with
    regression tests; CHANGELOG "September 2026 review"), plus the Qwen3/golden
-   cache-key batch and the pipeline, server and docs cleanups from Next #8. Still
-   open: the editor UX quick-wins batch (in flight), the follow-ups listed at the end
+   cache-key batch and the pipeline, server and docs cleanups from Next #8. The editor UX quick wins are
+   merged too. Still open: the follow-ups listed at the end
    of `dev/REVIEW-TODO.md`, and a local `make test` + `make test-browser` run before
    a3. Original scope:
    Two
