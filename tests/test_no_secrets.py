@@ -49,6 +49,8 @@ _REAL_KEY_PATTERNS = [
     re.compile(r"sk_[0-9a-f]{32,}"),  # ElevenLabs production key
     re.compile(r"sk-[A-Za-z0-9]{20,}"),  # OpenAI-style key
     re.compile(r"ELEVENLABS_API_KEY=[^\s]{10,}"),  # Inline assignment with real-looking value
+    # Inworld keys are long base64 strings; a placeholder or a $VAR reference is not flagged
+    re.compile(r"INWORLD_API_KEY\s*=\s*[\"']?[A-Za-z0-9+/_\-]{16,}={0,2}"),
 ]
 
 # Known safe values that should NOT trigger alerts
@@ -59,6 +61,15 @@ _SAFE_VALUES = {
     "sk-test-key",
     "sk-xxx-your-key",
 }
+
+
+def test_inworld_key_pattern() -> None:
+    inworld = _REAL_KEY_PATTERNS[-1]
+    assert inworld.search("INWORLD_API_KEY=" + "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5bC7dE9==")
+    assert inworld.search('INWORLD_API_KEY = "' + "Zm9vYmFyYmF6cXV4cXV1eDEyMzQ1Njc4OTA" + '"')
+    for safe in ("INWORLD_API_KEY=", "INWORLD_API_KEY=your_api_key_here", "INWORLD_API_KEY=$KEY"):
+        match = inworld.search(safe)
+        assert match is None or match.group().split("=", 1)[-1] in _SAFE_VALUES
 
 
 def test_no_real_api_keys_in_tracked_files():
@@ -75,7 +86,7 @@ def test_no_real_api_keys_in_tracked_files():
             for match in pattern.finditer(content):
                 value = match.group()
                 # Strip surrounding assignment syntax for comparison
-                bare = value.split("=", 1)[-1] if "=" in value else value
+                bare = value.split("=", 1)[-1].strip(" \"'") if "=" in value else value
                 if bare not in _SAFE_VALUES:
                     violations.append(f"{path}: {value[:40]}...")
     assert violations == [], "Possible API keys in tracked files:\n" + "\n".join(violations)
