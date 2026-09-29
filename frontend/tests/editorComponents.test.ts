@@ -5,6 +5,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '@/api/client'
+import ConflictDialog from '@/features/editor/ConflictDialog.vue'
 import ConsolePanel from '@/features/editor/ConsolePanel.vue'
 import DeckHead from '@/features/editor/DeckHead.vue'
 import FilmStrip from '@/features/editor/FilmStrip.vue'
@@ -225,6 +227,44 @@ describe('auto-generate', () => {
     await generation.setAutoBuild(true)
     expect(generation.autoBuild).toBe(false)
   })
+
+  it('leaving the deck drops only this tab’s clips and any auto-generate still waiting', async () => {
+    vi.useFakeTimers()
+    const { editor, generation, server } = await setup()
+    await generation.setAutoBuild(true) // sweeps the other slides
+    server.generated = []
+    const canceled: unknown[] = []
+    editor.client.cancelGeneration = async (_t, body) => {
+      canceled.push(body)
+      throw new ApiError(503, 'gone', 'The server stopped.') // best effort: leaving goes on
+    }
+    editor.draftFor('a')!.middle[0]!.text = 'Edited, then left.'
+    editor.touch('a')
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS) // saved: an auto-generate is now pending
+    await generation.leave()
+    await vi.advanceTimersByTimeAsync(AUTO_BUILD_MS)
+    await flushPromises()
+    expect(canceled).toEqual([{ owner: generation.owner }]) // not the engine's whole queue
+    expect(server.generated).toEqual([])
+  })
+})
+
+describe('the generation queue', () => {
+  it('Cancel empties the engine’s queue, says how much, and shows the queue as idle', async () => {
+    const { editor, generation } = await setup()
+    generation.status = { engine: 'kokoro', done: 1, total: 3, running: null, inflight: [], queued: 2 }
+    const canceled: unknown[] = []
+    editor.client.cancelGeneration = async (_t, body) => {
+      canceled.push(body)
+      return { count: 2 }
+    }
+    const w = mount(ConsolePanel)
+    await w.get('[data-testid="gen-cancel"]').trigger('click')
+    await flushPromises()
+    expect(canceled).toEqual([{ engine: 'kokoro' }])
+    expect(editor.flashMessage?.text).toBe('Canceled generation (2 clips)')
+    expect(generation.busy).toBe(false) // refreshed from the server, not left showing the old queue
+  })
 })
 
 describe('voices and unattached narration', () => {
@@ -336,5 +376,52 @@ describe('filmstrip', () => {
     await flushPromises()
     expect(thumbs().slice(0, 2)).toEqual(before.slice(0, 2)) // each swaps its picture in place (the browser holds the old until the new loads)
     expect(thumbs().map((img) => img.getAttribute('src'))).toEqual(['/img/p2/a.png', '/img/p2/b.png', '/img/p2/c.png'])
+  })
+})
+
+describe('conflict dialog', () => {
+  async function twoConflicts() {
+    const { editor, server } = await setup()
+    for (const id of ['a', 'b']) {
+      editor.draftFor(id)!.middle[0]!.text = `Mine ${id}.`
+      editor.touch(id)
+      server.externalEdit(id, `Theirs ${id}.`)
+    }
+    await editor.refresh()
+    mount(ConflictDialog, { attachTo: document.body })
+    await flushPromises()
+    return { editor, server }
+  }
+  const shown = (id: string) => document.querySelector(`[data-testid="${id}"]`)
+  const click = async (id: string) => {
+    ;(shown(id) as HTMLElement).click()
+    await flushPromises()
+  }
+
+  it('shows both versions and how many wait, and each button keeps the side it names', async () => {
+    const { editor, server } = await twoConflicts()
+    expect([shown('conflict-mine')?.textContent, shown('conflict-theirs')?.textContent]).toEqual(['Mine a.', 'Theirs a.'])
+    expect(shown('conflict-more')?.textContent).toContain('1 more slide changed')
+    await click('conflict-keep')
+    expect(server.narration.a?.segments.find((seg) => seg.kind === 'speech')).toMatchObject({ text: 'Mine a.' })
+    expect(shown('conflict-mine')?.textContent).toBe('Mine b.') // the next one, the last
+    expect(shown('conflict-more')).toBeNull()
+    await click('conflict-theirs-btn')
+    expect(editor.draftFor('b')?.middle[0]?.text).toBe('Theirs b.')
+    expect(server.saves.map((s) => s.slideId)).toEqual(['a'])
+    expect(shown('conflict-mine')).toBeNull() // closed: nothing left to choose
+  })
+
+  it('copies the unsaved text, or says how to when the browser won’t', async () => {
+    const { editor } = await twoConflicts()
+    const writeText = vi.fn(async (_text: string) => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    await click('conflict-copy')
+    expect(writeText).toHaveBeenCalledWith('Mine a.')
+    expect(editor.flashMessage).toMatchObject({ text: 'Copied your text' })
+    writeText.mockRejectedValueOnce(new Error('denied'))
+    await click('conflict-copy')
+    expect(editor.flashMessage).toMatchObject({ kind: 'warn' })
+    expect(editor.conflict?.slideId).toBe('a') // copying chooses nothing
   })
 })
