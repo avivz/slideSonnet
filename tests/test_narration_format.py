@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 import pytest
 
 from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.format import (
+    NarrationDoc,
     SidecarError,
     parse_document,
     parse_segments,
@@ -17,6 +19,7 @@ from slidesonnet.narration.format import (
     serialize_sidecar,
 )
 from slidesonnet.narration.model import PageNarration, Segment, Transition
+from slidesonnet.narration.transitions import TRANSITION_NAMES
 
 SAMPLE = """\
 # slideSonnet narration   deck: lecture.pdf
@@ -87,24 +90,6 @@ def test_silent_slide_is_pause_only() -> None:
     assert overview.total_pause_seconds == 3
 
 
-def test_inline_comment_stripped() -> None:
-    overview = parse_sidecar(SAMPLE)[1]
-    assert overview.segments == [Segment.pause(3)]  # trailing comment gone
-
-
-def test_round_trip_stable() -> None:
-    blocks = parse_sidecar(SAMPLE)
-    once = serialize_sidecar(blocks)
-    twice = serialize_sidecar(parse_sidecar(once))
-    assert once == twice
-
-
-def test_round_trip_preserves_model() -> None:
-    blocks = parse_sidecar(SAMPLE)
-    reparsed = parse_sidecar(serialize_sidecar(blocks))
-    assert reparsed == blocks
-
-
 def test_default_transitions_not_serialized() -> None:
     block = PageNarration(slide_id="x", segments=[Segment.speech("Hi.")])
     assert serialize_block(block) == "@x\n  utterance:\n    text: Hi."
@@ -134,11 +119,6 @@ def test_serialize_silent_block() -> None:
 
 def test_serialize_empty_block() -> None:
     assert serialize_block(PageNarration(slide_id="blank")) == "@blank"
-
-
-def test_text_with_colon_survives() -> None:
-    block = parse_sidecar("@a\n  utterance:\n    text: The ratio is 2:1, precisely.\n")[0]
-    assert block.segments[0].text == "The ratio is 2:1, precisely."
 
 
 # ---- raw round-trip preservation (non-destructive save) --------------------
@@ -225,34 +205,90 @@ def test_fresh_blocks_still_serialize_canonically() -> None:
 # ---- error paths -----------------------------------------------------------
 
 
-def test_content_before_header_errors() -> None:
-    with pytest.raises(SidecarError):
-        parse_sidecar("  utterance:\n    text: hi\n@a\n")
+@pytest.mark.parametrize(
+    ("text", "match"),
+    [
+        ("  utterance:\n    text: hi\n@a\n", "line 1"),
+        ("@a\n  voice: narrator\n", "outside an 'utterance:'"),
+        ("@a\n  utterance:\n    pace: turbo\n    text: hi\n", "invalid pace"),
+        ("@a\n  transition-in: teleport\n", "invalid transition"),
+        ("@a\n  tempo: fast\n", "unknown directive"),
+        ("@a\n  pause: soon\n", "line 2: pause 'soon' is not a number"),
+        ("@a\n  pause: -1\n", "line 2: pause .* non-negative"),
+        ("@a\n  pause: nan\n", "line 2: pause .* finite"),
+        ("@a\n  pause: inf\n", "line 2: pause .* finite"),
+        ("@a\n  pause: 1e400\n", "line 2: pause .* finite"),
+        ("@a\n  transition-in: fade -1\n", "line 2: .*non-negative"),
+        ("@a\n  transition-in: fade nan\n", "line 2: .*finite"),
+        ("@a\n  transition-out: wipeleft inf\n", "line 2: .*finite"),
+    ],
+)
+def test_malformed_sidecar_is_a_sidecar_error_with_a_line(text: str, match: str) -> None:
+    with pytest.raises(SidecarError, match=match):
+        parse_sidecar(text)
 
 
-def test_attribute_outside_utterance_errors() -> None:
-    with pytest.raises(SidecarError, match="outside an 'utterance:'"):
-        parse_sidecar("@a\n  voice: narrator\n")
+# ---- '#' is literal speech on utterance value lines ------------------------
 
 
-def test_invalid_pace_errors() -> None:
-    with pytest.raises(SidecarError, match="invalid pace"):
-        parse_sidecar("@a\n  utterance:\n    pace: turbo\n    text: hi\n")
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("    text: Use issue #123\n", Segment.speech("Use issue #123")),
+        ("    text: C# and F # rock\n      on line # two\n", Segment.speech("C# and F # rock on line # two")),
+        ("    text: One\n    # a comment line inside the text\n      two\n", Segment.speech("One two")),
+        ("    voice: take #2\n    text: Hi.\n", Segment.speech("Hi.", voice="take #2")),
+        ("    direct: stress #1 # loudly\n    text: Hi.\n", Segment.speech("Hi.", direction="stress #1 # loudly")),
+        ("    text: Hi.\n  pause: 2   # still a comment here\n", None),
+    ],
+)  # fmt: skip
+def test_hash_on_utterance_value_lines_is_spoken_not_a_comment(
+    body: str, expected: Segment | None
+) -> None:
+    block = parse_sidecar(f"@a   # a header comment\n  utterance:\n{body}")[0]
+    assert block.slide_id == "a"
+    if expected is None:
+        assert block.segments == [Segment.speech("Hi."), Segment.pause(2)]
+    else:
+        assert block.segments == [expected]
 
 
-def test_invalid_transition_errors() -> None:
-    with pytest.raises(SidecarError, match="invalid transition"):
-        parse_sidecar("@a\n  transition-in: teleport\n")
+def test_only_newline_splits_lines() -> None:
+    # U+2028, \x0b, \x0c and \x85 are not line breaks in a sidecar
+    for sep in ("\u2028", "\x0b", "\x0c", "\x85"):
+        text = f"@a\n  utterance:\n    direct: calm{sep}pause: 3\n    text: Hi.\n"
+        assert parse_sidecar(text)[0].segments == [
+            Segment.speech("Hi.", direction=f"calm{sep}pause: 3")
+        ]
+    assert parse_sidecar("@a\r\n  pause: 1\r\n")[0].segments == [Segment.pause(1)]
 
 
-def test_non_numeric_pause_errors() -> None:
-    with pytest.raises(SidecarError, match="not a number"):
-        parse_sidecar("@a\n  pause: soon\n")
+# ---- the model normalizes what could inject structure ------------------------
 
 
-def test_unknown_directive_errors() -> None:
-    with pytest.raises(SidecarError, match="unknown directive"):
-        parse_sidecar("@a\n  tempo: fast\n")
+def test_speech_text_collapses_whitespace_and_newlines() -> None:
+    seg = Segment.speech("  Line one\npause: 3\n@other\r\nvoice: x\t end ")
+    assert seg.text == "Line one pause: 3 @other voice: x end"
+
+
+@pytest.mark.parametrize("field", ["voice", "direction"])
+@pytest.mark.parametrize("value", ["a\nvoice: x", "a\rb"])
+def test_line_breaks_in_voice_or_direction_are_rejected(field: str, value: str) -> None:
+    with pytest.raises(ValueError, match=f"{field}.*single line"):
+        Segment.speech("Hi.", **{field: value})  # type: ignore[arg-type]
+
+
+def test_blank_voice_and_direction_mean_none() -> None:
+    seg = Segment.speech("Hi.", voice="  ", direction=" warm ")
+    assert (seg.voice, seg.direction) == (None, "warm")
+
+
+@pytest.mark.parametrize("bad", [-0.5, float("nan"), float("inf")])
+def test_non_finite_or_negative_durations_are_rejected(bad: float) -> None:
+    with pytest.raises(ValueError, match="finite|non-negative"):
+        Segment.pause(bad)
+    with pytest.raises(ValueError, match="finite|non-negative"):
+        Transition("fade", bad)
 
 
 # ---- the plain-text editing helper (lossy) ---------------------------------
@@ -269,16 +305,6 @@ def test_parse_segments_basic() -> None:
 
 def test_parse_segments_collapses_whitespace() -> None:
     assert parse_segments("Hello    there\tworld") == [Segment.speech("Hello there world")]
-
-
-def test_negative_pause_rejected() -> None:
-    with pytest.raises(ValueError, match="non-negative"):
-        Segment.pause(-0.5)
-
-
-def test_negative_transition_rejected() -> None:
-    with pytest.raises(ValueError, match="non-negative"):
-        Transition("crossfade", -1.0)
 
 
 class TestFormatVersionHeader:
@@ -412,3 +438,64 @@ def test_default_voice_without_voices_block() -> None:
 def test_voices_with_value_errors() -> None:
     with pytest.raises(SidecarError, match="takes no value"):
         parse_document("voices: oops\n@a\n  utterance:\n    text: Hi.\n")
+
+
+# ---- generative round-trip: model -> serialize -> parse is the identity -----
+
+_TEXT_ATOMS = [
+    "word", "Use issue #123", "#", " # ", "C#", "é", "שלום", "日本語", "🎉", ":", "2:1",
+    "\n", "\r\n", "\t", "  ", " ", "\x85", "\x0c", "\npause: 3", "\n@other", "\nvoice: x",
+    "\nutterance:", "\ntext: y", "\n# not a comment", "[pause 2]", "@id", "\\#",
+]  # fmt: skip
+_NAME_ATOMS = ["narrator", "take #2", "af_heart", "é", "voice: x", "#", "a b", ":", "\\", "\t"]
+_PREAMBLE_NAMES = ["lecturer", "guest", "Q_3", "a-b"]
+
+
+def _random_doc(rng: random.Random) -> NarrationDoc:
+    def words(atoms: list[str], most: int) -> str:
+        return " ".join(rng.choice(atoms) for _ in range(rng.randint(0, most)))
+
+    def one_line(atoms: list[str]) -> str | None:
+        return rng.choice([None, "", words(atoms, 3).replace("\n", " ").replace("\r", " ")])
+
+    def seconds() -> float:
+        return rng.choice([0.0, 1.0, 0.5, round(rng.uniform(0, 30), 3), rng.uniform(0, 5), 1e-7])
+
+    def transition() -> Transition:
+        kind = rng.choice(sorted(TRANSITION_NAMES))
+        return Transition(kind, 0.0 if kind == "cut" else seconds())
+
+    blocks = []
+    for i in range(rng.randint(0, 5)):
+        segments = [
+            Segment.pause(seconds())
+            if rng.random() < 0.3
+            else Segment.speech(
+                words(_TEXT_ATOMS, 8),
+                voice=one_line(_NAME_ATOMS),
+                pace=rng.choice([None, "slow", "normal", "fast"]),
+                direction=one_line(_TEXT_ATOMS),
+            )
+            for _ in range(rng.randint(0, 4))
+        ]
+        slide_id = f"s{i}-" + rng.choice(["x", "#1", "é", "a:b", "@"])
+        blocks.append(PageNarration(slide_id, segments, transition(), transition()))
+    voices = {
+        name: VoiceConfig(name, {"kokoro": f"{name}_k", "qwen3": "voice/é.pt"})
+        for name in rng.sample(_PREAMBLE_NAMES, rng.randint(0, 3))
+    }
+    return NarrationDoc(blocks=blocks, voices=voices, default_voice=rng.choice([None, *voices]))
+
+
+@pytest.mark.parametrize("seed", range(300))
+def test_serialize_then_parse_is_the_identity(seed: int) -> None:
+    doc = _random_doc(random.Random(seed))
+    text = serialize_sidecar(doc.blocks, voices=doc.voices, default_voice=doc.default_voice)
+    back = parse_document(text)
+    assert (back.blocks, back.voices, back.default_voice) == (
+        doc.blocks,
+        doc.voices,
+        doc.default_voice,
+    )
+    # and an untouched reparse saves byte-identically
+    assert serialize_sidecar(back.blocks, preamble_source=back.preamble_source) == text

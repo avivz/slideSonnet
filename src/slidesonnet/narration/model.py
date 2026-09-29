@@ -14,6 +14,8 @@ compatibility; the current local engine ignores it.
 
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -27,6 +29,28 @@ Pace = Literal["slow", "normal", "fast"]
 # ``cut`` (the default), the ``crossfade`` legacy alias, or an xfade name such
 # as ``wipeleft`` / ``slideup`` / ``circleopen``.
 TransitionKind = str
+
+_WS_RE = re.compile(r"\s+")
+
+
+def _check_seconds(what: str, seconds: float) -> None:
+    if not math.isfinite(seconds):
+        raise ValueError(f"{what} seconds must be finite, got {seconds}")
+    if seconds < 0:
+        raise ValueError(f"{what} seconds must be non-negative, got {seconds}")
+
+
+def _one_line(field_name: str, value: str | None) -> str | None:
+    """A voice/direction as stored: stripped, blank -> None, never multi-line.
+
+    A line break would let the value inject sidecar structure (``voice: x`` on
+    the next line) — and the parser couldn't read it back — so it is refused.
+    """
+    if value is None:
+        return None
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"{field_name} must be a single line, got {value!r}")
+    return value.strip() or None
 
 
 @dataclass(frozen=True)
@@ -44,8 +68,7 @@ class Transition:
     def __post_init__(self) -> None:
         if self.kind not in TRANSITION_NAMES:
             raise ValueError(f"unknown transition '{self.kind}'")
-        if self.seconds < 0:
-            raise ValueError(f"transition seconds must be non-negative, got {self.seconds}")
+        _check_seconds("transition", self.seconds)
 
     @property
     def is_animated(self) -> bool:
@@ -59,6 +82,12 @@ class Segment:
 
     Speech segments carry their own ``voice`` (backend voice name, or None for
     the configured default), ``pace``, and free-text ``direction``.
+
+    Construction normalizes what the sidecar can't hold: speech ``text`` has its
+    whitespace (line breaks included) collapsed to single spaces, and ``voice`` /
+    ``direction`` are stripped, blank means ``None``, and a line break is an
+    error. So every segment serializes to one line per attribute and reads back
+    equal.
     """
 
     kind: SegmentKind
@@ -67,6 +96,14 @@ class Segment:
     voice: str | None = None
     pace: Pace | None = None
     direction: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind == "pause":
+            _check_seconds("pause", self.seconds)
+            return
+        object.__setattr__(self, "text", _WS_RE.sub(" ", self.text).strip())
+        object.__setattr__(self, "voice", _one_line("voice", self.voice))
+        object.__setattr__(self, "direction", _one_line("direction", self.direction))
 
     @classmethod
     def speech(
@@ -81,8 +118,6 @@ class Segment:
 
     @classmethod
     def pause(cls, seconds: float) -> Segment:
-        if seconds < 0:
-            raise ValueError(f"pause seconds must be non-negative, got {seconds}")
         return cls(kind="pause", seconds=seconds)
 
     @property

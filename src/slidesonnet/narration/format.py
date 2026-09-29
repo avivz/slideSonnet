@@ -4,11 +4,11 @@ The sidecar is an indented, line-oriented, git-diffable text file. Each slide
 is a block of attributed utterances and pauses, optionally bracketed by
 transitions:
 
-    # a comment (line-leading '#', or a trailing ' #...' on a content line)
+    # a comment (a line-leading '#', or a trailing ' #...' on a structural line)
     @slide-id
       transition-in: crossfade 0.5     # optional; default is a cut
-      utterance:
-        voice: narrator                # optional per-utterance directives
+      utterance:                       # voice/pace/direct are optional
+        voice: narrator
         pace: slow
         direct: warm, unhurried
         text: The spoken words.
@@ -16,6 +16,12 @@ transitions:
       utterance:
         text: A second utterance, in the default voice.
       transition-out: cut              # optional; default is a cut
+
+On the lines that hold words — ``text:`` and its continuation lines,
+``voice:``, ``direct:`` — a ``#`` is part of the value ("Use issue #123"); only
+a line that *starts* with ``#`` is a comment there. Elsewhere (``pause:``,
+``transition-*:``, ``utterance:``, the ``@`` header, the preamble) a trailing
+`` #...`` is a comment.
 
 Indentation is cosmetic — lines are classified by their leading ``key:`` token
 (``utterance:``, ``pause:``, ``transition-in:``, ``transition-out:``, and the
@@ -34,6 +40,7 @@ canonically; comments above it and at end-of-file still survive).
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -75,6 +82,9 @@ _VALID_PACES: frozenset[str] = frozenset({"slow", "normal", "fast"})
 _VALID_TRANSITIONS: frozenset[str] = TRANSITION_NAMES
 
 _UTTERANCE_ATTRS: frozenset[str] = frozenset({"voice", "pace", "direct", "text"})
+# Value lines whose ``#`` is literal (words, not structure): no inline comments.
+_LITERAL_KEYS: frozenset[str] = frozenset({"voice", "direct", "text"})
+_LINE_BREAK_RE = re.compile(r"\r?\n")
 _KNOWN_KEYS: frozenset[str] = (
     frozenset({"utterance", "pause", "transition-in", "transition-out"}) | _UTTERANCE_ATTRS
 )
@@ -116,11 +126,42 @@ def _strip_comment(line: str) -> str:
     return line
 
 
+def _is_literal_line(line: str, *, in_text: bool) -> bool:
+    """Whether stripped *line* keeps its ``#`` (a words line, not structure).
+
+    True for a ``text:``/``voice:``/``direct:`` line, and — while a ``text:``
+    is open — for a continuation line (one that isn't a header or a directive).
+    """
+    kv = _KV_RE.match(line)
+    if kv is not None and kv.group("key") in _LITERAL_KEYS:
+        return True
+    if not in_text:
+        return False
+    bare = _strip_comment(line).strip()
+    if _HEADER_RE.match(bare):
+        return False
+    kv = _KV_RE.match(bare)
+    return kv is None or kv.group("key") not in _KNOWN_KEYS
+
+
 def _format_seconds(seconds: float) -> str:
-    """Render *seconds* without trailing zeros (3.0 -> '3', 1.50 -> '1.5')."""
+    """Render *seconds* exactly, without trailing zeros (3.0 -> '3', 1.50 -> '1.5')."""
     if seconds == int(seconds):
         return str(int(seconds))
-    return f"{seconds:g}"
+    return repr(seconds)
+
+
+def _parse_seconds(value: str, lineno: int, what: str) -> float:
+    """A finite, non-negative duration, or a :class:`SidecarError` naming *lineno*."""
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise SidecarError(f"line {lineno}: {what} '{value}' is not a number") from None
+    if not math.isfinite(seconds):
+        raise SidecarError(f"line {lineno}: {what} '{value}' must be a finite number of seconds")
+    if seconds < 0:
+        raise SidecarError(f"line {lineno}: {what} '{value}' must be non-negative")
+    return seconds
 
 
 def _parse_transition(value: str, lineno: int) -> Transition:
@@ -133,16 +174,7 @@ def _parse_transition(value: str, lineno: int) -> Transition:
             f"or circleopen/circleclose)"
         )
     kind: TransitionKind = parts[0]
-    seconds = 0.0
-    if len(parts) > 1:
-        try:
-            seconds = float(parts[1])
-        except ValueError:
-            raise SidecarError(
-                f"line {lineno}: transition '{value}' has a non-numeric duration"
-            ) from None
-        if seconds < 0:
-            raise SidecarError(f"line {lineno}: transition duration must be non-negative")
+    seconds = _parse_seconds(parts[1], lineno, "transition duration") if len(parts) > 1 else 0.0
     return Transition(kind=kind, seconds=seconds)
 
 
@@ -158,7 +190,7 @@ class _UtteranceDraft:
 
     def to_segment(self) -> Segment:
         return Segment.speech(
-            _WS_RE.sub(" ", self.text).strip(),
+            self.text,  # the model collapses whitespace
             voice=self.voice,
             pace=self.pace,
             direction=self.direction,
@@ -230,7 +262,12 @@ def parse_document(text: str) -> NarrationDoc:
             raise SidecarError(f"line {lineno}: {what} before any @slide-id header")
         return current
 
-    for lineno, raw in enumerate(text.splitlines(), start=1):
+    # Only \n / \r\n end a line (str.splitlines would also split on U+2028,
+    # \x0b, \x0c, \x85, ... inside a value).
+    lines = _LINE_BREAK_RE.split(text)
+    if lines and lines[-1] == "":
+        lines.pop()  # the final newline ends the last line; it doesn't start one
+    for lineno, raw in enumerate(lines, start=1):
         fmt = _FORMAT_RE.match(raw.strip())
         if fmt and int(fmt.group("version")) > FORMAT_VERSION:
             logger.warning(
@@ -239,10 +276,13 @@ def parse_document(text: str) -> NarrationDoc:
                 fmt.group("version"),
                 FORMAT_VERSION,
             )
-        line = _strip_comment(raw).strip()
-        if not line:
+        line = raw.strip()
+        if not line or line.startswith("#"):
             pending.append(raw)
             continue
+        in_text = draft is not None and draft.text_seen
+        if current is None or not _is_literal_line(line, in_text=in_text):
+            line = _strip_comment(raw).strip()
 
         header = _HEADER_RE.match(line)
         if header:
@@ -308,11 +348,7 @@ def parse_document(text: str) -> NarrationDoc:
             elif key == "pause":
                 block = _require_block(lineno, "'pause:'")
                 _flush_utterance()
-                try:
-                    seconds = float(value)
-                except ValueError:
-                    raise SidecarError(f"line {lineno}: pause '{value}' is not a number") from None
-                block.segments.append(Segment.pause(seconds))
+                block.segments.append(Segment.pause(_parse_seconds(value, lineno, "pause")))
             elif key in {"transition-in", "transition-out"}:
                 block = _require_block(lineno, f"'{key}:'")
                 transition = _parse_transition(value, lineno)
@@ -376,7 +412,7 @@ def _serialize_utterance(seg: Segment) -> list[str]:
         lines.append(f"    pace: {seg.pace}")
     if seg.direction:
         lines.append(f"    direct: {seg.direction}")
-    lines.append(f"    text: {seg.text.strip()}")
+    lines.append(f"    text: {seg.text}")
     return lines
 
 
