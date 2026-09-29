@@ -53,8 +53,8 @@ def test_example_stays_deliberately_broken() -> None:
     res = CliRunner().invoke(main, ["check", str(EXAMPLE / "error-showcase.pdf")])
     assert res.exit_code == 1
     assert "renamed to 'twin-2'" in res.output  # duplicate \\ssid: disambiguated + warned
-    assert "'double-block' has more than one narration block" in res.output  # disambiguated
-    assert "renamed to 'double-block-2'" in res.output  # the dup block's text is kept
+    assert "'double-block' has more than one narration block (lines 12 and 16" in res.output
+    assert "double-block-2" not in res.output  # the made-up id stays out of check's report
     assert "'ghost-slide' has no matching PDF page" in res.output
     assert "auto-generated default" in res.output
     assert "slide 'silent-stage' has no narration block" in res.output

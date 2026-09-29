@@ -28,8 +28,9 @@ anything; errors fail `slidesonnet check` (exit 1).
 
 Note: a duplicate `@id` in the sidecar no longer freezes saving. On load the
 later block is renamed (`double-block` → `double-block-2`) so neither block's
-text is lost, and the rename surfaces in the unattached-narration tray. Merge
-the two `@blocks` in `error-showcase.narration` to resolve the warning.
+text is lost, and the rename surfaces in the unattached-narration tray.
+`slidesonnet check` reports it as one error naming both line numbers. Merge
+the two `@blocks` in `error-showcase.narration` to resolve it.
 
 Rebuild the PDF after editing the source:
 

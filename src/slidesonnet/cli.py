@@ -5,9 +5,12 @@ from __future__ import annotations
 import difflib
 import logging
 import os
+import sys
+import traceback
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -21,8 +24,12 @@ from slidesonnet.logging_setup import (
     configure_console_logging,
     resolve_console_level,
 )
+from slidesonnet.narration.format import SidecarError
 from slidesonnet.progress import RunProgress
 from slidesonnet.tts import BACKENDS
+
+if TYPE_CHECKING:
+    from slidesonnet.api import ApproveFn, SynthesisPlan
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +82,40 @@ class _SuggestGroup(click.Group):
                     ) from e
             raise
 
+    def invoke(self, ctx: click.Context) -> Any:
+        # The one error boundary: every subcommand (and the group's own setup,
+        # e.g. logging and config) runs inside it.
+        with _cli_errors():
+            return super().invoke(ctx)
+
+
+class _PdfPath(click.Path):
+    """An existing deck PDF — with a plain message for LaTeX source or a non-PDF file."""
+
+    def __init__(self) -> None:
+        super().__init__(exists=True, dir_okay=False, path_type=Path)
+
+    def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> Any:
+        path = super().convert(value, param, ctx)
+        p = Path(os.fsdecode(path))
+        if p.suffix.lower() in {".tex", ".ltx", ".sty"}:
+            self.fail(
+                f"{p.name} is LaTeX source — pass the compiled PDF ({p.with_suffix('.pdf').name})",
+                param,
+                ctx,
+            )
+        try:
+            with p.open("rb") as f:
+                magic = f.read(5)
+        except OSError as e:
+            self.fail(f"can't read {p.name}: {e.strerror}", param, ctx)
+        if magic != b"%PDF-":
+            self.fail(f"{p.name} isn't a PDF file — pass the deck's compiled PDF", param, ctx)
+        return path
+
+
+_PDF_ARG = click.argument("pdf", type=_PdfPath())
+
 
 @click.group(cls=_SuggestGroup, invoke_without_command=True)
 @click.version_option(version=__version__)
@@ -115,30 +156,20 @@ def main(
          source (run "slidesonnet sty" to drop the macro file), compile to PDF.
       2. slidesonnet init deck.pdf      # scaffold a blank .narration sidecar
       3. Edit deck.narration (by hand, an LLM, or "slidesonnet edit deck.pdf").
-      4. slidesonnet export deck.pdf -o deck.mp4
-
-    \b
-    Commands:
-      sty     [-o PATH]                    write the slidesonnet.sty LaTeX macro
-      init    deck.pdf [--merge|--force]   scaffold a blank narration sidecar
-      check   deck.pdf                     reconcile sidecar ids against the PDF
-      tts     deck.pdf [--engine ...]      synthesize narration into the cache
-      export  deck.pdf -o OUT.mp4          render the narrated (or silent) video
-      subs    deck.pdf -o OUT.srt          subtitles alone (export already writes them)
-      edit    deck.pdf                     launch the NiceGUI editor
-      clean   deck.pdf [--keep ...]        prune the deck's own audio/render cache
-      pool    status | migrate | prune     inspect / fill / prune a shared clip pool
-      review  status | comment | reply ...  review agent changes slide by slide
-      doctor                               check installed dependencies
+      4. slidesonnet check deck.pdf     # catch id and voice problems early
+      5. slidesonnet export deck.pdf -o deck.mp4 --draft   # writes deck.draft.mp4
+      6. For the final video, compile a final build
+         (latexmk -pdf -usepretex='\\def\\ssfinal{}' deck.tex), then export
+         without --draft.
     """
+    ctx.ensure_object(dict)
+    ctx.obj["verbose"] = verbose  # before anything can fail: -v shows tracebacks
     try:
         level = resolve_console_level(quiet=quiet, verbose=verbose, env=os.environ.get(ENV_LEVEL))
     except ValueError as e:
         raise click.UsageError(str(e)) from e
     configure_console_logging(level)
-    ctx.ensure_object(dict)
     ctx.obj["quiet"] = quiet
-    ctx.obj["verbose"] = verbose
     ctx.obj["log_file"] = log_file
     ctx.obj["no_log_file"] = no_log_file
     ctx.obj["audio_dir_flag"] = audio_dir is not None
@@ -152,15 +183,90 @@ def main(
 
 @contextmanager
 def _cli_errors() -> Iterator[None]:
-    """Map domain failures to clean CLI errors (message, no traceback).
+    """Map expected failures to one-line CLI errors; ``-v`` adds the traceback.
 
-    One uniform catch set for every command: SlideSonnetError (the domain
-    base), ValueError (api parameter validation), FileExistsError (init).
+    Expected means the user can fix it: a domain error (SlideSonnetError), a
+    malformed sidecar (SidecarError), an existing file (init), a file-system
+    problem (a missing folder, no permission), or a PDF PyMuPDF can't read.
+    Anything else is a bug and keeps its traceback.
     """
     try:
         yield
-    except (SlideSonnetError, ValueError, FileExistsError) as e:
+    except (SlideSonnetError, SidecarError, FileExistsError) as e:
+        _show_traceback()
         raise click.ClickException(str(e)) from e
+    except BrokenPipeError:
+        raise  # the reader went away (e.g. `| head`); nothing to tell them
+    except OSError as e:
+        _show_traceback()
+        raise click.ClickException(_os_error_message(e)) from e
+    except RuntimeError as e:
+        if type(e).__name__ != "FileDataError":  # pymupdf's "not a readable PDF"
+            raise
+        _show_traceback()
+        raise click.ClickException(
+            f"can't read the PDF ({e}) — is it a complete, compiled PDF? Recompile it and retry"
+        ) from e
+
+
+def _show_traceback() -> None:
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and (ctx.find_root().obj or {}).get("verbose"):
+        click.echo(traceback.format_exc(), err=True)
+
+
+def _os_error_message(e: OSError) -> str:
+    name = e.filename or ""
+    if isinstance(e, FileNotFoundError):
+        return f"{name}: no such file or folder — check the path (create the folder first)"
+    if isinstance(e, PermissionError):
+        return f"{name}: permission denied — choose a location you can write to"
+    if isinstance(e, IsADirectoryError):
+        return f"{name} is a folder — give a file name"
+    return f"{name}: {e.strerror or e}" if name else str(e)
+
+
+def _stdin_is_tty() -> bool:
+    try:
+        return sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _paid_gate(yes: bool, seen: dict[str, SynthesisPlan] | None = None) -> ApproveFn:
+    """The ``approve`` hook for synthesis: ask before spending paid API credits.
+
+    Free engines and fully cached decks pass silently. With ``--yes`` paid work
+    goes ahead; at a terminal the user is asked; otherwise (a script, CI) the
+    run is refused rather than billed unasked.
+    """
+
+    def approve(plan: SynthesisPlan) -> bool:
+        if seen is not None:
+            seen["plan"] = plan
+        if not plan.paid or not plan.uncached or yes:
+            return True
+        what = (
+            f"{plan.uncached} new clip(s) with {plan.engine}, which spends paid API credits "
+            "(clips already generated are reused for free)"
+        )
+        if not _stdin_is_tty():
+            raise click.ClickException(
+                f"This would generate {what}. Re-run with --yes to allow it, "
+                "or use --engine kokoro (free, runs locally)."
+            )
+        return click.confirm(f"Generate {what}?", default=False, abort=True)
+
+    return approve
+
+
+def _check_timing(timing: str, wpm: float) -> None:
+    from slidesonnet.timing import parse_timing
+
+    try:
+        parse_timing(timing, wpm=wpm)
+    except ValueError as e:
+        raise click.BadParameter(str(e), param_hint="'--timing' / '--wpm'") from e
 
 
 def _print_diagnostics(diags: list[Diagnostic]) -> None:
@@ -190,7 +296,7 @@ def sty(output: Path) -> None:
 
 
 @main.command()
-@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@_PDF_ARG
 @click.option(
     "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
 )
@@ -207,10 +313,14 @@ def init(ctx: click.Context, pdf: Path, narration: Path | None, merge: bool, for
         path = init_sidecar(pdf, sidecar_path=narration, merge=merge, force=force)
     if not ctx.obj.get("quiet", False):
         click.echo(str(path))
+        click.echo(
+            f"Next: write the narration in {path.name} (or run 'slidesonnet edit {pdf.name}'), "
+            f"then 'slidesonnet check {pdf.name}'."
+        )
 
 
 @main.command()
-@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@_PDF_ARG
 @click.option(
     "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
 )
@@ -226,6 +336,27 @@ def check(pdf: Path, narration: Path | None) -> None:
     _print_diagnostics(diags)
     if has_errors(diags):
         raise SystemExit(1)
+
+
+_YES_OPT = click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Generate paid (Inworld) clips without asking first",
+)
+
+
+def _subtitle_format(output: Path, fmt: str | None) -> str:
+    """The subtitle format: --format if given, else the output's extension, else srt."""
+    ext = output.suffix.lower().lstrip(".")
+    if fmt is None:
+        return ext if ext in {"srt", "vtt"} else "srt"
+    if ext in {"srt", "vtt"} and ext != fmt:
+        raise click.UsageError(
+            f"{output.name} ends in .{ext} but --format {fmt} was asked for — "
+            f"drop --format, or name the file {output.with_suffix('.' + fmt).name}"
+        )
+    return fmt
 
 
 _NARRATION_OPT = click.option(
@@ -244,18 +375,29 @@ def _run_progress(phases: tuple[str, ...]) -> RunProgress:
 
 
 @main.command()
-@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@_PDF_ARG
 @_NARRATION_OPT
 @_ENGINE_OPT
 @click.option("--id", "ids", multiple=True, help="Synthesize only these slide-ids (repeatable)")
+@_YES_OPT
 @click.pass_context
 def tts(
-    ctx: click.Context, pdf: Path, narration: Path | None, engine: str | None, ids: tuple[str, ...]
+    ctx: click.Context,
+    pdf: Path,
+    narration: Path | None,
+    engine: str | None,
+    ids: tuple[str, ...],
+    yes: bool,
 ) -> None:
-    """Synthesize narration into the content-addressed cache (cache-aware)."""
+    """Synthesize narration into the content-addressed cache (cache-aware).
+
+    With a paid engine (Inworld), asks before generating new clips; --yes skips
+    the question (needed when no terminal is attached, e.g. in a script).
+    """
     from slidesonnet.api import synthesize_deck
 
     _attach_deck_logging(ctx, pdf)
+    seen: dict[str, SynthesisPlan] = {}
     with _cli_errors():
         n = synthesize_deck(
             pdf,
@@ -263,13 +405,18 @@ def tts(
             engine=engine,  # type: ignore[arg-type]
             only_ids=set(ids) or None,
             progress=_run_progress(("tts",)),
+            approve=_paid_gate(yes, seen),
         )
-    click.echo(f"Synthesized {n} new clip(s); rest from cache.")
+    plan = seen.get("plan")
+    reused = f", {plan.total - n} reused" if plan is not None else ""
+    click.echo(f"{n} generated{reused}.")
 
 
 @main.command()
-@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
-@click.option("-o", "--output", required=True, type=click.Path(path_type=Path), help="Output MP4")
+@_PDF_ARG
+@click.option(
+    "-o", "--output", required=True, type=click.Path(path_type=Path), help="Output video (.mp4)"
+)
 @_NARRATION_OPT
 @_ENGINE_OPT
 @click.option("--silent", is_flag=True, help="No TTS: silent video, timing from the model")
@@ -306,6 +453,7 @@ def tts(
         "or review conversations still open). Writes <name>.draft.mp4."
     ),
 )
+@_YES_OPT
 @click.pass_context
 def export(
     ctx: click.Context,
@@ -320,11 +468,24 @@ def export(
     sub_granularity: str,
     keep_scratch: bool,
     draft: bool,
+    yes: bool,
 ) -> None:
-    """Render the narrated (or silent) video with optional subtitles."""
+    """Render the narrated (or silent) video with optional subtitles.
+
+    Refuses a deck that 'slidesonnet check' reports errors for, one with no
+    narration yet, and a plain build; --draft exports it anyway as
+    <name>.draft.mp4. With a paid engine (Inworld), asks before generating new
+    clips; --yes skips the question.
+    """
     from slidesonnet.api import export as run_export
     from slidesonnet.api import export_phases
 
+    if output.suffix.lower() != ".mp4":
+        raise click.UsageError(
+            f"{output.name}: only MP4 video can be exported — name the output with .mp4 "
+            f"(e.g. -o {output.with_suffix('.mp4').name})"
+        )
+    _check_timing(timing, wpm)
     _attach_deck_logging(ctx, pdf)
     with _cli_errors():
         progress = _run_progress(export_phases(silent=silent, timing=timing, wpm=wpm))
@@ -341,6 +502,7 @@ def export(
             keep_scratch=True if keep_scratch else None,
             progress=progress,
             draft=draft,
+            approve=_paid_gate(yes),
         )
     logger.info(progress.summary())
     kind = "silent " if result.silent else ""
@@ -349,14 +511,18 @@ def export(
 
 
 @main.command()
-@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@_PDF_ARG
 @click.option(
     "-o", "--output", required=True, type=click.Path(path_type=Path), help="Output subtitle file"
 )
 @_NARRATION_OPT
 @_ENGINE_OPT
 @click.option(
-    "--format", "fmt", type=click.Choice(["srt", "vtt"]), default="srt", show_default=True
+    "--format",
+    "fmt",
+    type=click.Choice(["srt", "vtt"]),
+    default=None,
+    help="Subtitle format (default: from the output's extension, else srt)",
 )
 @click.option(
     "--sub-granularity",
@@ -379,7 +545,7 @@ def subs(
     output: Path,
     narration: Path | None,
     engine: str | None,
-    fmt: str,
+    fmt: str | None,
     sub_granularity: str,
     timing: str,
     wpm: float,
@@ -394,6 +560,8 @@ def subs(
     """
     from slidesonnet.api import write_subs
 
+    fmt = _subtitle_format(output, fmt)
+    _check_timing(timing, wpm)
     _attach_deck_logging(ctx, pdf)
     with _cli_errors():
         path = write_subs(
@@ -411,7 +579,7 @@ def subs(
 
 
 @main.command()
-@click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+@_PDF_ARG
 @click.option(
     "--keep",
     type=click.Choice(["nothing", "api", "current", "exact"]),
@@ -845,7 +1013,7 @@ def edit(
     app_window: bool,
     dev: bool,
 ) -> None:
-    """Launch the narration editor.
+    """Launch the narration editor in your browser.
 
     TARGET is a deck PDF to open, or a folder of decks to browse. With neither,
     the current folder is scanned. The editor opens on a library of every deck

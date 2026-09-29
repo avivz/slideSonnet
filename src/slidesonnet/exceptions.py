@@ -74,3 +74,15 @@ class ExportRefused(SlideSonnetError):
             + "\nExport a draft instead with --draft (writes <name>.draft.mp4)."
         )
         self.reasons = reasons
+
+
+class NarrationNotFound(SlideSonnetError):
+    """An explicitly named narration sidecar doesn't exist (a typo, not a new deck)."""
+
+
+class UnknownSlideId(SlideSonnetError):
+    """A slide-id asked for by name isn't in the deck."""
+
+
+class SynthesisDeclined(SlideSonnetError):
+    """Paid synthesis needed approval and didn't get it; nothing was generated."""

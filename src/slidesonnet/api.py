@@ -7,17 +7,26 @@ check, synthesize TTS, export video, write subtitles — is scriptable from Pyth
 
 from __future__ import annotations
 
+import difflib
 import importlib.resources
 import logging
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, unique_real_ids
 from slidesonnet.diagnostics import Diagnostic
-from slidesonnet.exceptions import ExportRefused
+from slidesonnet.exceptions import (
+    ExportRefused,
+    NarrationNotFound,
+    SlideSonnetError,
+    SynthesisDeclined,
+    UnknownSlideId,
+)
 from slidesonnet.models import Backend, ProgressFn
-from slidesonnet.narration.format import parse_sidecar
+from slidesonnet.narration.format import SidecarError, parse_sidecar
 from slidesonnet.pdf.reader import read_page_ids
 from slidesonnet.progress import EXPORT_PHASES, SILENT_EXPORT_PHASES
 
@@ -36,6 +45,7 @@ Engine = Backend
 __all__ = [
     "ExportResult",
     "Preview",
+    "SynthesisPlan",
     "build_preview",
     "check_deck",
     "export",
@@ -72,7 +82,18 @@ def scaffold_text(pdf_path: Path, pages: list[str]) -> str:
     lines = [
         f"# slidesonnet-format: {FORMAT_VERSION}",
         f"# slideSonnet narration — deck: {pdf_path.name}",
-        "# Fill in narration under each @slide-id. '[pause N]' inserts N seconds of silence.",
+        "# Write what each slide says under its @slide-id, indented like this:",
+        "#",
+        "# @intro-title",
+        "#   utterance:",
+        "#     text: Welcome to the course.",
+        "#   pause: 1.5                  # seconds of silence",
+        "#   utterance:",
+        "#     voice: af_heart           # optional; so is pace: slow | normal | fast",
+        "#     text: Let's begin.",
+        "#",
+        "# A slide with no narration stays silent. Full grammar:",
+        "# https://github.com/avivz/slideSonnet/blob/main/docs/authoring.md",
         "",
     ]
     page_of: dict[str, int] = {}
@@ -106,14 +127,17 @@ def init_sidecar(
     pdf_path = pdf_path.resolve()
     sidecar = sidecar_path or default_sidecar_path(pdf_path)
     pages, _ = dedupe_page_ids(read_page_ids(pdf_path))  # scaffold the effective ids
+    if pages and not any(pages):
+        raise SlideSonnetError(no_slide_ids_message(pdf_path, len(pages)))
 
     if sidecar.exists() and not (merge or force):
         raise FileExistsError(
-            f"{sidecar} already exists — use merge=True to top up or force=True to overwrite"
+            f"{sidecar} already exists — use --merge to add blocks for new slides, "
+            "or --force to overwrite it"
         )
 
     if merge and sidecar.exists():
-        existing = parse_sidecar(sidecar.read_text(encoding="utf-8"))
+        existing = _parse_named(sidecar, parse_sidecar)
         existing_ids = {b.slide_id for b in existing}
         missing = [pid for pid in unique_real_ids(pages) if pid not in existing_ids]
         if missing:
@@ -134,30 +158,153 @@ def init_sidecar(
 def check_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> list[Diagnostic]:
     """Run reconciliation diagnostics for *pdf_path* + its sidecar.
 
-    Combines id reconciliation with the portable-voice-layer check: a named
-    voice (or the deck default) that has no mapping for the configured engine.
+    Combines id reconciliation with the voice checks (a named voice with no
+    mapping for the configured engine, or a voice the engine doesn't have),
+    transition lengths, and a warning that a plain build can only be exported
+    as a draft. A PDF with no slide-ids at all, and a slide-id with more than
+    one narration block, are errors.
     """
-    from slidesonnet.config import load_config
-    from slidesonnet.deck import load_deck
+    _deck, _config, diags = _load(pdf_path, sidecar_path, None, None)
+    return diags
+
+
+def no_slide_ids_message(pdf_path: Path, n_pages: int) -> str:
+    """Why a PDF with no ``\\ssid`` markers can't be narrated, and the fix."""
+    return (
+        f"{pdf_path.name} has no slide-ids: none of its {n_pages} pages carries an \\ssid "
+        "marker. Run 'slidesonnet sty' to write slidesonnet.sty next to your .tex, add "
+        "\\usepackage{slidesonnet} to its preamble and \\ssid{some-name} to every frame, "
+        "then recompile the PDF."
+    )
+
+
+def _deck_diagnostics(
+    pdf_path: Path, deck: Deck, config: Config, load_diags: list[Diagnostic]
+) -> list[Diagnostic]:
+    """Everything ``check`` reports for a loaded deck (see :func:`check_deck`)."""
     from slidesonnet.diagnostics import (
         sort_diagnostics,
         transition_length_diagnostics,
         voice_diagnostics,
     )
+    from slidesonnet.pdf.reader import is_plain_build
     from slidesonnet.render import build_timeline
     from slidesonnet.timing import TimingMode
 
-    deck, diags = load_deck(pdf_path, sidecar_path=sidecar_path)
-    config = load_config(pdf_path)
+    diags = list(load_diags)
+    if deck.pages and not any(deck.pages):
+        # One actionable error instead of an "unmarked page" warning per page.
+        diags = [d for d in diags if d.code != "unmarked-page"]
+        diags.append(
+            Diagnostic("error", "no-slide-ids", no_slide_ids_message(pdf_path, len(deck.pages)))
+        )
+    diags = _duplicate_block_diagnostics(deck, diags)
     voices = {**config.voices, **deck.voices}  # deck wins over the shared library
-    voice_diags = voice_diagnostics(
+    diags += voice_diagnostics(
         list(deck.narration.values()), voices, deck.default_voice, config.tts.backend
     )
+    diags += _unknown_voice_diagnostics(deck, config)
     # Flag boundary transitions that the centered-overlay renderer would clamp.
     # Estimate timing keeps check audio-free; the clamp itself is duration-driven.
     timeline = build_timeline(deck, TimingMode("estimate"), video=config.video)
-    trans_diags = transition_length_diagnostics(deck.pages, deck.narration, timeline.page_durations)
-    return sort_diagnostics(diags + voice_diags + trans_diags)
+    diags += transition_length_diagnostics(deck.pages, deck.narration, timeline.page_durations)
+    if is_plain_build(pdf_path):
+        diags.append(
+            Diagnostic(
+                "warning",
+                "plain-build",
+                f"{pdf_path.name} is a plain build (page numbers and progress bars hidden), so "
+                "'slidesonnet export' will only make a draft: add --draft for a preview "
+                "video, or compile a final build first: "
+                "latexmk -pdf -usepretex='\\def\\ssfinal{}' <deck>.tex",
+            )
+        )
+    return sort_diagnostics(diags)
+
+
+_HEADER_LINE_RE = re.compile(r"^\s*@(?P<id>\S+)\s*(?:#.*)?$")
+
+
+def _duplicate_block_diagnostics(deck: Deck, diags: list[Diagnostic]) -> list[Diagnostic]:
+    """Report a slide-id with several ``@`` blocks as one error, with their line numbers.
+
+    Loading keeps every block by renaming the later ones (``intro`` → ``intro-2``),
+    which would otherwise surface as a confusing orphan ``intro-2``.
+    """
+    if not deck.sidecar_path.exists():
+        return diags
+    lines: dict[str, list[int]] = {}
+    text = deck.sidecar_path.read_text(encoding="utf-8")
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        m = _HEADER_LINE_RE.match(raw)
+        if m:
+            lines.setdefault(m.group("id"), []).append(lineno)
+    renamed = set(deck.narration) - set(lines)  # the ids loading made up
+    kept = [d for d in diags if d.code != "duplicate-block" and d.slide_id not in renamed]
+    for sid, where in lines.items():
+        if len(where) > 1:
+            at = ", ".join(str(n) for n in where[:-1]) + f" and {where[-1]}"
+            kept.append(
+                Diagnostic(
+                    "error",
+                    "duplicate-block",
+                    f"slide-id '{sid}' has more than one narration block (lines {at} of "
+                    f"{deck.sidecar_path.name}) — merge them into a single @{sid} block",
+                    sid,
+                )
+            )
+    return kept
+
+
+def _unknown_voice_diagnostics(deck: Deck, config: Config) -> list[Diagnostic]:
+    """Error where an utterance asks the engine for a voice it doesn't have.
+
+    Only engines that publish their voice list (Kokoro; Qwen3's CustomVoice
+    model) can be checked; cloud voices are account-specific and pass through.
+    A voice-map name resolves to its engine voice first, as synthesis does.
+    """
+    from slidesonnet.models import resolve_voice
+    from slidesonnet.tts import BACKENDS
+
+    backend = config.tts.backend
+    engine = BACKENDS[backend].factory(config.tts)
+    known = engine.list_voices()
+    if not known:
+        return []
+    voices = {**config.voices, **deck.voices}
+    diags: list[Diagnostic] = []
+    reported: set[tuple[str | None, str]] = set()
+
+    def flag(name: str, resolved: str, slide_id: str | None) -> None:
+        if resolved in known or resolved.endswith(".pt") or (slide_id, name) in reported:
+            return
+        reported.add((slide_id, name))
+        via = f" (the voice map sends '{name}' to '{resolved}')" if resolved != name else ""
+        close = difflib.get_close_matches(resolved, known, n=1, cutoff=0.6)
+        fix = (
+            f"did you mean '{close[0]}'?"
+            if close
+            else f"use one of {', '.join(known[:4])}, … ('slidesonnet edit' lists them all)"
+        )
+        diags.append(
+            Diagnostic(
+                "error",
+                "unknown-voice",
+                f"voice '{name}' isn't a {backend} voice{via} — {fix}",
+                slide_id,
+            )
+        )
+
+    default = engine.default_voice()
+    if default:
+        flag(default, default, None)
+    for block in deck.narration.values():
+        for seg in block.speech_segments:
+            name = seg.voice or deck.default_voice
+            resolved = resolve_voice(name, voices, backend) if name else None
+            if name and resolved:
+                flag(name, resolved, block.slide_id)
+    return diags
 
 
 def _audio_dir(pdf_path: Path, config: Config) -> Path:
@@ -180,18 +327,84 @@ def _load(
     sidecar_path: Path | None,
     config_path: Path | None,
     engine: Engine | None,
-) -> tuple[Deck, Config]:
+) -> tuple[Deck, Config, list[Diagnostic]]:
+    """Load the deck and its config, plus everything ``check`` would report."""
     from slidesonnet.config import load_config
     from slidesonnet.deck import load_deck
 
+    if sidecar_path is not None and not sidecar_path.exists():
+        # Named on purpose, so a miss is a typo — not an un-narrated deck.
+        raise NarrationNotFound(
+            f"narration file {sidecar_path} not found — check the --narration path, or "
+            f"create it with: slidesonnet init {pdf_path.name} --narration {sidecar_path}"
+        )
     config = load_config(pdf_path, config_path=config_path)
     # The engine reads its API key from this deck's .env (never os.environ-wide:
     # one editor process serves many decks), found wherever the cwd is.
     config.tts.env_dir = pdf_path.resolve().parent
     if engine is not None:
         config.tts.backend = engine
-    deck, _ = load_deck(pdf_path, sidecar_path=sidecar_path)
-    return deck, config
+    sidecar = sidecar_path or default_sidecar_path(pdf_path.resolve())
+    deck, load_diags = _parse_named(
+        sidecar, lambda _text: load_deck(pdf_path, sidecar_path=sidecar_path)
+    )
+    return deck, config, _deck_diagnostics(pdf_path, deck, config, load_diags)
+
+
+def _parse_named[T](sidecar: Path, parse: Callable[[str], T]) -> T:
+    """Run *parse* on *sidecar*'s text, naming the file in any syntax error."""
+    text = sidecar.read_text(encoding="utf-8") if sidecar.exists() else ""
+    try:
+        return parse(text)
+    except SidecarError as e:
+        raise SidecarError(f"{sidecar.name}, {e} — fix that line and re-run") from e
+
+
+@dataclass(frozen=True)
+class SynthesisPlan:
+    """What a synthesis run is about to do, handed to an ``approve`` hook first."""
+
+    engine: str
+    paid: bool  # the engine spends metered API credits
+    total: int  # utterances in scope
+    uncached: int  # distinct clips that would be generated (not already cached)
+
+
+ApproveFn = Callable[[SynthesisPlan], bool]
+
+
+def _plan(deck: Deck, config: Config, audio_dir: Path, only_ids: set[str] | None) -> SynthesisPlan:
+    from slidesonnet.audio.synth import ref_cache_status
+    from slidesonnet.tts import BACKENDS
+
+    status = [
+        (ref, cached)
+        for ref, cached in ref_cache_status(deck, config, audio_dir)
+        if only_ids is None or ref.slide_id in only_ids
+    ]
+    uncached = {(r.text, r.voice, r.pace) for r, cached in status if not cached}
+    backend = config.tts.backend
+    return SynthesisPlan(backend, BACKENDS[backend].paid, len(status), len(uncached))
+
+
+def _approve(plan: SynthesisPlan, approve: ApproveFn) -> None:
+    if not approve(plan):
+        raise SynthesisDeclined(
+            f"Nothing was generated: {plan.uncached} new {plan.engine} clip(s) weren't approved."
+        )
+
+
+def _check_ids(deck: Deck, pdf_path: Path, only_ids: set[str] | None) -> None:
+    """Refuse slide-ids the deck doesn't have, suggesting the closest real one."""
+    known = unique_real_ids(deck.pages)
+    for sid in sorted((only_ids or set()) - set(known)):
+        close = difflib.get_close_matches(sid, known, n=1, cutoff=0.6)
+        hint = (
+            f"did you mean '{close[0]}'?"
+            if close
+            else f"'slidesonnet check {pdf_path.name}' lists the deck's slides"
+        )
+        raise UnknownSlideId(f"Unknown slide-id '{sid}' — {hint}")
 
 
 def synthesize_deck(
@@ -204,20 +417,28 @@ def synthesize_deck(
     only_segments: set[tuple[str, int]] | None = None,
     force: bool = False,
     progress: ProgressFn | None = None,
+    approve: ApproveFn | None = None,
 ) -> int:
     """Synthesize narration into the content-addressed cache (cache-aware).
 
     Returns the number of speech segments newly synthesized (not from cache).
+    ``only_ids`` must name slides the deck has (:class:`UnknownSlideId`).
     ``only_segments`` targets specific ``(slide_id, speech_index)`` pairs.
     ``force`` re-synthesizes the targeted segments even when already cached.
+    *approve*, when given, sees the :class:`SynthesisPlan` first; returning
+    False raises :class:`SynthesisDeclined` before anything is generated.
     """
     from slidesonnet.audio.synth import synthesize as _synth
 
-    deck, config = _load(pdf_path, sidecar_path, config_path, engine)
+    deck, config, _ = _load(pdf_path, sidecar_path, config_path, engine)
+    _check_ids(deck, pdf_path, only_ids)
+    audio_dir = _audio_dir(pdf_path, config)
+    if approve is not None:
+        _approve(_plan(deck, config, audio_dir, only_ids), approve)
     results = _synth(
         deck,
         config,
-        audio_dir=_audio_dir(pdf_path, config),
+        audio_dir=audio_dir,
         only_ids=only_ids,
         only_segments=only_segments,
         force=force,
@@ -299,12 +520,16 @@ def export(
     keep_scratch: bool | None = None,
     progress: ProgressFn | None = None,
     draft: bool = False,
+    approve: ApproveFn | None = None,
 ) -> ExportResult:
     """Render the deck to a narrated (or silent) MP4 with optional subtitles.
 
     Refuses (:class:`ExportRefused`) when :func:`export_blockers` finds the deck
-    unready for a final video — a plain build, or open review conversations. A
-    *draft* skips that check and writes ``<name>.draft.mp4`` instead of *output*.
+    unready for a final video — a plain build, or open review conversations —
+    or when the deck has errors ``check`` would report, or (for a narrated
+    video) no slide has narration yet. A *draft* skips those checks and writes
+    ``<name>.draft.mp4`` instead of *output*. *approve* is consulted before any
+    synthesis, as in :func:`synthesize_deck`.
 
     On success the render intermediates (decoded page audio, assembled track,
     per-slide clips) are deleted unless *keep_scratch* is true — or, when it is
@@ -334,10 +559,12 @@ def export(
         reasons = export_blockers(pdf_path)
         if reasons:
             raise ExportRefused(reasons)
-    deck, config = _load(pdf_path, sidecar_path, config_path, engine)
+    deck, config, diags = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
 
     audible = export_phases(silent=silent, timing=timing, wpm=wpm) == EXPORT_PHASES
+    if not draft:
+        _refuse_unready(pdf_path, deck, diags, audible=audible)
     if silent and mode.kind == "tts":
         mode = TimingMode("estimate", wpm=wpm)  # tts is meaningless without audio
 
@@ -345,7 +572,10 @@ def export(
     page_audios: list[Path] | None = None
     audio_track: Path | None = None
     if audible:
-        results = _synth(deck, config, audio_dir=_audio_dir(pdf_path, config), progress=progress)
+        audio_dir = _audio_dir(pdf_path, config)
+        if approve is not None:
+            _approve(_plan(deck, config, audio_dir, None), approve)
+        results = _synth(deck, config, audio_dir=audio_dir, progress=progress)
         timeline = build_timeline(
             deck,
             mode,
@@ -383,6 +613,19 @@ def export(
     )
 
 
+def _refuse_unready(pdf_path: Path, deck: Deck, diags: list[Diagnostic], *, audible: bool) -> None:
+    """Refuse a final export of a deck ``check`` finds broken, or with nothing to say."""
+    reasons = [d.message for d in diags if d.severity == "error"]
+    narrated = any(deck.page_narration(pid).speech_segments for pid in deck.pages if pid)
+    if audible and not narrated and any(deck.pages):
+        reasons.append(
+            f"no slide has narration yet — write some in {deck.sidecar_path.name} (or run "
+            f"'slidesonnet edit {pdf_path.name}'), or make a silent video with --silent"
+        )
+    if reasons:
+        raise ExportRefused(reasons)
+
+
 def write_subs(
     pdf_path: Path,
     output: Path,
@@ -411,7 +654,7 @@ def write_subs(
     from slidesonnet.subtitles import format_srt, format_vtt
     from slidesonnet.timing import parse_timing
 
-    deck, config = _load(pdf_path, sidecar_path, config_path, engine)
+    deck, config, _ = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
     if mode.kind == "tts":
         cached = cached_durations(deck, config, _audio_dir(pdf_path, config), fallback_wpm=wpm)
@@ -550,7 +793,7 @@ def build_preview(
     from slidesonnet.render import build_timeline, render_audio_track
     from slidesonnet.timing import TimingMode
 
-    deck, config = _load(pdf_path, sidecar_path, config_path, engine)
+    deck, config, _ = _load(pdf_path, sidecar_path, config_path, engine)
     if only_id:  # render a one-page track; other pages' clips aren't synthesized
         deck = deck.restricted_to(only_id)
     only_ids = {only_id} if only_id else None

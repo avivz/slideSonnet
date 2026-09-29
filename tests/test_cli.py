@@ -197,7 +197,7 @@ def test_tts_passes_engine_and_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         main, ["tts", str(pdf), "--engine", "kokoro", "--id", "a", "--id", "b"]
     )
     assert result.exit_code == 0
-    assert "Synthesized 3 new clip(s)" in result.output
+    assert "3 generated" in result.output
     assert seen["pdf"] == pdf
     assert seen["engine"] == "kokoro"
     assert seen["only_ids"] == {"a", "b"}
@@ -349,18 +349,6 @@ def test_silent_export_plans_only_the_video_phases(
         )
     assert result.exit_code == 0
     assert "[00:00 50%] 1/2 video 2/2" in caplog.text  # video is half of (video, concat)
-
-
-def test_export_reports_value_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(*args: Any, **kwargs: Any) -> ExportResult:
-        raise ValueError("invalid timing spec 'fixed:'")
-
-    monkeypatch.setattr("slidesonnet.api.export", boom)
-    result = CliRunner().invoke(
-        main, ["export", str(_copy_pdf(tmp_path)), "-o", str(tmp_path / "x.mp4")]
-    )
-    assert result.exit_code != 0
-    assert "invalid timing spec" in result.output
 
 
 def test_subs_passes_options_and_prints_path(

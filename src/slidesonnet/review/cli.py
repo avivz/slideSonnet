@@ -63,6 +63,7 @@ def review() -> None:
     on first use). A conversation covers one or more slides; "deck" is the
     permanent deck-wide conversation. Accept closes a conversation; "clear"
     drops closed ones and moves their slides' base forward.
+
     \b
     Agent loop:
       slidesonnet review wait deck.pdf --since N --json   # block until "send"
