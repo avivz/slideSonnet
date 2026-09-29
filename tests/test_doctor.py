@@ -49,21 +49,19 @@ def test_pymupdf_detected() -> None:
 
 
 def test_run_all_checks_groups(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The grouping, independent of which tools this machine has: none are run."""
-    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    """The grouping and version parsing, independent of which tools this machine has."""
+    monkeypatch.setattr(shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
 
-    def no_tools(*args: object, **kwargs: object) -> object:
-        raise AssertionError("doctor ran a tool although none is installed")
+    def fake_tool(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        out = f"{cmd[0]} version 9.9 (fake)"
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr=out)
 
-    monkeypatch.setattr(subprocess, "run", no_tools)
+    monkeypatch.setattr(subprocess, "run", fake_tool)
     groups = dict(run_all_checks())
-    names = {c.name for c in groups["Core (always required)"]}
-    assert {"ffmpeg", "ffprobe", "pdftoppm", "PyMuPDF"} <= names
-    assert all(
-        c.status == "missing"
-        for c in groups["Core (always required)"]
-        if c.name in {"ffmpeg", "ffprobe", "pdftoppm"}
-    )
+    core = {c.name: c for c in groups["Core (always required)"]}
+    assert {"ffmpeg", "ffprobe", "pdftoppm", "PyMuPDF"} <= set(core)
+    for tool in ("ffmpeg", "ffprobe", "pdftoppm"):  # pdftoppm prints its version on stderr
+        assert (core[tool].status, core[tool].version) == ("ok", "9.9")
     # marp must be gone from the new toolchain
     all_names = {c.name for _, checks in groups.items() for c in checks}
     assert "marp-cli" not in all_names
