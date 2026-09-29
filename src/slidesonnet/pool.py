@@ -305,7 +305,6 @@ class PoolStatus:
     by_backend: dict[str, tuple[int, int]] = field(default_factory=dict)  # name → (files, bytes)
     unknown: tuple[int, int] = (0, 0)
     trash: tuple[int, int] = (0, 0)
-    indexed: int = 0
 
     @property
     def total_files(self) -> int:
@@ -337,5 +336,4 @@ def pool_status(pool: Path) -> PoolStatus:
     if trash.is_dir():
         files = [f for f in trash.iterdir() if f.is_file()]
         st.trash = (len(files), sum(f.stat().st_size for f in files))
-    st.indexed = len(load_index(pool))
     return st

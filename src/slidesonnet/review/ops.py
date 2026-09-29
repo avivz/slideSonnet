@@ -384,7 +384,6 @@ class ClearResult:
     cleared: list[str] = field(default_factory=list)  # conversation ids removed
     advanced: list[str] = field(default_factory=list)  # slides whose base moved
     skipped: list[str] = field(default_factory=list)  # held back by an open conversation
-    order_adopted: bool = False
 
 
 def _pin_slides(rec: Record, state: ReviewState) -> Record:
@@ -447,9 +446,7 @@ def _clear(txn: Transaction, current: DeckVersion) -> ClearResult:
         if r.conv is None or r.conv not in drop
     ]
     txn.rewrite(records)
-    return ClearResult(
-        cleared=[c.id for c in closed], advanced=advance, skipped=skipped, order_adopted=adopt
-    )
+    return ClearResult(cleared=[c.id for c in closed], advanced=advance, skipped=skipped)
 
 
 # ---- wait --------------------------------------------------------------------------

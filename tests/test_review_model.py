@@ -184,7 +184,6 @@ def test_clear_preserves_order_held_by_an_open_conversation(tmp_path: Path) -> N
     model.status(_narr(pdf))
     result = model.clear()
     assert result.skipped == ["a"]
-    assert not result.order_adopted
     stored = base_mod.load_base(pdf)
     assert stored is not None and stored.order == ("a", "b", "c")
     assert ops.load(pdf).conversations[other].status == "open"
