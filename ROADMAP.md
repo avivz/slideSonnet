@@ -1,13 +1,9 @@
 # Roadmap
 
-Current version: **1.0.0a3 — published to PyPI 2026-09-29.** Everything since is
-on `main` only (`CHANGELOG [Unreleased]`), and it is a lot: the editor was
-rewritten (NiceGUI → FastAPI + Vue 3, merged 2026-09-28), the **agent review
-loop** landed and is now always on, the **script view** is the default,
-**Play all** plays slide by slide, clips can live in a **shared pool** across
-decks and worktrees, and export reports progress for every phase. Anyone
-installing from PyPI still gets the old NiceGUI editor — so the release is the
-headline Now item.
+Current version: **1.0.0a3 — published to PyPI 2026-09-29.** It ships the Vue
+editor (NiceGUI is gone), the always-on agent review loop, the script view, slide-by-slide
+Play all, the shared clip pool, Inworld delivery controls and the quick export
+(`--fast`). `main` has nothing unreleased beyond it yet.
 
 *Last PM pass 2026-09-29 (second pass, same day).* The code + UX reviews
 landed: two independent reviews (ours: 6 code + 2 UX agents; Astra's) merged into
@@ -15,8 +11,7 @@ landed: two independent reviews (ours: 6 code + 2 UX agents; Astra's) merged int
 Now #1 and Next #7–#8 below point at its tiers; tick items off there.
 
 **Demo status:** basel-problem HQ Inworld render shipped (YouTube). Showcase is
-still Kokoro-only (Next #5). The demo PDFs are still *plain* builds; they need a
-final (`\ssfinal`) recompile before the next render or release (Now #3).
+still Kokoro-only (Next #5). The demo PDFs are final (`\\ssfinal`) builds as of 1.0.0a3.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
