@@ -84,7 +84,9 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   `Backend` Literal in models.py (a test pins them in sync).
 - **video/composer.py** — FFmpeg: `compose_silent_segment`, `compose_transition_clip`
   (one xfade clip per animated boundary), `concatenate_segments`, `mux_audio`,
-  `concatenate_audio`, `get_duration`.
+  `concatenate_audio`, `get_duration`; for the quick export (`--fast`,
+  `render.fast_video`/`_compose_fast`) `compose_slideshow` (one VFR pass, a few
+  long frames per still), `encode_aac` + `mux_copy`.
 - **proc.py** / **cancellation.py** — `run_tool`/`run_tool_with_progress` (uniform
   errors, timeout, kill on cancel); the cooperative cancel token (a ContextVar).
 - **atomic.py** (`atomic_write_text`), **progress.py** (`RunProgress`, the stable

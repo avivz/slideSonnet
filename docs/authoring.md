@@ -140,6 +140,7 @@ transitions:
 ```bash
 slidesonnet export deck.pdf -o deck.mp4 --draft             # writes deck.draft.mp4
 slidesonnet export deck.pdf -o deck.mp4 --silent --draft    # fast silent cut
+slidesonnet export deck.pdf -o deck.mp4 --fast              # quick look: writes deck.fast.mp4
 slidesonnet edit  deck.pdf                                  # GUI editor + preview
 slidesonnet edit  ~/courses/aicode                          # ...on a whole folder of decks
 ```
@@ -149,6 +150,14 @@ build (`latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex`), no errors from
 `check`, some narration, and no open review conversations. `--draft` skips
 those checks and names the file `<name>.draft.mp4`, so a draft never overwrites
 the real video. Only `.mp4` output is supported.
+
+`--fast` (the editor's **Quick export** box) trades picture quality for speed:
+720p at most, every transition a plain cut, and each slide encoded as a few
+long frames in one pass instead of 24 identical frames a second. The audio is
+the same track, encoded the same way, and the subtitles are unchanged. It writes
+`<name>.fast.mp4` (with `--draft`, `<name>.draft.fast.mp4`), so it never
+replaces the full-quality video, and it keeps the assembled audio in
+`.slidesonnet/render/` so the next quick export skips rebuilding it.
 
 With a paid engine (`--engine inworld`), `tts` and `export` say how many new
 clips they would generate and ask first; `--yes` answers for you, and without a

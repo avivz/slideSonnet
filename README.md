@@ -103,6 +103,14 @@ with no narration yet, and one with review conversations still open, and says
 which. `--draft` exports anyway and names the file `<name>.draft.mp4`, so a
 draft never overwrites the real video.
 
+For a quick look while you iterate, add `--fast` (the editor's **Quick export**
+box): 720p, plain cuts instead of transitions, and the stills encoded in one
+pass instead of frame by frame. The audio and subtitles are the full export's.
+It writes `<name>.fast.mp4`, so it never replaces the full-quality video. On the
+basel demo (6½ minutes, audio already generated) the full export takes about
+two minutes and `--fast` about 15 seconds, then 2 seconds for a repeat after a
+slide-only change.
+
 ## Marking slides — the `\ssid` macro
 
 `slidesonnet sty` writes `slidesonnet.sty`. In your Beamer preamble add
@@ -248,6 +256,7 @@ slidesonnet check  deck.pdf                         reconcile ids (exit≠0 on e
 slidesonnet tts    deck.pdf [--engine ...] [--id ID ...] [--yes]   synthesize into the cache
 slidesonnet export deck.pdf -o OUT.mp4
         [--draft]                      # not final yet: writes OUT.draft.mp4
+        [--fast]                       # quick look: 720p, cuts; writes OUT.fast.mp4
         [--engine kokoro]              [--silent]
         [--timing tts|estimate|fixed:N] [--wpm N]
         [--subtitles srt|vtt|both|none] [--sub-granularity segment|slide]
