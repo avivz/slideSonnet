@@ -14,6 +14,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from slidesonnet.models import Backend
+from slidesonnet.narration.format import PREAMBLE_KEY_RE, PREAMBLE_VALUE_RE
 from slidesonnet.narration.model import Segment, Transition
 from slidesonnet.narration.transitions import TRANSITION_NAMES
 
@@ -34,9 +35,33 @@ class ErrorResponse(_Model):
 
 
 # ---- narration content -----------------------------------------------------------
+#: A duration in seconds: finite (no NaN/Infinity) and non-negative.
+Seconds = Annotated[float, Field(ge=0.0, allow_inf_nan=False)]
+
+
+def _single_line(v: str | None) -> str | None:
+    """Refuse a line break: the sidecar holds each voice/direction on one line."""
+    if v is not None and ("\n" in v or "\r" in v):
+        raise ValueError("must be a single line")
+    return v
+
+
+def _voice_name(v: str) -> str:
+    if not PREAMBLE_KEY_RE.fullmatch(v):
+        raise ValueError(f"'{v}' must start with a letter and use only letters, digits, '-' or '_'")
+    return v
+
+
+def _voice_value(v: str) -> str:
+    v = v.strip()
+    if not PREAMBLE_VALUE_RE.fullmatch(v):
+        raise ValueError(f"'{v}' must be one non-blank line with no '#' after a space")
+    return v
+
+
 class TransitionDTO(_Model):
     kind: str = "cut"
-    seconds: float = Field(default=0.0, ge=0.0)
+    seconds: Seconds = 0.0
 
     @field_validator("kind")
     @classmethod
@@ -60,10 +85,12 @@ class SpeechDTO(_Model):
     pace: Literal["slow", "normal", "fast"] | None = None
     direction: str | None = None
 
+    _one_line = field_validator("voice", "direction")(_single_line)
+
 
 class PauseDTO(_Model):
     kind: Literal["pause"] = "pause"
-    seconds: float = Field(ge=0.0)
+    seconds: Seconds
 
 
 SegmentDTO = Annotated[SpeechDTO | PauseDTO, Field(discriminator="kind")]
@@ -250,6 +277,26 @@ class EditVoices(_Model):
     voices: dict[str, dict[str, str]]
     default_voice: str | None = None
     renames: dict[str, str] = Field(default_factory=dict)
+
+    # Everything here is written to the sidecar's voice preamble, so it must be
+    # something that preamble reads back as itself.
+    @field_validator("voices")
+    @classmethod
+    def _map(cls, v: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
+        return {
+            _voice_name(name): {_voice_name(eng): _voice_value(vid) for eng, vid in m.items()}
+            for name, m in v.items()
+        }
+
+    @field_validator("default_voice")
+    @classmethod
+    def _default(cls, v: str | None) -> str | None:
+        return None if v is None or not v.strip() else _voice_value(v)
+
+    @field_validator("renames")
+    @classmethod
+    def _renames(cls, v: dict[str, str]) -> dict[str, str]:
+        return {old: _voice_name(new) for old, new in v.items()}
 
 
 DeckCommand = Annotated[

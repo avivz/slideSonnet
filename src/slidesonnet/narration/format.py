@@ -75,7 +75,13 @@ _HEADER_RE = re.compile(r"^@(?P<id>\S+)\s*$")
 _KV_RE = re.compile(r"^(?P<key>[a-z][a-z-]*)\s*:\s*(?P<value>.*?)\s*$")
 # Preamble keys (voice + engine names) may carry digits/underscores — e.g.
 # ``qwen3`` — so the deck-level voice block uses a more permissive key charset.
-_PREAMBLE_KV_RE = re.compile(r"^(?P<key>[A-Za-z][\w-]*)\s*:\s*(?P<value>.*?)\s*$")
+_PREAMBLE_KEY = r"[A-Za-z][\w-]*"
+_PREAMBLE_KV_RE = re.compile(rf"^(?P<key>{_PREAMBLE_KEY})\s*:\s*(?P<value>.*?)\s*$")
+#: What a preamble key (a voice or engine name) must look like to read back.
+PREAMBLE_KEY_RE = re.compile(_PREAMBLE_KEY)
+#: A preamble value (an engine voice id, the default voice) that reads back as
+#: itself: not blank, one line, and no ``#`` that would start a comment.
+PREAMBLE_VALUE_RE = re.compile(r"[^\s#](?:[^\r\n#]|(?<=\S)#)*")
 _PAUSE_RE = re.compile(r"\[pause\s+(?P<sec>[0-9]*\.?[0-9]+)\]")
 _WS_RE = re.compile(r"\s+")
 _VALID_PACES: frozenset[str] = frozenset({"slow", "normal", "fast"})

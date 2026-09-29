@@ -7,6 +7,7 @@ approval, backend-owned jobs, immutable preview artifacts (B4), and ranged media
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -183,17 +184,51 @@ def test_mutations_need_same_origin_session_and_host(
 
 
 @pytest.mark.parametrize(
-    "segment",
-    [{"kind": "pause", "seconds": -1}, {"kind": "shout", "text": "x"}],
+    "edit",
+    [
+        {"segments": [{"kind": "pause", "seconds": -1}]},
+        {"segments": [{"kind": "pause", "seconds": float("nan")}]},
+        {"segments": [{"kind": "pause", "seconds": float("inf")}]},
+        {"segments": [{"kind": "shout", "text": "x"}]},
+        {"segments": [{"kind": "speech", "text": "x", "voice": "a\nvoice: b"}]},
+        {"segments": [{"kind": "speech", "text": "x", "direction": "warm\r\npause: 3"}]},
+        {"segments": [], "transition_in": {"kind": "fade", "seconds": float("inf")}},
+        {"segments": [], "transition_out": {"kind": "fade", "seconds": float("nan")}},
+    ],
 )
-def test_invalid_segments_are_rejected(client: TestClient, segment: dict[str, Any]) -> None:
+def test_invalid_segments_are_rejected(client: TestClient, edit: dict[str, Any]) -> None:
     token = _token(client)
     rev = _snapshot(client, token)["revisions"]["narration"]
-    r = client.patch(
+    r = client.patch(  # json.dumps writes NaN/Infinity, as a lax client could
         f"/api/v1/decks/{token}/slides/intro",
-        json={"expected_revision": rev, "segments": [segment]},
+        content=json.dumps({"expected_revision": rev, **edit}),
+        headers={"content-type": "application/json"},
     )
     assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_input"
+
+
+@pytest.mark.parametrize(
+    ("voices", "default_voice"),
+    [
+        ({"my voice": {"kokoro": "am_echo"}}, None),  # the preamble can't hold a space
+        ({"2nd": {"kokoro": "am_echo"}}, None),
+        ({"narrator": {"kokoro": "am_echo\nguest:"}}, None),
+        ({"narrator": {"kokoro": "am_echo # warm"}}, None),  # would read back as a comment
+        ({"narrator": {"kokoro": "  "}}, None),
+        ({"narrator": {"kokoro": "am_echo"}}, "narrator\nvoices:"),
+    ],
+)
+def test_voice_maps_the_sidecar_cannot_hold_are_rejected(
+    client: TestClient, voices: dict[str, dict[str, str]], default_voice: str | None
+) -> None:
+    token = _token(client)
+    rev = _snapshot(client, token)["revisions"]["narration"]
+    r = client.post(
+        f"/api/v1/decks/{token}/commands",
+        json={"type": "edit_voices", "expected_revision": rev, "voices": voices,
+              "default_voice": default_voice},
+    )  # fmt: skip
+    assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_input", r.text
 
 
 def test_commands_attach_orphans_and_rename_voices(client: TestClient) -> None:
