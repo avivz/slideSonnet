@@ -5,16 +5,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-### Added
-- **Quick export for iterating: `slidesonnet export --fast`** (and a *Quick
-  export* box in the editor's console). 720p, plain cuts instead of transitions,
-  and the stills encoded in one variable-frame-rate pass instead of frame by
-  frame; the same audio (byte-identical AAC) and subtitles. Writes
-  `<name>.fast.mp4`, so a full-quality video is never replaced. On the basel demo
-  with its audio generated: about 2 minutes for the full export, about 15 s for
-  the first quick one, about 2 s for a repeat after a slide-only change (the
-  encoded audio and the page images are reused while unchanged).
-
 ### Fixed (September 2026 code + UX review)
 Two independent reviews (checklist in `dev/REVIEW-TODO.md`); every fix below has a
 regression test.
@@ -209,6 +199,14 @@ regression test.
   NiceGUI-era idempotent app mounting. `review show` no longer requires `--base`.
 
 ### Added
+- **Quick export for iterating: `slidesonnet export --fast`** (and a *Quick
+  export* box in the editor's console). 720p, plain cuts instead of transitions,
+  and the stills encoded in one variable-frame-rate pass instead of frame by
+  frame; the same audio (byte-identical AAC) and subtitles. Writes
+  `<name>.fast.mp4`, so a full-quality video is never replaced. On the basel demo
+  with its audio generated: about 2 minutes for the full export, about 15 s for
+  the first quick one, about 2 s for a repeat after a slide-only change (the
+  encoded audio and the page images are reused while unchanged).
 - **Deck checks** in the editor's console: findings that belong to no slide —
   narration listed out of PDF order, narration whose slide is gone from the PDF —
   are listed there (only when there are some), and an unattached block's error
