@@ -7,6 +7,8 @@ pronunciation files.
 
 Example ``slidesonnet.toml``::
 
+    pronunciation = ["pronunciation.md"]   # top level: after a [table] it would belong to it
+
     [tts]
     backend = "kokoro"
 
@@ -30,8 +32,6 @@ Example ``slidesonnet.toml``::
     level = "DEBUG"                          # file detail level; console obeys -v/-q
     max_bytes = 2_000_000                    # rotate past ~2 MB
     backup_count = 3                         # keep slidesonnet.log.1 .. .3
-
-    pronunciation = ["pronunciation.md"]
 """
 
 from __future__ import annotations
