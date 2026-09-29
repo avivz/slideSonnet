@@ -5,593 +5,280 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-### Fixed (September 2026 code + UX review)
-Two independent reviews (checklist in `dev/REVIEW-TODO.md`); every fix below has a
-regression test.
+## [1.0.0a3] — 2026-09-29
 
-**Audio loss and paid safety**
-- **`clean` and the editor's automatic sweep no longer delete other decks' clips.**
-  The shared `.slidesonnet/audio/` is garbage-collected against every narrated deck
-  in the folder (paid clips included), and `pool prune` does the same for a deck
-  without a configured pool. `--keep nothing` removes only this deck's renders.
-- **The sweep honours `--narration`.** Clips made for an override sidecar were
-  deleted about a second after being generated.
-- **`clean` in pool mode and `pool migrate --apply` could delete the pool itself**
-  when it was the same directory as (or nested with) the deck's local cache.
-- **A forced whole-deck generate asks before re-billing paid clips.** On a fully
-  cached Inworld deck it used to regenerate everything without approval.
-- **Paid work makes only what you approved.** An approved Inworld generate,
-  preview or export that waited in line used to bill edits made meanwhile (a new
-  or reordered line); it now stops with "The narration changed after you approved
-  it; approve again to generate N new clips."
-- **`make clean` removes build artefacts only.** It deleted every `.slidesonnet/`
-  in the tree, including committed paid example audio.
+### Breaking
+Read this first when upgrading from 1.0.0a2.
 
-**Narration file**
-- **A `#` in narration text is kept** ("Use issue #123" lost everything from the
-  `#` on save). On `text:`, `voice:` and `direct:` lines only a line starting with
-  `#` is a comment.
-- **A line break typed into an utterance can no longer add a pause, change the voice
-  or start a new slide block** when saved; speech text collapses line breaks, and
-  a line break in a voice or director's note is refused.
-- **`pause: -1`, `pause: inf`, `pause: nan` and `transition-in: fade nan` give a
-  clear error with the line number** instead of a crash or a broken timeline; the
-  editor refuses them too. Durations are written exactly (no 6-digit rounding).
-- **The Voices dialog can't save a voice name the sidecar can't read back.**
-- **`init` (fresh, `--force` and `--merge`) replaces the sidecar in one step**, so
-  the editor or an agent watching it never reads a half-written file.
-- **`slidesonnet.toml` is checked strictly**, each error naming its key:
-  `keep_scratch = "false"` is no longer true; nan/inf, odd or zero resolutions and
-  `crf` outside 0–51 are refused. An explicitly given config file that doesn't
-  exist is an error instead of silently meaning defaults.
-
-**Export**
-- **Slides stay in step with the narration.** Each segment was rounded to whole
-  frames on its own, so a 30-slide video ran about a second behind its audio; each
-  slide now starts within one frame of its narration, and a slide between two full
-  transitions no longer gains an invented 0.1 s.
-- **A failed or cancelled export keeps the previous video and subtitles.**
-- **Exporting no longer overwrites and deletes a `concat_list.txt` of yours** in the
-  output folder, and decks in folders named like `O'Brien` export again.
-- **Cancelling an export or preview and undoing an edit can no longer serve the
-  edited (or half-written) audio** from the render cache.
-- **Recompiling the PDF while its pages render no longer marks the old images as
-  current.**
-- **A slide whose narration is one MP3 clip gets a real WAV page file.**
-- **`export` refuses a deck that `check` reports errors for, or that has no
-  narration, unless `--draft`**; only `.mp4` output is accepted. A PDF with no
-  `\ssid` is an error in `init` and `check`, and a missing `--narration` file is an
-  error rather than an empty deck.
-- **An empty utterance no longer fails the whole export.** Blank speech is skipped
-  in synthesis, timing and subtitles (a slide with only blank lines is held like an
-  unnarrated one), and the editor's clip numbering matches the server's again.
-
-**Editor**
-- **Two outside edits to slides you were typing on no longer save over the second
-  one**; each conflict is shown in turn, and "Saved" never shows while one is open.
-- **Switching decks or engines can't land a slow answer for the previous one on the
-  new one**; review picks and the compare view no longer carry over between decks.
-- **Leaving a deck by any route (switcher, links, back/forward) saves first** and
-  stays put if the save fails; play, generate, export and review stop instead of
-  using the old text.
-- **Script view shows the save state** (a lasting "Not saved" with Retry), and
-  playback and auto-generate leave the line you're typing alone.
-- **Stop wins over a play press that is still saving**; stopping Play all cancels
-  the track being prepared.
-- **A review note is kept if sending fails**, and Enter while composing (IME) no
-  longer sends it.
-- **Arrow keys on the console tabs, buttons and the pane divider no longer change
-  slides**; the console tabs respond to the arrows.
-- **"+ Line" puts the cursor in the new line**, and empty lines aren't saved.
-- **A second confirmation no longer leaves the first one waiting forever.**
-
-**Server and review**
-- **Review writes are one locked transaction**: concurrent comments no longer share
-  an id, Clear no longer drops replies or reopens made meanwhile, ids are never
-  reused, and a torn log record no longer swallows the next one.
-- **Review (Mark seen, diffs) uses the narration file given with `edit --narration`**,
-  and `review status`, `list`, `snapshot` and `clear` take `--narration` too.
-- **Clip generation keeps working after the sidecar or PDF is caught mid-rewrite.**
-- **A cancel racing an export's completion no longer leaves a stuck job** blocking
-  later exports; an export with a different engine or draft setting isn't merged
-  into a running one; shutdown settles queued jobs.
-- **Each deck's `.env` is read for that deck only.** One editor session used the
-  first deck's `INWORLD_API_KEY` and `SLIDESONNET_AUDIO_DIR` for every deck; now
-  `clean`, `pool` and the editor also honour a deck's `.env` pool. Shell exports
-  still win.
-- **A bad `slidesonnet.toml`, sidecar or missing PDF gives a readable error on every
-  editor route** instead of a bare 500, and unrelated errors are no longer reported
-  as "the PDF is being rewritten".
-- **A deck whose config turns logging off stops writing to the previous deck's log.**
-
-**Engines and CLI**
-- **Qwen3 clips depend on `[tts.qwen3] language`** (English keeps existing clips),
-  and **a per-voice `.pt` prompt is cached by content**, not path: editing it
-  regenerates its clips; moving the deck or using another worktree reuses them
-  (per-voice clips made before this are regenerated once). Qwen3 reloads a prompt
-  that changed on disk.
-- **CLI errors are one line saying what went wrong and how to fix it** (`-v` shows
-  the traceback) — including `clean`, config values, LaTeX source passed instead of
-  a PDF, unreadable PDFs and unwritable paths.
-- **`doctor` requires Python 3.13**, as the package does.
-- **`check` knows every Kokoro voice**, not only the English ones (`ef_dora`,
-  `ff_siwis`, … no longer need `--draft`), and warns when a Japanese (`j*`) or
-  Mandarin (`z*`) voice needs `misaki[ja]`/`misaki[zh]`; `doctor` lists both packs.
-- **`-q`/`-v` work after the subcommand too** (`slidesonnet export deck.pdf -v`,
-  `slidesonnet review status deck.pdf -q`), not only before it.
-
-**Editor experience**
-- **Your own edits no longer pile up as review items**: a slide only you changed
-  shows no "accepted" badge, changes box or conversation link.
-- **The Review tab counts what waits for you across the whole deck**, and a banner
-  says where the agent is waiting ("Show" opens it). The whole-deck conversation
-  says "your turn" only when something waits.
-- **A line whose audio couldn't be generated says so until you retry it**, in plain
-  words (missing API key, engine not installed, unknown voice), with the engine's
-  own message one click away.
-- **After an export the console keeps "Video saved next to the PDF: deck.mp4 ·
-  6 min 33 s long"** until dismissed.
-- **Export stays reachable down to 900 px wide** (the narrow toggle reads "Audio &
-  export"), and on a phone the player bar wraps instead of pushing the scrubber off
-  screen.
-- Picking an engine says "Now using Kokoro for previews and export (this session
-  only)" instead of "Generating with kokoro" while idle.
-- The error pill leads to the Deck checks when the error belongs to no slide; an
-  empty slide in the Script view offers "+ Add a line".
-- Every confirmation uses the editor's own dialog, and "Clear accepted" asks first.
-- **A recompiled PDF no longer blanks the filmstrip and the slide.** Each slide
-  keeps its last picture until its new one is rendered, then swaps it in place.
-- **"Watch as video" no longer flickers after a transition.** The transition's last
-  frame stays up until the next slide's picture is ready, instead of for a fixed
-  0.3 s (which could flash the previous slide, or an empty frame, back in).
-- **The editor agrees with `check` about a repeated `@id`**: one error on that
-  slide, naming both lines of the narration file. The second block waits in the
-  Unattached narration panel as "@intro · second block" instead of raising an
-  error of its own about a made-up `intro-2`.
-- **A new line you haven't typed into yet survives an outside change** to its
-  slide: the file's version is taken (nothing typed, so nothing to choose) and the
-  empty line stays where it was, also when the editor page is reopened.
-- The Unattached narration actions (attach, append, delete) refuse a slide's own
-  narration with a clear message instead of moving or deleting it.
-
-### Security (September 2026 review)
-- **Slide images and audio (`/ssmedia`) get the same Host check as the API**,
-  blocking DNS-rebinding reads.
-
-### Added (September 2026 review)
-- **`clean --dry-run`, `--yes` and `--narration`.** `clean` never deletes paid clips
-  at any `--keep` level — they move to `.slidesonnet/audio/trash/` after a prompt —
-  and its summary reports the paid clips kept; `--keep` help explains each level.
-- **`tts` and `export` ask before generating paid (Inworld) clips**; `--yes` skips
-  the question, and without a terminal they refuse.
-- **`check` flags voices the engine doesn't have**, warns that a plain build exports
-  only as a draft, and reports a duplicate `@id` with both line numbers.
-- **`edit --allow-host NAME`** for network binds: `--host 0.0.0.0` requires it, any
-  non-loopback bind warns, `--host`/`--port` have help, and `--host ::1` opens a
-  valid URL.
-- Docs: pre-release install instructions, a quick start that reaches a video, an
-  "Engines and keys" section, and a full `slidesonnet.toml` reference.
-
-### Changed (September 2026 review)
-- **Narration comments:** `voice: x  # note` and `direct: y  # note` now keep the
-  `# note` as part of the value — put comments on their own line.
-- **The automatic sweep waits until a Kokoro clip has been orphaned for 10 minutes**,
-  so trying a voice or wording and reverting keeps the clips. `clean` now leaves
-  files it doesn't recognise (e.g. `durations.json`) alone.
-- **A silent export has no audio stream** (was a silent AAC track).
-- `review wait --timeout` exits 3 on timeout (was 2, Click's usage-error code).
-- `tts` reports "N generated, M reused"; an unknown `--id` is an error with a
-  suggestion; `subs` takes its format from the file extension; the file `init`
-  writes shows a v1 example and the next step.
-- Sidecar lines split only on `\n`/`\r\n` (U+2028 and similar no longer break a line).
-- Releases build once, check the tag against `__version__`, and verify the exact
-  TestPyPI version before publishing the same files. CI caches pip and pins ruff
-  and mypy.
-
-### Removed (September 2026 review)
-- About 330 lines of dead pipeline code (`compose_segment`,
-  `concatenate_segments_xfade`, the transition-picker helpers, test-only synth and
-  narration-model helpers) and ~120 tests that only covered it or restated each
-  other; a golden table now pins every engine's exact cache filenames.
-- About 200 lines of dead server and review code, unread API fields
-  (`DeckSnapshot.pdf_name`/`sidecar_name`/`default_engine`/`review_active`,
-  `PagesDTO.rendered`, `GenerationStatusDTO.last_error`, `MetaDTO.speeds`) and the
-  NiceGUI-era idempotent app mounting. `review show` no longer requires `--base`.
+- **Plain builds are the default for `slidesonnet.sty`.** An ordinary compile now
+  draws page numbers, the headline (navigation) and metropolis progress bars
+  invisibly (the layout is unchanged), so slide-by-slide comparisons stay useful.
+  A *final* build shows them: `latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex`.
+  **Re-run `slidesonnet sty` and compile your final video with `\ssfinal`**, or the
+  page numbers disappear from it. Final builds carry an invisible `SSFINAL` marker
+  (`slidesonnet.pdf.reader.is_final_build`).
+- **`export` refuses a deck that isn't ready** — a plain build, open review
+  conversations, errors from `check`, or no narration — listing each reason.
+  `--draft` (or "Export draft" in the editor) renders anyway, to
+  `<name>.draft.mp4`. PDFs from an older `slidesonnet.sty` carry no build marker and
+  export as before. Only `.mp4` output is accepted; a PDF with no `\ssid` is an
+  error in `init` and `check`; a missing `--narration` file is an error rather than
+  an empty deck.
+- **Paid work asks first on the command line.** `tts` and `export` ask before
+  generating Inworld clips (including a forced regenerate of a fully cached deck);
+  `--yes` skips the question, and without a terminal they refuse — add `--yes` to
+  scripts. `clean` never deletes paid clips: after a prompt they move to
+  `.slidesonnet/audio/trash/`.
+- **Some existing clips regenerate once:**
+  - The default Inworld model is now **`inworld-tts-2`** (was
+    `inworld-tts-1.5-max`). The model is part of the cache key, so existing Inworld
+    clips re-synthesize (paid) on the next generate; set `[tts.inworld] model` in
+    `slidesonnet.toml` to keep the old one.
+  - **Director's notes (`direct:`) now go to Inworld** (`inworld-tts-2` performs
+    them; other models are never sent them). Lines with a note regenerate once;
+    `[tts.inworld] send_direction = false` opts out.
+  - **Pronunciation-dictionary IPA (`/…/`) now goes to Inworld only.** Kokoro and
+    Qwen3 say the word ("Mengoli") instead of reading the IPA out; their lines with
+    such a word regenerate once, for free.
+  - **Qwen3** clips now depend on `[tts.qwen3] language` (English keeps existing
+    clips), and a per-voice `.pt` prompt is keyed by its content, not its path;
+    per-voice clips made before this regenerate once.
+- **`#` in narration is text.** On `text:`, `voice:` and `direct:` lines only a
+  line *starting* with `#` is a comment: `voice: x  # note` now keeps `# note` as
+  part of the value. Put comments on their own line.
+- **A silent export has no audio stream** (it was a silent AAC track).
+- **`subs --timing tts` refuses to guess.** When audio is missing it names the
+  lines and slides instead of silently falling back to a words-per-minute guess;
+  pass `--allow-estimates` (or `--timing estimate`) to allow guesses. `subs` now
+  takes its format from the output file's extension.
+- **`slidesonnet.toml` is checked strictly**, each error naming its key: string
+  booleans (`"false"`), nan/inf, odd or zero resolutions and `crf` outside 0–51 are
+  refused, and an explicitly given config file that doesn't exist is an error
+  instead of silently meaning defaults.
+- **`edit --host 0.0.0.0` requires `--allow-host NAME`**, and any non-loopback bind
+  warns.
+- **The NiceGUI editor was replaced by a new Vue editor** served by FastAPI +
+  Uvicorn; NiceGUI is no longer a dependency. When a deck's `slidesonnet.toml`
+  names no engine, the editor now starts on **Inworld** (anything that spends
+  credits still asks first); the command line keeps the free Kokoro default.
+- **API: `ProgressFn` is now `(phase, done, total, label)`** (was `(slide_id, done,
+  total)`, with `"assemble"` sometimes standing in for the slide id). Callers
+  passing `progress=` to `synthesize_deck`, `export` or `build_preview` need the
+  extra argument. New `api.export_phases()` lists the phases an export reports, for
+  `slidesonnet.progress.RunProgress`.
 
 ### Added
-- **Quick export for iterating: `slidesonnet export --fast`** (and a *Quick
-  export* box in the editor's console). 720p, plain cuts instead of transitions,
-  and the stills encoded in one variable-frame-rate pass instead of frame by
-  frame; the same audio (byte-identical AAC) and subtitles. Writes
-  `<name>.fast.mp4`, so a full-quality video is never replaced. On the basel demo
-  with its audio generated: about 2 minutes for the full export, about 15 s for
-  the first quick one, about 2 s for a repeat after a slide-only change (the
-  encoded audio and the page images are reused while unchanged).
-- **Deck checks** in the editor's console: findings that belong to no slide —
-  narration listed out of PDF order, narration whose slide is gone from the PDF —
-  are listed there (only when there are some), and an unattached block's error
-  links to its text. Before, they raised the error count while every slide said
-  "No issues on this slide".
-- **Inworld delivery controls.** Existing Inworld clips keep their names; below
-  says which lines re-generate.
+- **A new deck editor.** `slidesonnet edit` opens a redesigned editor: the player
+  sits under the slide, deck-wide tools (engine, voices, generate, export) top the
+  console, the filmstrip labels each slide's state, and typing is saved as you go.
+  There are no full-width bars — the deck name, errors (only when there are some)
+  and shortcuts (?) sit atop the slides column, each side pane folds away, and a
+  line's voice, pace and note fold behind ⋯. Generation is shared between tabs and
+  keeps going if you reload; an export started in the editor keeps going if you
+  close the tab. Every confirmation uses the editor's own dialog.
+- **Script view** (the editor's default; **Slide** switches back): the whole deck's
+  narration as one editable document, one paragraph per line, pauses at the end of
+  the line before them. While playing, the spoken line is marked up to the current
+  word. Under review, each changed slide shows its narration changes word by word.
+- **A deck library and deck switching.** `slidesonnet edit` accepts a folder, a
+  deck (`edit deck.pdf` opens it directly and lists its neighbours) or nothing (the
+  current folder); `--root` scans a wider tree. The library finds every PDF with a
+  `.narration` beside it, grouped by folder and sorted naturally (`week9` before
+  `week10`); type to filter (**/** or **Ctrl+K**), ↑/↓ and **Enter** to open. PDFs
+  without narration are listed last with the command that starts one. Inside a
+  deck, **Ctrl+K** (or clicking its name) opens a switcher and **Alt+←/→** step
+  through the library. Each deck has its own URL (`/d/<token>`), so back/forward,
+  bookmarks and two decks in two tabs work. Leaving a deck by any route saves first
+  (and stays put if the save fails), stops playback and cancels audio still
+  generating for it (finished clips stay cached).
+- **Review conversations** — a loop for reviewing an agent's changes slide by
+  slide. The *base* (every slide's page image, text, narration and order) is taken
+  the first time a deck is opened; `slidesonnet review status` lists slides that
+  differ from it (new, edited, moved, deleted, matched by slide id; a hair's
+  re-layout doesn't count). Conversations live in a human-readable, append-only
+  `<deck>.review` beside the deck (created only once something is written):
+  `list` (`--all`, `--mine`), `comment`, `reply` (`-m`, `--add-slides`, including a
+  slide not compiled yet, `--title`), `title`, `accept`, `reopen`, `clear` (drops
+  closed ones and moves the base forward), a permanent deck-wide `deck`
+  conversation, and `send` / `wait --since N` so an agent can block until you hand
+  over a batch (`wait --timeout` exits 3). `review` commands take `--narration`.
+  The editor and an agent can write at the same time. Audio of the review base
+  counts as in use until `review clear`, and no clean level deletes the base.
+- **Review in the editor.** The console's **Review** tab lists conversations (the
+  deck conversation pinned on top, ✓ accepts on a row) and counts what waits for
+  you across the deck; a banner says where the agent is waiting. Choosing one greys
+  out the other slides and shows its messages, reply box and Reopen. A new
+  conversation is about the slide on screen or several (Ctrl-click in the
+  filmstrip); rename one with ✎. A changed slide shows its base beside the current
+  version (`D` toggles before-only) and a word diff; moved slides are marked ↕,
+  removed ones appear as faded tiles, and `N` jumps to the next slide waiting for
+  you. Changes with no conversation (a recompile, an outside edit) are filed into
+  their own; your own edits carry no review markings. A note goes out with Enter
+  (Shift+Enter for a new line) and wakes an agent in `review wait`. **Clear
+  accepted** (asks first) makes accepted changes the new base; **Reset comparison**
+  compares from the deck as it is now.
+- **Quick export: `export --fast`** (and a *Quick export* box in the editor): 720p,
+  plain cuts, the stills encoded in one pass; the same audio and subtitles. Writes
+  `<name>.fast.mp4`, so a full-quality video is never replaced. On the basel demo:
+  about 2 min for a full export, about 15 s for a first quick one, about 2 s for a
+  repeat after a slide-only change.
+- **Inworld delivery controls.**
   - **Fix how a word is said, not how it's captioned:** `[Mengoli](/menˈɡoːli/)`
-    (IPA) or `[Dijkstra](DYKE-struh)` (a respelling) in a line. Subtitles and the
-    editor show "Mengoli"; Inworld says the IPA; Kokoro and Qwen3 say a
-    respelling, or the word as written (never IPA). The `pronunciation`
-    dictionary now works the same way: its IPA entries go to Inworld only, so
-    Kokoro and Qwen3 say "Mengoli" instead of reading `/menˈɡoːli/` out (their
-    lines with such a word re-generate once, for free).
-  - **Director's notes reach Inworld:** a line's `direct:` note is performed by
-    `inworld-tts-2` (other models are never sent it). Lines with a note
-    re-generate once; `send_direction = false` under `[tts.inworld]` opts out. The
-    editor's note field says only Inworld follows it.
-  - **`temperature`, `delivery_mode` (stable/balanced/creative), `language` and
-    `text_normalization`** under `[tts.inworld]`, sent only when set.
-  - **Square brackets are said, not swallowed:** `inworld-tts-2` drops anything in
-    `[...]` as a stage direction, so "[0, 1]" is now sent as "(0, 1)"; sound tags
-    like `[sigh]` still work. `check` and the editor warn about a fix typed with a
+    (IPA) or `[Dijkstra](DYKE-struh)` (a respelling). Subtitles and the editor show
+    "Mengoli"; Inworld says the IPA; Kokoro and Qwen3 say a respelling, or the word
+    as written (never IPA). `check` and the editor warn about a fix typed with a
     space, `[Dijkstra] (DYKE-struh)`, which is read as written.
+  - `temperature`, `delivery_mode` (stable/balanced/creative), `language` and
+    `text_normalization` under `[tts.inworld]`, sent only when set.
+  - Square brackets are said, not swallowed: "[0, 1]" is sent as "(0, 1)"; sound
+    tags like `[sigh]` still work.
   - Each setting, fix and note is part of the clip's cache key, so a change
-    re-generates exactly the clips it affects.
-- **Script view** (the editor's default; **Slide** switches back): the whole
-  deck's narration as one editable document, each line its own paragraph, pauses
-  at the end of the line before them. While playing, the line being spoken is
-  marked up to the current word, which advances only while the voice speaks.
-  Under review, each changed slide shows its narration changes word by word.
-  Playback now plays a moment of silence before the first word so headphones and
-  speakers that sleep (Bluetooth, above all) don't swallow it.
-- **Play all plays slide by slide** and starts at once: each slide's own track,
-  the next prepared while this one plays, instead of building the whole deck
-  first (13–29 s on a 55-slide deck). It plays the slides not greyed out (the
-  chosen conversation's, or all from here), holds a silent slide for its pause,
-  keeps each transition's time but cuts rather than drawing it, and shows
-  "slide 3 of 7". Missing clips are queued up front, asking once on a paid
-  engine. Jumping to a slide plays on from there. The old whole-deck preview,
-  transitions drawn, is now **Watch as video** (the film button).
-- **Review is always on.** The editor takes the base (what the deck looked like)
-  the first time it opens a deck, so there's no **Start review** button; the
-  `.review` file beside the deck appears only once something is written (a note,
-  or your own edit being recorded), not for decks you only looked at.
-  **Reset comparison** compares from the deck as it is now — for when a
-  recompile changed every slide — without closing or clearing any conversation.
-  No clean level (not even `--keep nothing`, nor `make clean`) deletes the base.
-- **The Review tab is organised around conversations.** The list comes first
-  (the whole-deck conversation pinned on top; ✓ accepts right on a row);
-  choosing one greys out the other slides and shows its messages, reply box
-  and Reopen below. A new conversation is about the slide on screen, or about
-  several: Ctrl-click them in the filmstrip, and they show as removable tags.
-  Conversations can have a **title** — the agent gives one with `review reply
-  … --title "…"` (or on `review comment`, or `review title`), and you rename by
-  clicking ✎ — shown instead of just "c6". Under the slide, one line links the
-  conversations it's in and says what changed on it.
-- **Resuming after an edit plays the new words.** Pause, edit, play: the slide
-  is rebuilt and picks up at the start of the line it was paused in.
-- **A new deck editor.** `slidesonnet edit` now opens the redesigned editor:
-  the player sits right under the slide, deck-wide tools (engine, voices,
-  generate, export) are at the top of the console, the filmstrip labels each
-  slide's state, and typing is saved as you go — no need to leave the field. If
-  someone else edits the narration file while you're typing on the same slide,
-  both versions are shown and you choose. Generation is shared between tabs and
-  keeps going if you reload. The **Review** tab has everything it had before —
-  conversations, before/after pictures, word-level narration changes, removed
-  slides — and also lists slides a conversation names that aren't in the PDF
-  yet. `slidesonnet edit deck.pdf` now opens that deck directly (a folder still
-  opens the library).
-- **Review tools in the editor.** The base is taken the first time a deck is
-  opened (see *Review is always on*; `slidesonnet review snapshot` takes one by
-  hand). The console's **Review** tab (beside **Audio**, badged when something on this slide waits
-  for you) shows the Deck conversation (instructions not about one slide), this
-  slide's conversations with Reply / Accept / Reopen, a note box that opens a
-  new one, and all conversations (click one to grey out the other slides — ←/→ then
-  step only through its slides; click a greyed slide to leave);
-  accepted ones stay hidden unless you tick **show accepted**. A note
-  goes out with Enter (Shift+Enter for a new line) or **Send**, and wakes an
-  agent blocked in `review wait`; **Clear accepted** makes accepted changes the
-  new base. A changed slide shows its
-  base version beside the current one (`D` toggles before-only) and a word diff
-  of its narration. The filmstrip stays in the current order: a moved slide
-  is marked ↕ ("was slide N"), and a removed one appears as a faded tile right
-  after the slide that preceded it — click it to see it and its conversations. Filmstrip badges mark slides waiting for you,
-  for the agent, accepted, or changed without a conversation; `N` jumps to the
-  next one waiting for you. Changes that arrive with no conversation (a
-  recompile, an outside edit) are filed into their own conversation, with a
-  warning when many slides changed at once — and move out of it when the agent
-  declares them afterwards (until you reply there); your own narration edits are noted
-  in the slide's open conversation so the agent sees them.
-- **Export checks the deck is final.** `export` (and the editor's Export
-  button) refuses a plain build — no page numbers — and a deck with review
-  conversations still open, listing each reason. `--draft` (or "Export draft"
-  in the editor) renders anyway, to `<name>.draft.mp4`. PDFs from an older
-  `slidesonnet.sty` carry no build marker and export as before.
-- **Review conversations (`slidesonnet review …`).** A loop for reviewing
-  an agent's changes slide by slide. The *base* — the last-cleared version of
-  every slide (page image, page text, narration, order) — is taken
-  automatically on first use; `review status` lists slides that differ from it
-  (new, edited, moved, deleted — matched by slide id) and which conversation
-  each belongs to. A slide whose page LaTeX re-lays out by a hair when a
-  neighbour moves still counts as unchanged. Conversations live in an append-only, human-readable
-  `<deck>.review` next to the deck: `list` shows the open ones (`--all`
-  adds accepted, `--mine` just the agent's turn), `comment` opens one about some slides,
-  `reply` answers (`-m` or a plain argument; can `--add-slides`, including a
-  new slide not compiled yet — `status` lists those as pending until it is), `accept` closes it (tentatively
-  accepted), `reopen`, and `clear` drops closed ones and moves their slides'
-  base forward. `deck` is a permanent deck-wide conversation for instructions
-  like "publish these". `send` / `wait --since N` let an agent block until you
-  hand over a batch. Every write is a locked append, so the editor and an
-  agent can write at the same time.
-- **A shared speech-clip pool (`[cache] audio_dir`, `SLIDESONNET_AUDIO_DIR`,
-  `--audio-dir`).** Clips are content-addressed, so one directory can serve
-  every deck of a course and every git worktree of it — but their *location*
-  was pinned to `<deck dir>/.slidesonnet/audio/`, so a fresh worktree started
-  empty and re-bought Inworld lines the main checkout already had. The pool can
-  now be set per run (`--audio-dir`), per shell/`.env` (the env var), or per
-  toml (`[cache] audio_dir`, `~` and toml-relative paths). Only clips move;
-  render scratch stays per deck. `slidesonnet pool status` shows which pool a
-  deck resolves to and why. Clips left in a deck's old local cache are copied
-  into the pool the first time the deck is used with it; `slidesonnet pool
-  migrate --root <course> --apply` moves a whole course's local caches in one
-  go (dry run without `--apply`).
-- **`slidesonnet pool prune`** — mark-and-sweep pruning of a pool against
-  *every* deck that uses it (`--root <course>`, repeatable, plus explicit decks):
-  a clip is kept if any deck still says its line. Dry run unless `--apply`.
-  Orphans from paid or slow engines (Inworld, Qwen3) are quarantined in
-  `<pool>/trash/` rather than deleted (`--empty-trash` for the second step); a
-  small advisory index (`<pool>/index.jsonl`, appended on synthesis) lets the
-  dry run say what each orphan said and which deck last used it, instead of a
-  bare hash. A deck that fails to load aborts the plan rather than counting as
-  "uses nothing".
-- **`export --keep-scratch` / `[video] keep_scratch`.** See *Changed*.
-- **Export progress covers the whole run.** `export` used to print `[i/n]`
-  lines during TTS and then nothing until the video was built. It now reports
-  every phase — synthesis, audio assembly, each slide and morph clip, and the
-  final ffmpeg concat and mux as seconds of output written — as one overall
-  percentage that never goes backwards, prefixed with the elapsed time, and
-  ends with a timing line (`Timing: tts 0:04 · assemble 0:03 · video 1:07 ·
-  concat 0:01 · mux 0:11 · total 1:29`). The lines go to stderr in a fixed
-  format, `[01:42 37%] 3/5 video 7/23 · step2-zeros` (elapsed, overall
-  percent, phase 3 of 5, count within it, what just finished), that a wrapper
-  can follow with one regex: `slidesonnet.progress.LINE_PATTERN` for the
-  overall percent, `PHASE_PATTERN` for a phase-aware progress bar. `--quiet`
-  hides them. Phases get equal shares of the percentage for now.
-- **Switch decks inside the editor — a deck library, a switcher palette, and
-  next/previous-deck keys.** `slidesonnet edit` now opens on a **library** of every
-  deck it finds, so a course of decks no longer means one relaunch per deck.
-  `edit` accepts a folder (`slidesonnet edit ~/courses/aicode`), a deck
-  (`edit deck.pdf`, which also lists its neighbours), or nothing at all (the
-  current folder); `--root` scans a wider tree than the deck you opened.
-  Discovery walks *down* from that folder for any PDF with a matching
-  `.narration` beside it — no repository assumption — pruning dot-folders,
-  `node_modules`, and deck caches, and capped in depth and breadth so launching
-  somewhere huge reports a truncated scan instead of hanging. The library lists
-  decks one per row, grouped by top-level folder (a folder with a single deck
-  gets no heading of its own) and sorted naturally (`week9` before `week10`),
-  with each deck's size and how much is still to narrate filled in after first
-  paint. Type to filter — **/** or **Ctrl+K** jumps to the search box, ↑/↓ pick
-  a deck, **Enter** opens it; PDFs without narration are listed last with the
-  command that starts a narration file for them. Inside a deck, **Ctrl+K** (or
-  clicking the deck's name) opens a type-to-filter switcher and **Alt+←/→** step
-  through the library (wrapping). Each deck gets its own URL (`/d/<token>`), so
-  browser back/forward and bookmarks work and two decks can be open in two tabs.
-  Switching **saves the slide you were editing first**, stops playback, and
-  cancels any audio still generating for the deck you are leaving (finished
-  clips stay cached; coming back re-queues the rest).
-- **Accelerated narration playback (1× / 1.25× / 1.5× / 2×).** A speed control in
-  the editor transport cycles the preview's playback rate live — pressing it
-  mid-play speeds up immediately with **no re-synthesis** and no cache write. The
-  chosen speed sticks across slide changes and across both *play-slide* and
-  *play-all* (re-applied on every track load), the cue-driven slide flips and the
-  transition morph stay locked to the faster audio clock, and pitch is preserved
-  (2× stays natural, not chipmunked). Preview-only: it never touches the
-  synthesized cache, the per-utterance `pace:` directive, or the exported video.
-  This is HTML5 `audio.playbackRate` on the transport player, distinct from
-  `pace:` (which re-synthesizes).
-- **Toggle for transitions in single-slide preview.** A new editor checkbox,
-  **"Play transitions in single-slide preview"** (off by default), gates the
-  single-slide morph: unchecked, playing one slide is a plain cut so you just hear
-  its narration; checked, it animates that slide's own in/out transitions as
-  before. **Watch as video** always draws transitions, unaffected. The setting
-  is local editor state (off each session), never written to the deck.
+    regenerates exactly the clips it affects. The editor's note field says only
+    Inworld follows it.
+- **A shared speech-clip pool** (`[cache] audio_dir`, `SLIDESONNET_AUDIO_DIR` in
+  the shell or a deck's `.env`, or `--audio-dir`), so every deck of a course and
+  every git worktree reuses the same clips instead of re-buying Inworld lines.
+  `slidesonnet pool status` shows which pool a deck uses and why; clips in a deck's
+  old local cache are copied in on first use; `pool migrate --root <course>
+  --apply` moves a whole course. With a pool, `clean deck.pdf` touches only the
+  deck's own scratch and logs, and the automatic sweep is off.
+- **`slidesonnet pool prune`** keeps a clip if any deck using the pool still says
+  it (`--root`, repeatable, plus explicit decks; dry run unless `--apply`). Paid or
+  slow clips (Inworld, Qwen3) go to `<pool>/trash/` (`--empty-trash` to finish);
+  the dry run says what each orphan said and which deck last used it. A deck that
+  fails to load aborts the plan.
+- **Deck checks** in the console list findings that belong to no slide (narration
+  out of PDF order, narration whose slide is gone), instead of every slide saying
+  "No issues on this slide".
+- **`check`** flags voices the engine doesn't have, warns that a plain build
+  exports only as a draft, and reports a duplicate `@id` once, with both line
+  numbers (the editor agrees).
+- **`clean --dry-run`, `--yes` and `--narration`**; its summary reports the paid
+  clips kept, and `--keep` help explains each level.
+- **Export progress covers the whole run**: every phase as one overall percentage
+  that never goes backwards, with elapsed time, e.g. `[01:42 37%] 3/5 video 7/23 ·
+  step2-zeros` on stderr, ending with a timing line. Wrappers can match
+  `slidesonnet.progress.LINE_PATTERN` / `PHASE_PATTERN`; `--quiet` hides them.
+- **`export --keep-scratch` / `[video] keep_scratch`** (see *Changed*).
+- **`edit --allow-host NAME`** for network binds; `--host`/`--port` have help, and
+  `--host ::1` opens a valid URL.
+- **Playback speed (1× / 1.25× / 1.5× / 2×)** in the editor, applied live with
+  pitch preserved; preview only — never the cache, `pace:`, or the video.
+- **"Play transitions in single-slide preview"** (off by default): unchecked,
+  playing one slide is a plain cut. **Watch as video** always draws transitions.
+- **Resuming after an edit plays the new words**, from the start of the line it was
+  paused in.
+- Docs: pre-release install, a quick start that reaches a video, "Engines and
+  keys", and a full `slidesonnet.toml` reference.
 
 ### Changed
-- **The editor starts on Inworld** when a deck's `slidesonnet.toml` doesn't
-  name an engine (a deck that names one keeps it). Anything that would spend
-  API credits still asks first; the command line keeps the free Kokoro default.
-- **The editor gives the height to the work.** There are no full-width bars:
-  the deck's name, its neighbours, errors (only when there are some) and the
-  keyboard shortcuts (?) sit atop the slides column, the save status sits by
-  the slide id, and each side pane folds away from a tab on its divider. The
-  slide stays in view above a draggable divider while only the narration
-  scrolls. Each narration line shows just its text — voice, pace and note fold
-  behind ⋯ and are named only when they differ from the deck's defaults — and
-  a pause is a thin rule.
-- **Decks open at once.** The editor no longer waits for pdftoppm to render
-  every page: the current slide renders first, the filmstrip fills in around it
-  in the background (nearest pages first, following you if you jump), and pages
-  already rendered for this build are reused. Opening also stopped loading the
-  Kokoro model's libraries (torch) just to name cache files — they load on the
-  first synthesis — and a deck under review compares in the background
-  ("Comparing…") instead of before the page appears. A cold open of a 22-slide
-  deck went from ~11 s to ~1 s.
-- **Automatic audio pruning keeps the clips of the review base.** While a
-  slide is under review its old narration is still compared and played, so its
-  audio counts as in use until the base moves on (`review clear`).
-- **`slidesonnet.sty`: an ordinary compile is now a *plain* build.** Page
-  numbers, the headline (navigation), and metropolis progress bars are drawn
-  invisibly — keeping their space, so the layout is identical — because they
-  change on every slide when one is inserted or deleted, which would make
-  slide-by-slide comparisons useless. A *final* build shows them:
-  `latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex`. Final builds carry an
-  invisible `SSFINAL` marker (`slidesonnet.pdf.reader.is_final_build`).
-  **After upgrading, re-run `slidesonnet sty` and compile your final video with
-  `\ssfinal`, or the page numbers disappear from it.**
-- **`ProgressFn` is now `(phase, done, total, label)`** (was `(slide_id, done,
-  total)`, with `"assemble"` sometimes standing in for the slide id). API
-  callers passing `progress=` to `synthesize_deck`, `export`, or
-  `build_preview` need the extra argument. New `api.export_phases()` lists the
-  phases an export will report, for `slidesonnet.progress.RunProgress`.
-- **Kokoro's `words count mismatch` warnings are hidden** from the console;
-  the phonemizer emits one for nearly every line, burying real warnings.
-  `--verbose` still shows them.
-- **Per-deck `clean` never reaches into a shared pool.** With a pool configured,
-  `clean deck.pdf` removes only the deck's own render scratch, logs, and leftover
-  local clips (after copying them into the pool), whatever `--keep` says, and
-  tells you so; `--keep nothing` deletes the deck's `.slidesonnet/` and nothing
-  else. The silent on-edit orphan sweep is likewise off in pool mode. Pruning a
-  shared pool is `pool prune`'s job — cleaning one deck's orphans out of a pool
-  would delete exactly the clips its neighbours still use.
-- **A successful `export` now deletes its render scratch.** The decoded per-page
-  PCM, the assembled `track.wav`, silence files, and per-slide MP4 segments
-  exist only to feed one ffmpeg run, and across a 33-deck course they had grown
-  to ~7 GB beside 640 MB of actual speech clips. Page images stay (the editor
-  filmstrip reuses them); cached clips are never touched. A failed export keeps
-  everything for debugging; `--keep-scratch` or `[video] keep_scratch = true`
-  keeps it always. An export launched from the editor keeps it too, since the
-  preview player streams that very `track.wav`.
-- **Silence files are shared per duration** (`silence/2.0000s.wav`) instead of
-  written once per pause per page — a course held ~2,900 of them with ten
-  distinct contents.
-- **`export` no longer rewrites a subtitle file whose bytes are unchanged.** A
-  slide-only re-render left the `.srt`/`.vtt` byte-identical but bumped its
-  mtime, which made every mtime-based freshness check downstream (make,
-  watchers, rsync) treat the subtitles as newer than what they came from.
-- **Default Inworld model is now `inworld-tts-2`** (was `inworld-tts-1.5-max`).
-  Override per deck with `[tts.inworld] model` in `slidesonnet.toml`. Note: the
-  model is part of the audio cache key, so existing Inworld clips re-synthesize on
-  next generate under the new default.
-- **A narration edit marks its clip stale immediately.** Typing in an utterance
-  now flips that clip's generate badge to "not generated yet" (amber) within a
-  keystroke — before you blur or save — so you can see at a glance that the cached
-  audio no longer matches the text; undoing back to the original text restores the
-  green "up to date" badge without a save.
-
-### Removed
-- **The previous editor and its NiceGUI dependency.** The editor now runs on a
-  small web server (FastAPI + Uvicorn) and needs no NiceGUI; `--frontend` is
-  gone. `slidesonnet doctor` checks the editor's server and that its browser
-  interface is built.
+- **Play all plays slide by slide and starts at once**, preparing the next slide
+  while one plays, instead of building the whole deck first (13–29 s on a 55-slide
+  deck). It plays the slides not greyed out, holds a silent slide for its pause,
+  keeps each transition's time but cuts, and shows "slide 3 of 7". Missing clips
+  are queued up front, asking once on a paid engine. The old whole-deck preview,
+  transitions drawn, is now **Watch as video** (the film button). Playback starts
+  with a moment of silence so Bluetooth speakers don't swallow the first word.
+- **Decks open at once.** The current slide renders first and the rest fill in
+  around it; a deck's page images are reused until the PDF changes; the Kokoro
+  libraries load only on first synthesis. A cold open of a 22-slide deck went from
+  ~11 s to ~1 s. Replaying a deck no longer re-measures every clip (lengths are
+  saved in `durations.json` beside the clips), and versioned slide images are
+  cached by the browser.
+- **A successful `export` deletes its render scratch** (decoded PCM, `track.wav`,
+  silences, per-slide segments — ~7 GB across a 33-deck course). Page images and
+  clips stay; a failed export keeps everything; `--keep-scratch` or `[video]
+  keep_scratch = true` keeps it always, as does an export launched from the editor.
+  Silence files are shared per duration.
+- **The automatic sweep waits until a Kokoro clip has been orphaned for 10
+  minutes**, so trying a wording and reverting keeps the clip; it runs a moment
+  after a save instead of during it. `clean` leaves files it doesn't recognise alone.
+- **A narration edit marks its clip stale at once** ("Edited · click to
+  regenerate"); undoing back to the original text restores it.
+- `export` no longer rewrites a subtitle file whose bytes are unchanged.
+- `tts` reports "N generated, M reused"; an unknown `--id` is an error with a
+  suggestion; the file `init` writes shows a v1 example and the next step.
+- **CLI errors are one line** saying what went wrong and how to fix it (`-v` shows
+  the traceback), including LaTeX source passed instead of a PDF, unreadable PDFs
+  and unwritable paths. `-q`/`-v` also work after the subcommand.
+- Kokoro's `words count mismatch` warnings are hidden (`--verbose` shows them), and
+  Kokoro loads its model and voices from the local cache without touching the
+  network (no ~30 s stall offline); `SLIDESONNET_KOKORO_REFRESH=1` picks up a new
+  upstream revision.
+- `doctor` requires Python 3.13, as the package does, and checks the editor's
+  server and that its browser interface is built.
+- Sidecar lines split only on `\n`/`\r\n` (U+2028 and similar no longer break a
+  line).
 
 ### Fixed
-- **The script view marks a line all the way to its last word.** The mark was
-  drawn on a copy of the text that wrapped differently from the line itself (the
-  line kept room for its pause), so on a line of several rows it stopped short.
-  The copy now sizes the line, and a pause follows the last word instead of
-  sitting at the right edge.
-- **No half-sent slide pictures after a recompile.** Pages were re-rendered in
-  place, so a picture requested mid-render arrived broken ("Response content
-  longer than Content-Length" in the editor's log); each is now rendered aside
-  and swapped in whole, and the old one stays up until then.
-- **A recompiled PDF shows during playback.** A deck preview held the slide
-  pictures from when it was built, so slides changed meanwhile showed their old
-  look; the playing slide is now always drawn as it is now.
-- **Playing a deck no longer re-measures every clip.** Each clip's length is
-  saved beside it in the audio pool (`durations.json`) the moment it's made,
-  so replaying a 55-slide deck takes a fraction of a second instead of ~14 s.
-- **A recompiled PDF shows up in the editor.** Its new page pictures are
-  rendered; before, the old slides stayed on screen.
-- **Saving while a PDF recompiles no longer errors.** While the PDF is missing
-  or half-written, the editor keeps showing the last good version and picks up
-  the new one when it lands.
-- **Right-to-left narration** (Hebrew, Arabic) now lays out correctly in the
-  editor, review notes, and conflict dialog.
-- **The preview's slide changes land exactly on the audio.** During a
-  whole-deck preview the slide on screen now changes in the browser, in step
-  with the sound, instead of waiting for the editor to catch up — and it keeps
-  up even while you're typing on another slide (the editor itself still waits
-  until you leave the field). Dragging the position slider and changing speed
-  respond at once.
-- **No more phantom decks from old cache folders.** PDFs inside a deck's
-  leftover `cache/` folder (from slideSonnet before 1.0) were listed in the
-  library as decks without narration.
-- **A preview always plays its own audio.** Every preview used to be written to
-  the same file, so starting a second preview (or reopening the editor) could
-  play the previous slide's audio. Each preview now gets its own file.
-- **Saving is quicker.** Tidying up audio that an edit made obsolete now happens
-  a moment after the save instead of during it, so typing and moving between
-  slides no longer wait on it.
-- **Exports keep going if you close the tab.** An export started in the editor
-  now runs in the background of the editor process; leaving the page doesn't
-  stop it.
-- **Narration saves can't be half-written.** The narration file is replaced in
-  one step, so a program watching it never reads a partly saved file.
-- **Typing is no longer lost when the narration file changes on disk.** If an
-  agent (or another program) edited the narration file while you were typing,
-  the editor reloaded and your unsaved text vanished. Now an edit to a
-  different slide leaves your typing in place; an edit to the slide you're on
-  shows the new version and gives your text back, with **Copy my text** and
-  **Keep my version**.
-- **Saving in the editor no longer undoes an edit made to the narration file
-  by someone else.** The editor only noticed outside changes on its next check,
-  so an agent's rewrite that landed in between was silently overwritten by the
-  editor's older copy on the next save. The editor now checks first: if the
-  file changed, it keeps the file's version, shows it, and offers your unsaved
-  text in a dialog with a Copy button.
-- **`subs` no longer invents a timeline when it can't find the audio.** Each
-  voice keeps its own content-addressed cache (the filename embeds the backend
-  and its config hash), but `subs` had no `--engine` flag — so a deck rendered
-  with `export --engine inworld` and then re-subtitled with a plain `subs` looked
-  up kokoro-shaped keys, missed *every* utterance, and silently fell back to a
-  words-per-minute guess. A 150-wpm guess runs ~2 % short of real speech, so the
-  cues drifted ever earlier against the video (≈10 s by the end of an 8-minute
-  deck) in a file that looked perfectly well-formed. `subs` now takes
-  `--engine`, and under `--timing tts` it *refuses* to stand in guessed times,
-  naming how many lines have no audio and which slides they're on; pass
-  `--allow-estimates` (or `--timing estimate`) to opt into guesses on purpose.
-  `cached_durations` returns a `CachedDurations` reporting what it had to
-  estimate instead of blending guesses into the durations. Note that `export`
-  already writes matching subtitles from the very timeline it lays the video
-  out on — a recipe that runs `export` and then `subs` overwrites the good file
-  with an independently computed one, and `subs --help` now says so.
-- **Kokoro resolves its model and voices from the local cache first.** A HEAD
-  revalidation against huggingface.co ran on every pipeline load, so an offline
-  or flaky network (a sleeping laptop, a WSL network drop) stalled startup for
-  ~30 s of backoff retries before falling back to the cache it started next to.
-  Cached files now load without touching the network; anything genuinely missing
-  still downloads. Set `SLIDESONNET_KOKORO_REFRESH=1` to pick up a new upstream
-  model revision.
-- **Opening a deck no longer re-rasterizes it.** `rasterize` cleared the page
-  images and re-ran `pdftoppm` over the whole PDF every time, with no cache
-  check — ~3.5 s of blocking work for a 49-slide deck. That was invisible when
-  it happened once per launch, but the deck library opens a deck on every
-  switch, which made switching take seconds. An existing render is
-  now reused when a stamp beside the images matches the PDF's mtime, size, and
-  the dpi; a recompile still re-renders. Deck switching drops from ~3.6 s of
-  server work to ~45 ms. Each deck re-renders once more after upgrading, to
-  write its first stamp.
-- **Versioned media is cached by the browser.** Page-image URLs already carry a
-  `?v=<mtime>-<size>` stamp, but responses set no `Cache-Control`, so every
-  thumbnail was revalidated on each deck switch. Versioned URLs are now
-  `immutable`; the assembled preview track, which is rewritten in place at a
-  stable URL, still revalidates.
-- **`clean` no longer deletes current paid audio whose voice lives in the deck
-  preamble.** `clean --keep current` / `--keep exact` reconstructed cache keys from
-  only `config.voices` + the per-utterance `voice:`, ignoring the sidecar
-  preamble's portable voice layer (`voices:` / `default-voice:`) and per-backend
-  `resolve_voice`. A default- or preamble-voiced clip therefore collapsed to voice
-  `None`; for Kokoro that happened to match, but for Inworld the real cache key
-  carries a concrete voice id (e.g. `Tyler`), so the clip was mistaken for an
-  orphan and removed — silently discarding paid, regenerate-for-money audio (hit
-  on the basel demo, whose voices are defined entirely in the preamble). Clean now
-  mirrors synthesis exactly: it merges the deck preamble over config presets,
-  applies `default-voice`, and resolves per-backend. Regression-tested with
-  preamble-voiced decks.
-- **Subtitles no longer drift late on Inworld (MP3) renders.** An MP3 carries
-  encoder delay + end padding, so its container `format.duration` over-reports the
-  true decoded length by ~tens of ms per clip — and the subtitle timeline, built
-  from those per-clip durations, slid progressively later (≈1–2 s behind by the end
-  of a long deck) while the assembled audio track (which decodes the clips) did not.
-  `get_duration` now measures the *decoded* length for compressed audio-only clips
-  (MP3/AAC/…) by decoding to PCM, exactly as `concatenate_audio` does, so per-clip
-  durations sum to the assembled track and the cues stay locked to the speech.
-  WAV (Kokoro/Qwen3) was always sample-exact and is unaffected (it keeps the cheap
-  header read), as is the muxed video. The fix applies to already-cached `.mp3`
-  audio too — no re-synthesis or re-billing. Repro test
-  `tests/test_subtitle_drift.py` (free — libmp3lame tones, no Inworld call).
-- **Subtitle timestamps can no longer read `,1000`.** A cue boundary within
-  half a millisecond below a whole second (e.g. 136.9996 s) printed as
-  `00:02:16,1000` — invalid SRT/VTT that players drop or misplace — because the
-  milliseconds were rounded separately from the seconds. Times are now rounded
-  to whole milliseconds first, so the carry lands in the seconds
-  (`00:02:17,000`).
+**Audio and paid safety**
+- **`clean --keep current/exact` no longer deletes current paid audio whose voice
+  is set in the narration file's `voices:`/`default-voice:`** (it mistook
+  default- or preamble-voiced Inworld clips for orphans).
+- **`clean` and the automatic sweep no longer delete other decks' clips** in a
+  shared `.slidesonnet/audio/`: it is collected against every narrated deck in the
+  folder. `--keep nothing` removes only this deck's renders.
+- **The sweep honours `--narration`**; clips made for an override sidecar were
+  deleted a second after being generated.
+- **Paid work makes only what you approved.** An approved Inworld generate, preview
+  or export that waited in line used to bill edits made meanwhile; it now stops
+  with "The narration changed after you approved it; approve again to generate N
+  new clips."
+- `make clean` removes build artefacts only (it deleted every `.slidesonnet/`,
+  including committed paid example audio).
+
+**Narration file**
+- A line break typed into an utterance can no longer add a pause, change the voice
+  or start a new slide block; a line break in a voice or director's note is refused.
+- `pause: -1`, `inf`, `nan` and `transition-in: fade nan` give a clear error with
+  the line number (the editor refuses them too); durations are written exactly.
+- The Voices dialog can't save a voice name the sidecar can't read back.
+- Saves and `init` (fresh, `--force`, `--merge`) replace the narration file in one
+  step, so a program watching it never reads a half-written file.
+
+**Export and subtitles**
+- **Slides stay in step with the narration.** A 30-slide video ran about a second
+  behind its audio; each slide now starts within one frame of its narration, and a
+  slide between two full transitions no longer gains an invented 0.1 s.
+- **Subtitles no longer drift late on Inworld (MP3) renders** (≈1–2 s by the end of
+  a long deck); already-cached clips are fixed too, with no re-synthesis.
+- `subs` takes `--engine`, so a deck exported with Inworld no longer gets
+  subtitles guessed from Kokoro-shaped cache keys (≈10 s of drift over 8 minutes).
+  Note that `export` already writes matching subtitles; running `subs` after it
+  overwrites them.
+- Subtitle timestamps can no longer read `,1000` (invalid SRT/VTT).
+- A failed or cancelled export keeps the previous video and subtitles.
+- An empty utterance no longer fails the export; blank speech is skipped in
+  synthesis, timing and subtitles.
+- Export no longer overwrites and deletes a `concat_list.txt` of yours, and decks
+  in folders named like `O'Brien` export again.
+- Cancelling an export or preview and undoing an edit can no longer serve the
+  edited (or half-written) audio from the render cache.
+- A slide whose narration is one MP3 clip gets a real WAV page file.
+
+**Editor**
+- **Typing is no longer lost, and outside edits no longer overwritten, when the
+  narration file changes on disk.** An edit to another slide leaves your typing in
+  place; an edit to the slide you're on shows the file's version and offers yours
+  back (**Copy my text**, **Keep my version**), one conflict at a time.
+- **A recompiled PDF shows up**, also during playback: each slide keeps its old
+  picture until the new one is rendered and swapped in whole (no half-sent
+  images), and saving while the PDF is missing or half-written keeps the last good
+  version.
+- A preview always plays its own audio (a second preview could play the previous
+  slide's).
+- During playback the slide changes land exactly on the audio, even while you type
+  on another slide; dragging the position slider and changing speed respond at once.
+- Right-to-left narration (Hebrew, Arabic) lays out correctly.
+- The unattached-narration actions (attach, append, delete) refuse a slide's own
+  narration instead of moving or deleting it.
+
+### Security
+- **The editor checks the Host header on slide images and audio (`/ssmedia`)** as
+  on its API, blocking DNS-rebinding reads.
+
+### Removed
+- **The NiceGUI editor** and the NiceGUI dependency (see *Breaking*).
 
 ## [1.0.0a2] — 2026-06-19
 
