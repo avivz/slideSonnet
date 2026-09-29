@@ -20,6 +20,10 @@ regression test.
   when it was the same directory as (or nested with) the deck's local cache.
 - **A forced whole-deck generate asks before re-billing paid clips.** On a fully
   cached Inworld deck it used to regenerate everything without approval.
+- **Paid work makes only what you approved.** An approved Inworld generate,
+  preview or export that waited in line used to bill edits made meanwhile (a new
+  or reordered line); it now stops with "The narration changed after you approved
+  it; approve again to generate N new clips."
 - **`make clean` removes build artefacts only.** It deleted every `.slidesonnet/`
   in the tree, including committed paid example audio.
 
