@@ -1,9 +1,12 @@
 """Cache layout for a deck's synthesized audio and render artifacts.
 
-By default everything for ``path/deck.pdf`` lives under ``path/.slidesonnet/``:
+Speech clips live in a *speech-clip pool* (see below), which several decks and
+checkouts can share. By default the pool, like everything else for
+``path/deck.pdf``, lives under ``path/.slidesonnet/``:
 
     .slidesonnet/
-      audio/          content-addressed TTS clips (shared across decks in the dir)
+      audio/          the default pool: content-addressed TTS clips, shared by
+                      the decks in this dir
       render/<deck>/  page PNGs, assembled tracks, segments (disposable)
 
 Audio is content-addressed, so sharing it across decks is safe. Render

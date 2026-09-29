@@ -16,7 +16,7 @@ install:
 test:
 	$(VENV)/pytest tests/
 
-# The unit tier (CI's tier): Python unit + API tests, ~25 s.
+# The unit tier (CI's tier): Python unit + API tests, ~35–50 s.
 test-unit:
 	$(VENV)/pytest tests/ -m "not integration and not browser"
 
