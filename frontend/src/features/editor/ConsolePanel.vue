@@ -83,7 +83,7 @@ async function cancelGeneration(): Promise<void> {
 async function exportVideo(): Promise<void> {
   const token = editor.token
   if (!token || exporting.value) return
-  await editor.flush()
+  if (!(await editor.ensureSaved())) return // export what's on screen, or nothing
   let draft = false
   const blockers = await editor.client.exportBlockers(token)
   if (blockers.length) {

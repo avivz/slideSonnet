@@ -1,10 +1,12 @@
 // Switching decks (or engines) while answers are on their way: a late answer
 // for the old one is dropped, and nothing from the old deck's review leaks over.
 // Whatever consumes the narration stops while it can't be saved.
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { describe, expect, it } from 'vitest'
 
 import { ApiError, type GenerationStatusDTO, type ReviewDTO } from '@/api/client'
+import ConsolePanel from '@/features/editor/ConsolePanel.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { useReviewStore } from '@/stores/review'
@@ -72,7 +74,7 @@ describe('a late answer for the previous deck', () => {
 })
 
 describe('when the narration can’t be saved', () => {
-  it('generation and review commands stop instead of using the old text', async () => {
+  it('generation, export and review commands stop instead of using the old text', async () => {
     const { editor, server } = await setup()
     const block = editor.draftFor('a')
     if (block?.middle[0]) block.middle[0].text = 'Unsaved.'
@@ -89,5 +91,10 @@ describe('when the narration can’t be saved', () => {
     expect(server.generated).toEqual([])
     expect(await useReviewStore().command({ type: 'comment', slides: ['a'], text: 'Look.' })).toBe(false)
     expect(sent).toBe(0)
+    const w = mount(ConsolePanel, { props: { confirm: async () => true } })
+    await w.get('[data-testid="export"]').trigger('click')
+    await flushPromises()
+    expect(server.jobs).toEqual([])
+    w.unmount()
   })
 })

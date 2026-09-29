@@ -20,6 +20,7 @@ import ConsolePanel from './ConsolePanel.vue'
 import DeckHead from './DeckHead.vue'
 import DeckSwitcher from './DeckSwitcher.vue'
 import FilmStrip from './FilmStrip.vue'
+import { useLeaveGuard } from './leave'
 import NarrationEditor from './NarrationEditor.vue'
 import ScriptView from './ScriptView.vue'
 import SlideStage from './SlideStage.vue'
@@ -196,8 +197,7 @@ let pagesTimer: ReturnType<typeof setTimeout> | null = null
 
 async function openDeck(deckToken: string): Promise<void> {
   player.stop()
-  await editor.open(deckToken)
-  if (!editor.snapshot) return
+  if (!(await editor.open(deckToken)) || !editor.snapshot) return
   document.title = `${editor.snapshot.name} · slideSonnet`
   await generation.refresh()
   void generation.focus(editor.currentId)
@@ -208,12 +208,13 @@ async function openDeck(deckToken: string): Promise<void> {
   }
 }
 
+// every way out of this deck (switcher, links, back/forward) saves first, and
+// stays when the narration can't be saved
+useLeaveGuard()
+
 async function leaveTo(deck: { token: string }): Promise<void> {
   switcherOpen.value = false
   if (deck.token === token.value) return
-  await editor.flush() // the field being typed in must not vanish
-  await generation.leave() // drop the clips only this tab asked for
-  player.stop()
   await router.push(`/d/${deck.token}`)
 }
 
