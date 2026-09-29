@@ -255,15 +255,17 @@ def _resolve_engine(entry: DeckEntry, engine: Backend | None) -> Backend:
 
 
 def _uncached(
-    entry: DeckEntry, engine: Backend, *, slide_id: str | None = None
+    entry: DeckEntry, engine: Backend, *, slide_id: str | None = None, everything: bool = False
 ) -> set[tuple[str, int]]:
+    """Clips that would be synthesized: the uncached ones, or with *everything*
+    (a forced regenerate) every clip, cached or not."""
     loaded = _service(entry).load()
     config = snapshots.with_engine(loaded.config, engine)
     audio_dir = resolve_audio_dir(entry.pdf_path, config).path
     return {
         (ref.slide_id, ref.speech_index)
         for ref, cached in ref_cache_status(loaded.deck, config, audio_dir)
-        if not cached and (slide_id is None or ref.slide_id == slide_id)
+        if (everything or not cached) and (slide_id is None or ref.slide_id == slide_id)
     }
 
 
@@ -373,7 +375,7 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
             engine = _resolve_engine(entry, body.engine)
             if body.targets is None:
                 targets: set[tuple[str, int]] | None = None
-                count = len(_uncached(entry, engine))
+                count = len(_uncached(entry, engine, everything=body.force))
             else:
                 targets = {(t.slide_id, t.speech_index) for t in body.targets}
                 count = len(targets) if body.force else len(targets & _uncached(entry, engine))

@@ -261,6 +261,23 @@ def test_paid_generation_needs_explicit_approval(
     assert _wait(client, ok.json()["id"])["status"] == "succeeded" and len(calls) == 1
 
 
+def test_forced_whole_deck_generation_on_a_cached_paid_deck_needs_approval(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Forcing re-bills every clip, so a fully cached deck still costs credits."""
+    from slidesonnet.audio import synth as synth_mod
+
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: _StubTTS(cfg.backend))
+    token = _token(client)
+    paid = {"kind": "generate", "engine": "inworld"}
+    made = client.post(f"/api/v1/decks/{token}/jobs", json={**paid, "allow_paid": True})
+    assert _wait(client, made.json()["id"])["status"] == "succeeded"  # now fully cached
+
+    forced = client.post(f"/api/v1/decks/{token}/jobs", json={**paid, "force": True})
+    assert forced.status_code == 403
+    assert forced.json()["error"]["code"] == "paid_confirmation_required"
+
+
 def test_previews_are_immutable_per_build_and_served_with_ranges(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
