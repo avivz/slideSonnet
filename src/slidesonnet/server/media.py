@@ -2,7 +2,7 @@
 
 One route serves every deck, keyed by its registry token — so deck A's page
 images can never be served for deck B, and a token not in the registry never
-touches the filesystem. Paths are resolved (symlinks included) and must stay
+touches the filesystem. The API's Host check applies here too. Paths are resolved (symlinks included) and must stay
 under the deck's render directory. Responses support byte ranges (206/416), so
 audio players can seek.
 
@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 
 from slidesonnet.cache import render_dir
 from slidesonnet.review.base import base_dir
+from slidesonnet.server.context import ApiRoute
 from slidesonnet.server.library import DeckRegistry, deck_token
 from slidesonnet.server.previews import PREVIEWS_DIRNAME
 
@@ -66,8 +67,12 @@ def base_media_url(pdf_path: Path, path: Path) -> str:
 
 
 def media_router(registry: Callable[[], DeckRegistry | None]) -> APIRouter:
-    """The ``/ssmedia/{token}/{path}`` route, resolving tokens through *registry*."""
-    router = APIRouter()
+    """The ``/ssmedia/{token}/{path}`` route, resolving tokens through *registry*.
+
+    Served through :class:`~slidesonnet.server.context.ApiRoute` like the API, so
+    the same Host check guards it (a DNS-rebound page can't read slides or audio).
+    """
+    router = APIRouter(route_class=ApiRoute)
 
     @router.get(MEDIA_PREFIX + "/{token}/{filename:path}", include_in_schema=False)
     def read_media(request: Request, token: str, filename: str) -> FileResponse:

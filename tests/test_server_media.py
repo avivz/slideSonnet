@@ -56,6 +56,13 @@ def test_each_deck_serves_its_own_files(client: TestClient, decks: tuple[Path, P
         assert r.status_code == 200 and r.content == pdf.stem.encode()
 
 
+def test_media_refuses_an_unexpected_host(client: TestClient, decks: tuple[Path, Path]) -> None:
+    """DNS rebinding: a page on evil.example resolving to 127.0.0.1 can't read slides."""
+    url = _put(decks[0], "pages/probe.png", b"secret")
+    assert client.get(url, headers={"Host": "evil.example"}).status_code == 403
+    assert client.get(url).status_code == 200
+
+
 @pytest.mark.parametrize(
     ("rel", "query", "immutable"),
     [
