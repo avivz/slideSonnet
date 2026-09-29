@@ -106,6 +106,7 @@ def test_show_base(deck: Path) -> None:
     data = json.loads(_run("show", str(deck), "@intro", "--base", "--json"))
     assert "Hello." in data["narration"]
     assert Path(data["image"]).exists()
+    assert json.loads(_run("show", str(deck), "@intro", "--json")) == data  # --base is optional
 
 
 def test_send_and_wait(deck: Path) -> None:

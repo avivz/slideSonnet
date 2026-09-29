@@ -341,9 +341,11 @@ def clear_cmd(pdf: Path) -> None:
 @review.command("show")
 @_PDF
 @click.argument("slide")
-@click.option("--base", "use_base", is_flag=True, required=True, help="Show the base version")
+@click.option(
+    "--base", is_flag=True, expose_value=False, help="Show the base version (the default)"
+)
 @_JSON
-def show_cmd(pdf: Path, slide: str, use_base: bool, as_json: bool) -> None:
+def show_cmd(pdf: Path, slide: str, as_json: bool) -> None:
     """The base version of SLIDE: narration block, page text, page image path."""
     from slidesonnet.review.base import base_image, load_base
 
