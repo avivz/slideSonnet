@@ -1,470 +1,260 @@
 # Roadmap
 
-Current version: **1.0.0a2 — published to PyPI 2026-06-19** (TestPyPI → PyPI →
-GitHub Release all green; `v1.0.0a2` tagged). The PDF + narration-sidecar editor
-rewrite; repo is public. `main` is clean and CI is green.
+Current version: **1.0.0a2 — published to PyPI 2026-06-19.** Everything since is
+on `main` only (`CHANGELOG [Unreleased]`), and it is a lot: the editor was
+rewritten (NiceGUI → FastAPI + Vue 3, merged 2026-09-28), the **agent review
+loop** landed and is now always on, the **script view** is the default,
+**Play all** plays slide by slide, clips can live in a **shared pool** across
+decks and worktrees, and export reports progress for every phase. Anyone
+installing from PyPI still gets the old NiceGUI editor — so the release is the
+headline Now item.
 
-**Accumulating toward the next release** (`CHANGELOG [Unreleased]`, post-a2): the
-**accelerated narration playback** speed control, the **single-slide transition
-toggle**, the **per-utterance dirty badge**, the **default Inworld model** bumped
-to `inworld-tts-2`, the **clean-paid-audio fix** (don't false-orphan a
-preamble-voiced Inworld clip), and the **Inworld (MP3) subtitle-drift fix** —
-all on `main`, none yet in a tagged release. Cut the next alpha (a3) when this
-batch + the current Now items feel like a coherent increment.
+*Last PM pass 2026-09-29 (branch `pm/reconcile-ui-2026-09-29`).* Code and UX
+reviews of the new editor were running in parallel with this pass; their
+findings had not reached `dev/INBOX.md` yet. Triage them into Now #1.
 
-**Demo status:** the **basel-problem HQ Inworld render shipped** — rendered with
-Inworld, subtitles re-rendered drift-free, IPA pronunciation tuned, audio
-committed, and **published to YouTube** (README-linked). The **showcase HQ render
-is not done** (still Kokoro; no Inworld audio committed, no YouTube link) — see
-Next. With a2 out and the cloud path clean (Inworld validated on a real paid run,
-MP3 drift fixed — both Done), the Now tier is led by **deck switching + a deck
-library in the editor** (promoted 2026-08-23 — a whole course of decks is about
-to be audited and relaunching the editor per deck is the friction), followed by
-**pronunciation correctness for HQ renders**, Qwen3 own-voice, and
-orphaned-narration leftovers.
+**Demo status:** basel-problem HQ Inworld render shipped (YouTube). Showcase is
+still Kokoro-only (Next #5). The demo PDFs are still *plain* builds; they need a
+final (`\ssfinal`) recompile before the next render or release (Now #3).
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
 (paid, irreversible, or account-bound).
 
-## Now — next feature work (post-a2, toward 1.0)
+## Now — this week
 
-1. [ ] **Agent review loop — verify in the real editor, then merge
-   `feat/review-loop`.** *(Built 2026-09-27; spec `dev/DESIGN-review.md`.)* On
-   the branch and unit-tested: the narration-overwrite fix, plain-by-default
-   builds (`\ssfinal` for final), the base + diff by slide id, `<deck>.review`
-   conversations + the `slidesonnet review` CLI (incl. the `deck` conversation
-   and agent-opened conversations), the export check (`--draft`), and the editor
-   review tools (Start review, Review tab, Enter-to-send, Clear accepted, per-slide threads
-   with Reply/Accept/Reopen, conversation filter, badges, before/after `D`,
-   narration word diff, before strip, automatic filing + many-slides warning,
-   `N` = next waiting). *Left before merge:* open a demo deck in the real
-   editor and check the layout (the in-process tests can't see it — console
-   width, compare view, the two strips); run `make test` (integration);
-   recompile the demo PDFs as final builds. **[agent→human]**
-2. [ ] **Inline pronunciation override — spoken form vs. subtitle form.**
-   *(Promoted from inbox 2026-06-19; the active friction.)* The pronunciation
-   dictionary (`pronunciation/*.md` → `apply_pronunciation`) rewrites text
-   *before* synthesis, and the subtitle timeline is built from that **same
-   rewritten text** — so a respelling like `Mengoli → 'mehngohlee` fixes the audio
-   but **corrupts the subtitles** (they literally show "mehngohlee"). This forced
-   ripping the whole dictionary out of the basel demo (the HQ render shipped with
-   an ad-hoc IPA-in-`/slashes/` workaround instead). *Story:* As a deck author
-   with a name the TTS mispronounces, I want to respell just the *audio* without
-   that respelling leaking into the on-screen captions. *Acceptance examples:*
-   (a) an utterance `…work of [Mengoli](menˈɡɔːli)…` (grammar TBD — must round-trip
-   in the sidecar and not collide with `[pause N]`/markdown) synthesizes the spoken
-   form and the SRT/VTT shows the display form "Mengoli"; (b) the **spoken** form
-   feeds `synth.speech_refs`/`apply_pronunciation` and the **audio cache key** (so
-   editing only the spoken form re-synths exactly that clip and nothing else); the
-   **display** form feeds `render.subtitle_entries`; (c) when only one form is
-   given it serves both (decide which side is the default); (d) on Inworld the
-   spoken form may be IPA (Inworld accepts IPA) — carried through to the per-engine
-   pronunciation mechanism, falling back to plain text where unsupported (Kokoro/
-   Qwen3). *Appetite:* ~one day. *Open question:* pick the grammar; relationship to
-   (or replacement of) the global dictionary — design alongside Next's per-engine
-   dictionary item. **[agent]**
-3. [ ] **Qwen3 own-voice: record + judge the reference clip.** *(The engine is
-   shipped and mocked-tested — see Done. This is the one human step gating a real
-   own-voice render: nothing about Qwen3 has run on real weights + a real voice
-   yet.)* *Story:* As the deck author, I want to record a ~10 s reference, build
-   the `.pt` clone prompt, and judge the cloned voice, so I can decide whether
-   Qwen3 is good enough to ship an own-voice render. *Acceptance examples:* (a) a
-   fresh ~10 s reference is recorded and `create_voice_clone_prompt` produces a
-   `.pt` under `dev/voice-profile/` (git-excluded); (b) `SLIDESONNET_QWEN3_PROMPT=…
-   pytest -m integration -k real_weights` passes locally on the iGPU/XPU path
-   (downloads real weights once, clones, writes a non-empty WAV); (c) the human
-   listens to a short rendered sample and records a verdict (ship / refine the
-   reference / not yet). *Appetite:* an afternoon (mostly the human's; the agent
-   can drive the recording→`.pt`→smoke-test mechanics). *Note:* the `[qwen3]` extra
-   isn't installed in the dev venv (heavy torch + multi-GB weights), so this also
-   covers the one-time `pip install -e ".[qwen3]"`. **[human→agent]**
-4. [ ] **Play "play all" before the deck is fully generated** — the one remaining
-   "minor UX" sub-item, **re-scoped out of an afternoon**. The other three shipped
-   (per-utterance dirty badge, single-slide transition toggle, and the new-line
-   default-voice behavior — see Done). *Story:* As a deck author with a
-   half-generated deck, I want play-all to start immediately and pause (not error)
-   when playback catches up to the first ungenerated clip, resuming once the queue
-   catches up. *Acceptance:* pressing play-all on a half-generated deck starts
-   immediately and pauses at the generation frontier, resuming as the queue
-   advances. *Appetite:* **~2 days, not an afternoon** — this is an architecture
-   change, not a little PR. The whole-deck preview assembles a **single monolithic
-   `track.wav`** (`render.render_audio_track` → one ffmpeg concat) and plays it
-   off a cue sheet, so "pause at the frontier" needs either incremental/streaming
-   assembly (extend the track as pages finish) or per-page playback (stitch on
-   boundaries like the single-slide path). Decide the approach before building.
-   **[agent]**
-5. [ ] **Orphaned-narration leftovers** (tray already shipped): a deck-level
-   "Checks · deck" console section for pageless diagnostics, and saving
-   pending edits before PDF-triggered reloads. *Note:* the keystroke-loss
-   part is now mostly handled — a PDF/config-only refresh keeps the field
-   (editor pass #1), and since 2026-09-28 a *sidecar*-triggered reload keeps
-   unsaved typing too (other slide: kept on screen; same slide: handed back with
-   Copy / Keep my version, never auto-saved). What remains is the deck-level
-   checks section. *Appetite:* half a day. **[agent]**
-6. [x] **Frontend migration to Vue — phased.** *(Plan: `docs/frontend-migration.md`;
-   inventory + numbers: `docs/frontend-parity.md`.)* All seven phases built on
-   stacked branches `migration/phase-{1..6}` (2026-09-28), awaiting the
-   maintainer's review before merging: service layer + `/api/v1` + jobs,
-   Vue toolchain/packaging + library, browser-owned playback, the editor,
-   review, and NiceGUI removed. Unit tier 148 s → 35 s; B1–B5 fixed. Open:
-   per-screen mockup approval (built to the design brief instead), optional
-   IndexedDB draft recovery. **[human review]**
-## Next — toward 1.0 final
+1. [ ] **Fix what the running editor reviews find.** Code and UX reviews of the
+   new editor (Vue frontend, `/api/v1`, review tab, script view, slide-by-slide
+   play) are in flight from other agents. Bugs they confirm come first; repro
+   each at the lowest level that can see it (API test / Vitest, browser tier only
+   for focus, timing, media). Also carried from the merge: the intermittent
+   browser-journey flake ("not stable" at `seg-up-2`, full suite only) and the
+   unreproduced "Clear accepted hangs during playback" report (1.2–3.8 s in every
+   mode tried; commit `36f14b1` sped clearing up). *Appetite:* depends on what the
+   reviews find; keep cosmetic findings for Next. **[agent]**
+2. [ ] **Inworld delivery controls — pronunciation, direction, creativity.**
+   *(Top feature priority, 2026-09-29: Inworld is now the main engine. Merges the
+   inline pronunciation override, the director's note, and per-engine generation
+   parameters into one Inworld-first design.)* Today the Inworld engine sends only
+   `voice`, `model` and `speaking_rate` (`tts/inworld.py`), so everything else about
+   delivery is out of the author's hands. *Story:* As a deck author narrating with
+   Inworld, I want to fix how a name is said, tell a line how to be delivered, and
+   dial expressiveness, without the fixes leaking into the captions or breaking the
+   other engines. *Acceptance examples:*
+   (a) **Spoken vs. caption form.** `…work of [Mengoli](menˈɡɔːli)…` (grammar TBD —
+   must round-trip in the sidecar and not collide with `[pause N]`/markdown) sends
+   the IPA to Inworld while SRT/VTT and the script view's spoken-word marking show
+   "Mengoli"; a lone form serves both; Kokoro/Qwen3 get the plain display form (a
+   Kokoro preview never speaks IPA). Today's respelling dictionary puts the
+   respelling in the captions — why basel shipped with an ad-hoc `/IPA/` hack.
+   (b) **Direction.** The `direct:` note (already in the sidecar and editor,
+   consumed by no engine) maps onto whatever style control Inworld offers; engines
+   without one ignore it, and the editor says which engines honour it.
+   (c) **Creativity/temperature** (and any other Inworld knob found) as a
+   `[tts.inworld]` key, per-deck first; editor control only if (d) shows it's worth it.
+   (d) Every value joins the audio cache key, so changing it re-synthesizes exactly
+   the affected clips; an empty value equals none (no cache churn).
+   *First step:* inventory what the Inworld API actually accepts (temperature,
+   emotion/style markup, IPA/phoneme input) and spot-check each on a couple of
+   short lines — a few cents of paid audio, human-triggered, never in tests.
+   *Open questions:* the pronunciation grammar; whether the global
+   `pronunciation/*.md` dictionary gains per-engine forms or is replaced.
+   *Appetite:* two to three days. **[agent→human]**
 
-1. [ ] **Unify logging across the project** (from inbox; reaffirmed 2026-06-19 as
-   the requested "general sweep for logs"). Generation feedback is
-   ad-hoc: the job worker and editor `print("[gen] …")` straight to stdout, while
-   the rest of the code uses module `logger`s whose output never appears because
-   logging is never configured (no handler/level at CLI/editor startup) — so
-   `logger.info`/`logger.exception` calls are invisible, which is why a swallowed
-   background-job failure had to be band-aided with a `print`. *Story:* As someone
-   running slideSonnet, I want consistent, level-controlled output so I can see
-   progress and diagnose failures without reading the source. *Acceptance
-   examples:* (a) logging is configured once at CLI/editor startup (handler +
-   level), so a `logger.info` from any module reaches the terminal; (b) a
-   `--verbose`/`--quiet` flag or `SLIDESONNET_LOG` env var sets the level;
-   (c) the `print("[gen] …")` progress lines become structured `logger` calls (or
-   are deliberately kept as the few user-facing progress lines, with everything
-   else routed through logging); (d) a background-job failure is logged with a
-   traceback at the configured level, no longer silently swallowed. *Recent
-   example (2026-06-19):* the `.env`-not-loaded bug surfaced only as a terse
-   `[gen] … FAILED` print; a configured logger with the traceback would have
-   pointed straight at the missing-key cause. *Appetite:*
-   half a day. **[agent]**
-2. [ ] **Test audit remainder** — browser (Playwright) tier landed; remaining
-   gaps to fill deliberately: export timing modes end-to-end, `check`
-   diagnostics on real overlay decks, editor save/reload paths. Finish with
-   a joint human+AI review of coverage and quality. **[agent→human]**
-3. [ ] **HQ demo re-render with Inworld — showcase (basel done).** The
-   **basel-problem** HQ render shipped (Inworld, drift-free subtitles, IPA
-   pronunciation, audio committed, on YouTube — see Done). **Showcase still needs
-   it:** it's Kokoro-only (no Inworld audio committed, no YouTube link). Human
-   triggers the showcase Inworld render; agent re-renders subtitles, commits the
-   paid audio (per the commit-paid-audio rule), uploads the MP4 to the `v0.0.0`
-   GitHub Release (`gh release upload --clobber`) and/or YouTube, and refreshes
-   README links. *Note:* the release-asset MP4s are still the **old March renders**
-   — even basel's release MP4 was never replaced with the Inworld cut (only YouTube
-   was), so this item also covers refreshing basel's release asset if we want the
-   download to match the video. *Depends on:* Now #2 / Next pronunciation — showcase
-   will hit the same IPA-in-subtitles trap basel did. **[human→agent]**
-4. [ ] **Qwen3-TTS DashScope cloud mode** — a `mode = "dashscope"` arm of the
-   now-shipped Qwen3 engine (see Done) for users without a local GPU: ~$0.13/10 min,
-   no infra, but the voice leaves the machine (and needs one-time voice enrollment).
-   Same `BackendSpec`/engine interface, `paid=True`, the same mocked-client test
-   guard as ElevenLabs/Inworld (never a real paid call in CI). Serverless GPU
-   (Modal/RunPod, ~$0.01/10 min) is a further variant. The local engine has landed,
-   so this is now unblocked. **[agent→human]**
-5. [ ] **Qwen3 per-utterance `.pt` content-hash in the cache key** (debt from the
-   shipped engine). A per-utterance voice-map `.pt` folds its *path*, not its
-   *content hash*, into the clip cache key, so editing a clone artifact in place
-   needs a manual regenerate (the config-default prompt already content-hashes).
-   *Acceptance:* editing a `.pt` referenced by a `voices:` entry invalidates that
-   voice's cached clips on the next generate; moving/renaming the file does not
-   churn the cache. *Appetite:* an hour. **[agent]**
-6. [ ] **Upload demo videos to YouTube** — needs the human's account/auth and
-   an unlisted-vs-public decision; agent preps titles, descriptions, and
-   chapter markers from the narration sidecars. **[human]**
-7. [ ] **README refresh** — new video links, Kokoro install instructions,
-   editor screenshots of the new dark studio theme. **[agent]**
-8. [ ] **Wire the director's note to supporting models.** *(Was Now; deferred
-   behind the Inworld/Qwen3 engine work it depends on.)* *Story:* As a deck
-   author, I write a per-utterance *direction* — "cheerfully", "slow and somber",
-   "as an aside" — and the engines that can act on a natural-language style cue
-   actually do, so the same script can be delivered with intent rather than flat.
-   The `direction` field already exists end-to-end (sidecar grammar `direct:`,
-   the editor's per-utterance input, round-trip-stable) but **no engine consumes
-   it today** — it's collected and ignored. The natural target is Qwen3, whose
-   CustomVoice and VoiceDesign models take an `instruct=` style prompt
-   (`generate_custom_voice(..., instruct=...)`); cloud engines map it to whatever
-   style controls they expose (or ignore it). *Acceptance examples:* (a) an
-   utterance with `direct: cheerfully` on Qwen3 CustomVoice passes that string as
-   `instruct` and the clip is audibly more upbeat than the same text without it;
-   (b) the direction joins the audio cache key (see the standing note in
-   `hashing.py`) so editing the note regenerates exactly the affected clips and
-   nothing else; (c) an engine that has no style input ignores the direction with
-   no error, and the editor signals which engines honor it (mirroring how the
-   voice picker marks per-engine support); (d) an empty/whitespace direction is
-   indistinguishable from none (no spurious cache churn, no empty `instruct`).
-   *Appetite:* ~one day. *Design note:* the per-segment `direction` already flows
-   to `SpeechRef`; the work is threading it through `synth` → `TTSEngine.synthesize`
-   (a new optional `direction` arg, default None, ignored by Kokoro) → Qwen3's
-   `generate_custom_voice/voice_design`, plus folding it into the hash. **[agent]**
-9. [ ] **Per-engine generation parameters (creativity/temperature & friends).**
-   *(From inbox 2026-06-19. Design it together with #8 — both are per-engine
-   expressive controls; build the parameter surface once.)* *Story:* As a deck
-   author, I want to dial an engine's generation knobs — starting with Inworld's
-   **creativity/temperature** (expressive ↔ consistent) — so I can tune the
-   delivery without re-authoring the script. *Acceptance examples:* (a) a
-   `[tts.inworld]` `creativity` (a.k.a. temperature) config key is passed through
-   to the Inworld synthesis call and changes the output; (b) the parameter joins
-   the audio cache key, so changing it regenerates exactly the affected clips and
-   nothing else (and is content-hashed, not churned by unrelated edits); (c) an
-   engine with no such knob ignores it with no error; (d) a written **inventory of
-   which generation parameters each engine accepts** (Inworld creativity/emotion;
-   Qwen3 CustomVoice/VoiceDesign `instruct=` + any sampling knobs; Kokoro =
-   speed/voice-blend only), each spot-checked to confirm it actually moves the
-   output. *Open question — surface:* config-only first, or also per-deck/editor?
-   Decide before build. *Appetite:* ~one day (shares the `TTSEngine.synthesize`
-   param + cache-key threading with #8 — do them as one design). **[agent→human]**
-10. [ ] **Config audit — what's necessary vs vestigial.** A pass over the
-   user-facing config surface (`slidesonnet.toml` → `config.py`/`models.py`) and
-   the project's own config files to find keys/sections that are dead, redundant,
-   or now defaulted-away. Known candidates: `[tts] backend` (kept only as the
-   initial editor default — the engine picker is session-state; full removal as a
-   config key was deferred — see Done). (The `elevenlabs_*` keys are already gone —
-   see Done, ElevenLabs removal.) *Story:* As someone configuring a deck, I want the documented config to be
-   only what still does something, so I'm not cargo-culting dead keys. *Acceptance
-   examples:* (a) a written inventory of every config key with a keep/drop/merge
-   call and reason; (b) dropped keys removed from `Config`/`TTSConfig` parsing,
-   their defaults, and the docs, with a `### Removed`/`### Changed` CHANGELOG note;
-   (c) `make test-unit` + typecheck green. *Appetite:* half a day. **[agent→human]**
-11. [ ] **Pre-assemble the "Play all" track in the background (opt-in).** *Story:*
-   As a deck author who has finished generating narration, I want the whole-deck
-   audio track assembled in the background while I'm idle, so pressing **Play all**
-   starts instantly instead of waiting for the FFmpeg concat. *Acceptance examples:*
-   (a) a new checkbox (e.g. **"Pre-build Play-all audio"**), **off by default** and
-   persisted like "Auto-generate as I edit"; with it on, once the generation queue
-   is idle *and* every clip is cached, the whole-deck track assembles in the
-   background, and a later **Play all** uses it with no visible "building preview"
-   wait; (b) the pre-build never competes with generation — it gates on the queue's
-   idle signal (`JobQueue.await_idle` / `_idle`, `gui/jobs.py`) and only fires when
-   nothing is pending or running, and a real Play preempts it; (c) any edit
-   (narration text, voice, per-slide silence, transition) or a fresh generate
-   invalidates the prebuilt track, which re-assembles in the background once things
-   settle (debounced) — Play all never serves stale audio; (d) with the checkbox
-   **off**, behavior is unchanged (assemble on demand at Play-all time). *Appetite:*
-   half a day. *Design note:* reuse `preview_deck`/`build_preview`; cache the
-   assembled track keyed to a deck/config/voice hash so an edit invalidates it.
-   Complements the Now #4 sub-item "let Play all start before everything is
-   generated" — that's *partial* play mid-generation; this is *instant* play once
-   the deck is fully generated and idle. **[agent]**
-12. [ ] **Cache inventory — show what's cached (count + size) before clearing it.**
-   *(From a 2026-06-19 request; the visibility precursor to a cache-clearing UX
-   the user plans to build. The counting already exists —
-   `clean.py::_count_dir(path) -> (files, bytes)` and `CleanResult.removed_mb`.)*
-   *Story:* As a deck author about to clear the TTS cache, I want to see how many
-   utterances are cached and how much disk they use — and how much a clear
-   reclaimed — so I can decide whether to clear and confirm afterward that
-   something actually happened. *Acceptance examples:* (a) a cache-status readout
-   reports the **number of cached utterance clips** and their **total size in MB**
-   for the deck's content-addressed audio cache (`.slidesonnet/audio/`), e.g.
-   "142 clips · 86.3 MB"; (b) it separates the reclaimable audio cache from render
-   artifacts so the number matches what a clear would remove at the chosen
-   `--keep` level; (c) clearing then reports the before→after delta ("removed 96
-   clips · freed 58.1 MB") for visible confirmation — surface the existing
-   `CleanResult.removed_mb`; (d) the inventory is a pure read (mutates nothing) and
-   pairs with the planned `clean --dry-run` (Later #5). *Open question — surface:*
-   CLI (a `cache`/`clean --dry-run` header) and/or an editor panel? The request
-   ties it to the editor's cache-clearing flow, so likely both — **decide the
-   surface before build.** *Appetite:* half a day (sizing is `_count_dir`; the work
-   is the surface + before/after delta). **[agent]**
-13. [ ] **Export progress bar — feedback during the long FFmpeg render.** *(From
-   inbox 2026-06-19. The just-shipped "Play all" assembly bar is the template —
-   `api.build_preview`/`render.render_audio_track` gained a `progress` callback
-   driving an "Assembling audio · X/N" bar; export wants the same.)* *Story:* As
-   a deck author exporting to MP4, I want a progress indicator so I can see the
-   render is working and how far along it is, instead of staring at a silent
-   2-minute FFmpeg run. *Acceptance examples:* (a) `slidesonnet export` prints a
-   per-segment/per-stage progress line (e.g. "Encoding segment 12/48") that
-   advances and completes; (b) the editor's export action shows the same bar it
-   shows for assembly (reuse the progress widget); (c) the `progress` callback is
-   threaded through the export path (`render`/`composer`) the same way it was for
-   the audio track. *Appetite:* an afternoon. *Design note:* pairs with #13
-   (draft mode) — both are export-iteration ergonomics. **[agent]**
-14. [ ] **Draft/fast export mode — trade quality for speed while iterating.**
-   *(From inbox 2026-06-19.)* *Story:* As a deck author who just wants to
-   see/share a render quickly, I want a fast draft export that trades quality for
-   speed, so I'm not waiting ~2 min for a full 1080p encode on every iteration.
-   *Acceptance examples:* (a) a single `--draft` (a.k.a. `--fast`) flag on
-   `slidesonnet export` (and an editor toggle) flips a preset bundle — faster
-   x264 `preset` (e.g. `ultrafast`), lower `resolution` (e.g. 1280×720), higher
-   `crf`, and plain cuts (skip the per-boundary xfade re-encode) — measurably
-   faster wall-clock than the default; (b) audio is untouched (cache reused), so a
-   later full export needs no re-synthesis; (c) without the flag, output is
-   byte-for-byte the current default. *Appetite:* an afternoon (the plumbing
-   exists — `config.video` already carries `resolution`/`fps`/`crf`/`preset`; this
-   is a preset bundle behind one flag). **[agent]**
-15. [ ] **Bug: filmstrip blanks and reloads every thumbnail on a PDF change.**
-   *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic refresh-cost, not
-   a2-blocking.)* *Symptom:* a live-reload (recompile) tears down the whole strip
-   (`EditorView.build_strip`, `gui/app.py:1598` — `clear()` + fresh cache-busting
-   URLs) so the browser refetches all N thumbnails before any reappears — a blank
-   flash even though almost nothing changed. *Fix:* mirror the stage image's
-   `set_source` pattern — reuse thumbnail elements when the page count is
-   unchanged and only re-source the pages whose `(mtime,size)` token changed; full
-   rebuild only on add/remove/reorder. *Repro test (first action):* the structural
-   half is unit-testable (assert elements reused + only the changed thumb's src
-   token changes); the no-flash timing is browser-tier. *Appetite:* half a day.
-   **[agent]**
-16. [ ] **Bug: "Play all" flashes black between a transition and the next slide.**
-   *(Open bug — full write-up in `dev/KNOWN_ISSUES.md`. Cosmetic flicker, not
-   a2-blocking. Sibling of #16 — the "hold the old frame until the new
-   one paints" family.)* *Symptom:* during whole-deck play, an animated boundary
-   plays the morph then blinks through a black frame before the next slide — a
-   two-clock handoff gap between the morph overlay (`gui/static/morph.html`, RAF
-   vs `audio.currentTime`, time-based `GRACE`) and the throttled `timeupdate`
-   stage cue-flip (`PreviewPlayer.on_timeupdate`, `app.py:654`) which calls the
-   heavy `view.render()`. *Fix:* event-gate the `hide()` on the stage `<img>`
-   confirming it painted the new slide (not a fixed `GRACE`), and/or make the
-   cue-flip a cheap `set_source` instead of a full re-render. *Repro test (first
-   action, browser tier):* Play-all across an animated boundary, assert no black
-   frame between morph-complete and the next slide painting. *Appetite:* half a
-   day. **[agent]**
-17. [ ] **Per-engine pronunciation dictionaries.** *(From inbox 2026-06-19; design
-   together with Now #2 — shared per-engine pronunciation plumbing.)* The dictionary
-   (`pronunciation/*.md` → `apply_pronunciation`) is engine-*agnostic* today: one
-   `word → replacement` map applied uniformly. But the right replacement is
-   engine-specific — Inworld speaks IPA (`Weierstrass → ˈvaɪərʃtrɑːs`) while
-   Kokoro/Qwen3 read the IPA symbols literally and **mangle the preview/`make basel`
-   render**. *Story:* As a deck author who previews on Kokoro and renders HQ on
-   Inworld, I want one dictionary that pronounces names right on both, without IPA
-   leaking into the Kokoro audio. *Acceptance examples:* (a) a dictionary entry can
-   carry per-engine forms, mirroring the portable voice layer's shape —
-   `Weierstrass → {kokoro: "vy-er-shtrahs", inworld: "ˈvaɪərʃtrɑːs", default:
-   "Weierstrass"}`; (b) the active engine selects its form, falling back to
-   `default`/plain spelling when an engine isn't listed (a Kokoro preview never
-   speaks IPA); (c) the simple single-value `**Word**: repl` form still parses
-   unchanged; (d) `apply_pronunciation` takes the active backend and the resolved
-   per-engine replacement varies the audio cache key (already does, since it varies
-   the spoken text). *Touch points:* `tts/pronunciation.py`, the `.md` grammar, the
-   cache key. *Appetite:* ~one day. **[agent]**
-18. [ ] **Docs pass — verify all docs match narration format v2.** *(From inbox
-   2026-06-19.)* The sidecar format has migrated many times; docs may show stale
-   grammar. *Story:* As a new user reading the docs, I want every narration example
-   to match what the parser (`narration/format.py`, `FORMAT_VERSION = 2`) actually
-   accepts. *Acceptance:* (a) README, CLAUDE.md, CHANGELOG, any docs/examples
-   READMEs, `slidesonnet init` scaffolding, and CLI `--help` are reconciled against
-   the v2 grammar — specifically the voice preamble (`# slidesonnet-format: 2`,
-   `default-voice:`, the `voices:` block mapping internal names → per-engine
-   voices); (b) examples cross-checked against the migrated demo sidecars
-   (`examples/basel-problem`, `examples/showcase`) as the canonical reference;
-   (c) decide whether a single canonical narration-format reference doc should exist
-   and consolidate scattered/duplicated examples to it. *Appetite:* half a day.
-   **[agent]**
-19. [ ] **Skills pass — verify committed `.claude/skills/` are current.** *(From
-   inbox 2026-06-19.)* Same migration-drift risk as the docs. *Story:* As a
-   maintainer using the skills, I want each skill free of stale narration grammar,
-   removed pre-1.0 pipeline concepts (MARP/Beamer parsers, doit, playlists, inline
-   `\say`/`<!-- say -->`), outdated CLI flags, and pre-v2 voice-config guidance.
-   *Acceptance:* (a) `beamer-writer`, `build`, `pm`, `ux-review` audited and
-   reconciled; (b) `beamer-writer` in particular emits **valid format-v2** sidecars
-   with a correct `voices:` preamble, verified against the migrated demo sidecars.
-   *Appetite:* half a day. **[agent]**
+3. [ ] **Cut 1.0.0a3.** *Why now:* PyPI users are on a2's NiceGUI editor; the
+   Unreleased batch is the largest since the rewrite and includes a breaking
+   `.sty` change (plain builds by default) and a `ProgressFn` signature change.
+   *Acceptance:* (a) Now #1's confirmed bugs fixed; (b) `make test` (integration)
+   and `make test-browser` green locally; (c) demo PDFs recompiled as final
+   builds (`\ssfinal`) so `make basel`/`make showcase` export without `--draft`;
+   (d) the wheel's installed-package smoke test opens the editor with the built
+   frontend (CI `build` job) and `slidesonnet doctor` passes from a clean venv;
+   (e) the Unreleased section reads as a2 → a3 for a user (reconciled 2026-09-29:
+   duplicate groups merged, NiceGUI-internal fixes dropped); (f) version bumped
+   in `src/slidesonnet/__init__.py`, tag pushed, publish workflow green.
+   *Appetite:* half a day once #1 settles. **[agent→human]**
+4. [ ] **Re-check the two preview bugs carried over from the NiceGUI editor.**
+   Both entries in `dev/KNOWN_ISSUES.md` describe code that no longer exists
+   (`gui/app.py`, `morph.html`). The Vue filmstrip keeps its `<img>` elements
+   (keyed by page + slide id) and changes only the `src` of re-rendered pages,
+   and pages are swapped in whole (`18f65a1`), so the **filmstrip blank flash**
+   is probably gone. **Play all** no longer draws transitions, so the **black
+   flash after a transition** can only happen in **Watch as video** now, where
+   `features/playback/morph.ts` still lifts the overlay after a fixed
+   `GRACE = 0.3`. *Acceptance:* recompile a deck with the editor open and watch
+   the strip; watch a deck with an animated boundary. Each bug is either closed in
+   `KNOWN_ISSUES.md` or gets a Vitest/browser repro before its fix. *Appetite:*
+   an hour to check, half a day per bug that survives. **[agent]**
+5. [ ] **Show deck-level checks in the editor.** The console lists only
+   `diagnosticsHere` (`stores/editor.ts`: this slide's findings). A finding that
+   belongs to no page is invisible: `order-drift` has no slide id at all, and an
+   `orphan-narration` error names an id that is on no page, so it raises the
+   header's error count while the checks list says "No issues on this slide" (the
+   orphan tray shows the block, not the error). *Story:* As a deck author,
+   when the editor says there are errors, I want to see every one of them, so I
+   can fix a deck-level problem without running `slidesonnet check`.
+   *Acceptance examples:* (a) a sidecar whose blocks are out of PDF order shows
+   the `order-drift` note in a "Deck" checks list; (b) an orphaned block's error
+   appears in that list and links to the tray; (c) a deck with no page-less
+   findings shows no such list. *(The keystroke-loss half of the old
+   "orphaned-narration leftovers" item shipped 2026-09-28.)* *Appetite:* half a day. **[agent]**
+## Next — this month
 
-20. [ ] **Review loop follow-ups** (not in the first cut of the review loop;
-    spec `dev/DESIGN-review.md`):
-    - *Change highlight* — overlay the pixels that differ on the before/after
-      view (spec'd; today the two images sit side by side).
-    - *Play old vs new narration* — the base clip is kept (pruning rule
-      shipped); add a play button for it next to the narration diff.
-    - *Comment on several slides* — shift-click in the filmstrip → "Comment on
-      selected" opens one conversation over all of them (the CLI already can).
-    - *Comment on selection* — select narration text → quote it into a note.
-    - *Optional Claude Code hook* — run `slidesonnet review status` after any
-      LaTeX compile so even an agent without the skill sees unfiled changes.
-    - *Themes beyond metropolis* — plain builds hide footline/headline
-      generically and metropolis progress bars specifically; add other themes'
-      position-dependent decorations as they're used. **[agent]**
-
-21. [ ] **Test tiers: a faster inner loop and a habit for the slow tier.**
-    *Story:* As the developer, I want day-to-day test runs to take seconds, and
-    the slow tiers to run at clear, remembered moments. *Acceptance examples:*
-    (a) `make test-changed` runs only the tests affected by the files changed
-    since the last run (pytest-testmon as a dev dependency), falling back to
-    `test-fast` when there's no testmon data; (b) `test_generation_target_helpers`
-    (~10 s, loads Kokoro) moves out of the fast tier into `integration`, and a
-    quick `--durations` pass moves any other multi-second unit test the same
-    way; (c) CLAUDE.md documents the cadence: while coding — the touched test
-    files + `make test-changed`/`test-fast`; before every push — `make
-    test-unit` (what CI runs); before a release tag and after touching the
-    `.sty`, export, or rendering — `make test` (integration). *Appetite:* an
-    hour or two. **[agent]**
-
+1. [ ] **Bug: `pool prune --root <course>` refuses to run on a real course.**
+   `discover_decks` (`server/library.py`, `max_depth=6`, `max_dirs=5000`, tuned
+   for a GUI launch from `$HOME`) marks the *whole* scan truncated when any branch
+   is too deep — in AICODE, the site's `site/dist/…` — so `pool prune` aborts
+   (`cli.py:681`), while `pool migrate` has no such guard and silently works off a
+   partial list. Workaround in use: name all decks explicitly (`just prune-pool`).
+   *Acceptance examples:* (a) a course with decks at depth 2 and an unrelated
+   8-deep build folder prunes normally; (b) a scan that really hit `max_dirs`
+   still refuses, naming the limit and where it hit; (c) `pool migrate` refuses on
+   a truncated scan the same way. *Repro test first:* `tests/test_pool*.py` with a
+   tmp tree. *Appetite:* two hours. **[agent]**
+2. [ ] **Bug: a renamed deck's render scratch is never cleaned.** `render_dir`
+   is `<cache>/render/<pdf stem>/`, and `clean` removes only the current stem's
+   folder, so a renamed deck strands its old scratch (298 MB found in AICODE
+   2026-09-16). *Acceptance:* (a) `clean deck.pdf` also removes every
+   `render/*/` whose name matches no `*.pdf` beside the deck, and says so;
+   (b) `pool status deck.pdf` mentions stray render folders. *Repro test first:*
+   `tests/test_clean.py`. *Appetite:* an hour. **[agent]**
+3. [ ] **Choose where the video and the subtitles go, separately.** *Story:* As
+   a course author rendering in git worktrees, I want the `.mp4` to land in one
+   fixed place and the `.srt`/`.vtt` beside the deck (they are committed and
+   translated), so removing a worktree never loses a render. *Acceptance
+   examples:* (a) `[video] output_dir` (absolute, `~`, or toml-relative, like
+   `[cache] audio_dir`) / `--output-dir` makes `export` with no `-o` write
+   `<output_dir>/<stem>.mp4`; `-o` still wins; (b) `[video] subtitles_dir` /
+   `--subtitles-dir`; once `output_dir` is set, subtitles default to beside the
+   deck; with neither set nothing changes; (c) `pool status` (or `export --where`)
+   prints the resolved paths without rendering. *Appetite:* half a day. **[agent]**
+4. [ ] **Fast export for iterating.** *Story:* As a deck author who wants a
+   quick look, I want an export that trades quality for speed. *Note:* the name
+   `--draft` is **taken** — since the review loop it means "export a plain build /
+   open review anyway" — so this needs another name (`--fast`, or
+   `--quality draft`). *Acceptance examples:* (a) first **profile** a real export
+   with the per-phase timing line export now prints (`Timing: tts · assemble ·
+   video · concat · mux`) and pick the bottleneck; (b) the flag flips a preset
+   bundle (720p, faster x264 preset, higher crf, cuts instead of xfade) and is
+   measurably faster; (c) audio is untouched; (d) without the flag the output is
+   unchanged. *Appetite:* an afternoon. **[agent]**
+5. [ ] **Showcase HQ render + refresh the release assets and YouTube.** Showcase
+   is Kokoro-only; basel is on YouTube but the `v0.0.0` release MP4s are still the
+   March Kokoro cuts. Human triggers the paid showcase render; agent commits the
+   paid audio, uploads with `gh release upload v0.0.0 … --clobber`, preps YouTube
+   titles/descriptions/chapters from the sidecars, refreshes README links.
+   *Depends on:* Now #2 (showcase will hit the same IPA-in-captions trap) and the
+   final-build recompile in Now #3. **[human→agent]**
+6. [ ] **Docs, README and skills after the UI change.** The editor, review loop,
+   plain/final builds and pool all changed how the product is used. *Acceptance:*
+   (a) README screenshots of the new editor (script view, Review tab) replace any
+   old ones, and the editor section matches the Vue UI; (b) `docs/authoring.md`,
+   `slidesonnet init` scaffolding and `--help` match narration format v2 and
+   mention `\ssfinal`; (c) the committed skills (`beamer-writer`, `build`, `pm`,
+   `ux-review`) know the review CLI, plain vs final builds and `--draft`, and
+   `beamer-writer` emits a valid v2 preamble (checked against the demo sidecars);
+   (d) `docs/frontend-parity.md`/`frontend-migration.md` are marked historical.
+   *Appetite:* a day. **[agent]**
 ## Later — before 1.0 final
 
-1. **Narration schema validation** (decided 2026-06-12): publish an EBNF
-   grammar of the sidecar format in docs (with `slidesonnet check` as the
-   reference validator) and add `narration export --json` emitting a JSON
-   projection with a published JSON Schema for LLM/CI round-tripping. Don't
-   YAML-ify the format — the terse `@id` grammar is the product.
-2. **Multi-take TTS / re-roll takes** — generation is stochastic; users may
-   want to re-roll an utterance and keep/compare takes. Blocked on a cache
-   design decision: today the cache is content-addressed (text+voice+config
-   → one file), so N takes need a take index in the key or a side `takes/`
-   store, plus UI to audition/pick. Until then the per-utterance generate
-   button's "fresh take" re-roll overwrites the cached clip.
-3. **`init` default sidecar UX** — richer scaffold comments (per-page titles
-   pulled from the PDF outline, if present).
-4. **Editor polish leftovers** — engine/voice picker, export dialog with
-   timing/subtitle options. (Keyboard nav and single-slide preview already
-   shipped — see CHANGELOG Unreleased.)
-5. **`clean --dry-run`** — preview what would be removed.
-6. **`check --fix`** — offer to re-sort the sidecar to PDF order and scaffold
-   missing blocks in one step.
-7. **Watch mode** — re-preview on sidecar save in the editor.
-8. **Per-segment voice switching mid-utterance** — utterances already carry
-   per-utterance voices; this is about a voice switch *within* one utterance
-   (today: split into two utterances).
+1. **Review loop follow-ups** (spec `dev/DESIGN-review.md`): highlight the
+   pixels that changed in before/after; play the old narration next to its word
+   diff (the base clip is already kept); quote selected narration text into a
+   note; an optional Claude Code hook running `slidesonnet review status` after a
+   LaTeX compile; plain-build support for themes beyond metropolis. *(Comment on
+   several slides shipped — Ctrl-click in the filmstrip.)*
+2. **Line-as-unit editing** (inbox 2026-06): insert a line between lines, and move
+   a line together with the pause before it (new lines default to a 0.3 s leading
+   pause). Re-check against the script view and Slide view before designing —
+   the original note described the NiceGUI card editor.
+3. **A trailing pause becomes the End silence field** (inbox 2026-08-23): adding
+   a pause after the last line makes it the block's end silence, so the added
+   pause visibly disappears in the card editor. Re-check in the Vue Slide view
+   (a pause is now a thin rule) before deciding whether it's still a problem.
+4. **Find a slide by its text** — search the PDF text layer (the review base
+   already extracts it) from Ctrl+K.
+5. **Cache inventory** — count + size of cached clips before clearing, and the
+   before→after delta after; pairs with `clean --dry-run`. Now that clips live in
+   a pool, `pool status` is the likely home.
+6. **Config audit** — inventory every `slidesonnet.toml` key, drop the vestigial
+   ones (`[tts] backend` is now only the editor's starting engine).
+7. **Narration schema validation** — EBNF of the sidecar in docs, `narration
+   export --json` + JSON Schema. Don't YAML-ify the format.
+8. **Multi-take TTS** — re-roll and compare takes; needs a take index in the cache
+    key or a side `takes/` store.
+9. **`check --fix`**, **`clean --dry-run`**, **`init` scaffold with PDF-outline
+    titles**, an **export dialog** with timing/subtitle options.
+10. **Per-segment voice switching mid-utterance.**
 
 ## Later — backlog
 
-1. **Backend service/daemon architecture** (discussion wanted) — should
-   slidesonnet stay a blocking per-invocation command, or become a resident
-   service the GUI/CLI auto-spawn and attach to (socket/port discovery, idle
-   shutdown)? Buys warm TTS models, shared cache state, faster editor
-   startup. Agent writes an options memo; human decides. Post-1.0.
-2. **id-injection adapters** (designed, deferred): Marp theme
-   span, PPTX `python-pptx` textbox, Google Slides API. Same marker contract.
-3. **Layered reconciliation** — optional text-fingerprint fallback when ids are
-   missing, for non-Beamer sources.
-4. **More TTS backends** — Cartesia, Azure, Google Cloud (follow the engine
-   interface). (Qwen3-TTS local + Inworld cloud both shipped — see Done; the Qwen3
-   DashScope cloud mode is in Next.)
-5. **Multi-deck playlists** — concatenate several PDFs into one video.
-6. **`--json` output** for CI/automation.
-7. **Batched synthesis for heavy engines (use the spare iGPU).** *(Was Now;
-   deferred — a throughput optimization that only pays off once a real Qwen3
-   own-voice render is happening, which is itself gated on the record+judge step.)*
-   *Story:* As a deck author on a local GPU, my Qwen3 generation pins the iGPU at
-   only ~50% because autoregressive decoding is latency-bound, not compute-bound —
-   so the queue should synthesize a small *batch* of nearby clips in one
-   `generate` call (qwen_tts's `generate_custom_voice`/`generate_voice_clone`
-   already accept list inputs and run the sequences together), filling the idle
-   gaps without the thread-safety hazard of two `generate()`s on one cached model
-   or the ~2× memory of a second model instance. *Acceptance examples:* (a) with
-   auto-build on and several uncached clips near the cursor, the worker pops up to
-   N (e.g. 2–4) and synthesizes them in a single batched call, measurably raising
-   iGPU utilization and clips/min over the one-at-a-time loop; (b) batching
-   respects the distance priority (the batch is the N best-next clips) and the
-   play preempt still aborts the whole in-flight batch promptly; (c) light/realtime
-   engines (Kokoro) and the CLI path are unaffected — batching is opt-in per
-   engine via a `batch_size`/capability, default 1; (d) a batched clip's cache
-   file, duration, and hash are identical to generating it alone (batching is a
-   throughput optimization, not a content change). *Appetite:* ~two days.
-   *Design note:* the worker currently pops one `JobHandle`; batching means
-   popping the top-N pending by priority into one synth call and a
-   `synthesize_batch` on the engine (default = loop), with the heavy path
-   overriding it. **[agent]**
-8. *(Promoted & merged into the transition gallery on 2026-06-15 — the
-   sub-slide-animation use case and the full xfade gallery shipped as part of it;
-   see Done.)*
-9. **Cross-deck background generation — lift the JobQueue out of the page.**
-   *(Split out of Now's deck-switching item, 2026-08-23.)* Today the queue is
-   built per page and dies on `client.on_disconnect`, so switching decks stops
-   deck A's generation — the switch now cancels it outright (the confirm prompt
-   was removed 2026-08-23 as friction on a fast audit loop). *Story:* As someone
-   auditing a course, I want deck A to keep rendering clips while I read deck B,
-   so a long generation isn't hostage to where I'm looking. *Design sketch:* a
-   process-level registry of queues keyed by deck token, each with its own
-   `EditorState`-free synth context; the page attaches to (rather than owns) its
-   deck's queue, and idle queues shut down. *Open questions:* one global worker or
-   one per deck (paid-engine rate limits, iGPU contention with Qwen3); how a
-   detached queue surfaces failures with no page to flash them; interaction with
-   the per-deck run-log handler. *Appetite:* ~two days. **[agent]**
-
+1. **Cross-deck background generation.** The job queue is now server-side and
+   survives a reload, but leaving a deck still cancels its generation
+   (`stores/generation.ts` `leave`). Let deck A keep generating while you read
+   deck B. *Open questions:* one worker or one per deck (rate limits, iGPU
+   contention); where a detached failure shows up. ~two days.
+2. **A resident editor server** — the editor is already a FastAPI server; the open
+   question is whether the CLI should attach to a running one (warm models,
+   shared cache state). Options memo, human decides. Post-1.0.
+3. **id-injection adapters** — Marp, PPTX, Google Slides; same marker contract.
+4. **Layered reconciliation** — text-fingerprint fallback when ids are missing.
+5. **More TTS backends** — Cartesia, Azure, Google Cloud.
+6. **Multi-deck playlists** — several PDFs into one video.
+7. **`--json` output** for CI/automation.
 
 ## Done (v1 rewrite)
+
+- [x] **Qwen3 own-voice clone: tried, not good enough** (verdict 2026-09-29; was
+  Now #3, then Next #7). The maintainer recorded a reference, built the clone and
+  judged the result: not good. Own-voice cloning is dropped, and with it the
+  items that only served it: the per-utterance `.pt` content hash, the DashScope
+  cloud-clone mode, and batched iGPU synthesis. The Qwen3 engine stays (built-in
+  CustomVoice speakers).
+- [x] **Review is always on; the Review tab centres on conversations**
+  (2026-09-28/29, `a21c3f7`, `333b4d5`, `b88098f`, `36f14b1`; CHANGELOG
+  `[Unreleased]`). The base is taken on first open (no Start review), **Reset
+  comparison** re-bases the view without touching conversations, no clean level
+  drops the base, conversations take titles (`review title`, `--title`), and
+  Ctrl-click in the filmstrip tags several slides for one conversation (the
+  "comment on several slides" follow-up).
+- [x] **Play all plays slide by slide** (2026-09-28, `b9ee7ee`, `8b18d96`). Each
+  slide's own track with the next one prefetched, scoped to the slides not
+  greyed out, missing clips queued up front (one paid-engine prompt), "slide 3 of
+  7". This delivered the former Now #4 (play before the deck is fully generated)
+  and made the former Next #11 (pre-assemble the whole-deck track) moot. The old
+  whole-deck preview is now **Watch as video**. A 0.8 s wake-up silence keeps
+  Bluetooth speakers from swallowing the first word.
+- [x] **Script view is the editor's default** (2026-09-28, merge `b8e06b1`): the
+  whole deck's narration as one editable document, marking the spoken line to
+  the current word during playback.
+- [x] **Frontend migration: NiceGUI → FastAPI + Vue 3** (2026-09-28, merges
+  `78da538`…`52cd32f`; was Now #6). Service layer + `/api/v1` + jobs/SSE,
+  browser-owned playback, the editor and review in Vue, NiceGUI removed, first-use
+  layout round. Unit tier 148 s → ~25 s. Plan and parity inventory in
+  `docs/frontend-migration.md` / `docs/frontend-parity.md`. Optional follow-up
+  not taken: IndexedDB draft recovery.
+- [x] **Agent review loop merged** (2026-09-28, merge `0a4e920`; was Now #1).
+  Plain-by-default builds (`\ssfinal` for final), base + diff by slide id,
+  `<deck>.review` conversations and the `slidesonnet review` CLI, the export check
+  (`--draft`), and the editor review tools. Spec `dev/DESIGN-review.md`.
+  *Left over:* recompile the demo PDFs as final builds — now part of Now #3.
+- [x] **Unsaved typing survives an external sidecar edit** (2026-09-28,
+  `5bf2221`). The keystroke-loss half of the former Now #5.
+- [x] **Export reports progress for every phase** (2026-09-24, `5a319f4`; was
+  Next #13). One overall percent on stderr in a regex-friendly format, a
+  per-phase timing line, and a progress bar in the editor's export.
+- [x] **Shared speech-clip pool** (2026-09-16, `9e0ad66`): `[cache] audio_dir` /
+  `SLIDESONNET_AUDIO_DIR` / `--audio-dir`, `pool status|migrate|prune`, render
+  scratch deleted after a successful export, one silence file per duration,
+  unchanged subtitle files not rewritten. Covers three inbox items (shared audio
+  across worktrees, the 7.7 GB scratch, subtitle mtime churn).
+- [x] **Subtitle fixes** (2026-08-27 `7ffcffa`, 2026-09-03 `207246c`): `subs
+  --engine` and refusing guessed times (no more silent drift after an Inworld
+  export), and no more invalid `,1000` millisecond stamps.
+- [x] **Unified logging** (shipped in 1.0.0a2, `c329692`; was Next #1):
+  `logging_setup.py`, `--quiet`/`--verbose`/`SLIDESONNET_LOG`, a rotating
+  per-deck log file.
+
 
 - [x] **Deck switching + a deck library in the editor** (2026-08-23; CHANGELOG
   `[Unreleased]`; was Now #1). `slidesonnet edit` now opens on a library of every

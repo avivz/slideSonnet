@@ -39,7 +39,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   conversations it's in and says what changed on it.
 - **Resuming after an edit plays the new words.** Pause, edit, play: the slide
   is rebuilt and picks up at the start of the line it was paused in.
-
 - **A new deck editor.** `slidesonnet edit` now opens the redesigned editor:
   the player sits right under the slide, deck-wide tools (engine, voices,
   generate, export) are at the top of the console, the filmstrip labels each
@@ -51,14 +50,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   slides — and also lists slides a conversation names that aren't in the PDF
   yet. `slidesonnet edit deck.pdf` now opens that deck directly (a folder still
   opens the library).
-- **Review tools in the editor.** "Start review" (or `slidesonnet review
-  snapshot`) makes the deck as it is now the base. From then on the console's
-  **Review** tab (beside **Audio**, badged when something on this slide waits
+- **Review tools in the editor.** The base is taken the first time a deck is
+  opened (see *Review is always on*; `slidesonnet review snapshot` takes one by
+  hand). The console's **Review** tab (beside **Audio**, badged when something on this slide waits
   for you) shows the Deck conversation (instructions not about one slide), this
   slide's conversations with Reply / Accept / Reopen, a note box that opens a
   new one, and all conversations (click one to grey out the other slides — ←/→ then
   step only through its slides; click a greyed slide to leave);
-  accepted ones stay hidden unless you tick **Show closed**. A note
+  accepted ones stay hidden unless you tick **show accepted**. A note
   goes out with Enter (Shift+Enter for a new line) or **Send**, and wakes an
   agent blocked in `review wait`; **Clear accepted** makes accepted changes the
   new base. A changed slide shows its
@@ -127,6 +126,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   can follow with one regex: `slidesonnet.progress.LINE_PATTERN` for the
   overall percent, `PHASE_PATTERN` for a phase-aware progress bar. `--quiet`
   hides them. Phases get equal shares of the percentage for now.
+- **Switch decks inside the editor — a deck library, a switcher palette, and
+  next/previous-deck keys.** `slidesonnet edit` now opens on a **library** of every
+  deck it finds, so a course of decks no longer means one relaunch per deck.
+  `edit` accepts a folder (`slidesonnet edit ~/courses/aicode`), a deck
+  (`edit deck.pdf`, which also lists its neighbours), or nothing at all (the
+  current folder); `--root` scans a wider tree than the deck you opened.
+  Discovery walks *down* from that folder for any PDF with a matching
+  `.narration` beside it — no repository assumption — pruning dot-folders,
+  `node_modules`, and deck caches, and capped in depth and breadth so launching
+  somewhere huge reports a truncated scan instead of hanging. The library lists
+  decks one per row, grouped by top-level folder (a folder with a single deck
+  gets no heading of its own) and sorted naturally (`week9` before `week10`),
+  with each deck's size and how much is still to narrate filled in after first
+  paint. Type to filter — **/** or **Ctrl+K** jumps to the search box, ↑/↓ pick
+  a deck, **Enter** opens it; PDFs without narration are listed last with the
+  command that starts a narration file for them. Inside a deck, **Ctrl+K** (or
+  clicking the deck's name) opens a type-to-filter switcher and **Alt+←/→** step
+  through the library (wrapping). Each deck gets its own URL (`/d/<token>`), so
+  browser back/forward and bookmarks work and two decks can be open in two tabs.
+  Switching **saves the slide you were editing first**, stops playback, and
+  cancels any audio still generating for the deck you are leaving (finished
+  clips stay cached; coming back re-queues the rest).
+- **Accelerated narration playback (1× / 1.25× / 1.5× / 2×).** A speed control in
+  the editor transport cycles the preview's playback rate live — pressing it
+  mid-play speeds up immediately with **no re-synthesis** and no cache write. The
+  chosen speed sticks across slide changes and across both *play-slide* and
+  *play-all* (re-applied on every track load), the cue-driven slide flips and the
+  transition morph stay locked to the faster audio clock, and pitch is preserved
+  (2× stays natural, not chipmunked). Preview-only: it never touches the
+  synthesized cache, the per-utterance `pace:` directive, or the exported video.
+  This is HTML5 `audio.playbackRate` on the transport player, distinct from
+  `pace:` (which re-synthesizes).
+- **Toggle for transitions in single-slide preview.** A new editor checkbox,
+  **"Play transitions in single-slide preview"** (off by default), gates the
+  single-slide morph: unchecked, playing one slide is a plain cut so you just hear
+  its narration; checked, it animates that slide's own in/out transitions as
+  before. **Watch as video** always draws transitions, unaffected. The setting
+  is local editor state (off each session), never written to the deck.
 
 ### Changed
 - **The editor starts on Inworld** when a deck's `slidesonnet.toml` doesn't
@@ -140,11 +177,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   scrolls. Each narration line shows just its text — voice, pace and note fold
   behind ⋯ and are named only when they differ from the deck's defaults — and
   a pause is a thin rule.
-- **A new deck library.** Decks are listed one per row with their size. Type to filter — **/** or
-  **Ctrl+K** jumps to the search box, ↑/↓ pick a deck, **Enter** opens it. A
-  folder with a single deck no longer gets a heading of its own, and PDFs
-  without narration are listed last with the command that starts a narration
-  file for them. The library page no longer loads fonts from the internet.
 - **Decks open at once.** The editor no longer waits for pdftoppm to render
   every page: the current slide renders first, the filmstrip fills in around it
   in the background (nearest pages first, following you if you jump), and pages
@@ -195,6 +227,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   slide-only re-render left the `.srt`/`.vtt` byte-identical but bumped its
   mtime, which made every mtime-based freshness check downstream (make,
   watchers, rsync) treat the subtitles as newer than what they came from.
+- **Default Inworld model is now `inworld-tts-2`** (was `inworld-tts-1.5-max`).
+  Override per deck with `[tts.inworld] model` in `slidesonnet.toml`. Note: the
+  model is part of the audio cache key, so existing Inworld clips re-synthesize on
+  next generate under the new default.
+- **A narration edit marks its clip stale immediately.** Typing in an utterance
+  now flips that clip's generate badge to "not generated yet" (amber) within a
+  keystroke — before you blur or save — so you can see at a glance that the cached
+  audio no longer matches the text; undoing back to the original text restores the
+  green "up to date" badge without a save.
 
 ### Removed
 - **The previous editor and its NiceGUI dependency.** The editor now runs on a
@@ -273,69 +314,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   already writes matching subtitles from the very timeline it lays the video
   out on — a recipe that runs `export` and then `subs` overwrites the good file
   with an independently computed one, and `subs --help` now says so.
-
-### Added
-- **Switch decks inside the editor — a deck library, a switcher palette, and
-  next/previous-deck keys.** `slidesonnet edit` now opens on a **library** of every
-  deck it finds, so a course of decks no longer means one relaunch per deck.
-  `edit` accepts a folder (`slidesonnet edit ~/courses/aicode`), a deck
-  (`edit deck.pdf`, which also lists its neighbours), or nothing at all (the
-  current folder); `--root` scans a wider tree than the deck you opened.
-  Discovery walks *down* from that folder for any PDF with a matching
-  `.narration` beside it — no repository assumption — pruning dot-folders,
-  `node_modules`, and deck caches, and capped in depth and breadth so launching
-  somewhere huge reports a truncated scan instead of hanging. The library groups
-  decks by top-level folder, sorts them naturally (`week9` before `week10`), and
-  fills in each deck's size and how much is still to narrate after first paint.
-  Inside a deck, **Ctrl+K** opens a type-to-filter switcher, **Alt+←/→** step
-  through the library (wrapping), and the header names the current deck as a
-  dropdown. Each deck gets its own URL (`/d/<token>`), so browser back/forward
-  and bookmarks work and two decks can be open in two tabs. Switching **saves the
-  slide you were editing first**, stops playback, points the run-log at the new
-  deck, and cancels any audio still generating for the deck you are leaving
-  (finished clips stay cached; coming back re-queues the rest).
-- **Accelerated narration playback (1× / 1.25× / 1.5× / 2×).** A speed control in
-  the editor transport cycles the preview's playback rate live — pressing it
-  mid-play speeds up immediately with **no re-synthesis** and no cache write. The
-  chosen speed sticks across slide changes and across both *play-slide* and
-  *play-all* (re-applied on every track load), the cue-driven slide flips and the
-  transition morph stay locked to the faster audio clock, and pitch is preserved
-  (2× stays natural, not chipmunked). Preview-only: it never touches the
-  synthesized cache, the per-utterance `pace:` directive, or the exported video.
-  This is HTML5 `audio.playbackRate` on the transport player, distinct from
-  `pace:` (which re-synthesizes).
-- **Toggle for transitions in single-slide preview.** A new editor checkbox,
-  **"Play transitions in single-slide preview"** (off by default), gates the
-  single-slide morph: unchecked, playing one slide is a plain cut so you just hear
-  its narration; checked, it animates that slide's own in/out transitions as
-  before. The whole-deck preview always plays transitions, unaffected. The setting
-  is local editor state (off each session), never written to the deck.
-
-### Changed
-- **Default Inworld model is now `inworld-tts-2`** (was `inworld-tts-1.5-max`).
-  Override per deck with `[tts.inworld] model` in `slidesonnet.toml`. Note: the
-  model is part of the audio cache key, so existing Inworld clips re-synthesize on
-  next generate under the new default.
-- **A narration edit marks its clip stale immediately.** Typing in an utterance
-  now flips that clip's generate badge to "not generated yet" (amber) within a
-  keystroke — before you blur or save — so you can see at a glance that the cached
-  audio no longer matches the text; undoing back to the original text restores the
-  green "up to date" badge without a save.
-
-### Fixed
-- **A preview or a long action no longer crashes on app shutdown.** NiceGUI's
-  `run.io_bound` returns `None` when the app is going away; both call sites
-  dereferenced the result unconditionally, so quitting mid-build raised an
-  `AttributeError` out of the background task. Newer NiceGUI types the return as
-  optional, which is what surfaced it.
-- **The preview player no longer plays a stale slide's audio.** Every preview
-  assembles to one fixed `track.wav`, busted with a counter that restarts at 1 on
-  each page load — and the media route was granting any `?v=` URL a year-long
-  `immutable` cache. So the first preview of a session got pinned in the browser
-  and replayed as the first preview of the *next* session: after a reload or a
-  deck switch, pressing play could sound a slide you had previewed earlier. The
-  track now uses a distinct one-shot `?t=` buster, and only a genuine
-  `<mtime>-<size>` content stamp can earn the immutable header.
 - **Kokoro resolves its model and voices from the local cache first.** A HEAD
   revalidation against huggingface.co ran on every pipeline load, so an offline
   or flaky network (a sleeping laptop, a WSL network drop) stalled startup for
@@ -347,39 +325,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   images and re-ran `pdftoppm` over the whole PDF every time, with no cache
   check — ~3.5 s of blocking work for a 49-slide deck. That was invisible when
   it happened once per launch, but the deck library opens a deck on every
-  switch, which made switching take seconds and (exceeding NiceGUI's 3 s
-  reconnect timeout) flash "connection lost" on the way. An existing render is
+  switch, which made switching take seconds. An existing render is
   now reused when a stamp beside the images matches the PDF's mtime, size, and
   the dpi; a recompile still re-renders. Deck switching drops from ~3.6 s of
   server work to ~45 ms. Each deck re-renders once more after upgrading, to
   write its first stamp.
-- **No more "Connection lost" flash when switching decks.** NiceGUI shows that
-  popup the instant the websocket closes — its disconnect handler flips it
-  visible with no grace period — and navigating to another deck always closes
-  the socket, so it flashed in the corner while the next page loaded no matter
-  how fast that was. Pages now hide it as they unload, which covers every way
-  out: the switcher, a library card, browser back/forward. A page you are not
-  leaving still reports a genuine disconnect as before.
 - **Versioned media is cached by the browser.** Page-image URLs already carry a
   `?v=<mtime>-<size>` stamp, but responses set no `Cache-Control`, so every
   thumbnail was revalidated on each deck switch. Versioned URLs are now
   `immutable`; the assembled preview track, which is rewritten in place at a
   stable URL, still revalidates.
-- **A saved utterance no longer keeps claiming its audio is stale.** Editing an
-  utterance flips its badge to amber ("Edited · click to regenerate"), which is
-  right while the edit is unsaved — but the flag was only cleared by a full
-  rebuild of the narration cards, and saving deliberately doesn't rebuild them
-  (it would destroy focus). So once you touched a line, its badge stayed amber
-  for the rest of the visit — including right after auto-build had regenerated
-  its audio — until you navigated to another slide and back. The flag is now
-  cleared on save, after which the cache state alone drives the badge: amber
-  while nothing matches the saved text, green as soon as a clip does.
-- **Page images are now served per deck.** The editor mounted its media directory
-  once per process, so a second deck opened in the same session was served the
-  *first* deck's page images (or none). Media is now addressed by deck
-  (`/ssmedia/<token>/…`), with range requests preserved so preview seeking is
-  unaffected. Only decks in the open library resolve, so a hand-typed URL can't
-  reach files elsewhere on disk.
 - **`clean` no longer deletes current paid audio whose voice lives in the deck
   preamble.** `clean --keep current` / `--keep exact` reconstructed cache keys from
   only `config.voices` + the per-utterance `voice:`, ignoring the sidecar
@@ -404,6 +359,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   header read), as is the muxed video. The fix applies to already-cached `.mp3`
   audio too — no re-synthesis or re-billing. Repro test
   `tests/test_subtitle_drift.py` (free — libmp3lame tones, no Inworld call).
+- **Subtitle timestamps can no longer read `,1000`.** A cue boundary within
+  half a millisecond below a whole second (e.g. 136.9996 s) printed as
+  `00:02:16,1000` — invalid SRT/VTT that players drop or misplace — because the
+  milliseconds were rounded separately from the seconds. Times are now rounded
+  to whole milliseconds first, so the carry lands in the seconds
+  (`00:02:17,000`).
 
 ## [1.0.0a2] — 2026-06-19
 
