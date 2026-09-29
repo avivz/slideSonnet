@@ -30,11 +30,16 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **pdf/reader.py** — `read_page_ids` (PyMuPDF, extracts invisible `SSID:` markers),
   `rasterize` (pdftoppm → page PNGs).
 - **narration/model.py** — `Segment` (speech|pause; speech carries per-utterance
-  `voice`/`pace`/`direction`), `Transition` (cut|crossfade), `PageNarration`
-  (segments + `transition_in`/`transition_out`), `Deck`.
+  `voice`/`pace`/`direction`), `Transition` (`kind` + `seconds`; `kind` is a
+  gallery name), `PageNarration` (segments + `transition_in`/`transition_out`), `Deck`.
+- **narration/transitions.py** — the curated xfade gallery: `FAMILIES` (Cut, Fade,
+  Fade through black/white, Dissolve, Wipe/Slide/Cover/Reveal × Left/Right/Up/Down,
+  Circle Open/Close), `TRANSITION_NAMES` (every valid stored name: `cut` is the
+  default, `crossfade` a legacy alias for `fade`), `xfade_name` (stored name →
+  FFmpeg xfade `transition=`; `None` for a cut).
 - **narration/format.py** — parse/serialize the indented block sidecar grammar
   (round-trip stable; `utterance:`/`pause:`/`transition-*:` lines);
-  `parse_segments`/`serialize_body` (lossy plain-text helper), `pace_to_speed`.
+  `serialize_body` (lossy plain-text view, used by review), `pace_to_speed`.
   `FORMAT_VERSION` + the optional `# slidesonnet-format: N` header (a comment, so
   old parsers skip it; a greater N logs an upgrade warning).
 - **diagnostics.py** — id reconciliation (auto/missing/orphan/order/unmarked/
@@ -45,23 +50,41 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   default sidecar path.
 - **timing.py** — `TimingMode` (tts/estimate/fixed), `compute_page_timing` → `PageTiming`.
 - **render.py** — `build_timeline` (`DeckTimeline`), `subtitle_entries`,
-  `render_audio_track`, `compose_video`.
+  `render_audio_track`, `compose_video` (transitions are visual overlays centred on
+  the page boundary — `transition_morph_seconds`, `frame_plan` — so the audio
+  timeline and total duration don't change).
 - **audio/synth.py** — cache-aware per-segment TTS; pace→speed; `page_speech_durations`,
-  `cached_durations`.
+  `cached_durations`. **audio/durations.py** — `ClipDurations`, the saved clip
+  lengths in `<pool>/durations.json` (a cache; stale entries are re-measured).
 - **audio/track.py** — `make_silence`, `build_page_audio`, `assemble_track`, `cue_sheet`.
 - **subtitles.py** — `format_srt`, `format_vtt`, `split_text`, `SubtitleEntry`.
-- **config.py** — optional `slidesonnet.toml`: `Config` (tts/video/voices/pronunciation).
-- **cache.py** — `<deck-dir>/.slidesonnet/` layout: `audio/` is content-addressed and
-  shared across decks in the dir; `render/<deck-stem>/` is per-deck (render artifacts
-  use positional names, so sharing them would interleave two decks' files).
+- **config.py** — optional `slidesonnet.toml`: `Config` (tts/video/voices/logging/
+  pronunciation/`[cache] audio_dir`).
+- **cache.py** — `<deck-dir>/.slidesonnet/` layout: `render/<deck-stem>/` is per-deck
+  (positional names, so sharing would interleave two decks' files). Audio is
+  content-addressed and lives in a *speech-clip pool*, resolved by
+  `resolve_audio_dir`: `--audio-dir` > `$SLIDESONNET_AUDIO_DIR` > `[cache] audio_dir`
+  in `slidesonnet.toml` > the default `<deck-dir>/.slidesonnet/audio/` (shared by
+  the decks in that dir). Pointing worktrees/decks at one pool shares paid clips.
+- **pool.py** — pool maintenance behind `slidesonnet pool`: `pool_status`,
+  mark-and-sweep `plan_prune`/`apply_prune` (live set = every deck's sidecar;
+  paid/slow-backend orphans go to `<pool>/trash/`, `empty_trash` deletes), and an
+  advisory `index.jsonl` (snippets for dry runs, never used to decide deletion).
 - **hashing.py** — content-addressed audio filenames (`{text_hash}.{backend}.{config_hash}.ext`).
 - **tts/** — `BACKENDS` registry (name → extension/paid/factory; the single source
   the CLI choices, config validation, hashing extensions, and clean's paid set
   derive from), `create_tts`, `TTSEngine` base (incl. `list_voices`/`default_voice`),
   Kokoro, Inworld, Qwen3, pronunciation. Adding an engine = one `BackendSpec` + the
   `Backend` Literal in models.py (a test pins them in sync).
-- **video/composer.py** — FFmpeg: `compose_segment`, `compose_silent_segment`,
-  `concatenate_segments`, `concatenate_audio`, `get_duration`.
+- **video/composer.py** — FFmpeg: `compose_silent_segment`, `compose_transition_clip`
+  (one xfade clip per animated boundary), `concatenate_segments`, `mux_audio`,
+  `concatenate_audio`, `get_duration`.
+- **proc.py** / **cancellation.py** — `run_tool`/`run_tool_with_progress` (uniform
+  errors, timeout, kill on cancel); the cooperative cancel token (a ContextVar).
+- **atomic.py** (`atomic_write_text`), **progress.py** (`RunProgress`, the stable
+  `[mm:ss NN%]` console lines), **logging_setup.py**, **env.py** (`getenv`: per-deck `.env`
+  reads that never touch `os.environ`),
+  **models.py** (`VoiceConfig`/`TTSConfig`/`VideoConfig`/…), **exceptions.py**.
 - **review/** — the agent review loop (spec: `dev/DESIGN-review.md`).
   `versions.py` captures a `DeckVersion` (per slide id: pixel hash at 150 dpi,
   page text, narration block); `diff.py` compares two by id (new/deleted/edited/
@@ -72,8 +95,8 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   reopen/send/clear/status/wait, automatic filing, author-edit notes); `cli.py`
   is the `slidesonnet review` group. slideSonnet never edits `.tex`/`.narration`
   during review.
-- **server/** — the editor's HTTP backend, UI-framework-free (frontend migration,
-  `docs/frontend-migration.md`): `revisions` (content hashes), `decks`
+- **server/** — the editor's FastAPI backend: `context` (registry, events, jobs,
+  session token; Host/same-origin checks), `revisions` (content hashes), `decks`
   (`DeckService`: per-deck lock, revision-checked atomic writes, debounced orphan
   sweep), `editing` (edits by explicit slide id), `jobs`/`events` (backend jobs,
   SSE), `previews` (immutable preview tracks + manifest), `media`, `snapshots`,
@@ -85,7 +108,9 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   natural sort, neighbours — only registered decks resolve), `queue` (per-clip
   generation queue: dedup, nearest-first priority, preemption), `generation` (one
   queue per deck × engine), `review` / `review_model` (review read model + author
-  commands over `review/ops`).
+  commands over `review/ops`), `engines` (one synthesis at a time per engine;
+  render lock before engine lock), `voicing` (voiced spans in a preview track),
+  `openapi` (writes the schema for `make api-types`).
 - **frontend/** — the Vue 3 + TypeScript app (Vite, Pinia, Vitest); builds into
   `src/slidesonnet/server/static/`: the library (`/`), the deck editor (`/d/{token}`,
   drafts + autosave + conflicts in `stores/editor.ts`), review, and the browser-owned
@@ -93,7 +118,8 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **api.py** — typed entry points mirroring the CLI: `sty_text`/`write_sty`,
   `init_sidecar`, `check_deck`, `synthesize_deck`, `export`, `write_subs`, `build_preview`.
 - **cli.py** — Click commands: `sty`, `init`, `check`, `tts`, `export`, `subs`, `edit`,
-  `clean`, `doctor`.
+  `clean`, `pool` (`status`/`migrate`/`prune`), `review` (from `review/cli.py`),
+  `doctor`; global `--audio-dir` picks the pool.
 - **doctor.py** / **clean.py** — dependency checks; graduated cache cleanup.
 
 ## The `\ssid` macro
