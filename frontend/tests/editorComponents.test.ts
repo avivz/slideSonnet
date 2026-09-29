@@ -167,6 +167,14 @@ describe('console', () => {
     expect(server.generated).toEqual([{ targets: null, force: false, allow_paid: true }])
   })
 
+  it('says which engine is now in use, by name, for this session only', async () => {
+    const { editor } = await setup()
+    const w = mount(ConsolePanel, { props: { confirm: async () => false } })
+    await w.get('[data-testid="engine-select"]').setValue('inworld')
+    await flushPromises()
+    expect(editor.flashMessage?.text).toBe('Now using Inworld for previews and export (this session only)')
+  })
+
   it('explains export blockers and exports a draft on request', async () => {
     const server = new FakeServer()
     server.blockers = ['deck.pdf is a plain build']

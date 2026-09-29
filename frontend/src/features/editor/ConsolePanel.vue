@@ -11,6 +11,7 @@ import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
 
+import { engineLabel } from './engines'
 import OrphanTray from './OrphanTray.vue'
 
 const props = defineProps<{
@@ -62,7 +63,7 @@ async function changeEngine(name: string): Promise<void> {
   generation.autoBuild = false // the new engine's audio is all missing: don't regenerate unasked
   await editor.setEngine(name as Backend)
   await generation.refresh()
-  editor.flash(`Generating with ${name}`)
+  editor.flash(`Now using ${engineLabel(name)} for previews and export (this session only)`)
   if (editor.snapshot && !editor.snapshot.engine_warm && editor.token) {
     // load a heavy model now, so the first play doesn't stall on it
     void editor.client.startJob(editor.token, { kind: 'warm', engine: name as Backend }).catch(() => undefined)
@@ -71,11 +72,11 @@ async function changeEngine(name: string): Promise<void> {
 
 async function generateMissing(): Promise<void> {
   if (missing.value === 0) {
-    editor.flash(`Nothing to generate — all audio for ${editor.activeEngine} exists`)
+    editor.flash(`Nothing to generate — every line has ${engineLabel(editor.activeEngine)} audio`)
     return
   }
   const n = await generation.enqueue(null)
-  if (n > 0) editor.flash(`Generating ${n} clip(s) with ${editor.activeEngine}…`)
+  if (n > 0) editor.flash(`Generating ${n} clip(s) with ${engineLabel(editor.activeEngine)}…`)
 }
 
 async function cancelGeneration(): Promise<void> {
@@ -152,7 +153,7 @@ async function cancelExport(): Promise<void> {
           @change="changeEngine(($event.target as HTMLSelectElement).value)"
         >
           <option v-for="e in engines" :key="e.name" :value="e.name">
-            {{ e.name }}{{ e.paid ? ' · paid' : '' }}{{ e.realtime ? '' : ' · slow' }}
+            {{ engineLabel(e.name) }}{{ e.paid ? ' · paid' : '' }}{{ e.realtime ? '' : ' · slow' }}
           </option>
         </select>
       </label>

@@ -20,6 +20,7 @@ import ConflictDialog from './ConflictDialog.vue'
 import ConsolePanel from './ConsolePanel.vue'
 import DeckHead from './DeckHead.vue'
 import DeckSwitcher from './DeckSwitcher.vue'
+import { engineLabel } from './engines'
 import FilmStrip from './FilmStrip.vue'
 import { shortcut } from './keymap'
 import { useLeaveGuard } from './leave'
@@ -86,9 +87,9 @@ watch(
     else consoleOpen.value = true
   },
 )
-const narrow = ref(false)
 /** Below this width the side panes become pop-overs. */
 const NARROW_PX = 900
+const narrow = ref(false)
 const overlay = ref<'strip' | 'console' | null>(null)
 /** The Review tab is on screen (the "agent is waiting" line would only repeat it). */
 const reviewShown = computed(
@@ -354,14 +355,14 @@ function confirm(o: { title: string; lines: string[]; yes: string; danger?: bool
 generation.setConfirm((count, engine, action) =>
   confirm({
     title: 'This will spend API credits',
-    lines: [`${count} clip(s) aren't generated yet — making them with ${engine} will spend API credits.`],
+    lines: [`${count} clip(s) aren't generated yet — making them with ${engineLabel(engine)} will spend API credits.`],
     yes: action,
   }),
 )
 player.setConfirm((count) =>
   confirm({
     title: 'This will spend API credits',
-    lines: [`${count} clip(s) aren't generated yet — making them with ${editor.activeEngine} will spend API credits.`],
+    lines: [`${count} clip(s) aren't generated yet — making them with ${engineLabel(editor.activeEngine)} will spend API credits.`],
     yes: 'Generate & play',
   }),
 )
@@ -409,8 +410,8 @@ function pick(deck: LibraryDeckDTO): void {
         title="Show or hide audio & export" aria-label="Audio & export" :aria-expanded="overlay === 'console'"
         data-testid="toggle-console" @click="toggle('console')"
       >
-        <AppIcon name="panelRight" />
         <span class="toggle-label">Audio &amp; export</span>
+        <AppIcon name="panelRight" />
       </button>
     </header>
 
@@ -539,7 +540,6 @@ function pick(deck: LibraryDeckDTO): void {
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-.header .bar-head {
 .console-toggle {
   display: inline-flex;
   align-items: center;
@@ -558,6 +558,7 @@ function pick(deck: LibraryDeckDTO): void {
     display: inline;
   }
 }
+.header .bar-head {
   flex: 1;
   min-width: 0;
   padding: 0;
