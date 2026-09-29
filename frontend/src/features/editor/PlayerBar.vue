@@ -129,18 +129,29 @@ function onScrubChange(event: Event): void {
 </template>
 
 <style scoped>
+/* a narrow bar wraps: the scrubber (and what follows) takes a second row
+   rather than sliding off the edge; buttons never shrink below a finger's width */
 .bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
+  gap: 2px var(--space-1);
   min-width: 0;
   padding: var(--space-1) var(--space-2);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
 }
+.bar .icon-btn {
+  flex: none;
+  min-width: 28px;
+  min-height: 28px;
+}
 .counter {
-  min-width: 96px;
+  flex: none;
+  min-width: 0;
+  padding: 0 var(--space-1);
+  white-space: nowrap;
   font-size: var(--text-xs);
   color: var(--dim);
   text-align: center;
@@ -152,14 +163,15 @@ function onScrubChange(event: Event): void {
   background: var(--line);
 }
 .speed {
+  flex: none;
   min-width: 44px;
   min-height: 28px;
   padding: 0 var(--space-1);
   font-size: var(--text-xs);
 }
 .scrub {
-  flex: 1 1 60px;
-  min-width: 40px;
+  flex: 1 1 140px;
+  min-width: 100px;
   accent-color: var(--accent);
 }
 .time {

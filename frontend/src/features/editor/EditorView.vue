@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The deck editor page (/d/:token). Layout: filmstrip | stage + narration |
-// console, each side pane resizable and collapsible; below 1100 px the side
+// console, each side pane resizable and collapsible; below 900 px the side
 // panes fold away and open as overlays.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -87,6 +87,8 @@ watch(
   },
 )
 const narrow = ref(false)
+/** Below this width the side panes become pop-overs. */
+const NARROW_PX = 900
 const overlay = ref<'strip' | 'console' | null>(null)
 /** The Review tab is on screen (the "agent is waiting" line would only repeat it). */
 const reviewShown = computed(
@@ -182,7 +184,7 @@ function setScriptView(on: boolean): void {
 }
 
 function onResize(): void {
-  narrow.value = window.innerWidth < 1100
+  narrow.value = window.innerWidth < NARROW_PX
   if (!narrow.value) overlay.value = null
 }
 
@@ -403,11 +405,12 @@ function pick(deck: LibraryDeckDTO): void {
         @switch="switcherOpen = true" @step="stepDeck"
       />
       <button
-        class="icon-btn" :class="{ on: overlay === 'console' }" type="button"
-        title="Show or hide the console" aria-label="Show or hide the console" data-testid="toggle-console"
-        @click="toggle('console')"
+        class="icon-btn console-toggle" :class="{ on: overlay === 'console' }" type="button"
+        title="Show or hide audio & export" aria-label="Audio & export" :aria-expanded="overlay === 'console'"
+        data-testid="toggle-console" @click="toggle('console')"
       >
         <AppIcon name="panelRight" />
+        <span class="toggle-label">Audio &amp; export</span>
       </button>
     </header>
 
@@ -537,6 +540,24 @@ function pick(deck: LibraryDeckDTO): void {
   border-bottom: 1px solid var(--line);
 }
 .header .bar-head {
+.console-toggle {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: var(--space-1);
+  width: auto;
+  padding: 0 var(--space-1);
+}
+.toggle-label {
+  display: none;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+@media (min-width: 560px) {
+  .toggle-label {
+    display: inline;
+  }
+}
   flex: 1;
   min-width: 0;
   padding: 0;
