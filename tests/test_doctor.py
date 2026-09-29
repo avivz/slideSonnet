@@ -29,6 +29,20 @@ def test_python_ok() -> None:
     assert check_python().status == "ok"
 
 
+def test_python_minimum_matches_pyproject(monkeypatch: pytest.MonkeyPatch) -> None:
+    import tomllib
+
+    from slidesonnet import doctor
+
+    pyproject = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())
+    floor = pyproject["project"]["requires-python"].removeprefix(">=")
+    assert ".".join(map(str, doctor.MIN_PYTHON)) == floor
+    below = (doctor.MIN_PYTHON[0], doctor.MIN_PYTHON[1] - 1, 9)
+    monkeypatch.setattr(doctor.sys, "version_info", below)
+    result = check_python()
+    assert result.status == "missing" and floor in result.hint
+
+
 def test_pymupdf_detected() -> None:
     # PyMuPDF is a hard dependency, installed in the dev env
     assert check_pymupdf().status == "ok"

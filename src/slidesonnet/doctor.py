@@ -114,11 +114,26 @@ def _run_cli_check(check: ToolCheck) -> CheckResult:
     return CheckResult(check.name, "ok", version, "", check.context)
 
 
+def _min_python() -> tuple[int, int]:
+    """The package's ``requires-python`` floor, read from the installed metadata."""
+    try:
+        spec = importlib.metadata.metadata("slidesonnet").get("Requires-Python") or ""
+    except importlib.metadata.PackageNotFoundError:
+        spec = ""
+    m = re.search(r">=\s*(\d+)\.(\d+)", spec)
+    return (int(m.group(1)), int(m.group(2))) if m else (3, 13)
+
+
+#: Oldest Python slideSonnet runs on (pyproject's ``requires-python``).
+MIN_PYTHON: tuple[int, int] = _min_python()
+
+
 def check_python() -> CheckResult:
-    version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    ok = sys.version_info >= (3, 12)
+    version = ".".join(str(n) for n in sys.version_info[:3])
+    ok = tuple(sys.version_info[:2]) >= MIN_PYTHON
+    floor = ".".join(map(str, MIN_PYTHON))
     return CheckResult(
-        "python", "ok" if ok else "missing", version, "Requires Python 3.12+", "Runtime"
+        "python", "ok" if ok else "missing", version, f"Requires Python {floor}+", "Runtime"
     )
 
 
