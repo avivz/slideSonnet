@@ -332,6 +332,8 @@ class PreviewJob(_Model):
 class ExportJob(_Model):
     kind: Literal["export"] = "export"
     draft: bool = False
+    #: The quick export: 720p, cuts, one encoding pass; writes ``<name>.fast.mp4``.
+    fast: bool = False
     engine: Backend | None = None
     allow_paid: bool = False
 

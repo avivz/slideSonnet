@@ -348,7 +348,12 @@ def preview_work(
 
 
 def export_work(
-    entry: DeckEntry, *, draft: bool, engine: Backend, approved: frozenset[str] | None = None
+    entry: DeckEntry,
+    *,
+    draft: bool,
+    fast: bool,
+    engine: Backend,
+    approved: frozenset[str] | None = None,
 ) -> Any:
     def work(ctx: JobContext) -> dict[str, Any]:
         service = _service(entry)
@@ -361,10 +366,16 @@ def export_work(
                 engine=engine,
                 keep_scratch=True,  # an open preview may be streaming the page audio
                 draft=draft,
+                fast=fast,
                 progress=ctx.progress,
                 approved_clips=approved,
             )
-        return {"video": result.video.name, "duration": result.duration, "draft": draft}
+        return {
+            "video": result.video.name,
+            "duration": result.duration,
+            "draft": draft,
+            "fast": fast,
+        }
 
     return work
 
@@ -447,14 +458,19 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
             blockers = api.export_blockers(entry.pdf_path)
             if blockers:
                 raise ApiError(409, "export_blocked", " ".join(blockers))
-        inputs = {"engine": engine, "narration_revision": narration_rev, "draft": body.draft}
+        inputs = {
+            "engine": engine,
+            "narration_revision": narration_rev,
+            "draft": body.draft,
+            "fast": body.fast,
+        }
         job = jobs.submit(
             "export",
             token,
             inputs,
-            export_work(entry, draft=body.draft, engine=engine, approved=approved),
+            export_work(entry, draft=body.draft, fast=body.fast, engine=engine, approved=approved),
             # a paid export is pinned to its approval: a new approval is a new job
-            dedupe_key=f"export:{token}:{engine}:{body.draft}:{_digest(approved)}",
+            dedupe_key=f"export:{token}:{engine}:{body.draft}:{body.fast}:{_digest(approved)}",
         )
     elif isinstance(body, WarmJob):
         engine = _resolve_engine(entry, body.engine)

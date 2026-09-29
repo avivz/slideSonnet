@@ -15,6 +15,8 @@ import { usePlayerStore } from '@/stores/player'
 import { engineLabel } from './engines'
 import OrphanTray from './OrphanTray.vue'
 
+interface ExportDone { video: string; duration: number; draft: boolean; fast?: boolean }
+
 // `orphans`: show the unattached narration an error in the deck checks is about
 const emit = defineEmits<{ voices: []; orphans: [] }>()
 
@@ -23,7 +25,15 @@ const generation = useGenerationStore()
 const player = usePlayerStore()
 const exporting = ref<JobDTO | null>(null)
 /** The last export's video: shown until dismissed (or the next export). */
-const exported = ref<{ video: string; duration: number; draft: boolean } | null>(null)
+const exported = ref<ExportDone | null>(null)
+/** Export a quick, lower-quality video (720p, plain cuts) instead of the full one. */
+const quick = ref(false)
+/** "Video", "Draft video", "Quick video", "Quick draft video". */
+const exportedLabel = computed(() => {
+  const e = exported.value
+  const text = [e?.fast ? 'quick' : '', e?.draft ? 'draft' : '', 'video'].filter(Boolean).join(' ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+})
 
 const engines = computed(() => {
   const snap = editor.snapshot
@@ -101,14 +111,14 @@ async function exportVideo(): Promise<void> {
 async function runExport(token: string, draft: boolean, allowPaid: boolean): Promise<void> {
   try {
     const job = await editor.client.startJob(token, {
-      kind: 'export', draft, engine: editor.activeEngine, allow_paid: allowPaid,
+      kind: 'export', draft, fast: quick.value, engine: editor.activeEngine, allow_paid: allowPaid,
     })
     exporting.value = job
     exported.value = null
     const wait = waitForJob(editor.client, job.id, (j) => (exporting.value = j))
     const done = await wait.done
     if (done.status === 'succeeded' && done.result) {
-      exported.value = done.result as { video: string; duration: number; draft: boolean }
+      exported.value = done.result as unknown as ExportDone
     } else if (done.status === 'failed') {
       editor.flash(`Export failed: ${done.error?.message ?? 'unknown error'}`, 'err')
     } else {
@@ -195,6 +205,10 @@ async function cancelExport(): Promise<void> {
       <button class="btn primary" type="button" :disabled="exporting !== null" data-testid="export" @click="exportVideo">
         <AppIcon name="movie" :size="16" /> Export video
       </button>
+      <label class="check" title="720p with plain cuts instead of transitions: much faster, for a quick look. Same audio and subtitles. Saved as a separate .fast.mp4 file, so your full video is kept.">
+        <input v-model="quick" type="checkbox" :disabled="exporting !== null" data-testid="quick-export" />
+        Quick export (lower quality, much faster)
+      </label>
       <div v-if="exporting" class="progress" data-testid="export-progress">
         <div class="bar">
           <span :style="{ width: `${exporting.progress.total ? (exporting.progress.done / exporting.progress.total) * 100 : 5}%` }"></span>
@@ -206,7 +220,7 @@ async function cancelExport(): Promise<void> {
       </div>
       <div v-if="exported" class="result" role="status" data-testid="export-result">
         <p>
-          {{ exported.draft ? 'Draft video' : 'Video' }} saved next to the PDF:
+          {{ exportedLabel }} saved next to the PDF:
           <span class="mono">{{ exported.video }}</span> · {{ formatLength(exported.duration) }} long
         </p>
         <button

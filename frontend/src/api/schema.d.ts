@@ -617,6 +617,11 @@ export interface components {
             /** Engine */
             engine?: ("kokoro" | "qwen3" | "inworld") | null;
             /**
+             * Fast
+             * @default false
+             */
+            fast: boolean;
+            /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */

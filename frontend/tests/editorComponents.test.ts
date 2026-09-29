@@ -194,6 +194,16 @@ describe('console', () => {
     await result.get('[data-testid="export-result-dismiss"]').trigger('click')
     expect(w.find('[data-testid="export-result"]').exists()).toBe(false) // stays until dismissed
   })
+
+  it('asks the server for a quick export when that box is ticked', async () => {
+    const server = new FakeServer()
+    await setup(server)
+    const w = mount(ConsolePanel)
+    await w.get('[data-testid="quick-export"]').setValue(true)
+    await w.get('[data-testid="export"]').trigger('click')
+    await vi.waitFor(() => expect(server.jobs).toHaveLength(1))
+    expect(server.jobs[0]?.body).toMatchObject({ kind: 'export', draft: false, fast: true })
+  })
 })
 
 describe('auto-generate', () => {

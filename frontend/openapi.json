@@ -689,6 +689,11 @@
             ],
             "title": "Engine"
           },
+          "fast": {
+            "default": false,
+            "title": "Fast",
+            "type": "boolean"
+          },
           "kind": {
             "const": "export",
             "default": "export",
