@@ -96,6 +96,19 @@ def test_subtitles_slide_granularity() -> None:
     assert [e.text for e in entries] == ["one two three", "four"]
 
 
+@pytest.mark.parametrize("granularity", ["segment", "slide"])
+def test_subtitles_show_the_display_form_of_a_pronunciation_fix(granularity: str) -> None:
+    deck = Deck(
+        pdf_path=Path("x.pdf"),
+        sidecar_path=Path("x.narration"),
+        pages=["a"],
+        narration={"a": PageNarration("a", [Segment.speech("Ask [Mengoli](/menˈɡoːli/).")])},
+    )
+    tl = build_timeline(deck, _MODE, video=_VIDEO)
+    entries = subtitle_entries(deck, tl, granularity=granularity)
+    assert [e.text for e in entries] == ["Ask Mengoli."]
+
+
 def test_subtitles_split_long_segment_proportionally() -> None:
     text = "First sentence is fairly long indeed. Second sentence is also fairly long indeed."
     deck = Deck(

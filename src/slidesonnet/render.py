@@ -21,6 +21,7 @@ from slidesonnet.config import Config
 from slidesonnet.models import ProgressFn, VideoConfig
 from slidesonnet.narration import transitions as transitions_mod
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
+from slidesonnet.narration.spoken import display_text
 from slidesonnet.subtitles import SubtitleEntry, split_text
 from slidesonnet.timing import PageTiming, TimingMode, compute_page_timing
 from slidesonnet.video.composer import (
@@ -126,7 +127,7 @@ def subtitle_entries(
                     index=index,
                     start=page_start + speech[0].start,
                     end=page_start + speech[-1].end,
-                    text=block.speech_text,
+                    text=display_text(block.speech_text),
                 )
             )
             index += 1
@@ -135,9 +136,10 @@ def subtitle_entries(
         for st in speech:
             seg_start = page_start + st.start
             seg_end = page_start + st.end
-            chunks = split_text(st.segment.text, max_chars)
+            text = display_text(st.segment.text)
+            chunks = split_text(text, max_chars)
             if len(chunks) <= 1:
-                entries.append(SubtitleEntry(index, seg_start, seg_end, st.segment.text))
+                entries.append(SubtitleEntry(index, seg_start, seg_end, text))
                 index += 1
                 continue
             total = sum(len(c) for c in chunks) or 1
