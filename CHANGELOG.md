@@ -34,6 +34,8 @@ regression test.
   clear error with the line number** instead of a crash or a broken timeline; the
   editor refuses them too. Durations are written exactly (no 6-digit rounding).
 - **The Voices dialog can't save a voice name the sidecar can't read back.**
+- **`init` (fresh, `--force` and `--merge`) replaces the sidecar in one step**, so
+  the editor or an agent watching it never reads a half-written file.
 - **`slidesonnet.toml` is checked strictly**, each error naming its key:
   `keep_scratch = "false"` is no longer true; nan/inf, odd or zero resolutions and
   `crf` outside 0–51 are refused. An explicitly given config file that doesn't

@@ -49,6 +49,30 @@ def test_init_force_overwrites(tmp_path: Path) -> None:
     assert "Edited." not in sidecar.read_text(encoding="utf-8")
 
 
+def test_init_writes_the_sidecar_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fresh, --force and --merge writes all replace the file whole (a watcher never
+    reads it half-written)."""
+    from slidesonnet.atomic import atomic_write_text
+
+    pdf = tmp_path / "marked.pdf"
+    pdf.write_bytes(MARKED.read_bytes())
+    written: list[Path] = []
+
+    def spy(path: Path, text: str) -> None:
+        written.append(path)
+        atomic_write_text(path, text)
+
+    monkeypatch.setattr("slidesonnet.api.atomic_write_text", spy)
+    sidecar = api.init_sidecar(pdf)
+    api.init_sidecar(pdf, force=True)
+    sidecar.write_text("@intro-title\n  utterance:\n    text: Kept.\n", encoding="utf-8")
+    api.init_sidecar(pdf, merge=True)
+    assert written == [sidecar] * 3
+    assert "Kept." in sidecar.read_text(encoding="utf-8")
+
+
 def test_init_no_overwrite_raises(tmp_path: Path) -> None:
     pdf = tmp_path / "marked.pdf"
     pdf.write_bytes(MARKED.read_bytes())

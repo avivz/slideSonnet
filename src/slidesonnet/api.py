@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from slidesonnet.atomic import atomic_write_text
 from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, unique_real_ids
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.exceptions import (
@@ -148,10 +149,10 @@ def init_sidecar(
                 chunk.append(f"@{pid}")
                 chunk.append(f"# page {page_of[pid]}")
             text = sidecar.read_text(encoding="utf-8").rstrip() + "\n" + "\n".join(chunk) + "\n"
-            sidecar.write_text(text, encoding="utf-8")
+            atomic_write_text(sidecar, text)
         return sidecar
 
-    sidecar.write_text(scaffold_text(pdf_path, pages), encoding="utf-8")
+    atomic_write_text(sidecar, scaffold_text(pdf_path, pages))
     return sidecar
 
 
@@ -730,8 +731,6 @@ def _write_if_changed(path: Path, text: str) -> bool:
     and a rename, so an interrupted export never leaves half a subtitle file.
     Returns whether a write happened.
     """
-    from slidesonnet.atomic import atomic_write_text
-
     data = text.encode("utf-8")
     try:
         if path.read_bytes() == data:
