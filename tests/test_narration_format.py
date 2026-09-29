@@ -487,15 +487,15 @@ def _random_doc(rng: random.Random) -> NarrationDoc:
     return NarrationDoc(blocks=blocks, voices=voices, default_voice=rng.choice([None, *voices]))
 
 
-@pytest.mark.parametrize("seed", range(300))
-def test_serialize_then_parse_is_the_identity(seed: int) -> None:
-    doc = _random_doc(random.Random(seed))
-    text = serialize_sidecar(doc.blocks, voices=doc.voices, default_voice=doc.default_voice)
-    back = parse_document(text)
-    assert (back.blocks, back.voices, back.default_voice) == (
-        doc.blocks,
-        doc.voices,
-        doc.default_voice,
-    )
-    # and an untouched reparse saves byte-identically
-    assert serialize_sidecar(back.blocks, preamble_source=back.preamble_source) == text
+def test_serialize_then_parse_is_the_identity() -> None:
+    for seed in range(300):
+        doc = _random_doc(random.Random(seed))
+        text = serialize_sidecar(doc.blocks, voices=doc.voices, default_voice=doc.default_voice)
+        back = parse_document(text)
+        assert (back.blocks, back.voices, back.default_voice) == (
+            doc.blocks,
+            doc.voices,
+            doc.default_voice,
+        ), f"seed {seed}:\n{text}"
+        # and an untouched reparse saves byte-identically
+        assert serialize_sidecar(back.blocks, preamble_source=back.preamble_source) == text
