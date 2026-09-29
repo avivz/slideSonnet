@@ -109,6 +109,20 @@ def test_show_base(deck: Path) -> None:
     assert json.loads(_run("show", str(deck), "@intro", "--json")) == data  # --base is optional
 
 
+def test_narration_override_is_the_reviewed_sidecar(deck: Path) -> None:
+    alt = deck.with_name("alt.narration")
+    alt.write_text(simple_narration("@intro\nOther.\n"), encoding="utf-8")
+    over = ("--narration", str(alt))
+    _run("list", str(deck), *over)  # the first use takes the base from the override
+    assert "Other." in json.loads(_run("show", str(deck), "@intro", "--json"))["narration"]
+    assert "No changes" in _run("status", str(deck), *over)
+    assert "No changes" not in _run("status", str(deck))  # deck.narration says "Hello."
+    _run("snapshot", str(deck))
+    assert "No changes" not in _run("status", str(deck), *over)
+    assert "Nothing to clear" in _run("clear", str(deck), *over)
+    assert "does not exist" in _fail("status", str(deck), "--narration", "typo.narration")
+
+
 def test_send_and_wait(deck: Path) -> None:
     _run("comment", str(deck), "@proof", "-m", "x", "--as", "author")
     _run("send", str(deck))

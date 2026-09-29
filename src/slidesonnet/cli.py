@@ -16,6 +16,7 @@ import click
 
 from slidesonnet import __version__
 from slidesonnet.cache import AUDIO_DIR_ENV
+from slidesonnet.cli_options import NARRATION_OPT
 from slidesonnet.diagnostics import Diagnostic, count_by_severity, has_errors
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.logging_setup import (
@@ -297,9 +298,7 @@ def sty(output: Path) -> None:
 
 @main.command()
 @_PDF_ARG
-@click.option(
-    "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
-)
+@NARRATION_OPT
 @click.option(
     "--merge", is_flag=True, help="Append blocks for ids missing from an existing sidecar"
 )
@@ -321,9 +320,7 @@ def init(ctx: click.Context, pdf: Path, narration: Path | None, merge: bool, for
 
 @main.command()
 @_PDF_ARG
-@click.option(
-    "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
-)
+@NARRATION_OPT
 def check(pdf: Path, narration: Path | None) -> None:
     """Reconcile the sidecar against the PDF; exit non-zero on errors."""
     from slidesonnet.api import check_deck
@@ -359,9 +356,6 @@ def _subtitle_format(output: Path, fmt: str | None) -> str:
     return fmt
 
 
-_NARRATION_OPT = click.option(
-    "--narration", type=click.Path(path_type=Path), help="Sidecar path (default: <deck>.narration)"
-)
 _ENGINE_OPT = click.option(
     "--engine",
     type=click.Choice(sorted(BACKENDS)),
@@ -376,7 +370,7 @@ def _run_progress(phases: tuple[str, ...]) -> RunProgress:
 
 @main.command()
 @_PDF_ARG
-@_NARRATION_OPT
+@NARRATION_OPT
 @_ENGINE_OPT
 @click.option("--id", "ids", multiple=True, help="Synthesize only these slide-ids (repeatable)")
 @_YES_OPT
@@ -417,7 +411,7 @@ def tts(
 @click.option(
     "-o", "--output", required=True, type=click.Path(path_type=Path), help="Output video (.mp4)"
 )
-@_NARRATION_OPT
+@NARRATION_OPT
 @_ENGINE_OPT
 @click.option("--silent", is_flag=True, help="No TTS: silent video, timing from the model")
 @click.option("--timing", default="tts", show_default=True, help="tts | estimate | fixed:N")
@@ -515,7 +509,7 @@ def export(
 @click.option(
     "-o", "--output", required=True, type=click.Path(path_type=Path), help="Output subtitle file"
 )
-@_NARRATION_OPT
+@NARRATION_OPT
 @_ENGINE_OPT
 @click.option(
     "--format",
@@ -598,7 +592,7 @@ def subs(
 @click.option(
     "--yes", "-y", is_flag=True, help="Don't ask before trashing paid clips or --keep nothing"
 )
-@_NARRATION_OPT
+@NARRATION_OPT
 def clean(pdf: Path, keep: str, dry_run: bool, yes: bool, narration: Path | None) -> None:
     """Prune the deck's own audio/render cache (.slidesonnet/ beside the PDF).
 
@@ -957,7 +951,7 @@ def pool_prune_cmd(
 
 @main.command()
 @click.argument("target", required=False, type=click.Path(exists=True, path_type=Path))
-@_NARRATION_OPT
+@NARRATION_OPT
 @click.option(
     "--root",
     type=click.Path(exists=True, file_okay=False, path_type=Path),

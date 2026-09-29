@@ -14,6 +14,7 @@ from typing import Any, cast
 
 import click
 
+from slidesonnet.cli_options import EXISTING_NARRATION_OPT
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.review.log import Author, Conversation
 
@@ -75,7 +76,8 @@ def review() -> None:
 
 @review.command("snapshot")
 @_PDF
-def snapshot_cmd(pdf: Path) -> None:
+@EXISTING_NARRATION_OPT
+def snapshot_cmd(pdf: Path, narration: Path | None) -> None:
     """Mark everything as seen: the base becomes the deck as it is now.
 
     The editor takes a base by itself the first time it opens a deck; this
@@ -84,19 +86,20 @@ def snapshot_cmd(pdf: Path) -> None:
     from slidesonnet.review import ops
 
     with _errors():
-        version = ops.start(pdf)
+        version = ops.start(pdf, sidecar_path=narration)
     click.echo(f"Base taken: {len(version.order)} slides. Review is on.")
 
 
 @review.command("status")
 @_PDF
 @_JSON
-def status_cmd(pdf: Path, as_json: bool) -> None:
+@EXISTING_NARRATION_OPT
+def status_cmd(pdf: Path, as_json: bool, narration: Path | None) -> None:
     """Changed slides, conversations and whose turn it is, unfiled changes."""
     from slidesonnet.review import ops
 
     with _errors():
-        st = ops.status(pdf)
+        st = ops.status(pdf, sidecar_path=narration)
     in_conv: dict[str, list[str]] = {}
     for conv in st.state.slide_conversations():
         for sid in conv.slides:
@@ -167,12 +170,13 @@ def status_cmd(pdf: Path, as_json: bool) -> None:
 @_JSON
 @click.option("--mine", is_flag=True, help="Only open conversations where it's the agent's turn")
 @click.option("--all", "show_all", is_flag=True, help="Include closed (accepted) conversations")
-def list_cmd(pdf: Path, as_json: bool, mine: bool, show_all: bool) -> None:
+@EXISTING_NARRATION_OPT
+def list_cmd(pdf: Path, as_json: bool, mine: bool, show_all: bool, narration: Path | None) -> None:
     """Open conversations with their messages (JSON adds each slide's page text)."""
     from slidesonnet.review import ops
 
     with _errors():
-        st = ops.status(pdf)
+        st = ops.status(pdf, sidecar_path=narration)
     convs = list(st.state.conversations.values())
     if not show_all or mine:
         convs = [c for c in convs if c.status == "open"]
@@ -317,12 +321,13 @@ def reopen_cmd(pdf: Path, conversation: str) -> None:
 
 @review.command("clear")
 @_PDF
-def clear_cmd(pdf: Path) -> None:
+@EXISTING_NARRATION_OPT
+def clear_cmd(pdf: Path, narration: Path | None) -> None:
     """Drop closed conversations and move their slides' base forward."""
     from slidesonnet.review import ops
 
     with _errors():
-        result = ops.clear(pdf)
+        result = ops.clear(pdf, sidecar_path=narration)
     if not result.cleared:
         click.echo("Nothing to clear — no closed conversations.")
         return

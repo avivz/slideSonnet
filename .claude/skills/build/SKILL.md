@@ -113,8 +113,9 @@ slidesonnet review list    deck.pdf --mine --json     # what awaits the agent
 slidesonnet review wait    deck.pdf --since N --json  # block until the author presses Send
 ```
 
-Also `title`, `accept`, `reopen`, `send`, `clear`, `show`, `snapshot`. Never edit
-`<deck>.review` by hand.
+Also `title`, `accept`, `reopen`, `send`, `clear`, `show`, `snapshot`. `status`,
+`list`, `snapshot` and `clear` take `--narration PATH` for a deck edited with
+`edit --narration`. Never edit `<deck>.review` by hand.
 
 ### `slidesonnet clean` — prune the deck's cache
 

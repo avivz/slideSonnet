@@ -85,7 +85,8 @@ regression test.
 - **Review writes are one locked transaction**: concurrent comments no longer share
   an id, Clear no longer drops replies or reopens made meanwhile, ids are never
   reused, and a torn log record no longer swallows the next one.
-- **Review (Mark seen, diffs) uses the narration file given with `edit --narration`.**
+- **Review (Mark seen, diffs) uses the narration file given with `edit --narration`**,
+  and `review status`, `list`, `snapshot` and `clear` take `--narration` too.
 - **Clip generation keeps working after the sidecar or PDF is caught mid-rewrite.**
 - **A cancel racing an export's completion no longer leaves a stuck job** blocking
   later exports; an export with a different engine or draft setting isn't merged
