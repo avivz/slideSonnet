@@ -382,34 +382,98 @@ def test_compose_segment_streams_match(work_dir):
     )
 
 
+def _gray_png(path: Path, level: int) -> None:
+    """A 16x16 still of one gray *level*, so decoded frames say which slide they show."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=0x{level:02x}{level:02x}{level:02x}:s=16x16",
+            "-frames:v",
+            "1",
+            str(path),
+        ],
+        check=True,
+    )
+
+
+def _frame_levels(video: Path) -> list[int]:
+    """The mean luma of every decoded frame of *video*, in order."""
+    raw = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(video),
+            "-vf",
+            "scale=1:1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "gray",
+            "-",
+        ],
+        check=True,
+        capture_output=True,
+    ).stdout
+    return list(raw)
+
+
 @pytest.mark.integration
-def test_multi_segment_concat_no_drift(work_dir):
-    """10 concatenated segments should have no accumulated drift."""
-    segments = []
-    for i in range(10):
-        image = work_dir / f"slide_{i}.png"
-        audio = work_dir / f"audio_{i}.wav"
-        seg = work_dir / f"seg_{i}.mp4"
-        _make_png(image)
-        _make_wav(audio, duration_seconds=1.5)
-        compose_segment(
-            image=image,
-            audio=audio,
-            output=seg,
-            duration=1.5,
-            resolution="640x480",
-            fps=24,
-            crf=28,
-        )
-        segments.append(seg)
+def test_compose_video_slide_boundaries_never_drift(work_dir):
+    """Each slide starts on the frame nearest its true start, however late in the deck.
 
-    output = work_dir / "concat.mp4"
-    concatenate_segments(segments, output)
+    Non-frame-aligned page lengths are the case that drifted: every segment was
+    rounded to whole frames on its own and carried a silent AAC stream that the
+    concat stretched it by, so the slides fell ~20 ms a page behind the audio.
+    """
+    from slidesonnet.config import Config
+    from slidesonnet.models import VideoConfig
+    from slidesonnet.render import DeckTimeline, compose_video
+    from slidesonnet.timing import PageTiming
 
-    dur = get_duration(output)
-    # expected: 10 × 1.5 = 15.0s
-    # AAC frame quantization (~23ms/frame) can add up to ~50ms per segment
-    assert 14.85 <= dur <= 15.5, f"Expected ~15.0s, got {dur:.3f}s"
+    fps = 24
+    lengths = [0.37 + 0.13 * i for i in range(12)]  # none a whole number of frames
+    levels = [30 + 16 * i for i in range(12)]
+    images, audios = [], []
+    for i, (secs, level) in enumerate(zip(lengths, levels, strict=True)):
+        images.append(work_dir / f"s{i}.png")
+        _gray_png(images[-1], level)
+        audios.append(work_dir / f"a{i}.wav")
+        _make_wav(audios[-1], duration_seconds=secs)
+    track = work_dir / "track.wav"
+    concatenate_audio(audios, track)
+    tl = DeckTimeline(
+        pages=[
+            PageTiming(slide_id=f"s{i}", duration=d, lead=0, tail=0) for i, d in enumerate(lengths)
+        ]
+    )
+    config = Config(video=VideoConfig(resolution="16x16", fps=fps, crf=30, preset="ultrafast"))
+    out = work_dir / "deck.mp4"
+    compose_video(
+        tl,
+        images,
+        out,
+        config=config,
+        page_audios=audios,
+        render_dir=work_dir / "r",
+        audio_track=track,
+    )
+
+    frames = _frame_levels(out)
+    shown = [min(range(12), key=lambda k: abs(levels[k] - f)) for f in frames]
+    for i in range(1, 12):
+        true_start = round(sum(lengths[:i]) * fps)
+        assert abs(shown.index(i) - true_start) <= 1, f"slide {i} starts off its frame"
+    assert abs(len(frames) - round(sum(lengths) * fps)) <= 1
+    assert abs(get_duration(out, stream="video") - get_duration(track)) <= 1 / fps
 
 
 @pytest.mark.integration
@@ -618,27 +682,16 @@ class TestComposeSilentSegmentMocked:
     """Mocked tests for compose_silent_segment()."""
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
-    def test_command_has_anullsrc(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+    def test_video_only_and_frame_exact(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+        """No audio stream (a silent AAC stream pads the concat), and a frame count
+        rather than ``-t`` so the length is exactly what the caller planned."""
         compose_silent_segment(
-            image=tmp_path / "s.png",
-            output=tmp_path / "o.mp4",
-            duration=3.0,
-            resolution="1920x1080",
+            image=tmp_path / "s.png", output=tmp_path / "o.mp4", duration=5.0, fps=24
         )
         cmd = mock_ffmpeg.call_args[0][0]
-        assert "anullsrc=r=44100:cl=stereo" in cmd
-        assert "-f" in cmd
-
-    @patch("slidesonnet.video.composer._run_ffmpeg")
-    def test_duration_flag(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
-        compose_silent_segment(
-            image=tmp_path / "s.png",
-            output=tmp_path / "o.mp4",
-            duration=5.0,
-        )
-        cmd = mock_ffmpeg.call_args[0][0]
-        t_idx = cmd.index("-t")
-        assert cmd[t_idx + 1] == "5.0"
+        assert "-an" in cmd and not any("anullsrc" in arg for arg in cmd)
+        assert "-t" not in cmd
+        assert cmd[cmd.index("-frames:v") + 1] == "120"
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
     def test_preset_in_command(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:

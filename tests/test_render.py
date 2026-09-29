@@ -305,7 +305,8 @@ def test_compose_video_silent_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert output.parent.is_dir()
     # One silent segment per page, timed from the timeline, styled from config.
     assert [c[0] for c in silent_calls] == images
-    assert [c[2] for c in silent_calls] == pytest.approx(tl.page_durations)
+    # Frame-exact: each within a frame of the timeline (they never drift).
+    assert [c[2] for c in silent_calls] == pytest.approx(tl.page_durations, abs=1 / 24)
     v = config.video
     assert all(c[3:] == (v.resolution, v.fps, v.crf, v.preset) for c in silent_calls)
     expected_segs = [tmp_path / "r" / "segments" / f"seg-{i:04d}.mp4" for i in range(1, 5)]
@@ -543,3 +544,33 @@ def test_compose_video_reports_every_clip_then_the_ffmpeg_passes(
             (phase, 8, 8, ""),
             (phase, 8, 8, ""),
         ]
+
+
+def test_frame_plan_never_drifts_more_than_a_frame() -> None:
+    """Frames come from cumulative quantized boundaries, so each slide starts on
+    the frame nearest its true start time however many slides precede it (per-slide
+    rounding drifted ~20 ms a slide: 30 x 1.01 s at 24 fps came out at 31.25 s)."""
+    from slidesonnet.render import frame_plan
+
+    fps = 24
+    fulls = [1.01] * 30
+    plan = frame_plan(fulls, [0.0] * 29, fps)
+    assert [(p.kind, p.page) for p in plan] == [("still", i) for i in range(30)]
+    starts = list(itertools.accumulate((p.frames for p in plan), initial=0))
+    for i, start in enumerate(starts):
+        assert start == round(sum(fulls[:i]) * fps)
+    assert starts[-1] == 727  # round(30.3 * 24)
+
+
+def test_frame_plan_skips_a_still_that_two_full_transitions_consume() -> None:
+    """A slide flanked by two morphs as long as itself shows no still at all
+    (rather than an invented 0.1 s that lengthens the video)."""
+    from slidesonnet.render import frame_plan
+
+    plan = frame_plan([2.0, 1.0, 2.0], [1.0, 1.0], 24)
+    assert [(p.kind, p.page, p.frames) for p in plan] == [
+        ("still", 0, 36),
+        ("morph", 0, 24),
+        ("morph", 1, 24),
+        ("still", 2, 36),
+    ]

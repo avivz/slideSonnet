@@ -13,6 +13,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from slidesonnet.audio.track import Cue, assemble_track, build_page_audio, cue_sheet, page_pieces
 from slidesonnet.config import Config
@@ -304,6 +305,50 @@ def transition_morph_seconds(transitions: list[Transition], page_fulls: list[flo
     return out
 
 
+@dataclass(frozen=True)
+class FramePiece:
+    """One clip spliced into the exported video: a slide's still, or a boundary morph."""
+
+    kind: Literal["still", "morph"]
+    page: int  # still: its page index; morph: the page it morphs *from*
+    frames: int
+
+
+def frame_plan(fulls: list[float], morph: list[float], fps: int) -> list[FramePiece]:
+    """Whole-frame lengths for every still and morph clip, in splice order.
+
+    Page ``i`` spans ``[T_i, T_i + fulls[i])`` of the deck track; a morph of
+    ``morph[i]`` seconds is centered on the boundary after it. Each clip's frame
+    count is ``round(end * fps) - round(start * fps)`` on those *cumulative*
+    times, so the rounding telescopes: every clip starts on the frame nearest
+    its true start and the video is never more than one frame off the audio,
+    however long the deck. (Rounding each clip on its own drifted ~20 ms a
+    slide.) A clip that rounds to no frames — the still of a slide two full
+    morphs consume, or a morph shorter than a frame — is left out.
+    """
+    plan: list[FramePiece] = []
+    last = len(fulls) - 1
+    at = 0.0  # where the previous clip ended, in deck seconds
+    page_start = 0.0
+
+    def add(kind: Literal["still", "morph"], page: int, end: float) -> None:
+        nonlocal at
+        end = max(end, at)
+        frames = round(end * fps) - round(at * fps)
+        if frames > 0:
+            plan.append(FramePiece(kind, page, frames))
+        at = end
+
+    for i, full in enumerate(fulls):
+        page_end = page_start + full
+        half = morph[i] / 2 if i < last else 0.0
+        add("still", i, page_end - half)
+        if half > 0:
+            add("morph", i, page_end + half)
+        page_start = page_end
+    return plan
+
+
 def compose_video(
     timeline: DeckTimeline,
     page_images: list[Path],
@@ -360,6 +405,9 @@ def compose_video(
         else None
         for i in range(n - 1)
     ]
+    plan = frame_plan(
+        fulls, [morph[i] if i < n - 1 and xnames[i] else 0.0 for i in range(n)], v.fps
+    )
 
     total_s = max(1, round(sum(fulls)))  # the ffmpeg passes count seconds of output
 
@@ -374,50 +422,42 @@ def compose_video(
         report(phase, 0, total_s)
         return lambda t: report(phase, min(total_s, int(t)), total_s)
 
-    clip_count = n + sum(x is not None for x in xnames)
-    clips_done = 0
-    report("video", 0, clip_count)
+    report("video", 0, len(plan))
 
     pieces: list[Path] = []
-    for i, page in enumerate(timeline.pages):
-        s_i = morph[i - 1] / 2 if i > 0 else 0.0  # trimmed at the start by the incoming morph
-        e_i = morph[i] / 2 if i < n - 1 else 0.0  # trimmed at the end by the outgoing morph
-        seg_duration = max(0.1, fulls[i] - s_i - e_i)
-        seg = seg_dir / f"seg-{i + 1:04d}.mp4"
-        compose_silent_segment(
-            page_images[i],
-            seg,
-            duration=seg_duration,
-            resolution=v.resolution,
-            fps=v.fps,
-            crf=v.crf,
-            preset=v.preset,
-        )
-        pieces.append(seg)
-        clips_done += 1
-        report("video", clips_done, clip_count, page.slide_id)
-        xname = xnames[i] if i < n - 1 else None
-        if xname is not None:
-            tclip = seg_dir / f"trans-{i + 1:04d}.mp4"
+    for done, piece in enumerate(plan, start=1):
+        i = piece.page
+        seconds = piece.frames / v.fps  # frame-exact, so the composer rounds nothing
+        if piece.kind == "still":
+            clip = seg_dir / f"seg-{i + 1:04d}.mp4"
+            compose_silent_segment(
+                page_images[i],
+                clip,
+                duration=seconds,
+                resolution=v.resolution,
+                fps=v.fps,
+                crf=v.crf,
+                preset=v.preset,
+            )
+            label = timeline.pages[i].slide_id
+        else:
+            clip = seg_dir / f"trans-{i + 1:04d}.mp4"
+            xname = xnames[i]
+            assert xname is not None  # frame_plan only morphs where there is one
             composer.compose_transition_clip(
                 page_images[i],
                 page_images[i + 1],
-                tclip,
-                duration=morph[i],
+                clip,
+                duration=seconds,
                 transition=xname,
                 resolution=v.resolution,
                 fps=v.fps,
                 crf=v.crf,
                 preset=v.preset,
             )
-            pieces.append(tclip)
-            clips_done += 1
-            report(
-                "video",
-                clips_done,
-                clip_count,
-                f"{page.slide_id} → {timeline.pages[i + 1].slide_id}",
-            )
+            label = f"{timeline.pages[i].slide_id} → {timeline.pages[i + 1].slide_id}"
+        pieces.append(clip)
+        report("video", done, len(plan), label)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     if page_audios is None or audio_track is None:

@@ -38,8 +38,7 @@ def _compose_ffmpeg_cmd(
 ) -> list[str]:
     """Build the shared ffmpeg invocation for a per-slide segment.
 
-    *audio_args* are the ``-f/-i`` args that introduce the audio input
-    (either a real file or ``anullsrc`` for silent slides).
+    *audio_args* are the ``-i`` args that introduce the audio input.
     """
     cmd = [
         "ffmpeg",
@@ -118,21 +117,48 @@ def compose_silent_segment(
     crf: int = 23,
     preset: str = "medium",
 ) -> None:
-    """Create a silent video segment from a static slide image."""
+    """Create a silent, video-only segment from a static slide image.
+
+    The segment holds exactly ``round(duration * fps)`` frames and carries no
+    audio stream: the deck track is muxed over the concatenated video at the
+    end, and a silent AAC stream here would pad each segment to whole AAC frames
+    that the stream-copy concat then offsets every later segment by. Callers
+    that splice segments pass frame-exact durations (see
+    :func:`slidesonnet.render.frame_plan`), so no rounding error accumulates.
+    """
     output.parent.mkdir(parents=True, exist_ok=True)
     logger.debug("compose_silent: %s duration=%.3fs", output.name, duration)
 
-    cmd = _compose_ffmpeg_cmd(
-        image=image,
-        audio_args=["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"],
-        output=output,
-        duration=duration,
-        resolution=resolution,
-        fps=fps,
-        crf=crf,
-        preset=preset,
-    )
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-loop",
+        "1",
+        "-i",
+        str(image),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-tune",
+        "stillimage",
+        "-vf",
+        _scale_pad_filter(resolution),
+        "-r",
+        str(fps),
+        "-preset",
+        preset,
+        "-crf",
+        str(crf),
+        "-frames:v",
+        str(_frame_count(duration, fps)),
+        str(output),
+    ]
     _run_ffmpeg(cmd)
+
+
+def _frame_count(duration: float, fps: int) -> int:
+    """Whole frames for *duration* seconds at *fps* (at least one)."""
+    return max(1, round(duration * fps))
 
 
 def compose_transition_clip(
@@ -146,11 +172,11 @@ def compose_transition_clip(
     crf: int = 23,
     preset: str = "medium",
 ) -> None:
-    """Render a *duration*-second silent clip that xfades *image_from*→*image_to*.
+    """Render a *duration*-second video-only clip that xfades *image_from*→*image_to*.
 
     ``transition`` is an FFmpeg xfade name (``wipeleft``, ``slideup``, ``fade``,
-    …). The clip carries silent audio so it can be spliced between two per-slide
-    segments (see :func:`render.compose_video`): it replaces an equal slice of
+    …). The clip holds ``round(duration * fps)`` frames and no audio, so it can
+    be spliced between two per-slide segments (see :func:`render.compose_video`): it replaces an equal slice of
     the outgoing slide's trailing hold, so the deck's total duration and audio
     waveform are unchanged — the morph just plays over otherwise-static hold
     time.
@@ -187,34 +213,23 @@ def compose_transition_clip(
         str(src_len),
         "-i",
         str(image_to),
-        "-f",
-        "lavfi",
-        "-t",
-        str(duration),
-        "-i",
-        "anullsrc=r=44100:cl=stereo",
         "-filter_complex",
         filter_complex,
         "-map",
         "[v]",
-        "-map",
-        "2:a",
+        "-an",
         "-c:v",
         "libx264",
         "-tune",
         "stillimage",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
         "-r",
         str(fps),
         "-preset",
         preset,
         "-crf",
         str(crf),
-        "-t",
-        str(duration),
+        "-frames:v",
+        str(_frame_count(duration, fps)),
         str(output),
     ]
     _run_ffmpeg(cmd)
@@ -408,8 +423,10 @@ def mux_audio(
     assembled silent (still segments + centered morph clips) and the single
     continuous deck track is laid over it here, so a morph centered on a slide
     boundary plays over whatever audio is there (silence *or* speech) without
-    changing the deck's total duration. *on_time*, if given, is called with
-    seconds of output written as ffmpeg runs.
+    changing the deck's total duration. The video is frame-planned to within a
+    frame of the track, so nothing is cut to the shorter stream (``-shortest``
+    would clip the track's last few milliseconds). *on_time*, if given, is
+    called with seconds of output written as ffmpeg runs.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     logger.debug("mux: %s + %s → %s", video.name, audio.name, output.name)
@@ -430,7 +447,6 @@ def mux_audio(
         "aac",
         "-b:a",
         "192k",
-        "-shortest",
         str(output),
     ]
     _run_ffmpeg(cmd, on_time=on_time)
