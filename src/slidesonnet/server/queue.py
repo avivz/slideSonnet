@@ -1,9 +1,7 @@
 """Background TTS generation queue for the editor.
 
-Generation used to run through the editor's single ``busy`` gate, so making one
-clip froze typing, navigation, and every other action. This queue moves
-synthesis onto a long-lived background worker: callers ``enqueue`` work and the
-UI stays live while clips render.
+Synthesis runs on a long-lived background worker: callers ``enqueue`` work and
+the editor stays live while clips render.
 
 Two requests for the *same* clip never synthesize twice. Jobs are keyed on the
 content-addressed cache filename (text + voice + backend + config), so a second

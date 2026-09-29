@@ -13,7 +13,7 @@ repo root is as often too wide (a monorepo) as too narrow. The walk is capped in
 both depth and directories visited so launching from ``$HOME`` reports a
 truncated scan instead of hanging.
 
-Pure logic — no NiceGUI imports, so it is testable without a server.
+Pure logic — no web framework imports, so it is testable without a server.
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 One :class:`DeckService` exists per deck in the process (see :func:`deck_service`),
 shared by every editor tab and every API request. It owns the deck's write lock,
-so two writers — a NiceGUI tab and an API client, or two API clients — can never
+so two writers — two editor tabs, or a tab and another API client — can never
 interleave a read-modify-write of the same sidecar.
 
 Every write names the narration revision it was edited against. If the file on
@@ -10,8 +10,7 @@ disk has moved on (an agent edited it, another tab saved), the write is refused
 with :class:`RevisionConflict` instead of silently undoing the other edit.
 
 Work that doesn't need to finish before a save returns — reclaiming audio clips
-the edit orphaned — runs afterwards on a debounced background timer (B3: saves
-used to run the prune inline, on the UI event loop).
+the edit orphaned — runs afterwards on a debounced background timer, off the save path.
 """
 
 from __future__ import annotations

@@ -195,9 +195,8 @@ class ApiRoute(APIRoute):
     A deck that can't be read (:data:`LOAD_ERRORS`) is answered here for every
     route, so no route returns a bare 500 for a bad toml, sidecar or PDF.
 
-    Done per route rather than with app middleware and exception handlers,
-    because the API is mounted onto NiceGUI's app after it has started — and
-    Starlette freezes its middleware stack at startup.
+    Done per route rather than with app middleware and exception handlers, so
+    it applies to ``/api/v1`` only, not to media or the frontend.
     """
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
