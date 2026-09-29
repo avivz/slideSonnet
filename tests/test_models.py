@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 import pytest
 
 from slidesonnet.models import (
@@ -13,76 +11,60 @@ from slidesonnet.models import (
     resolve_voice,
 )
 
-
-class TestVoiceConfig:
-    def test_resolve_mapped_backend(self) -> None:
-        vc = VoiceConfig(name="narrator", backend_voices={"kokoro": "af_heart"})
-        assert vc.resolve("kokoro") == "af_heart"
-
-    def test_resolve_unmapped_backend_returns_none(self) -> None:
-        vc = VoiceConfig(name="narrator", backend_voices={"kokoro": "af_heart"})
-        assert vc.resolve("inworld") is None
-
-    def test_all_voice_ids(self) -> None:
-        vc = VoiceConfig(
-            name="narrator",
-            backend_voices={"kokoro": "af_heart", "inworld": "Ashley"},
-        )
-        assert vc.all_voice_ids() == {"af_heart", "Ashley"}
-
-    def test_all_voice_ids_empty(self) -> None:
-        assert VoiceConfig(name="narrator").all_voice_ids() == set()
+_VOICES = {
+    "narrator": VoiceConfig(
+        name="narrator", backend_voices={"kokoro": "af_bella", "qwen3": "Vivian"}
+    )
+}
 
 
-class TestResolveVoice:
-    VOICES: ClassVar[dict[str, VoiceConfig]] = {
-        "narrator": VoiceConfig(name="narrator", backend_voices={"kokoro": "af_bella"})
-    }
-
-    def test_none_preset(self) -> None:
-        assert resolve_voice(None, self.VOICES, "kokoro") is None
-
-    def test_empty_preset(self) -> None:
-        assert resolve_voice("", self.VOICES, "kokoro") is None
-
-    def test_raw_voice_id_passes_through(self) -> None:
-        # not a named preset -> treated as a raw backend voice id
-        assert resolve_voice("af_heart", self.VOICES, "kokoro") == "af_heart"
-
-    def test_known_preset_mapped_backend(self) -> None:
-        assert resolve_voice("narrator", self.VOICES, "kokoro") == "af_bella"
-
-    def test_known_preset_unmapped_backend(self) -> None:
-        assert resolve_voice("narrator", self.VOICES, "inworld") is None
+@pytest.mark.parametrize(
+    ("preset", "backend", "expected"),
+    [
+        (None, "kokoro", None),  # default voice
+        ("", "kokoro", None),
+        ("af_heart", "kokoro", "af_heart"),  # not a preset: a raw backend voice id
+        ("narrator", "kokoro", "af_bella"),
+        ("narrator", "inworld", None),  # the preset has no mapping for this backend
+    ],
+)
+def test_resolve_voice(preset: str | None, backend: str, expected: str | None) -> None:
+    assert resolve_voice(preset, _VOICES, backend) == expected
 
 
-class TestAPIBackends:
-    def test_inworld_is_api_kokoro_is_not(self) -> None:
-        from slidesonnet.tts import API_BACKENDS
-
-        assert "inworld" in API_BACKENDS
-        assert "kokoro" not in API_BACKENDS
+def test_all_voice_ids() -> None:
+    assert _VOICES["narrator"].all_voice_ids() == {"af_bella", "Vivian"}
+    assert VoiceConfig(name="empty").all_voice_ids() == set()
 
 
-class TestTTSConfigValidation:
-    def test_defaults_are_valid(self) -> None:
-        cfg = TTSConfig()
-        assert cfg.backend == "kokoro"
-        assert cfg.kokoro_voice == "am_echo"
+@pytest.mark.parametrize(
+    ("config", "field", "expected"),
+    [
+        (TTSConfig(), "backend", "kokoro"),
+        (TTSConfig(), "kokoro_voice", "am_echo"),
+        (VideoConfig(), "resolution", "1920x1080"),
+        (VideoConfig(), "preset", "medium"),
+        (VideoConfig(resolution="640x360"), "resolution", "640x360"),
+        (VideoConfig(crf=0), "crf", 0),
+        (VideoConfig(crf=51), "crf", 51),
+        (VideoConfig(pre_silence=0.0), "pre_silence", 0.0),
+        (VideoConfig(tail_seconds=0.0), "tail_seconds", 0.0),
+    ],
+)
+def test_defaults_and_boundary_values_accepted(
+    config: object, field: str, expected: object
+) -> None:
+    assert getattr(config, field) == expected
 
-    @pytest.mark.parametrize("field", ["kokoro_speed", "inworld_speed"])
-    @pytest.mark.parametrize("speed", [0.0, -0.5, float("nan"), float("inf")])
-    def test_speeds_must_be_positive_and_finite(self, field: str, speed: float) -> None:
-        with pytest.raises(ValueError, match=field):
-            TTSConfig(**{field: speed})  # type: ignore[arg-type]
+
+@pytest.mark.parametrize("field", ["kokoro_speed", "inworld_speed"])
+@pytest.mark.parametrize("speed", [0.0, -0.5, float("nan"), float("inf")])
+def test_tts_speeds_must_be_positive_and_finite(field: str, speed: float) -> None:
+    with pytest.raises(ValueError, match=field):
+        TTSConfig(**{field: speed})  # type: ignore[arg-type]
 
 
 class TestVideoConfigValidation:
-    def test_defaults_are_valid(self) -> None:
-        cfg = VideoConfig()
-        assert cfg.resolution == "1920x1080"
-        assert cfg.preset == "medium"
-
     @pytest.mark.parametrize(
         ("field", "value"),
         [
@@ -101,14 +83,6 @@ class TestVideoConfigValidation:
         with pytest.raises(ValueError, match=field):
             VideoConfig(**{field: value})  # type: ignore[arg-type]
 
-    def test_boundary_values_accepted(self) -> None:
-        cfg = VideoConfig(resolution="640x360", crf=0)
-        assert (cfg.resolution, cfg.crf, VideoConfig(crf=51).crf) == ("640x360", 0, 51)
-
-    def test_zero_paddings_accepted(self) -> None:
-        cfg = VideoConfig(pre_silence=0.0, tail_seconds=0.0)
-        assert cfg.pre_silence == 0.0
-
 
 class TestBackendRegistry:
     """The runtime registry and the static Literal must stay in sync."""
@@ -122,8 +96,9 @@ class TestBackendRegistry:
         assert set(BACKENDS) == set(get_args(Backend))
 
     def test_registry_specs(self) -> None:
-        from slidesonnet.tts import BACKENDS
+        from slidesonnet.tts import API_BACKENDS, BACKENDS
 
+        assert API_BACKENDS == {"inworld"}
         kokoro = BACKENDS["kokoro"]
         inworld = BACKENDS["inworld"]
         qwen3 = BACKENDS["qwen3"]

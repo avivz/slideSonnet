@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -19,30 +20,21 @@ from slidesonnet.logging_setup import (
 # ---- level resolution ----------------------------------------------------
 
 
-def test_resolve_default_is_info() -> None:
-    assert resolve_console_level() == logging.INFO
-
-
-def test_resolve_quiet_is_warning() -> None:
-    assert resolve_console_level(quiet=True) == logging.WARNING
-
-
-def test_resolve_verbose_is_debug() -> None:
-    assert resolve_console_level(verbose=True) == logging.DEBUG
-
-
-def test_resolve_env_sets_level() -> None:
-    assert resolve_console_level(env="DEBUG") == logging.DEBUG
-    assert resolve_console_level(env="warning") == logging.WARNING
-
-
-def test_resolve_invalid_env_falls_back_to_info() -> None:
-    assert resolve_console_level(env="not-a-level") == logging.INFO
-
-
-def test_resolve_flag_beats_env() -> None:
-    assert resolve_console_level(verbose=True, env="ERROR") == logging.DEBUG
-    assert resolve_console_level(quiet=True, env="DEBUG") == logging.WARNING
+@pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({}, logging.INFO),
+        ({"quiet": True}, logging.WARNING),
+        ({"verbose": True}, logging.DEBUG),
+        ({"env": "DEBUG"}, logging.DEBUG),
+        ({"env": "warning"}, logging.WARNING),
+        ({"env": "not-a-level"}, logging.INFO),  # invalid env falls back
+        ({"verbose": True, "env": "ERROR"}, logging.DEBUG),  # a flag beats the env
+        ({"quiet": True, "env": "DEBUG"}, logging.WARNING),
+    ],
+)
+def test_resolve_console_level(kwargs: dict[str, Any], expected: int) -> None:
+    assert resolve_console_level(**kwargs) == expected
 
 
 def test_resolve_quiet_and_verbose_conflict() -> None:
@@ -81,22 +73,24 @@ def _mismatch() -> logging.LogRecord:
     )
 
 
-def test_console_hides_phonemizer_word_count_noise() -> None:
-    configure_console_logging(logging.INFO)
-    assert not _console_shows(_mismatch())
+_OTHER_PHONEMIZER_WARNING = logging.LogRecord(
+    "phonemizer", logging.WARNING, __file__, 1, "espeak not found", None, None
+)
 
 
-def test_console_shows_phonemizer_noise_when_verbose() -> None:
-    configure_console_logging(logging.DEBUG)
-    assert _console_shows(_mismatch())
-
-
-def test_console_keeps_other_phonemizer_warnings() -> None:
-    configure_console_logging(logging.INFO)
-    other = logging.LogRecord(
-        "phonemizer", logging.WARNING, __file__, 1, "espeak not found", None, None
-    )
-    assert _console_shows(other)
+@pytest.mark.parametrize(
+    ("level", "record", "shown"),
+    [
+        (logging.INFO, _mismatch(), False),  # word-count noise is hidden...
+        (logging.DEBUG, _mismatch(), True),  # ...unless verbose
+        (logging.INFO, _OTHER_PHONEMIZER_WARNING, True),  # other warnings still show
+    ],
+)
+def test_console_phonemizer_noise_filter(
+    level: int, record: logging.LogRecord, shown: bool
+) -> None:
+    configure_console_logging(level)
+    assert _console_shows(record) is shown
 
 
 # ---- file handler --------------------------------------------------------

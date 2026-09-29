@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -41,28 +42,18 @@ def test_page_count() -> None:
     assert page_count(MARKED) == len(read_page_ids(MARKED))
 
 
-def test_read_missing_pdf_raises() -> None:
-    with pytest.raises(ParserError):
-        read_page_ids(FIXTURES / "does-not-exist.pdf")
-
-
-def test_page_count_missing_pdf_raises() -> None:
-    with pytest.raises(ParserError):
-        page_count(FIXTURES / "does-not-exist.pdf")
-
-
-def test_page_aspect_missing_pdf_raises() -> None:
-    with pytest.raises(ParserError):
-        page_aspect(FIXTURES / "does-not-exist.pdf")
-
-
 def test_page_aspect_is_wider_than_tall() -> None:
     assert page_aspect(MARKED) > 1.0  # beamer slides are landscape
 
 
-def test_rasterize_missing_pdf_raises(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "read",
+    [read_page_ids, page_count, page_aspect, lambda pdf: rasterize(pdf, Path("unused"))],
+    ids=["read_page_ids", "page_count", "page_aspect", "rasterize"],
+)
+def test_missing_pdf_raises(read: Callable[[Path], object]) -> None:
     with pytest.raises(ParserError, match="PDF not found"):
-        rasterize(FIXTURES / "does-not-exist.pdf", tmp_path)
+        read(FIXTURES / "does-not-exist.pdf")
 
 
 def test_rasterize_without_pdftoppm_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

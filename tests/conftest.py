@@ -4,7 +4,7 @@ import base64
 import io
 import sys
 import wave
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -233,8 +233,6 @@ class _StubTTS(TTSEngine):
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-PdfFactory = Callable[[Path, list[str]], Path]
-
 
 def write_pdf(path: Path, ids: list[str], *, final: bool = False, plain: bool = False) -> Path:
     """Write a PDF with one page per id, each stamped with an invisible SSID marker.
@@ -257,11 +255,6 @@ def write_pdf(path: Path, ids: list[str], *, final: bool = False, plain: bool = 
     doc.save(path)
     doc.close()
     return path
-
-
-@pytest.fixture
-def make_pdf() -> PdfFactory:
-    return write_pdf
 
 
 def simple_narration(text: str) -> str:
@@ -329,15 +322,5 @@ def prep_marked_deck(tmp_path: Path, sidecar: str = "") -> Path:
 
 
 @pytest.fixture
-def fixtures_dir():
-    return FIXTURES_DIR
-
-
-@pytest.fixture
-def marked_pdf(fixtures_dir):
-    return fixtures_dir / "marked.pdf"
-
-
-@pytest.fixture
-def pronunciation_cs(fixtures_dir):
-    return fixtures_dir / "pronunciation_cs.md"
+def pronunciation_cs() -> Path:
+    return FIXTURES_DIR / "pronunciation_cs.md"

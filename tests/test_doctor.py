@@ -48,13 +48,24 @@ def test_pymupdf_detected() -> None:
     assert check_pymupdf().status == "ok"
 
 
-def test_run_all_checks_groups() -> None:
+def test_run_all_checks_groups(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The grouping, independent of which tools this machine has: none are run."""
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+
+    def no_tools(*args: object, **kwargs: object) -> object:
+        raise AssertionError("doctor ran a tool although none is installed")
+
+    monkeypatch.setattr(subprocess, "run", no_tools)
     groups = dict(run_all_checks())
-    assert "Core (always required)" in groups
     names = {c.name for c in groups["Core (always required)"]}
     assert {"ffmpeg", "ffprobe", "pdftoppm", "PyMuPDF"} <= names
+    assert all(
+        c.status == "missing"
+        for c in groups["Core (always required)"]
+        if c.name in {"ffmpeg", "ffprobe", "pdftoppm"}
+    )
     # marp must be gone from the new toolchain
-    all_names = {c.name for _, checks in run_all_checks() for c in checks}
+    all_names = {c.name for _, checks in groups.items() for c in checks}
     assert "marp-cli" not in all_names
     # all TTS backends are reported (kokoro/qwen3 free, inworld paid)
     tts_names = {c.name for c in groups["TTS backends (at least one required)"]}

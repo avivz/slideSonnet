@@ -28,17 +28,12 @@ def _deck(dirpath: Path, stem: str, *, sidecar: bool = True) -> Path:
 # ---- tokens ------------------------------------------------------------
 
 
-def test_token_is_stable_and_path_derived(tmp_path: Path) -> None:
+def test_token_is_stable_and_addresses_the_resolved_deck(tmp_path: Path) -> None:
+    """``./a/../a/deck.pdf`` is one deck; a same-named deck elsewhere is another."""
     pdf = _deck(tmp_path / "a", "deck")
-    assert deck_token(pdf) == deck_token(pdf)
     assert len(deck_token(pdf)) == 8
-    assert deck_token(pdf) != deck_token(_deck(tmp_path / "b", "deck"))
-
-
-def test_token_ignores_path_spelling(tmp_path: Path) -> None:
-    """A token addresses the resolved deck, so ``./a/../a/deck.pdf`` is one deck."""
-    pdf = _deck(tmp_path / "a", "deck")
     assert deck_token(tmp_path / "a" / ".." / "a" / "deck.pdf") == deck_token(pdf)
+    assert deck_token(pdf) != deck_token(_deck(tmp_path / "b", "deck"))
 
 
 # ---- discovery ---------------------------------------------------------
@@ -80,47 +75,48 @@ def test_prunes_dot_dirs_and_vendor_dirs(tmp_path: Path) -> None:
     assert result.unnarrated == []
 
 
-def test_deck_at_the_root_itself_is_found(tmp_path: Path) -> None:
+def test_deck_at_the_root_itself_is_found_in_the_empty_section(tmp_path: Path) -> None:
     _deck(tmp_path, "solo")
-    assert [e.label for e in discover_decks(tmp_path).decks] == ["solo"]
+    decks = discover_decks(tmp_path).decks
+    assert [(e.label, e.group) for e in decks] == [("solo", "")]
+    reg = DeckRegistry(tmp_path)
+    reg.rescan()
+    assert [g for g, _ in reg.grouped()] == [""]
 
 
-def test_depth_cap_stops_the_walk_and_reports_truncation(tmp_path: Path) -> None:
-    _deck(tmp_path / "a" / "b" / "c" / "d", "deep")
-    limits = ScanLimits(max_depth=2, max_dirs=1000)
+@pytest.mark.parametrize(
+    "limits",
+    [ScanLimits(max_depth=2, max_dirs=1000), ScanLimits(max_depth=6, max_dirs=5)],
+    ids=["depth", "visits"],
+)
+def test_scan_caps_stop_the_walk_and_report_truncation(tmp_path: Path, limits: ScanLimits) -> None:
+    """Launched somewhere huge, the scan bails out instead of hanging."""
+    for i in range(20):
+        (tmp_path / f"dir{i}").mkdir()
+    _deck(tmp_path / "dir19" / "b" / "c" / "d", "deep")
     result = discover_decks(tmp_path, limits=limits)
     assert result.decks == []
     assert result.truncated
 
 
-def test_visit_cap_stops_the_walk_and_reports_truncation(tmp_path: Path) -> None:
-    """Launched somewhere huge, the scan bails out instead of hanging."""
-    for i in range(20):
-        (tmp_path / f"dir{i}").mkdir()
-    _deck(tmp_path / "dir19", "late")
-    result = discover_decks(tmp_path, limits=ScanLimits(max_depth=6, max_dirs=5))
-    assert result.truncated
-
-
-def test_scan_is_naturally_sorted(tmp_path: Path) -> None:
+def test_scan_and_sections_are_naturally_sorted(tmp_path: Path) -> None:
     """week10 sorts after week9 — a course list is unreadable otherwise."""
-    for name in ("week9", "week10", "week1"):
-        _deck(tmp_path / name, "d")
-    assert [e.group for e in discover_decks(tmp_path).decks] == ["week1", "week9", "week10"]
-
-
-def test_natural_key_orders_embedded_numbers() -> None:
     assert sorted(["a10", "a9", "a1"], key=natural_key) == ["a1", "a9", "a10"]
+    for name in ("week9", "week10", "week1"):
+        _deck(tmp_path / name / "d", "d")
+    assert [e.group for e in discover_decks(tmp_path).decks] == [
+        "week1/d",
+        "week9/d",
+        "week10/d",
+    ]
+    reg = DeckRegistry(tmp_path)
+    reg.rescan()
+    assert [g for g, _ in reg.grouped()] == ["week1", "week9", "week10"]
 
 
 def test_missing_root_scans_to_nothing(tmp_path: Path) -> None:
     result = discover_decks(tmp_path / "nope")
     assert result.decks == [] and not result.truncated
-
-
-def test_group_is_empty_for_a_root_level_deck(tmp_path: Path) -> None:
-    _deck(tmp_path, "solo")
-    assert discover_decks(tmp_path).decks[0].group == ""
 
 
 # ---- registry ----------------------------------------------------------
@@ -202,21 +198,6 @@ def test_entries_are_grouped_by_top_level_folder(tmp_path: Path) -> None:
     groups = reg.grouped()
     assert [g for g, _ in groups] == ["week01", "week02"]
     assert [e.name for e in groups[0][1]] == ["a", "b"]
-
-
-def test_grouped_sections_follow_natural_order(tmp_path: Path) -> None:
-    for name in ("week9", "week10", "week1"):
-        _deck(tmp_path / name / "d", "d")
-    reg = DeckRegistry(tmp_path)
-    reg.rescan()
-    assert [g for g, _ in reg.grouped()] == ["week1", "week9", "week10"]
-
-
-def test_root_level_deck_lands_in_the_empty_section(tmp_path: Path) -> None:
-    _deck(tmp_path, "solo")
-    reg = DeckRegistry(tmp_path)
-    reg.rescan()
-    assert [g for g, _ in reg.grouped()] == [""]
 
 
 def test_entry_display_name_is_the_deck_stem(tmp_path: Path) -> None:

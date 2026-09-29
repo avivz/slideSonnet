@@ -80,13 +80,6 @@ def test_no_clean_touches_the_review(tmp_path: Path) -> None:
     assert not (audio_dir(pdf) / "aaaa.kokoro.bbbb.wav").exists()  # everything else still goes
 
 
-def test_clean_no_cache(tmp_path: Path) -> None:
-    pdf = tmp_path / "deck.pdf"
-    pdf.write_bytes(b"%PDF-1.4")
-    result = clean(pdf, keep="api")
-    assert result.removed_files == 0
-
-
 def test_removed_mb_converts_bytes() -> None:
     assert CleanResult(removed_bytes=3 * 1024 * 1024).removed_mb == 3.0
     assert CleanResult().removed_mb == 0.0
@@ -99,29 +92,6 @@ def test_clean_reports_counts_and_bytes(tmp_path: Path) -> None:
     assert result.removed_files == 2
     assert result.removed_bytes == 4
     assert result.kept_files == 1
-
-
-def test_keep_api_without_render_dir(tmp_path: Path) -> None:
-    pdf = tmp_path / "deck.pdf"
-    pdf.write_bytes(b"%PDF-1.4")
-    ad = audio_dir(pdf)
-    ad.mkdir(parents=True)
-    (ad / "aaaa.kokoro.bbbb.wav").write_bytes(b"x")
-    result = clean(pdf, keep="api")
-    assert result.removed_files == 1
-    assert not (ad / "aaaa.kokoro.bbbb.wav").exists()
-
-
-def test_keep_api_without_audio_dir(tmp_path: Path) -> None:
-    pdf = tmp_path / "deck.pdf"
-    pdf.write_bytes(b"%PDF-1.4")
-    rd = render_dir(pdf)
-    rd.mkdir(parents=True)
-    (rd / "page-0001.png").write_bytes(b"img")
-    result = clean(pdf, keep="api")
-    assert not rd.exists()
-    assert result.removed_files == 1
-    assert result.kept_files == 0
 
 
 def test_keep_api_leaves_unrecognized_files_and_subdirs(tmp_path: Path) -> None:
@@ -255,24 +225,6 @@ def test_keep_exact_resolves_preamble_default_voice(tmp_path: Path) -> None:
     assert not (ad / voiceless).exists()  # default voice is am_michael, not None
 
 
-def test_keep_current_skips_subdirs_and_missing_audio_dir(tmp_path: Path) -> None:
-    pdf = _seed_deck(tmp_path)
-    result = clean(pdf, keep="current")  # cache root exists? no — early return
-    assert result.removed_files == 0
-
-    rd = render_dir(pdf)
-    rd.mkdir(parents=True)  # cache root now exists, but no audio dir
-    result = clean(pdf, keep="current")
-    assert result.kept_files == 0
-
-    ad = audio_dir(pdf)
-    sub = ad / "nested"
-    sub.mkdir(parents=True)
-    (sub / "stray.wav").write_bytes(b"s")
-    clean(pdf, keep="current")
-    assert (sub / "stray.wav").exists()
-
-
 def test_keep_exact_keeps_only_active_engine_config(tmp_path: Path) -> None:
     pdf = _seed_deck(tmp_path)
     ad = audio_dir(pdf)
@@ -328,6 +280,28 @@ def test_keep_exact_keeps_paced_utterance_cache(tmp_path: Path) -> None:
     assert (ad / paced).exists()  # the clip synthesis actually uses
     assert (ad / unpaced).exists()
     assert not (ad / stale).exists()
+
+
+@pytest.mark.parametrize("keep", ["api", "current", "exact"])
+def test_clean_missing_dirs_and_subdirs(tmp_path: Path, keep: KeepLevel) -> None:
+    pdf = _seed_deck(tmp_path)
+    assert clean(pdf, keep=keep).removed_files == 0  # no cache yet: nothing to do
+
+    rd = render_dir(pdf)
+    rd.mkdir(parents=True)
+    (rd / "page-0001.png").write_bytes(b"img")
+    result = clean(pdf, keep=keep)  # renders but no audio dir
+    assert not rd.exists()
+    assert (result.removed_files, result.kept_files) == (1, 0)
+
+    ad = audio_dir(pdf)
+    (ad / "nested").mkdir(parents=True)
+    (ad / "nested" / "stray.wav").write_bytes(b"s")
+    (ad / "aaaa.kokoro.bbbb.wav").write_bytes(b"x")
+    result = clean(pdf, keep=keep)  # audio but no render dir
+    assert result.removed_files == 1
+    assert not (ad / "aaaa.kokoro.bbbb.wav").exists()
+    assert (ad / "nested" / "stray.wav").exists()  # directories are skipped, not unlinked
 
 
 # --- prune_local_orphans: silent on-edit cleanup of cheap local audio ---
@@ -393,21 +367,6 @@ def test_prune_local_orphans_no_audio_dir(tmp_path: Path) -> None:
     pdf = _seed_deck(tmp_path)
     result = prune_local_orphans(pdf)  # never synthesized: nothing to do, no crash
     assert result.removed_files == 0
-
-
-def test_keep_exact_missing_audio_dir_and_subdirs(tmp_path: Path) -> None:
-    pdf = _seed_deck(tmp_path)
-    rd = render_dir(pdf)
-    rd.mkdir(parents=True)
-    result = clean(pdf, keep="exact")  # no audio dir: nothing to keep, no crash
-    assert result.kept_files == 0
-
-    ad = audio_dir(pdf)
-    sub = ad / "nested"
-    sub.mkdir(parents=True)
-    (sub / "stray.wav").write_bytes(b"s")
-    clean(pdf, keep="exact")
-    assert (sub / "stray.wav").exists()
 
 
 # ---- shared pool: per-deck clean never reaches into it -------------------------

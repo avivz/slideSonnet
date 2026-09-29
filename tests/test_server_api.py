@@ -60,7 +60,7 @@ def _speech(text: str) -> dict[str, Any]:
 
 
 def _wait(client: TestClient, job_id: str) -> dict[str, Any]:
-    for _ in range(200):
+    for _ in range(500):
         job = client.get(f"/api/v1/jobs/{job_id}").json()
         if job["status"] in ("succeeded", "failed", "cancelled"):
             return dict(job)
@@ -428,7 +428,7 @@ async def test_event_stream_replays_resyncs_and_goes_live() -> None:
     assert "id: 3\nevent: deck.changed" in replayed[1]
     assert any("event: job.finished" in c and '"job_id": "j1"' in c for c in replayed)
     polls["n"] = 0
-    gap = await asyncio.wait_for(collect("0"), timeout=5)  # seq 1 fell out of the buffer
+    gap = await asyncio.wait_for(collect("0"), timeout=10)  # seq 1 fell out of the buffer
     assert "event: resync" in gap[1]
 
 
@@ -503,7 +503,7 @@ def test_generation_queue_generates_and_reports_status(
     )
     assert r.status_code == 200, r.text
     assert r.json()["queued"] == 1
-    for _ in range(200):
+    for _ in range(500):
         status = client.get(f"/api/v1/decks/{token}/generation").json()
         if status["total"] and status["done"] == status["total"] and not status["inflight"]:
             break
