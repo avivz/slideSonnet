@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import { useEditorStore } from '@/stores/editor'
@@ -70,9 +70,17 @@ function structural(): void {
   commit()
 }
 
-function add(kind: 'speech' | 'pause'): void {
-  block.value?.middle.push(kind === 'speech' ? newSpeech() : newPause())
-  structural()
+/** A new line or pause, with the cursor in it (typing goes there, not to the shortcuts). */
+async function add(kind: 'speech' | 'pause'): Promise<void> {
+  const middle = block.value?.middle
+  if (!middle) return
+  middle.push(kind === 'speech' ? newSpeech() : newPause())
+  structural() // an empty line isn't written until it has words
+  const at = middle.length - 1
+  await nextTick()
+  root.value
+    ?.querySelector<HTMLElement>(`[data-testid="${kind === 'speech' ? 'utext' : 'pause-secs'}-${at}"]`)
+    ?.focus()
 }
 function remove(index: number): void {
   block.value?.middle.splice(index, 1)
@@ -82,7 +90,8 @@ function move(index: number, delta: number): void {
   if (block.value && moveSeg(block.value, index, delta)) structural()
 }
 
-async function generate(speechIndex: number, force: boolean): Promise<void> {
+async function generate(speechIndex: number | undefined, force: boolean): Promise<void> {
+  if (speechIndex === undefined) return // a line with no words yet has nothing to generate
   // the clip being replaced mustn't keep playing
   const loaded = player.transport.loadedKey
   if (loaded === 'video' || loaded === slideId.value || player.allAt === slideId.value) player.stop()
@@ -162,7 +171,7 @@ function onKey(event: KeyboardEvent): void {
             @commit="commit"
             @move="move(i, $event)"
             @remove="remove(i)"
-            @generate="generate(speech.get(seg.key) ?? 0, $event)"
+            @generate="generate(speech.get(seg.key), $event)"
             @voices="emit('voices')"
           />
           <PauseCard

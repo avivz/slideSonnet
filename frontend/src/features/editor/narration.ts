@@ -120,10 +120,15 @@ function fromEdit(seg: EditSeg): SegmentDTO {
   }
 }
 
+/** A line with no words yet isn't written: the file never gets an empty `text:`. */
+export function written(seg: EditSeg): boolean {
+  return seg.kind === 'pause' || seg.text.trim() !== ''
+}
+
 /** The segments a save writes: the cards, bracketed by the silences when shown. */
 export function blockSegments(block: EditBlock): SegmentDTO[] {
-  const middle = block.middle.map(fromEdit)
-  if (hasSilenceFields(block) && block.middle.some((s) => s.kind === 'speech')) {
+  const middle = block.middle.filter(written).map(fromEdit)
+  if (hasSilenceFields(block) && speaks(block.middle)) {
     return [
       { kind: 'pause', seconds: Math.max(0, block.start ?? 0) },
       ...middle,
@@ -156,12 +161,15 @@ export function moveSeg(block: EditBlock, index: number, delta: number): boolean
   return true
 }
 
-/** Speech segments' positions: card index → speech index (for per-clip audio). */
+/**
+ * Spoken lines' positions as the file has them: card key → speech index (for
+ * per-clip audio). A line with no words yet has none — it isn't written.
+ */
 export function speechIndexes(block: EditBlock): Map<string, number> {
   const out = new Map<string, number>()
   let n = 0
   for (const seg of block.middle) {
-    if (seg.kind === 'speech') out.set(seg.key, n++)
+    if (seg.kind === 'speech' && written(seg)) out.set(seg.key, n++)
   }
   return out
 }

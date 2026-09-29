@@ -67,6 +67,20 @@ describe('narration editor', () => {
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS)
   })
 
+  it('+ Line and + Pause put the cursor in the new block; an empty line is never saved', async () => {
+    const { server } = await setup()
+    const w = mount(NarrationEditor, { attachTo: document.body })
+    await w.get('[data-testid="add-utterance"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(w.get('[data-testid="utext-1"]').element)
+    expect(server.saves).toHaveLength(0) // nothing said yet: nothing to write
+    await w.get('[data-testid="add-pause"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(w.get('[data-testid="pause-secs-2"]').element)
+    expect(server.narration.a?.segments.map((s) => s.kind === 'speech' ? s.text : s.seconds))
+      .toEqual([0.3, 'Hello.', 1, 0.6]) // the pause, without an empty line
+  })
+
   it('folds a line’s voice, pace and note away, naming only what differs from the defaults', async () => {
     const server = new FakeServer()
     const { editor } = await setup(server)

@@ -10,6 +10,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 import { ApiError, type JobDTO } from '@/api/client'
 import { waitForJob } from '@/api/jobs'
+import { written } from '@/features/editor/narration'
 import { PlaybackController, type Frame } from '@/features/playback/controller'
 import { nextInScope } from '@/features/playback/cues'
 import type { PreviewManifest } from '@/features/playback/manifest'
@@ -88,7 +89,7 @@ export const usePlayerStore = defineStore('player', () => {
     let next: typeof spoken.value = null
     const span = f.loaded ? spanAt(spans, f.time) : null
     if (span) {
-      const line = editor.draftFor(span.slide_id)?.middle.filter((seg) => seg.kind === 'speech')[span.index]
+      const line = editor.draftFor(span.slide_id)?.middle.filter((seg) => seg.kind === 'speech' && written(seg))[span.index]
       const range = line ? wordAt(line.text, voicedFraction(span, f.time)) : null
       if (range) next = { slideId: span.slide_id, index: span.index, start: range[0], end: range[1] }
     }
