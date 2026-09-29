@@ -28,9 +28,11 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    **Status 2026-09-29:** batches (a)–(f) below are **done and on `main`** (each with
    regression tests; CHANGELOG "September 2026 review"), plus the Qwen3/golden
    cache-key batch and the pipeline, server and docs cleanups from Next #8. The editor UX quick wins are
-   merged too. Still open: the follow-ups listed at the end
-   of `dev/REVIEW-TODO.md`, and a local `make test` + `make test-browser` run before
-   a3. Original scope:
+   merged too, and so are the follow-up batches (Kokoro voices in every language,
+   `review --narration`, `-q`/`-v` anywhere, blank lines skipped in export, duplicate
+   `@id` agreement, orphan-action guards, the empty-new-line conflict). Heavy suites
+   green on 9579d6f (36 passed); rerun before a3. Still open in Tier 3: paid work
+   pinned to approved content, frontend dead code and missing frontend tests. Original scope:
    Two
    reviews agree the new editor and pipeline have real data-loss and paid-audio
    holes; a3 must not ship them. Work in parallel batches, each **repro test
@@ -99,31 +101,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    duplicate groups merged, NiceGUI-internal fixes dropped); (f) version bumped
    in `src/slidesonnet/__init__.py`, tag pushed, publish workflow green.
    *Appetite:* half a day once #1 settles. **[agent→human]**
-4. [ ] **Re-check the two preview bugs carried over from the NiceGUI editor.**
-   Both entries in `dev/KNOWN_ISSUES.md` describe code that no longer exists
-   (`gui/app.py`, `morph.html`). The Vue filmstrip keeps its `<img>` elements
-   (keyed by page + slide id) and changes only the `src` of re-rendered pages,
-   and pages are swapped in whole (`18f65a1`), so the **filmstrip blank flash**
-   is probably gone. **Play all** no longer draws transitions, so the **black
-   flash after a transition** can only happen in **Watch as video** now, where
-   `features/playback/morph.ts` still lifts the overlay after a fixed
-   `GRACE = 0.3`. *Acceptance:* recompile a deck with the editor open and watch
-   the strip; watch a deck with an animated boundary. Each bug is either closed in
-   `KNOWN_ISSUES.md` or gets a Vitest/browser repro before its fix. *Appetite:*
-   an hour to check, half a day per bug that survives. **[agent]**
-5. [ ] **Show deck-level checks in the editor.** The console lists only
-   `diagnosticsHere` (`stores/editor.ts`: this slide's findings). A finding that
-   belongs to no page is invisible: `order-drift` has no slide id at all, and an
-   `orphan-narration` error names an id that is on no page, so it raises the
-   header's error count while the checks list says "No issues on this slide" (the
-   orphan tray shows the block, not the error). *Story:* As a deck author,
-   when the editor says there are errors, I want to see every one of them, so I
-   can fix a deck-level problem without running `slidesonnet check`.
-   *Acceptance examples:* (a) a sidecar whose blocks are out of PDF order shows
-   the `order-drift` note in a "Deck" checks list; (b) an orphaned block's error
-   appears in that list and links to the tray; (c) a deck with no page-less
-   findings shows no such list. *(The keystroke-loss half of the old
-   "orphaned-narration leftovers" item shipped 2026-09-28.)* *Appetite:* half a day. **[agent]**
+
 ## Next — this month
 
 1. [ ] **Bug: `pool prune --root <course>` refuses to run on a real course.**
@@ -252,6 +230,13 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Deck-level checks in the editor** (2026-09-29, `3782666`; was Now #5). A
+  "Deck checks" list shows findings no slide owns (out-of-order narration, an
+  unattached block's error, linking to the tray); the error pill leads there.
+- [x] **Preview bugs carried over from NiceGUI re-checked** (2026-09-29, `cd444bc`,
+  `ba295dd`; was Now #4). Both survived in new forms and are fixed: a recompile keeps
+  every thumbnail until its new picture lands, and the transition overlay in Watch as
+  video lifts only once the next picture has decoded.
 - [x] **Qwen3 own-voice clone: tried, not good enough** (verdict 2026-09-29; was
   Now #3, then Next #7). The maintainer recorded a reference, built the clone and
   judged the result: not good. Own-voice cloning is dropped, and with it the
