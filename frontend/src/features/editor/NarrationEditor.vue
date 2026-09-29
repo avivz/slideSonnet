@@ -13,6 +13,7 @@ import PauseCard from './PauseCard.vue'
 import SilenceField from './SilenceField.vue'
 import TransitionPicker from './TransitionPicker.vue'
 import UtteranceCard from './UtteranceCard.vue'
+import { useEditingFocus } from './useEditingFocus'
 
 const emit = defineEmits<{ voices: [] }>()
 
@@ -88,36 +89,16 @@ async function generate(speechIndex: number, force: boolean): Promise<void> {
   await generation.enqueue([{ slide_id: slideId.value, speech_index: speechIndex }], { force })
 }
 
-function onFocusIn(event: FocusEvent): void {
-  player.setEditing(true)
-  const card = (event.target as HTMLElement).closest<HTMLElement>('[data-speech]')
-  generation.focusedSpeech = card
-    ? { slideId: slideId.value, index: Number(card.dataset.speech) }
-    : null
-}
-function onFocusOut(event: FocusEvent): void {
-  const next = event.relatedTarget as Node | null
-  if (next && root.value?.contains(next)) return
-  generation.focusedSpeech = null
-  player.setEditing(false)
-}
+const { onFocusIn, onFocusOut } = useEditingFocus(root, (el) => {
+  const card = el.closest<HTMLElement>('[data-speech]')
+  return card ? { slideId: slideId.value, index: Number(card.dataset.speech) } : null
+})
 function onKey(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault()
     commit() // save now, without leaving the field
   }
 }
-
-const saveLabel = computed(
-  () =>
-    ({
-      saved: 'Saved',
-      unsaved: 'Unsaved changes',
-      saving: 'Saving…',
-      conflict: 'Changed on disk',
-      error: 'Not saved',
-    })[editor.saveState],
-)
 </script>
 
 <template>
@@ -132,7 +113,6 @@ const saveLabel = computed(
   >
     <header class="head">
       <h2 class="id mono" data-testid="slide-id">{{ slideId || '(no slide id)' }}</h2>
-      <span class="save mono" :class="editor.saveState" data-testid="save-state" role="status">{{ saveLabel }}</span>
       <span class="spacer"></span>
       <button
         class="btn quiet" type="button" :disabled="!block" data-testid="add-utterance"
@@ -215,20 +195,6 @@ const saveLabel = computed(
   display: flex;
   align-items: center;
   gap: var(--space-1);
-}
-.save {
-  margin-left: var(--space-2);
-  font-size: var(--text-xs);
-  color: var(--dim);
-}
-.save.unsaved,
-.save.saving {
-  color: var(--warn);
-}
-.save.conflict,
-.save.error {
-  color: var(--err);
-  font-weight: 600;
 }
 .id {
   margin: 0;

@@ -22,6 +22,7 @@ import DeckSwitcher from './DeckSwitcher.vue'
 import FilmStrip from './FilmStrip.vue'
 import { useLeaveGuard } from './leave'
 import NarrationEditor from './NarrationEditor.vue'
+import SaveIndicator from './SaveIndicator.vue'
 import ScriptView from './ScriptView.vue'
 import SlideStage from './SlideStage.vue'
 import VoicesDialog from './VoicesDialog.vue'
@@ -430,19 +431,22 @@ function pick(deck: LibraryDeckDTO): void {
           @keydown="onSplitKey"
         ></div>
         <div class="narration-area">
-          <div class="view-switch" role="group" aria-label="Narration view">
-            <button
-              type="button" :class="{ on: !scriptView }" :aria-pressed="!scriptView" data-testid="view-slide"
-              title="Edit this slide's narration" @click="setScriptView(false)"
-            >
-              Slide
-            </button>
-            <button
-              type="button" :class="{ on: scriptView }" :aria-pressed="scriptView" data-testid="view-script"
-              title="The whole deck's narration as one script" @click="setScriptView(true)"
-            >
-              Script
-            </button>
+          <div class="view-bar">
+            <SaveIndicator />
+            <div class="view-switch" role="group" aria-label="Narration view">
+              <button
+                type="button" :class="{ on: !scriptView }" :aria-pressed="!scriptView" data-testid="view-slide"
+                title="Edit this slide's narration" @click="setScriptView(false)"
+              >
+                Slide
+              </button>
+              <button
+                type="button" :class="{ on: scriptView }" :aria-pressed="scriptView" data-testid="view-script"
+                title="The whole deck's narration as one script" @click="setScriptView(true)"
+              >
+                Script
+              </button>
+            </div>
           </div>
           <ScriptView v-if="scriptView" />
           <NarrationEditor v-else @voices="voicesOpen = true" />
@@ -676,14 +680,24 @@ function pick(deck: LibraryDeckDTO): void {
 .stage-area > * {
   width: 100%; /* the slide is sized by the area's height, not a fixed cap */
 }
-.view-switch {
+.view-bar {
   position: sticky;
   top: 0;
   z-index: 2;
   display: flex;
+  align-items: center;
+  gap: var(--space-3);
   justify-self: end !important;
   width: auto !important;
   margin-bottom: var(--space-1);
+}
+.view-bar :deep(.save) {
+  padding: 2px var(--space-2);
+  background: var(--surface);
+  border-radius: var(--radius-pill);
+}
+.view-switch {
+  display: flex;
   padding: 2px;
   background: var(--surface);
   border: 1px solid var(--line);

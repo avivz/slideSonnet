@@ -3,8 +3,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '@/api/client'
+import SaveIndicator from '@/features/editor/SaveIndicator.vue'
 import ScriptView from '@/features/editor/ScriptView.vue'
 import { AUTOSAVE_MS, useEditorStore } from '@/stores/editor'
+import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
 import { useReviewStore } from '@/stores/review'
 
@@ -39,6 +42,41 @@ describe('script view', () => {
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS)
     await flushPromises()
     expect(server.narration.b?.segments.find((s) => s.kind === 'speech')).toMatchObject({ text: 'New words for b.' })
+  })
+
+  it('while a line is typed in, playback and auto-generate leave it alone', async () => {
+    await setup()
+    const player = usePlayerStore()
+    const generation = useGenerationStore()
+    const w = mount(ScriptView, { attachTo: document.body })
+    const line = w.get('[data-testid="script-text-b-0"]')
+    await line.trigger('focusin')
+    expect([player.editing, generation.focusedSpeech]).toEqual([true, { slideId: 'b', index: 0 }])
+    await line.trigger('focusout')
+    expect([player.editing, generation.focusedSpeech]).toEqual([false, null])
+    await line.trigger('focusin')
+    w.unmount() // switched to the slide view while typing: nothing stays held
+    expect([player.editing, generation.focusedSpeech]).toEqual([false, null])
+  })
+
+  it('shows the deck’s save state, and a failed save until it is retried', async () => {
+    const { editor } = await setup()
+    const w = mount(SaveIndicator)
+    expect(w.text()).toBe('Saved')
+    const save = editor.client.saveSlide
+    editor.client.saveSlide = async () => {
+      throw new ApiError(500, 'io', 'Disk full.')
+    }
+    const line = editor.draftFor('a')?.middle[0]
+    if (line) line.text = 'Changed.'
+    editor.touch('a')
+    await editor.flush()
+    await flushPromises()
+    expect(w.text()).toContain('Not saved')
+    editor.client.saveSlide = save
+    await w.get('button').trigger('click') // retry
+    await flushPromises()
+    expect(w.text()).toBe('Saved')
   })
 
   it('marks the word being spoken in its line', async () => {

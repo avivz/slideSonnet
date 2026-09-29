@@ -11,6 +11,7 @@ import { useReviewStore } from '@/stores/review'
 
 import NarrationDiff from './NarrationDiff.vue'
 import { speechIndexes, type EditSeg } from './narration'
+import { useEditingFocus } from './useEditingFocus'
 
 const editor = useEditorStore()
 const review = useReviewStore()
@@ -25,6 +26,13 @@ function spokenParts(slideId: string, seg: EditSeg): [string, string, string] | 
   return ['', seg.text.slice(0, w.end), seg.text.slice(w.end)]
 }
 const root = ref<HTMLElement | null>(null)
+// typing in a line holds playback's cursor and auto-generate off it, as in the slide view
+const { onFocusIn, onFocusOut } = useEditingFocus(root, (el) => {
+  if (el.tagName !== 'TEXTAREA') return null
+  const key = el.closest<HTMLElement>('[data-speech]')?.dataset.speech
+  const at = key?.lastIndexOf('#') ?? -1
+  return key && at > 0 ? { slideId: key.slice(0, at), index: Number(key.slice(at + 1)) } : null
+})
 
 function enter(index: number): void {
   if (index !== editor.index) {
@@ -100,7 +108,7 @@ function speechKey(slideId: string, seg: EditSeg): string | undefined {
 </script>
 
 <template>
-  <section ref="root" class="script" data-testid="script-view">
+  <section ref="root" class="script" data-testid="script-view" @focusin="onFocusIn" @focusout="onFocusOut">
     <article
       v-for="(page, i) in editor.pages"
       :key="`${i}-${page.slide_id}`"
