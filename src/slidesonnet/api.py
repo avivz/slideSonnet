@@ -137,7 +137,7 @@ def init_sidecar(
         )
 
     if merge and sidecar.exists():
-        existing = _parse_named(sidecar, parse_sidecar)
+        existing = _parse_named(sidecar, lambda: parse_sidecar(sidecar.read_text(encoding="utf-8")))
         existing_ids = {b.slide_id for b in existing}
         missing = [pid for pid in unique_real_ids(pages) if pid not in existing_ids]
         if missing:
@@ -164,8 +164,8 @@ def check_deck(pdf_path: Path, *, sidecar_path: Path | None = None) -> list[Diag
     as a draft. A PDF with no slide-ids at all, and a slide-id with more than
     one narration block, are errors.
     """
-    _deck, _config, diags = _load(pdf_path, sidecar_path, None, None)
-    return diags
+    deck, config, load_diags = _load(pdf_path, sidecar_path, None, None)
+    return _deck_diagnostics(pdf_path, deck, config, load_diags)
 
 
 def no_slide_ids_message(pdf_path: Path, n_pages: int) -> str:
@@ -328,7 +328,12 @@ def _load(
     config_path: Path | None,
     engine: Engine | None,
 ) -> tuple[Deck, Config, list[Diagnostic]]:
-    """Load the deck and its config, plus everything ``check`` would report."""
+    """Load the deck and its config, plus the id diagnostics found while loading.
+
+    The fuller report (voices, transitions, build type) is
+    :func:`_deck_diagnostics`, computed only where it's needed: ``check`` and a
+    final export. Synthesis and previews run per edit and skip it.
+    """
     from slidesonnet.config import load_config
     from slidesonnet.deck import load_deck
 
@@ -345,17 +350,14 @@ def _load(
     if engine is not None:
         config.tts.backend = engine
     sidecar = sidecar_path or default_sidecar_path(pdf_path.resolve())
-    deck, load_diags = _parse_named(
-        sidecar, lambda _text: load_deck(pdf_path, sidecar_path=sidecar_path)
-    )
-    return deck, config, _deck_diagnostics(pdf_path, deck, config, load_diags)
+    deck, load_diags = _parse_named(sidecar, lambda: load_deck(pdf_path, sidecar_path=sidecar_path))
+    return deck, config, load_diags
 
 
-def _parse_named[T](sidecar: Path, parse: Callable[[str], T]) -> T:
-    """Run *parse* on *sidecar*'s text, naming the file in any syntax error."""
-    text = sidecar.read_text(encoding="utf-8") if sidecar.exists() else ""
+def _parse_named[T](sidecar: Path, parse: Callable[[], T]) -> T:
+    """Run *parse* (which reads *sidecar*), naming the file in any syntax error."""
     try:
-        return parse(text)
+        return parse()
     except SidecarError as e:
         raise SidecarError(f"{sidecar.name}, {e} — fix that line and re-run") from e
 
@@ -559,11 +561,12 @@ def export(
         reasons = export_blockers(pdf_path)
         if reasons:
             raise ExportRefused(reasons)
-    deck, config, diags = _load(pdf_path, sidecar_path, config_path, engine)
+    deck, config, load_diags = _load(pdf_path, sidecar_path, config_path, engine)
     mode = parse_timing(timing, wpm=wpm)
 
     audible = export_phases(silent=silent, timing=timing, wpm=wpm) == EXPORT_PHASES
     if not draft:
+        diags = _deck_diagnostics(pdf_path, deck, config, load_diags)
         _refuse_unready(pdf_path, deck, diags, audible=audible)
     if silent and mode.kind == "tts":
         mode = TimingMode("estimate", wpm=wpm)  # tts is meaningless without audio
