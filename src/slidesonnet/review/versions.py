@@ -181,6 +181,30 @@ def combine(pages: PageCapture, narration: Mapping[str, PageNarration]) -> DeckV
     return DeckVersion(order=pages.order, slides=slides)
 
 
+def store_images(
+    pdf_path: Path, version: DeckVersion, slide_ids: set[str], images_dir: Path
+) -> None:
+    """Write missing images for selected slides from an already captured version.
+
+    Existing canonical images stay untouched. Only pages whose images are
+    missing need rendering; no pixel comparison is needed a second time.
+    """
+    missing = {
+        sid: images_dir / f"{version.slides[sid].image_hash}.png"
+        for sid in slide_ids & version.slides.keys()
+        if not (images_dir / f"{version.slides[sid].image_hash}.png").exists()
+    }
+    if not missing:
+        return
+    images_dir.mkdir(parents=True, exist_ok=True)
+    ids, _diags = dedupe_page_ids(read_page_ids(pdf_path))
+    with pymupdf.open(pdf_path) as doc:
+        for index, sid in enumerate(ids):
+            target = missing.pop(sid, None)
+            if target is not None and not target.exists():
+                _render(doc[index]).save(target)
+
+
 def capture(
     pdf_path: Path,
     *,

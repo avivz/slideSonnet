@@ -101,12 +101,12 @@ function time(at: string): string {
         <button
           class="btn quiet small"
           type="button"
-          :disabled="review.closedCount === 0"
+          :disabled="review.closedCount === 0 || review.clearing"
           title="Make accepted changes the new starting point"
           data-testid="review-clear"
           @click="review.command({ type: 'clear' })"
         >
-          Clear accepted ({{ review.closedCount }})
+          {{ review.clearing ? 'Clearing…' : `Clear accepted (${review.closedCount})` }}
         </button>
       </header>
       <p v-if="review.data.final_build" class="warn-text small">

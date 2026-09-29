@@ -52,6 +52,28 @@ async function setup() {
 }
 
 describe('review store', () => {
+  it('shows clearing progress, blocks duplicate clears, and recovers after failure', async () => {
+    const { editor, review } = await setup()
+    let reject!: (reason: Error) => void
+    const request = vi.spyOn(editor.client, 'reviewCommand').mockImplementation(
+      () => new Promise((_resolve, rejectRequest) => { reject = rejectRequest }),
+    )
+    const w = mount(ReviewPanel)
+    const clearing = review.command({ type: 'clear' })
+    await flushPromises()
+    const button = w.get('[data-testid="review-clear"]')
+    expect(button.text()).toBe('Clearing…')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(await review.command({ type: 'clear' })).toBe(false)
+    expect(request).toHaveBeenCalledTimes(1)
+    reject(new Error('Failed'))
+    expect(await clearing).toBe(false)
+    await flushPromises()
+    expect(review.clearing).toBe(false)
+    expect(button.attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
+
   it('lays removed slides after their old predecessor in one strip', async () => {
     const { review } = await setup()
     expect(review.strip.map((it) => (it.kind === 'page' ? it.slideId : `-${it.slideId}`))).toEqual([

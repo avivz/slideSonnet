@@ -16,6 +16,7 @@ export const useReviewStore = defineStore('review', () => {
   const editor = useEditorStore()
   const data = shallowRef<ReviewDTO | null>(null)
   const comparing = ref(false)
+  const clearing = ref(false)
   /** The chosen conversation: other slides dim and the arrows stay inside it. */
   const filter = ref<string | null>(null)
   const showClosed = ref(false)
@@ -144,8 +145,10 @@ export const useReviewStore = defineStore('review', () => {
   async function command(body: ReviewCommand): Promise<boolean> {
     const token = editor.token
     if (token === null) return false
-    await editor.flush() // the agent should see the saved narration
+    if (body.type === 'clear' && clearing.value) return false
+    if (body.type === 'clear') clearing.value = true
     try {
+      await editor.flush() // the agent should see the saved narration
       const outcome = await editor.client.reviewCommand(token, body)
       if (outcome.message) editor.flash(outcome.message, body.type === 'file_unrequested' ? 'warn' : 'ok')
       if (outcome.focus && outcome.conversation) filter.value = outcome.conversation
@@ -155,6 +158,8 @@ export const useReviewStore = defineStore('review', () => {
     } catch (e) {
       editor.flash(e instanceof ApiError ? e.message : 'The review couldn’t be updated.', 'warn')
       return false
+    } finally {
+      if (body.type === 'clear') clearing.value = false
     }
   }
 
@@ -240,7 +245,7 @@ export const useReviewStore = defineStore('review', () => {
   }
 
   return {
-    data, comparing, filter, showClosed, beforeOnly, viewingRemoved, active, conversations,
+    data, comparing, clearing, filter, showClosed, beforeOnly, viewingRemoved, active, conversations,
     deckConversation, slideConversations, changes, removed, subject, scope, waitingHere, closedCount,
     strip,
     conversationsFor, badge, refresh, command, fileUnrequested, viewRemoved, leaveRemoved,

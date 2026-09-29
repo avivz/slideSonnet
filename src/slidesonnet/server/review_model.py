@@ -195,7 +195,8 @@ class ReviewModel:
         ops.send(self.pdf_path)
 
     def clear(self) -> ops.ClearResult:
-        result = ops.clear(self.pdf_path)
+        pages, _final = self._page_capture()
+        result = ops.clear(self.pdf_path, pages=pages)
         self._base = None
         return result
 

@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pymupdf
+import pytest
 
 from slidesonnet.deck import load_deck
-from slidesonnet.review import ops
+from slidesonnet.review import base as base_mod
+from slidesonnet.review import ops, versions
 from slidesonnet.server.review_model import ReviewModel, word_diff
 from tests.conftest import simple_narration, write_pdf
 
@@ -118,3 +120,82 @@ def test_narration_diff_and_base_image(tmp_path: Path) -> None:
 def test_word_diff() -> None:
     assert word_diff("a b c", "a x c") == [("=", "a"), ("-", "b"), ("+", "x"), ("=", "c")]
     assert word_diff("", "new") == [("+", "new")]
+
+
+def test_clear_reuses_pages_and_preserves_other_conversations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf = _deck(tmp_path, ["a", "b", "c"], "@a\nOld.\n")
+    model = ReviewModel(pdf)
+    model.ensure_base()
+    before = base_mod.load_base(pdf)
+    assert before is not None
+    for index in range(3):
+        _edit_page(pdf, index)
+    accepted = model.comment(["a", "b"], "Accept these")
+    other = model.comment(["b", "c"], "Still needs work")
+    model.accept(accepted)
+    model.status(_narr(pdf))  # the panel has already compared the current PDF
+    # Narration must still be read afresh even when the PDF capture is reused.
+    pdf.with_suffix(".narration").write_text(simple_narration("@a\nLatest.\n"))
+    rendered: list[int] = []
+    real_render = versions._render
+
+    def render(page: pymupdf.Page) -> pymupdf.Pixmap:
+        rendered.append(page.number)
+        return real_render(page)
+
+    def no_compare(*args: object) -> bool:
+        pytest.fail("clear must not repeat the cached pixel comparisons")
+
+    monkeypatch.setattr(versions, "_render", render)
+    monkeypatch.setattr(versions, "same_picture", no_compare)
+    result = model.clear()
+    assert result.cleared == [accepted]
+    assert result.advanced == ["a"] and result.skipped == ["b"]
+    assert rendered == [0]  # only the accepted slide's missing image
+    after = base_mod.load_base(pdf)
+    assert after is not None
+    assert "Latest." in after.slides["a"].narration
+    assert after.slides["b"] == before.slides["b"]
+    assert after.slides["c"] == before.slides["c"]
+    assert model.base_image("a") is not None
+    status = model.status(_narr(pdf))
+    assert {c.slide_id for c in status.changes} == {"b", "c"}
+    assert status.state.conversations[other].status == "open"
+    assert status.state.conversations[other].slides == ["b", "c"]
+
+
+def test_clear_refreshes_cached_pages_after_pdf_edit(tmp_path: Path) -> None:
+    pdf = _deck(tmp_path, ["a", "b"])
+    model = ReviewModel(pdf)
+    model.ensure_base()
+    model.status(_narr(pdf))
+    _edit_page(pdf, 0)
+    cid = model.comment(["a"], "Accept")
+    model.accept(cid)
+    model.clear()
+    assert ops.status(pdf).changes == []
+    image = model.base_image("a")
+    assert image is not None
+    stored = base_mod.load_base(pdf)
+    assert stored is not None
+    assert versions.pixel_hash(pymupdf.Pixmap(str(image))) == stored.slides["a"].image_hash
+
+
+def test_clear_preserves_order_held_by_an_open_conversation(tmp_path: Path) -> None:
+    pdf = _deck(tmp_path, ["a", "b", "c"])
+    model = ReviewModel(pdf)
+    model.ensure_base()
+    accepted = model.comment(["a", "c"], "Accept")
+    other = model.comment(["a"], "Still reviewing this move")
+    model.accept(accepted)
+    write_pdf(pdf, ["b", "a", "c"])
+    model.status(_narr(pdf))
+    result = model.clear()
+    assert result.skipped == ["a"]
+    assert not result.order_adopted
+    stored = base_mod.load_base(pdf)
+    assert stored is not None and stored.order == ("a", "b", "c")
+    assert ops.load(pdf).conversations[other].status == "open"
+    assert any(c.slide_id == "a" and c.moved for c in model.status(_narr(pdf)).changes)

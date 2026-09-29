@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from slidesonnet.deck import dedupe_page_ids
+from slidesonnet.deck import dedupe_page_ids, load_deck
 from slidesonnet.exceptions import ReviewError
 from slidesonnet.pdf.reader import is_final_build, read_page_ids
 from slidesonnet.review import base as base_mod
@@ -29,7 +29,7 @@ from slidesonnet.review.log import (
     replay,
     write_records,
 )
-from slidesonnet.review.versions import DeckVersion, capture
+from slidesonnet.review.versions import DeckVersion, PageCapture, capture, combine
 
 AUTHOR_EDIT_NOTE = "The author edited the narration of @{slide}."
 
@@ -91,13 +91,18 @@ def ensure_base(pdf_path: Path) -> DeckVersion | None:
     return base
 
 
-def status(pdf_path: Path) -> ReviewStatus:
+def status(pdf_path: Path, *, pages: PageCapture | None = None) -> ReviewStatus:
+    """Read current review state; *pages*, if supplied, must match the PDF on disk."""
     state = load(pdf_path)
     if is_final_build(pdf_path):
         return ReviewStatus(state=state, final_build=True, base=base_mod.load_base(pdf_path))
     base = ensure_base(pdf_path)
     assert base is not None  # a plain build always yields one
-    current = capture(pdf_path, reference=base_mod.reference_images(pdf_path))
+    current = (
+        capture(pdf_path, reference=base_mod.reference_images(pdf_path))
+        if pages is None
+        else combine(pages, load_deck(pdf_path)[0].narration)
+    )
     changes = diff_versions(base, current)
     filed = {sid for c in state.slide_conversations() for sid in c.slides}
     unfiled = [c.slide_id for c in changes if c.slide_id not in filed]
@@ -342,14 +347,17 @@ def _pin_slides(rec: Record, state: ReviewState) -> Record:
     return replace(rec, slides=()) if rec.slides else rec
 
 
-def clear(pdf_path: Path) -> ClearResult:
+def clear(pdf_path: Path, *, pages: PageCapture | None = None) -> ClearResult:
     """Drop closed conversations and advance the base for their slides.
 
     A slide that's also in an open conversation keeps its base (it advances
     when that one clears). The base adopts the current slide order unless an
     open conversation holds a moved slide.
+
+    The editor may supply a fresh cached page capture. Narration and the log
+    are always read from disk, including when that capture is reused.
     """
-    current = status(pdf_path)
+    current = status(pdf_path, pages=pages)
     if current.final_build:
         raise ReviewError("the PDF is a final build — recompile it normally before clearing")
     state = current.state
@@ -364,7 +372,7 @@ def clear(pdf_path: Path) -> ClearResult:
     skipped = sorted({s for s in closed_slides if s in open_slides})
     moved = {c.slide_id for c in current.changes if c.moved}
     adopt = not (moved & open_slides)
-    base_mod.advance(pdf_path, set(advance), adopt_order=adopt)
+    base_mod.advance(pdf_path, set(advance), adopt_order=adopt, current=current.current)
     drop = {c.id for c in closed} | state.retired
     path = review_path(pdf_path)
     records = [

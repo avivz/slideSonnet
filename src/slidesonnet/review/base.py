@@ -16,7 +16,7 @@ from pathlib import Path
 from slidesonnet.cache import REVIEW_DIRNAME, cache_root
 from slidesonnet.exceptions import ReviewError
 from slidesonnet.pdf.reader import is_final_build
-from slidesonnet.review.versions import DeckVersion, SlideVersion, capture
+from slidesonnet.review.versions import DeckVersion, SlideVersion, capture, store_images
 
 _FORMAT = 1
 
@@ -107,6 +107,7 @@ def advance(
     *,
     adopt_order: bool,
     sidecar_path: Path | None = None,
+    current: DeckVersion | None = None,
 ) -> DeckVersion:
     """Move *slide_ids* to their current version (Clear accepted).
 
@@ -114,17 +115,21 @@ def advance(
     With *adopt_order* the base takes the current order (restricted to slides
     the base holds); otherwise the old order is kept, with newly added slides
     placed as in the current order.
+
+    Reuse *current* when the caller already captured this PDF and narration.
+    Only missing images for the named slides are rendered and stored.
     """
     _require_plain(pdf_path)
     base = load_base(pdf_path)
     if base is None:
         raise ReviewError("no review base yet — take one with `slidesonnet review snapshot`")
-    current = capture(
-        pdf_path,
-        sidecar_path=sidecar_path,
-        images_dir=_pages_dir(pdf_path),
-        reference=reference_images(pdf_path),
-    )
+    if current is None:
+        current = capture(
+            pdf_path,
+            sidecar_path=sidecar_path,
+            reference=reference_images(pdf_path),
+        )
+    store_images(pdf_path, current, slide_ids, _pages_dir(pdf_path))
     slides = dict(base.slides)
     for sid in slide_ids:
         if sid in current.slides:

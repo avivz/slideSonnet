@@ -148,6 +148,26 @@ def test_clear_skips_slides_still_in_an_open_conversation(deck: Path) -> None:
     assert {c.slide_id for c in ops.status(deck).changes} == {"a"}
 
 
+def test_clear_compares_pages_once(deck: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from slidesonnet.review import versions
+
+    ops.status(deck)
+    _edit_page(deck, 0)
+    cid = ops.comment(deck, ["a"], "Accept")
+    ops.accept(deck, cid)
+    comparisons = 0
+    real = versions.same_picture
+
+    def compare(a: pymupdf.Pixmap, b: pymupdf.Pixmap) -> bool:
+        nonlocal comparisons
+        comparisons += 1
+        return real(a, b)
+
+    monkeypatch.setattr(versions, "same_picture", compare)
+    ops.clear(deck)
+    assert comparisons == 1  # advancing the base must reuse the comparison
+
+
 def test_clear_keeps_deck_conversation_and_send_cursor(deck: Path) -> None:
     ops.reply(deck, DECK, "publish", author="author")
     ops.send(deck)
