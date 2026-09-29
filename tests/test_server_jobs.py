@@ -12,7 +12,7 @@ import pytest
 
 from slidesonnet.cancellation import current_cancel
 from slidesonnet.server import jobs as jobs_mod
-from slidesonnet.server.events import EventBus
+from slidesonnet.server.events import Event, EventBus
 from slidesonnet.server.jobs import JobCancelled, JobContext, JobManager
 
 
@@ -29,8 +29,16 @@ def jobs(bus: EventBus) -> Iterator[JobManager]:
 
 
 def _finish(jobs: JobManager, job_id: str, timeout: float = 5.0) -> str:
-    job = jobs.wait_sync(job_id, timeout=timeout)
+    job = jobs.get(job_id)
+    assert job is not None
+    job.done_event.wait(timeout)
     return job.status
+
+
+def _events(bus: EventBus) -> list[Event]:
+    events = bus.since(0)
+    assert events is not None  # nothing fell out of the buffer
+    return events
 
 
 def test_job_runs_off_thread_reports_progress_and_result(jobs: JobManager, bus: EventBus) -> None:
@@ -49,9 +57,9 @@ def test_job_runs_off_thread_reports_progress_and_result(jobs: JobManager, bus: 
     assert done.result == {"answer": 42}
     assert (done.progress.phase, done.progress.done, done.progress.total) == ("assemble", 2, 2)
     assert seen_thread and seen_thread[0] != threading.current_thread().name
-    kinds = [e.type for e in bus.history()]
+    kinds = [e.type for e in _events(bus)]
     assert kinds[0] == "job.created" and kinds[-1] == "job.finished"
-    seqs = [e.seq for e in bus.history()]
+    seqs = [e.seq for e in _events(bus)]
     assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
 
 
@@ -94,8 +102,8 @@ def test_cancelling_a_queued_job_never_runs_it(bus: EventBus) -> None:
         second = manager.submit("preview", "tok", {}, lambda ctx: ran.append("second"))
         manager.cancel(second.id)
         gate.set()
-        assert manager.wait_sync(first.id, timeout=5).status == "succeeded"
-        assert manager.wait_sync(second.id, timeout=5).status == "cancelled"
+        assert _finish(manager, first.id) == "succeeded"
+        assert _finish(manager, second.id) == "cancelled"
         assert ran == []
     finally:
         manager.shutdown()
@@ -119,7 +127,7 @@ def test_progress_events_are_coalesced(jobs: JobManager, bus: EventBus) -> None:
 
     job = jobs.submit("generate", "tok", {}, work)
     _finish(jobs, job.id)
-    progress_events = [e for e in bus.history() if e.type == "job.progress"]
+    progress_events = [e for e in _events(bus) if e.type == "job.progress"]
     assert len(progress_events) < 20
 
 
@@ -171,7 +179,7 @@ def test_status_changes_only_under_the_lock(
     monkeypatch.setattr(jobs_mod, "Job", Watched)
     try:
         job = manager.submit("export", "tok", {}, work)
-        manager.wait_sync(job.id, timeout=5)
+        _finish(manager, job.id)
         manager.cancel(job.id)
     finally:
         manager.shutdown()

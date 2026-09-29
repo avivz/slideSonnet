@@ -51,7 +51,7 @@ def test_changes_badges_and_conversations(tmp_path: Path) -> None:
     _edit_page(pdf, 1)
     cid = model.comment(["b"], "why?")
     st = model.status(_narr(pdf))
-    assert model.change_for(st, "b") is not None and model.change_for(st, "a") is None
+    assert [c.slide_id for c in st.changes] == ["b"]
     assert [c.id for c in model.conversations_for(st, "b")] == [cid]
     assert model.badge(st, "b") == "agent-turn"
     ops.reply(pdf, cid, "fixed")
@@ -92,16 +92,6 @@ def test_file_unrequested_only_when_active(tmp_path: Path) -> None:
     assert filed is not None
     cid, count = filed
     assert count == 1 and ops.load(pdf).conversations[cid].origin == "unrequested"
-
-
-def test_author_edits_noted_only_when_active(tmp_path: Path) -> None:
-    pdf = _deck(tmp_path, ["a"])
-    model = ReviewModel(pdf)
-    model.note_edits({"a"})
-    assert not ops.review_path(pdf).exists()  # no base yet: nothing to note against
-    model.ensure_base()
-    model.note_edits({"a"})
-    assert any(c.origin == "author-edits" for c in ops.load(pdf).slide_conversations())
 
 
 def test_narration_diff_and_base_image(tmp_path: Path) -> None:

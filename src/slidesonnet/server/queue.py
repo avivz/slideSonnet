@@ -12,8 +12,8 @@ regenerate — attaches to the running job instead of launching a duplicate. Two
 byte-identical utterances on different slides collapse to one job for the same
 reason.
 
-This module is deliberately NiceGUI-free (its dependencies are injected as
-callables) so the dedup/coalesce logic is unit-testable without a browser.
+Its dependencies are injected as callables, so the dedup/coalesce logic is
+unit-testable without a browser or a server.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -40,7 +40,7 @@ JobKey = str  # the content-addressed cache filename — one synthesis per key
 JobStatus = Literal["queued", "running", "done", "error"]
 Target = tuple[str, int]  # (slide_id, speech_index)
 
-# Injected dependencies (the GUI binds these to an EditorState; tests fake them).
+# Injected dependencies (`generation` binds these to a deck and engine; tests fake them).
 DeckProvider = Callable[[], tuple[Deck, Config, Path]]  # -> (deck, config, audio_dir)
 SynthFn = Callable[[set[Target], bool], object]  # (targets, force) -> synthesize; result ignored
 IsPaid = Callable[[], bool]
@@ -185,39 +185,10 @@ class JobQueue:
             self._wake.set()  # nudge the worker to (re)evaluate the backlog
         return handles
 
-    # ---- querying / awaiting -------------------------------------------
-    def handle_for(self, slide_id: str, speech_index: int) -> JobHandle | None:
-        """The in-flight job covering this clip, if any (drives the per-clip UI)."""
-        for handle in self._inflight.values():
-            if (slide_id, speech_index) in handle.refs:
-                return handle
-        return None
-
-    async def await_targets(self, targets: set[Target]) -> None:
-        """Block until every in-flight job covering *targets* finishes.
-
-        Targets with no in-flight job return immediately — used by play to wait
-        on exactly the clips it needs instead of racing or re-triggering synth.
-        """
-        deck, config, audio_dir = self._deck_provider()
-        keys = {
-            target.name
-            for ref, target in _ref_targets(deck, config, audio_dir)
-            if (ref.slide_id, ref.speech_index) in targets
-        }
-        for key in keys:
-            handle = self._inflight.get(key)
-            if handle is not None:
-                await handle.done.wait()
-
+    # ---- awaiting / cancelling ------------------------------------------
     async def drain(self) -> None:
-        """Block until nothing is pending or running (tests/shutdown)."""
+        """Block until nothing is pending or running (the tests' sync point)."""
         await self._idle.wait()
-
-    async def drain_after(self, handles: Iterable[JobHandle]) -> None:
-        """Block until each given handle finishes."""
-        for handle in handles:
-            await handle.done.wait()
 
     def cancel_running_unless(self, targets: set[Target]) -> bool:
         """Abort the in-flight clip unless it's already one of *targets*.

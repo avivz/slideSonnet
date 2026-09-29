@@ -1,17 +1,14 @@
 """Narration edits as pure operations on a :class:`Deck`, addressed by slide id.
 
-These used to be methods on the NiceGUI editor's state, keyed on "the slide the
-user is looking at". Here every operation names its slide explicitly, so the
-same rules serve the NiceGUI editor, the HTTP API, and tests alike. Nothing in
-this module touches the disk; :class:`slidesonnet.server.decks.DeckService`
-persists the result.
+Every operation names its slide explicitly, so the same rules serve the HTTP
+API and tests alike. Nothing in this module touches the disk;
+:class:`slidesonnet.server.decks.DeckService` persists the result.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
 
-from slidesonnet.deck import unique_real_ids
 from slidesonnet.diagnostics import boundary_transition
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import VoiceConfig
@@ -130,24 +127,6 @@ def apply_block_edit(
     return changed
 
 
-def block_differs(
-    deck: Deck,
-    slide_id: str,
-    segments: list[Segment],
-    *,
-    transition_in: Transition,
-    transition_out: Transition,
-) -> bool:
-    """Would :func:`apply_block_edit` with these values change the deck? (read-only)"""
-    cur = deck.page_narration(slide_id)
-    if transition_in != incoming_transition(deck, slide_id):
-        return True
-    edited = cur.with_content(
-        segments, transition_in=cur.transition_in, transition_out=transition_out
-    )
-    return edited != cur
-
-
 # ---- unattached narration (a slide dropped/renamed by a recompile) -----------
 def has_narration(deck: Deck, slide_id: str) -> bool:
     block = deck.narration.get(slide_id)
@@ -158,11 +137,6 @@ def orphan_blocks(deck: Deck) -> list[PageNarration]:
     """Narration blocks whose slide id matches no PDF page (sidecar order)."""
     on_page = set(deck.pages)
     return [b for sid, b in deck.narration.items() if sid not in on_page]
-
-
-def unnarrated_pages(deck: Deck) -> list[str]:
-    """Page ids an orphan could attach to (no narration yet), in page order."""
-    return [sid for sid in unique_real_ids(deck.pages) if not has_narration(deck, sid)]
 
 
 def attach_orphan(deck: Deck, orphan_id: str, target_id: str) -> None:

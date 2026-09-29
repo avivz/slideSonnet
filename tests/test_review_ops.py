@@ -93,16 +93,17 @@ def test_changes_and_unfiled(deck: Path) -> None:
     assert ops.status(deck).unfiled == ["a"]
 
 
-def test_file_unrequested_groups_unfiled_changes(deck: Path) -> None:
+def test_open_unrequested_files_the_unfiled_changes(deck: Path) -> None:
     ops.status(deck)
     _edit_page(deck, 0)
     _edit_page(deck, 2)
-    cid = ops.file_unrequested(deck)
-    assert cid is not None
+    unfiled = ops.status(deck).unfiled
+    assert unfiled == ["a", "c"]
+    cid = ops.open_unrequested(deck, unfiled)
     conv = ops.load(deck).conversations[cid]
     assert conv.origin == "unrequested" and conv.slides == ["a", "c"]
     assert conv.turn == "author"
-    assert ops.file_unrequested(deck) is None  # nothing left unfiled
+    assert ops.status(deck).unfiled == []  # nothing left unfiled
 
 
 def test_author_edit_notes_open_conversation_without_passing_turn(deck: Path) -> None:
@@ -220,8 +221,7 @@ def test_claiming_a_slide_later_moves_it_out_of_unrequested(deck: Path) -> None:
     ops.status(deck)
     mine = ops.comment(deck, ["a"], "shorten", author="author")
     _edit_page(deck, 1)  # agent edits @b before declaring it...
-    stray = ops.file_unrequested(deck)  # ...and the editor files it first
-    assert stray is not None
+    stray = ops.open_unrequested(deck, ["b"])  # ...and the editor files it first
     ops.reply(deck, mine, "Shortened; also touched @b.", add_slides=["b"])
     state = ops.load(deck)
     assert stray not in state.conversations  # nothing left in it: gone
@@ -234,8 +234,7 @@ def test_claiming_keeps_the_rest_of_an_unrequested_conversation(deck: Path) -> N
     ops.status(deck)
     _edit_page(deck, 1)
     _edit_page(deck, 2)
-    stray = ops.file_unrequested(deck)
-    assert stray is not None
+    stray = ops.open_unrequested(deck, ["b", "c"])
     ops.comment(deck, ["b"], "Tightened @b.")
     assert ops.load(deck).conversations[stray].slides == ["c"]
 
@@ -243,8 +242,7 @@ def test_claiming_keeps_the_rest_of_an_unrequested_conversation(deck: Path) -> N
 def test_an_unrequested_conversation_you_answered_keeps_its_slides(deck: Path) -> None:
     ops.status(deck)
     _edit_page(deck, 1)
-    stray = ops.file_unrequested(deck)
-    assert stray is not None
+    stray = ops.open_unrequested(deck, ["b"])
     ops.reply(deck, stray, "Why did this change?", author="author")
     ops.comment(deck, ["b"], "It was me.")
     assert ops.load(deck).conversations[stray].slides == ["b"]
@@ -254,7 +252,7 @@ def test_clear_does_not_resurrect_a_retired_unrequested_conversation(deck: Path)
     ops.status(deck)
     mine = ops.comment(deck, ["a"], "shorten", author="author")
     _edit_page(deck, 1)
-    stray = ops.file_unrequested(deck)
+    stray = ops.open_unrequested(deck, ["b"])
     ops.reply(deck, mine, "Done; touched @b too.", add_slides=["b"])
     ops.accept(deck, mine)
     ops.clear(deck)
@@ -266,8 +264,7 @@ def test_clear_keeps_a_partly_claimed_unrequested_conversation_as_it_was(deck: P
     mine = ops.comment(deck, ["a"], "shorten", author="author")
     _edit_page(deck, 1)
     _edit_page(deck, 2)
-    stray = ops.file_unrequested(deck)
-    assert stray is not None
+    stray = ops.open_unrequested(deck, ["b", "c"])
     ops.reply(deck, mine, "Done; touched @b too.", add_slides=["b"])
     ops.accept(deck, mine)
     ops.clear(deck)

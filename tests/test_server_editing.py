@@ -143,24 +143,11 @@ def test_a_page_without_an_id_cannot_be_edited(tmp_path: Path) -> None:
         editing.append_orphan(deck, "a", "")
 
 
-def test_block_differs_only_for_a_real_edit(tmp_path: Path) -> None:
-    pdf = _deck(tmp_path, ["a", "b"], "@a\nHi.\n")
-    deck = deck_service(pdf).load().deck
-    here = deck.page_narration("b")
-    kw = {
-        "transition_in": editing.incoming_transition(deck, "b"),
-        "transition_out": here.transition_out,
-    }
-    assert not editing.block_differs(deck, "b", list(here.segments), **kw)
-    assert editing.block_differs(deck, "b", [Segment.speech("new")], **kw)
-
-
 # ---- unattached narration ----------------------------------------------------------------
 def test_orphans_listed_attached_appended_and_deleted(tmp_path: Path) -> None:
     pdf = _deck(tmp_path, ["a", "b", "c"], "@a\nKept.\n\n@gone\nLost text.\n\n@old\nMore.\n")
     deck = deck_service(pdf).load().deck
     assert [b.slide_id for b in editing.orphan_blocks(deck)] == ["gone", "old"]
-    assert editing.unnarrated_pages(deck) == ["b", "c"]
     with pytest.raises(editing.EditError):
         editing.attach_orphan(deck, "gone", "a")  # a already has narration
     _, deck = _edit(pdf, lambda d: editing.attach_orphan(d, "gone", "b") or True)

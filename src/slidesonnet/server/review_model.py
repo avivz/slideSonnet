@@ -103,10 +103,6 @@ class ReviewModel:
         ops.mark_seen(self.pdf_path, sidecar_path=self.sidecar_path)
         self._base = None
 
-    def pages_fresh(self) -> bool:
-        """True when the cached page capture still matches the PDF (status is cheap)."""
-        return self._pages is not None and self._pages[0] == _stamp(self.pdf_path)
-
     # ---- cached reads --------------------------------------------------------------
     def _page_capture(self) -> tuple[PageCapture, bool]:
         stamp = _stamp(self.pdf_path)
@@ -149,10 +145,6 @@ class ReviewModel:
         return EditorReviewStatus(state, changes, unfiled, final, base, current)
 
     # ---- per-slide questions ---------------------------------------------------
-    @staticmethod
-    def change_for(status: EditorReviewStatus, slide_id: str) -> SlideChange | None:
-        return next((c for c in status.changes if c.slide_id == slide_id), None)
-
     @staticmethod
     def conversations_for(status: EditorReviewStatus, slide_id: str) -> list[Conversation]:
         return [c for c in status.state.slide_conversations() if slide_id in c.slides]
@@ -210,10 +202,3 @@ class ReviewModel:
         if not unfiled:
             return None
         return ops.open_unrequested(self.pdf_path, unfiled), len(unfiled)
-
-    def note_edits(self, slide_ids: set[str]) -> None:
-        """The author edited these slides' narration in the editor."""
-        if not self.active:
-            return
-        for sid in sorted(slide_ids):
-            ops.note_author_edit(self.pdf_path, sid)

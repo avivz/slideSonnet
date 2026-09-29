@@ -75,10 +75,6 @@ class EventBus:
                 sub.loop.call_soon_threadsafe(sub._deliver, event)
         return event
 
-    def history(self) -> list[Event]:
-        with self._lock:
-            return list(self._buffer)
-
     def since(self, seq: int) -> list[Event] | None:
         """Buffered events after *seq*, or ``None`` when some were lost (resync)."""
         with self._lock:

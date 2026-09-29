@@ -135,7 +135,8 @@ def test_cached_clip_skipped_unless_forced(tmp_path: Path, monkeypatch: pytest.M
     async def body() -> None:
         queue, engine, _ = _make_queue(tmp_path, monkeypatch)
         queue.start()
-        await queue.drain_after(queue.enqueue({("a", 0)}))  # first generation
+        queue.enqueue({("a", 0)})  # first generation
+        await queue.drain()
         assert engine.calls == 1
 
         again = queue.enqueue({("a", 0)})  # already cached, no force
@@ -152,21 +153,6 @@ def test_cached_clip_skipped_unless_forced(tmp_path: Path, monkeypatch: pytest.M
     asyncio.run(body())
 
 
-def test_await_targets_blocks_until_done(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    async def body() -> None:
-        queue, engine, _ = _make_queue(tmp_path, monkeypatch)
-        queue.start()
-        queue.enqueue({("a", 0)})
-        await queue.await_targets({("a", 0)})  # must not return before the job finishes
-        assert engine.calls == 1
-        assert queue.handle_for("a", 0) is None  # cleared once done
-        # Awaiting a target with no in-flight job returns immediately.
-        await queue.await_targets({("b", 0)})
-        queue.stop()
-
-    asyncio.run(body())
-
-
 def test_failed_job_leaves_no_stuck_handle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     async def body() -> None:
         queue, _engine, _ = _make_queue(tmp_path, monkeypatch, engine=FailingEngine())
@@ -177,7 +163,7 @@ def test_failed_job_leaves_no_stuck_handle(tmp_path: Path, monkeypatch: pytest.M
         assert handles[0].status == "error"
         assert handles[0].error is not None
         assert handles[0].done.is_set()
-        assert queue.handle_for("a", 0) is None  # not stuck in-flight
+        assert queue.inflight() == []  # not stuck in-flight
 
     asyncio.run(body())
 
@@ -514,7 +500,7 @@ def test_cancel_owned_drops_only_clips_nobody_else_wants(
         queue.enqueue({("b", 0)}, owner="tab-2")  # tab 2 wants b as well
         assert queue.cancel_owned("tab-1") == 1  # a dropped; b is still wanted
         assert mine[0].done.is_set() and not shared[0].done.is_set()
-        assert queue.handle_for("a", 0) is None and queue.handle_for("b", 0) is not None
+        assert [h.refs for h in queue.inflight()] == [{("b", 0)}]
         queue.start()
         await queue.drain()
         queue.stop()

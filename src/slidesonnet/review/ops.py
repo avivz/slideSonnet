@@ -320,18 +320,6 @@ def open_unrequested(pdf_path: Path, slide_ids: list[str]) -> str:
     return conv_id
 
 
-def file_unrequested(pdf_path: Path, *, sidecar_path: Path | None = None) -> str | None:
-    """File every changed slide that's in no conversation into a new one.
-
-    Returns the new conversation id, or None when nothing was unfiled (or the
-    PDF is a final build, where comparison pauses).
-    """
-    current = status(pdf_path, sidecar_path=sidecar_path)
-    if not current.unfiled:
-        return None
-    return open_unrequested(pdf_path, current.unfiled)
-
-
 def note_author_edit(pdf_path: Path, slide_id: str) -> None:
     """Record that the author edited *slide_id*'s narration in the editor.
 

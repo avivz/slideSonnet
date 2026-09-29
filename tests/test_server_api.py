@@ -392,7 +392,7 @@ def test_events_replay_a_write_and_flag_a_gap(client: TestClient) -> None:
         json={"expected_revision": rev, "segments": [_speech("Changed.")]},
     )
     bus = context_of(client.app).bus  # type: ignore[arg-type]
-    changed = [e for e in bus.history() if e.type == "deck.changed"]
+    changed = [e for e in bus.since(0) or [] if e.type == "deck.changed"]
     assert changed and changed[-1].deck == token
     assert bus.since(changed[-1].seq - 1) == [changed[-1]]
 

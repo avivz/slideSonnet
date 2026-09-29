@@ -173,12 +173,6 @@ class JobManager:
             j for j in jobs if (deck is None or j.deck == deck) and (not active_only or j.active)
         ]
 
-    def wait_sync(self, job_id: str, *, timeout: float | None = None) -> Job:
-        """Block until the job finishes (tests, CLI). Raises KeyError for unknown ids."""
-        job = self._require(job_id)
-        job.done_event.wait(timeout)
-        return job
-
     async def wait(self, job_id: str) -> Job:
         """Await the job's end without blocking the event loop."""
         job = self._require(job_id)
@@ -198,14 +192,6 @@ class JobManager:
                 job.status = "cancelling"
         self._publish(job, "job.updated")
         return job
-
-    def cancel_deck(self, deck: str, *, kinds: set[str] | None = None) -> int:
-        n = 0
-        for job in self.list(deck=deck, active_only=True):
-            if kinds is None or job.kind in kinds:
-                self.cancel(job.id)
-                n += 1
-        return n
 
     def shutdown(self, *, timeout: float = 10.0) -> None:
         """Cancel everything and wait for workers (bounded), so nothing outlives the server.

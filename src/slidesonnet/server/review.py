@@ -2,7 +2,7 @@
 
 The on-disk format and the CLI are untouched: every write goes through
 :mod:`slidesonnet.review.ops` as the author, exactly as ``slidesonnet review``
-and the NiceGUI panel did. Capturing the current pages (a raster hash of every
+does. Capturing the current pages (a raster hash of every
 page) is the slow part, so each deck keeps one
 :class:`~slidesonnet.server.review_model.ReviewModel`, which caches that capture until
 the PDF changes. Blocking — call off the event loop.
@@ -176,7 +176,3 @@ def run_command(entry: DeckEntry, command: str, args: dict[str, Any]) -> Command
             count=count,
         )
     raise ValueError(f"unknown review command {command!r}")
-
-
-def is_active(entry: DeckEntry) -> bool:
-    return ops.is_active(entry.pdf_path)
