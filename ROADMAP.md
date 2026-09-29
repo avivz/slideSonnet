@@ -31,9 +31,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    merged too, and so are the follow-up batches (Kokoro voices in every language,
    `review --narration`, `-q`/`-v` anywhere, blank lines skipped in export, duplicate
    `@id` agreement, orphan-action guards, the empty-new-line conflict). Heavy suites
-   green on 9579d6f (36 passed); on c1ec424 **one test failed** (36 passed, 1 skipped:
-   the Qwen3 real-prompt test) — which one wasn't captured; rerun with `-rf`, find and
-   fix it before a3. Still open in Tier 3: paid work
+   green on 9579d6f (36 passed); on c1ec424 one test failed once
+   (not captured); the rerun on 41dd234 (Inworld merged) was **all green** (37 passed, 1
+   skipped: the Qwen3 real-prompt test), so it was intermittent — likely a browser-tier
+   flake under CPU load (cf. `test_keyboard_deck_switching`). Rerun once more before a3. Still open in Tier 3: paid work
    pinned to approved content, frontend dead code and missing frontend tests. Original scope:
    Two
    reviews agree the new editor and pipeline have real data-loss and paid-audio
