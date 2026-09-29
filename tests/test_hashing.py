@@ -130,8 +130,22 @@ def test_golden_cache_filename(
     assert engine.paid is BACKENDS[engine.name()].paid
 
 
-def test_unknown_backend_extension_defaults_to_wav() -> None:
+def test_every_backend_has_an_extension_and_unknown_defaults_to_wav() -> None:
+    from slidesonnet.hashing import BACKEND_EXTENSIONS
+    from slidesonnet.tts import BACKENDS
+
+    assert set(BACKENDS) <= set(BACKEND_EXTENSIONS)
     assert audio_extension("unknown_engine") == ".wav"
+
+
+def test_hashing_does_not_import_the_tts_package() -> None:
+    """Naming a cache file must not drag in the engine registry (and its imports)."""
+    import subprocess
+    import sys
+
+    code = "import sys, slidesonnet.hashing\nprint('slidesonnet.tts' in sys.modules)\n"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "False"
 
 
 @pytest.mark.parametrize(

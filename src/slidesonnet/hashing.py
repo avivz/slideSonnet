@@ -5,9 +5,9 @@ by synthesis (audio/synth.py) and selective cleanup (clean.py).
 
 Filename format: {text_hash}.{backend}.{config_hash}.{ext}
   - text_hash:   sha256(text + voice)[:16]  — identifies the utterance content
-  - backend:     "kokoro" or "inworld"      — readable engine name
+  - backend:     "kokoro", "inworld", ...   — readable engine name
   - config_hash: sha256(cache_key)[:8]      — differentiates engine configs
-  - ext:         backend-specific extension (.wav for kokoro, .mp3 for inworld)
+  - ext:         backend-specific extension (.wav for kokoro/qwen3, .mp3 for inworld)
 """
 
 from __future__ import annotations
@@ -15,16 +15,18 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from slidesonnet.tts import BACKENDS
+#: Cached-audio file extension per TTS backend. Owned here (not derived from the
+#: ``slidesonnet.tts`` registry) so naming a cache file never imports the engine
+#: package; ``BackendSpec.extension`` reads it back, and a test pins every
+#: registered backend to an entry.
+BACKEND_EXTENSIONS: dict[str, str] = {"kokoro": ".wav", "inworld": ".mp3", "qwen3": ".wav"}
 
-_BACKEND_EXTENSIONS: dict[str, str] = {name: spec.extension for name, spec in BACKENDS.items()}
-
-_VALID_EXTENSIONS: frozenset[str] = frozenset(_BACKEND_EXTENSIONS.values())
+_VALID_EXTENSIONS: frozenset[str] = frozenset(BACKEND_EXTENSIONS.values())
 
 
 def audio_extension(backend: str) -> str:
     """Return the file extension for a TTS backend (e.g. '.wav', '.mp3')."""
-    return _BACKEND_EXTENSIONS.get(backend, ".wav")
+    return BACKEND_EXTENSIONS.get(backend, ".wav")
 
 
 def text_hash(text: str, voice: str | None = None) -> str:
@@ -72,7 +74,7 @@ def audio_path(
 
 def _alternate_extensions(suffix: str) -> list[str]:
     """Return the other backend extensions besides *suffix*."""
-    return [ext for ext in _BACKEND_EXTENSIONS.values() if ext != suffix]
+    return [ext for ext in BACKEND_EXTENSIONS.values() if ext != suffix]
 
 
 def audio_cache_path_or_alt(path: Path) -> Path | None:

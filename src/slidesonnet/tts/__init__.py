@@ -1,11 +1,12 @@
 """TTS package: speech synthesis backends, their registry, and a factory.
 
-``BACKENDS`` is the single place a TTS engine is described — name, cached-audio
-file extension, paid flag, and constructor. The CLI's ``--engine`` choices,
-config validation, cache filename extensions, and clean's paid-audio set all
-derive from it, so adding an engine means one new ``BackendSpec`` (plus the
-``Backend`` Literal in models.py, which mypy can't derive at runtime — a test
-pins the two in sync).
+``BACKENDS`` is the single place a TTS engine is described — name, paid flag,
+constructor, and (read back from ``hashing``, which owns it) cached-audio file
+extension. The CLI's ``--engine`` choices, config validation, and clean's
+paid-audio set all derive from it, so adding an engine means one new
+``BackendSpec`` (plus its extension in ``hashing.BACKEND_EXTENSIONS`` and the
+``Backend`` Literal in models.py, which mypy can't derive at runtime — tests pin
+both in sync).
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from slidesonnet.hashing import audio_extension
 from slidesonnet.models import TTSConfig
 from slidesonnet.tts.base import TTSEngine
 
@@ -45,7 +47,6 @@ class BackendSpec:
     """Everything the rest of the tool needs to know about a TTS backend."""
 
     name: str
-    extension: str  # cached-audio file extension (".wav", ".mp3")
     paid: bool  # synthesis spends metered API credits
     factory: Callable[[TTSConfig], TTSEngine]
     #: Synthesis runs at ~real-time or faster — cheap enough to fire unattended
@@ -75,12 +76,16 @@ class BackendSpec:
     #: in one place rather than the prune path hardcoding a ``paid`` check.
     auto_prune_orphans: bool = True
 
+    @property
+    def extension(self) -> str:
+        """Cached-audio file extension (".wav", ".mp3") — owned by ``hashing``."""
+        return audio_extension(self.name)
+
 
 BACKENDS: dict[str, BackendSpec] = {
-    "kokoro": BackendSpec("kokoro", ".wav", paid=False, factory=_make_kokoro, import_name="kokoro"),
+    "kokoro": BackendSpec("kokoro", paid=False, factory=_make_kokoro, import_name="kokoro"),
     "inworld": BackendSpec(
         "inworld",
-        ".mp3",
         paid=True,
         factory=_make_inworld,
         import_name="inworld_tts",
@@ -88,7 +93,6 @@ BACKENDS: dict[str, BackendSpec] = {
     ),
     "qwen3": BackendSpec(
         "qwen3",
-        ".wav",
         paid=False,
         factory=_make_qwen3,
         realtime=False,
