@@ -27,13 +27,11 @@ from slidesonnet.narration.model import Deck
 from slidesonnet.server import editing, snapshots
 from slidesonnet.server import review as review_service
 from slidesonnet.server.context import (
-    LOAD_ERRORS,
     ApiError,
     ApiRoute,
     ServerContext,
     check_mutation,
     context_of,
-    load_error,
 )
 from slidesonnet.server.decks import DeckService, RevisionConflict, deck_service
 from slidesonnet.server.engines import editor_engine, engine_lock
@@ -109,10 +107,6 @@ def _service(entry: DeckEntry) -> DeckService:
     return deck_service(entry.pdf_path, entry.sidecar_path)
 
 
-# ApiRoute maps these for every route; the explicit handlers below predate it.
-_load_error = load_error
-
-
 # ---- session / library ------------------------------------------------------------
 @router.get("/session", response_model=SessionDTO)
 def get_session(request: Request) -> SessionDTO:
@@ -130,10 +124,7 @@ def get_library(request: Request, rescan: bool = False) -> LibraryDTO:
 @router.get("/decks/{token}/stats", response_model=DeckStatsDTO)
 def get_deck_stats(request: Request, token: str) -> DeckStatsDTO:
     entry = _entry(_ctx(request), token)
-    try:
-        return snapshots.deck_stats(entry)
-    except LOAD_ERRORS as exc:
-        raise _load_error(exc) from exc
+    return snapshots.deck_stats(entry)
 
 
 # ---- deck snapshot + edits -----------------------------------------------------------
@@ -141,10 +132,7 @@ def get_deck_stats(request: Request, token: str) -> DeckStatsDTO:
 def get_deck(request: Request, token: str, engine: Backend | None = None) -> DeckSnapshot:
     ctx = _ctx(request)
     entry = _entry(ctx, token)
-    try:
-        snap = snapshots.deck_snapshot(entry, engine=engine, registry=ctx.registry)
-    except LOAD_ERRORS as exc:
-        raise _load_error(exc) from exc
+    snap = snapshots.deck_snapshot(entry, engine=engine, registry=ctx.registry)
     ctx.watch(token, _service(entry).revisions())
     if ctx.on_deck_open is not None and ctx.last_opened != token:
         ctx.last_opened = token
@@ -164,8 +152,6 @@ def _save(ctx: ServerContext, entry: DeckEntry, expected: str, mutate: Any) -> S
         ) from exc
     except editing.EditError as exc:
         raise ApiError(422, "invalid_edit", str(exc)) from exc
-    except LOAD_ERRORS as exc:
-        raise _load_error(exc) from exc
     if result.changed:
         ctx.announce_write(entry.token, service.revisions())
     return SaveResponse(changed=result.changed, revision=result.revision)
@@ -363,82 +349,79 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
     ctx = _ctx(request)
     entry = _entry(ctx, token)
     jobs = ctx.job_manager()
-    try:
-        narration_rev = _service(entry).narration_revision()
-        if isinstance(body, GenerateJob):
-            engine = _resolve_engine(entry, body.engine)
-            if body.targets is None:
-                targets: set[tuple[str, int]] | None = None
-                count = len(_uncached(entry, engine, everything=body.force))
-            else:
-                targets = {(t.slide_id, t.speech_index) for t in body.targets}
-                count = len(targets) if body.force else len(targets & _uncached(entry, engine))
-            _require_paid_approval(engine, count, body.allow_paid)
-            inputs: dict[str, Any] = {
-                "engine": engine,
-                "narration_revision": narration_rev,
-                "targets": sorted(targets) if targets is not None else None,
-                "force": body.force,
-            }
-            job = jobs.submit(
-                "generate",
-                token,
-                inputs,
-                generate_work(entry, targets, force=body.force, engine=engine),
-                dedupe_key=f"generate:{token}:{engine}:{narration_rev}:{inputs['targets']}:{body.force}",
-            )
-        elif isinstance(body, PreviewJob):
-            engine = _resolve_engine(entry, body.engine)
-            needed = _uncached(entry, engine, slide_id=body.slide_id)
-            _require_paid_approval(engine, len(needed), body.allow_paid)
-            if needed:
-                _preempt_generation(ctx, entry, engine, needed)
-            inputs = {
-                "engine": engine,
-                "narration_revision": narration_rev,
-                "slide_id": body.slide_id,
-            }
-            job = jobs.submit(
-                "preview",
-                token,
-                inputs,
-                preview_work(entry, body, engine),
-                dedupe_key=(
-                    f"preview:{token}:{engine}:{narration_rev}:{body.slide_id}:"
-                    f"{body.start_slide}:{body.single_slide_transitions}"
-                ),
-            )
-        elif isinstance(body, ExportJob):
-            engine = _resolve_engine(entry, body.engine)
-            _require_paid_approval(engine, len(_uncached(entry, engine)), body.allow_paid)
-            if not body.draft:
-                blockers = api.export_blockers(entry.pdf_path)
-                if blockers:
-                    raise ApiError(409, "export_blocked", " ".join(blockers))
-            inputs = {"engine": engine, "narration_revision": narration_rev, "draft": body.draft}
-            job = jobs.submit(
-                "export",
-                token,
-                inputs,
-                export_work(entry, draft=body.draft, engine=engine),
-                dedupe_key=f"export:{token}:{engine}:{body.draft}",
-            )
-        elif isinstance(body, WarmJob):
-            engine = _resolve_engine(entry, body.engine)
-            job = jobs.submit(
-                "warm", token, {"engine": engine}, warm_work(engine), dedupe_key=f"warm:{engine}"
-            )
+    narration_rev = _service(entry).narration_revision()
+    if isinstance(body, GenerateJob):
+        engine = _resolve_engine(entry, body.engine)
+        if body.targets is None:
+            targets: set[tuple[str, int]] | None = None
+            count = len(_uncached(entry, engine, everything=body.force))
         else:
-            assert isinstance(body, RenderPagesJob)
-            job = jobs.submit(
-                "render_pages",
-                token,
-                {"near": body.near},
-                render_pages_work(entry, body.near),
-                dedupe_key=f"pages:{token}",
-            )
-    except LOAD_ERRORS as exc:
-        raise _load_error(exc) from exc
+            targets = {(t.slide_id, t.speech_index) for t in body.targets}
+            count = len(targets) if body.force else len(targets & _uncached(entry, engine))
+        _require_paid_approval(engine, count, body.allow_paid)
+        inputs: dict[str, Any] = {
+            "engine": engine,
+            "narration_revision": narration_rev,
+            "targets": sorted(targets) if targets is not None else None,
+            "force": body.force,
+        }
+        job = jobs.submit(
+            "generate",
+            token,
+            inputs,
+            generate_work(entry, targets, force=body.force, engine=engine),
+            dedupe_key=f"generate:{token}:{engine}:{narration_rev}:{inputs['targets']}:{body.force}",
+        )
+    elif isinstance(body, PreviewJob):
+        engine = _resolve_engine(entry, body.engine)
+        needed = _uncached(entry, engine, slide_id=body.slide_id)
+        _require_paid_approval(engine, len(needed), body.allow_paid)
+        if needed:
+            _preempt_generation(ctx, entry, engine, needed)
+        inputs = {
+            "engine": engine,
+            "narration_revision": narration_rev,
+            "slide_id": body.slide_id,
+        }
+        job = jobs.submit(
+            "preview",
+            token,
+            inputs,
+            preview_work(entry, body, engine),
+            dedupe_key=(
+                f"preview:{token}:{engine}:{narration_rev}:{body.slide_id}:"
+                f"{body.start_slide}:{body.single_slide_transitions}"
+            ),
+        )
+    elif isinstance(body, ExportJob):
+        engine = _resolve_engine(entry, body.engine)
+        _require_paid_approval(engine, len(_uncached(entry, engine)), body.allow_paid)
+        if not body.draft:
+            blockers = api.export_blockers(entry.pdf_path)
+            if blockers:
+                raise ApiError(409, "export_blocked", " ".join(blockers))
+        inputs = {"engine": engine, "narration_revision": narration_rev, "draft": body.draft}
+        job = jobs.submit(
+            "export",
+            token,
+            inputs,
+            export_work(entry, draft=body.draft, engine=engine),
+            dedupe_key=f"export:{token}:{engine}:{body.draft}",
+        )
+    elif isinstance(body, WarmJob):
+        engine = _resolve_engine(entry, body.engine)
+        job = jobs.submit(
+            "warm", token, {"engine": engine}, warm_work(engine), dedupe_key=f"warm:{engine}"
+        )
+    else:
+        assert isinstance(body, RenderPagesJob)
+        job = jobs.submit(
+            "render_pages",
+            token,
+            {"near": body.near},
+            render_pages_work(entry, body.near),
+            dedupe_key=f"pages:{token}",
+        )
     return job_dto(job)
 
 
@@ -599,10 +582,7 @@ def get_meta() -> MetaDTO:
 def get_review(request: Request, token: str) -> ReviewDTO:
     """Review state for the deck (comparing pages can take a moment on a big deck)."""
     entry = _entry(_ctx(request), token)
-    try:
-        return ReviewDTO.model_validate(review_service.review_snapshot(entry))
-    except LOAD_ERRORS as exc:
-        raise _load_error(exc) from exc
+    return ReviewDTO.model_validate(review_service.review_snapshot(entry))
 
 
 @router.post("/decks/{token}/review/commands", response_model=ReviewOutcomeDTO)

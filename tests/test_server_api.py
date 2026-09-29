@@ -569,6 +569,8 @@ def test_a_pdf_caught_mid_recompile_is_a_readable_retry(client: TestClient, deck
 @pytest.mark.parametrize(
     ("method", "url", "body"),
     [
+        ("GET", "/api/v1/decks/{t}", None),
+        ("GET", "/api/v1/decks/{t}/stats", None),
         ("GET", "/api/v1/decks/{t}/generation", None),
         ("POST", "/api/v1/decks/{t}/generation", {}),
     ],
