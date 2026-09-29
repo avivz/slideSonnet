@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: **1.0.0a2 — published to PyPI 2026-06-19.** Everything since is
+Current version: **1.0.0a3 — published to PyPI 2026-09-29.** Everything since is
 on `main` only (`CHANGELOG [Unreleased]`), and it is a lot: the editor was
 rewritten (NiceGUI → FastAPI + Vue 3, merged 2026-09-28), the **agent review
 loop** landed and is now always on, the **script view** is the default,
@@ -93,19 +93,6 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `send_direction`; (vi) `delivery_mode` stable vs creative, two takes each; (vii)
    optional `temperature = 0.6` vs unset on 1.5-max; (viii) `[Dijkstra](DYKE-struh)` vs
    `[Dijkstra](dyke-struh)` on tts-2 (CAPS read as emphasis?). **[human]**
-3. [ ] **Cut 1.0.0a3.** *Why now:* PyPI users are on a2's NiceGUI editor; the
-   Unreleased batch is the largest since the rewrite and includes a breaking
-   `.sty` change (plain builds by default) and a `ProgressFn` signature change.
-   *Acceptance:* (a) Now #1's confirmed bugs fixed; (b) `make test` (integration)
-   and `make test-browser` green locally; (c) demo PDFs recompiled as final
-   builds (`\ssfinal`) so `make basel`/`make showcase` export without `--draft`;
-   (d) the wheel's installed-package smoke test opens the editor with the built
-   frontend (CI `build` job) and `slidesonnet doctor` passes from a clean venv;
-   (e) the Unreleased section reads as a2 → a3 for a user (reconciled 2026-09-29:
-   duplicate groups merged, NiceGUI-internal fixes dropped); (f) version bumped
-   in `src/slidesonnet/__init__.py`, tag pushed, publish workflow green.
-   *Appetite:* half a day once #1 settles. **[agent→human]**
-
 ## Next — this month
 
 1. [ ] **Bug: `pool prune --root <course>` refuses to run on a real course.**
@@ -235,6 +222,11 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Published 1.0.0a3** (2026-09-29; tag `v1.0.0a3` at `abafafe`; PyPI, TestPyPI and
+  GitHub Release). Heavy suites green (38 passed), demo PDFs recompiled as final builds,
+  consolidated release notes with a Breaking list. The first publish run failed at the
+  TestPyPI install check (a junk `fastapi` on TestPyPI); the workflow now takes only
+  slidesonnet from TestPyPI and re-runs skip existing files; the tag was moved to the fix.
 - [x] **Quick export `--fast`** (2026-09-29, `5b98731`; was Next #4). 720p, cuts, one
   variable-frame-rate encode, audio byte-identical to the full export; writes
   `<name>.fast.mp4`; editor "Quick export" box. basel warm: ~15 s vs ~115 s.
