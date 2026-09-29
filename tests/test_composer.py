@@ -1028,14 +1028,23 @@ class TestConcatenateAudioMocked:
         assert output.read_bytes() == b"previous"
         assert [p.name for p in tmp_path.iterdir()] == ["track.wav"]
 
-    def test_single_file_copies(self, tmp_path: Path) -> None:
-        src = tmp_path / "only.wav"
-        src.write_bytes(b"audio-data")
-        output = tmp_path / "out.wav"
+    @patch("slidesonnet.video.composer._run_ffmpeg", side_effect=_ffmpeg_writes_output)
+    def test_single_file_copies_same_format_and_converts_another(
+        self, mock_ffmpeg: MagicMock, tmp_path: Path
+    ) -> None:
+        """One WAV is copied as is; one MP3 is decoded, never copied into a .wav name."""
+        wav = tmp_path / "only.wav"
+        wav.write_bytes(b"audio-data")
+        concatenate_audio([wav], tmp_path / "out.wav")
+        assert (tmp_path / "out.wav").read_bytes() == b"audio-data"
+        mock_ffmpeg.assert_not_called()
 
-        concatenate_audio([src], output)
-
-        assert output.read_bytes() == b"audio-data"
+        mp3 = tmp_path / "only.mp3"
+        mp3.write_bytes(b"mp3-data")
+        concatenate_audio([mp3], tmp_path / "out2.wav")
+        cmd = mock_ffmpeg.call_args[0][0]
+        assert cmd[cmd.index("-i") + 1] == str(mp3)
+        assert (tmp_path / "out2.wav").read_bytes() == b"out"
 
     @patch("slidesonnet.video.composer._run_ffmpeg", side_effect=_ffmpeg_writes_output)
     def test_creates_output_dir(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:

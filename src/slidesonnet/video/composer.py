@@ -489,13 +489,14 @@ def mux_audio(
 def concatenate_audio(audio_paths: list[Path], output: Path) -> None:
     """Concatenate multiple audio files into one using ffmpeg concat filter.
 
-    Handles any format (WAV/MP3) since it decodes and re-encodes.
-    Single-file input just copies. The output is published whole
+    Handles any format (WAV/MP3) since it decodes and re-encodes. A single
+    input already in the output's format is copied; one in another format (an
+    MP3 clip for a ``.wav`` page) is converted, never copied under the wrong name. The output is published whole
     (:func:`partial_output`): page and track WAVs are reused by name.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    if len(audio_paths) == 1:
+    if len(audio_paths) == 1 and audio_paths[0].suffix.lower() == output.suffix.lower():
         with partial_output(output) as partial:
             shutil.copy2(audio_paths[0], partial)
         return
