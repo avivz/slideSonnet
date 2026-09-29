@@ -21,18 +21,19 @@ from slidesonnet.audio.synth import ref_cache_status
 from slidesonnet.cache import resolve_audio_dir
 from slidesonnet.config import load_config
 from slidesonnet.deck import resolve_voice_files
-from slidesonnet.exceptions import ConfigError, ParserError, SlideSonnetError
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import Backend, VoiceConfig
-from slidesonnet.narration.format import SidecarError
 from slidesonnet.narration.model import Deck
 from slidesonnet.server import editing, snapshots
 from slidesonnet.server import review as review_service
 from slidesonnet.server.context import (
+    LOAD_ERRORS,
     ApiError,
     ApiRoute,
     ServerContext,
     check_mutation,
     context_of,
+    load_error,
 )
 from slidesonnet.server.decks import DeckService, RevisionConflict, deck_service
 from slidesonnet.server.engines import editor_engine, engine_lock
@@ -108,15 +109,8 @@ def _service(entry: DeckEntry) -> DeckService:
     return deck_service(entry.pdf_path, entry.sidecar_path)
 
 
-def _load_error(exc: Exception) -> ApiError:
-    if isinstance(exc, ParserError | RuntimeError | OSError):
-        # the PDF is missing or half-written (a recompile in progress): try again shortly
-        return ApiError(503, "deck_unavailable", "The PDF is being rewritten — trying again.")
-    return ApiError(422, "deck_file_error", f"The deck's files have an error: {exc}")
-
-
-#: Errors reading a deck: a malformed sidecar/config (422) or a PDF mid-recompile (503).
-LOAD_ERRORS = (SidecarError, ConfigError, ParserError, RuntimeError, OSError)
+# ApiRoute maps these for every route; the explicit handlers below predate it.
+_load_error = load_error
 
 
 # ---- session / library ------------------------------------------------------------

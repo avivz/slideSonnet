@@ -13,11 +13,12 @@ from dataclasses import replace
 
 from slidesonnet.deck import unique_real_ids
 from slidesonnet.diagnostics import boundary_transition
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
 
 
-class EditError(ValueError):
+class EditError(SlideSonnetError, ValueError):
     """An edit that can't apply to this deck (unknown slide, occupied target, …)."""
 
 

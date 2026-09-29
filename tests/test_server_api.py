@@ -566,6 +566,51 @@ def test_a_pdf_caught_mid_recompile_is_a_readable_retry(client: TestClient, deck
     assert client.get(f"/api/v1/decks/{token}").status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("method", "url", "body"),
+    [
+        ("GET", "/api/v1/decks/{t}/generation", None),
+        ("POST", "/api/v1/decks/{t}/generation", {}),
+    ],
+)
+def test_a_broken_config_is_a_readable_error_everywhere(
+    client: TestClient, deck: Path, method: str, url: str, body: dict[str, Any] | None
+) -> None:
+    (deck.parent / "slidesonnet.toml").write_text("[tts\n", encoding="utf-8")
+    r = client.request(method, url.format(t=_token(client)), json=body)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "deck_file_error"
+
+
+@pytest.mark.parametrize("url", ["/api/v1/decks/{t}/pages", "/api/v1/decks/{t}/export-blockers"])
+def test_a_missing_pdf_is_a_readable_retry_everywhere(
+    client: TestClient, deck: Path, url: str
+) -> None:
+    token = _token(client)
+    deck.unlink()
+    r = client.get(url.format(t=token))
+    assert r.status_code == 503 and r.json()["error"]["code"] == "deck_unavailable"
+
+
+def test_edit_refusals_are_slidesonnet_errors() -> None:
+    from slidesonnet.exceptions import SlideSonnetError
+    from slidesonnet.server.decks import RevisionConflict
+    from slidesonnet.server.editing import EditError
+
+    assert issubclass(RevisionConflict, SlideSonnetError)
+    assert issubclass(EditError, SlideSonnetError) and issubclass(EditError, ValueError)
+
+
+def test_a_bug_is_not_reported_as_a_pdf_being_rewritten(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("a genuine bug")
+
+    monkeypatch.setattr("slidesonnet.server.snapshots.deck_stats", broken)
+    with pytest.raises(RuntimeError, match="genuine bug"):  # a 500, not "deck_unavailable"
+        client.get(f"/api/v1/decks/{_token(client)}/stats")
+
+
 def test_the_editor_starts_on_inworld_unless_the_deck_chooses(
     client: TestClient, deck: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

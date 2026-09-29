@@ -28,6 +28,7 @@ from slidesonnet.clean import SWEEP_GRACE_S, prune_local_orphans
 from slidesonnet.config import Config, default_config_path, load_config
 from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, load_deck, sidecar_text
 from slidesonnet.diagnostics import Diagnostic
+from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.narration.format import SidecarError, parse_sidecar, serialize_block
 from slidesonnet.narration.model import Deck
 from slidesonnet.pdf.reader import read_page_ids
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 PRUNE_DELAY_S = 0.75
 
 
-class RevisionConflict(Exception):
+class RevisionConflict(SlideSonnetError):
     """The sidecar changed since the caller read it; nothing was written."""
 
     def __init__(self, expected: str, current: str) -> None:

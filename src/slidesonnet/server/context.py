@@ -19,11 +19,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+import pymupdf
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 
+from slidesonnet.exceptions import ConfigError, ParserError
+from slidesonnet.narration.format import SidecarError
 from slidesonnet.server.events import EventBus
 from slidesonnet.server.generation import GenerationHub
 from slidesonnet.server.jobs import JobManager
@@ -166,8 +169,31 @@ def check_mutation(request: Request) -> None:
         raise ApiError(403, "bad_session", "This page's session expired — reload it.")
 
 
+#: A PDF that is missing or half-written (a recompile in progress): retry shortly.
+_PDF_UNAVAILABLE = (
+    ParserError,
+    pymupdf.FileDataError,
+    pymupdf.FileNotFoundError,
+    FileNotFoundError,
+)
+#: Errors reading a deck's files, mapped to readable API errors by :func:`load_error`.
+LOAD_ERRORS = (SidecarError, ConfigError, *_PDF_UNAVAILABLE, OSError)
+
+
+def load_error(exc: Exception) -> ApiError:
+    """The API error for a deck that can't be read (see :data:`LOAD_ERRORS`)."""
+    if isinstance(exc, _PDF_UNAVAILABLE):
+        return ApiError(503, "deck_unavailable", "The PDF is being rewritten — trying again.")
+    if isinstance(exc, SidecarError | ConfigError):
+        return ApiError(422, "deck_file_error", f"The deck's files have an error: {exc}")
+    return ApiError(500, "deck_io_error", f"Couldn't read the deck's files: {exc}")
+
+
 class ApiRoute(APIRoute):
     """Route class for ``/api/v1``: host check, stable error bodies, no caching.
+
+    A deck that can't be read (:data:`LOAD_ERRORS`) is answered here for every
+    route, so no route returns a bare 500 for a bad toml, sidecar or PDF.
 
     Done per route rather than with app middleware and exception handlers,
     because the API is mounted onto NiceGUI's app after it has started — and
@@ -184,6 +210,9 @@ class ApiRoute(APIRoute):
                 response = await original(request)
             except ApiError as exc:
                 response = _error(exc.status, exc.code, exc.message)
+            except LOAD_ERRORS as exc:
+                err = load_error(exc)
+                response = _error(err.status, err.code, err.message)
             except RequestValidationError as exc:
                 errors = exc.errors()
                 first = errors[0] if errors else {}
