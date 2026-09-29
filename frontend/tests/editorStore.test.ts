@@ -2,6 +2,7 @@ import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError, type DeckSnapshot } from '@/api/client'
 import { useEditorStore, AUTOSAVE_MS } from '@/stores/editor'
 
 import { FakeServer } from './fakeServer'
@@ -128,4 +129,104 @@ it('a recompiled PDF drops the old page images; a render in progress keeps them'
   server.pdfRev = 'p2' // recompiled: the old pictures are of another PDF
   await store.refresh()
   expect(store.images).toEqual([null, null, null])
+})
+
+// ---- save and session soundness ----------------------------------------------------
+
+/** A promise the test settles by hand (to deliver responses out of order). */
+function deferred<T>() {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((r) => (resolve = r))
+  return { promise, resolve }
+}
+
+describe('conflicts', () => {
+  it('keeps every conflicted slide unsaved, and shows them one after another', async () => {
+    const { store, server } = await setup()
+    typeInto(store, 'a', 'Mine a.')
+    typeInto(store, 'b', 'Mine b.')
+    server.externalEdit('a', 'Theirs a.')
+    server.externalEdit('b', 'Theirs b.')
+    await store.refresh()
+    expect(store.saveState).toBe('conflict')
+    expect(await store.flush()).toBe(false)
+    expect(server.saves).toHaveLength(0) // neither outside edit is overwritten
+    expect(store.conflict?.slideId).toBe('a')
+    await store.resolveConflict('theirs')
+    expect(store.conflict).toMatchObject({ slideId: 'b', mine: 'Mine b.', theirs: 'Theirs b.' })
+    expect(store.saveState).toBe('conflict') // never "Saved" while one is open
+    await store.resolveConflict('mine')
+    await flushPromises()
+    expect(server.saves.map((s) => s.slideId)).toEqual(['b'])
+    expect(server.narration.a?.segments[0]).toMatchObject({ text: 'Theirs a.' })
+    expect(store.saveState).toBe('saved')
+  })
+})
+
+describe('flush', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('says whether everything is saved; a failed save stays visibly unsaved', async () => {
+    const { store, server } = await setup()
+    typeInto(store, 'a', 'Will fail.')
+    const save = store.client.saveSlide
+    store.client.saveSlide = async () => {
+      throw new ApiError(500, 'io', 'Disk full.')
+    }
+    expect(await store.flush()).toBe(false)
+    expect(store.saveState).toBe('error')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(store.saveState).toBe('error') // until a save succeeds
+    store.client.saveSlide = save
+    expect(await store.flush()).toBe(true)
+    expect(store.saveState).toBe('saved')
+    expect(server.saves).toHaveLength(1)
+  })
+})
+
+describe('deck sessions', () => {
+  it('drops a late snapshot of the previous deck', async () => {
+    const { store } = await setup(new FakeServer({ a: 'Deck one.' }))
+    const late = deferred<DeckSnapshot>()
+    store.client.snapshot = () => late.promise
+    const refreshing = store.refresh()
+    store.client = new FakeServer({ a: 'Deck two.' }).client()
+    await store.open('tok2')
+    late.resolve(new FakeServer({ a: 'Deck one, late.' }).snapshot())
+    await refreshing
+    expect(store.draftFor('a')?.middle[0]?.text).toBe('Deck two.')
+  })
+
+  it('an open answered after a newer open is dropped', async () => {
+    setActivePinia(createPinia())
+    const store = useEditorStore()
+    const first = new FakeServer({ a: 'First deck.' }).client()
+    const late = deferred<DeckSnapshot>()
+    first.snapshot = () => late.promise
+    store.client = first
+    const opening = store.open('tok1')
+    await flushPromises()
+    store.client = new FakeServer({ a: 'Second deck.' }).client()
+    await store.open('tok2')
+    late.resolve(new FakeServer({ a: 'First deck.' }).snapshot())
+    await opening
+    expect(store.token).toBe('tok2')
+    expect(store.draftFor('a')?.middle[0]?.text).toBe('Second deck.')
+  })
+
+  it('never clears unsaved typing: reopening keeps it, and another deck waits for it to save', async () => {
+    const { store, server } = await setup()
+    typeInto(store, 'a', 'Still typing.')
+    await store.open('tok') // e.g. the editor page mounted again
+    expect(store.draftFor('a')?.middle[0]?.text).toBe('Still typing.')
+    expect(store.isDirty('a')).toBe(true)
+    store.client.saveSlide = async () => {
+      throw new ApiError(500, 'io', 'Disk full.')
+    }
+    expect(await store.open('tok2')).toBe(false) // it can't be saved: stay on this deck
+    expect(store.token).toBe('tok')
+    expect(store.draftFor('a')?.middle[0]?.text).toBe('Still typing.')
+    expect(server.saves).toHaveLength(0)
+  })
 })

@@ -8,7 +8,10 @@
 //   didn't change on disk, or the user is shown both versions if it did.
 // - A reload from disk updates clean slides and never touches a dirty draft
 //   (B1's real fix): an outside edit to a slide being edited is a conflict with
-//   explicit choices, not a silent overwrite of either side.
+//   explicit choices, not a silent overwrite of either side. Every such slide
+//   is held (never saved) until the user chooses; they are shown one at a time.
+// - Answers to requests made before the latest open() belong to another deck
+//   (or an older load) and are dropped (`loadEpoch`).
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, shallowRef } from 'vue'
 
@@ -40,7 +43,7 @@ export interface Draft {
   block: EditBlock
   /** Fingerprint of this slide as the server has it (last loaded or acknowledged). */
   baseline: string
-  /** Fingerprint of the server's version as last seen in a snapshot. */
+  /** Fingerprint of the server's version this draft was reconciled with (moves on a conflict only when resolved). */
   serverFp: string
   /** The narration revision our last acknowledged save of this slide produced. */
   ackRevision: string | null
@@ -76,8 +79,12 @@ export const useEditorStore = defineStore('editor', () => {
   const index = ref(0)
   const loadError = ref<string | null>(null)
   const drafts = reactive(new Map<string, Draft>())
-  const saveState = ref<SaveState>('saved')
-  const conflict = ref<Conflict | null>(null)
+  /** Slides changed on disk while they had unsaved typing, in the order found. */
+  const conflicts = reactive(new Map<string, Conflict>())
+  /** The last save failed: shown until a save succeeds or nothing is left unsaved. */
+  const saveFailed = ref(false)
+  /** Saves sent and not answered yet. */
+  const inFlight = ref(0)
   const flashMessage = ref<{ text: string; kind: FlashKind; id: number } | null>(null)
   /** The narration revision the next save must name. */
   const revision = ref('')
@@ -85,12 +92,13 @@ export const useEditorStore = defineStore('editor', () => {
   const images = ref<(string | null)[]>([])
   /** Bumped whenever the narration changed on disk from outside this tab. */
   const externalChanges = ref(0)
+  /** Bumped by every open(); other stores compare it too, to drop late answers. */
+  const loadEpoch = ref(0)
   /** Revisions this tab's own saves produced (to tell them from outside edits). */
   const ownRevisions = new Set<string>()
 
   let timer: ReturnType<typeof setTimeout> | null = null
   let saving: Promise<void> = Promise.resolve()
-  let inFlight = 0
   let flashId = 0
   let refreshing: Promise<void> | null = null
   let refreshAgain = false
@@ -110,8 +118,16 @@ export const useEditorStore = defineStore('editor', () => {
   const dirtySlides = computed(() =>
     [...drafts.entries()].filter(([, d]) => fingerprint(d.block) !== d.baseline).map(([s]) => s),
   )
+  /** The conflict shown now; any others wait their turn. */
+  const conflict = computed<Conflict | null>(() => conflicts.values().next().value ?? null)
+  const saveState = computed<SaveState>(() => {
+    if (conflicts.size > 0) return 'conflict'
+    if (inFlight.value > 0) return 'saving'
+    if (dirtySlides.value.length === 0) return 'saved'
+    return saveFailed.value ? 'error' : 'unsaved'
+  })
   const hasUnsaved = computed(
-    () => dirtySlides.value.length > 0 || saveState.value === 'saving' || conflict.value !== null,
+    () => dirtySlides.value.length > 0 || inFlight.value > 0 || conflicts.size > 0,
   )
 
   // ---- loading -----------------------------------------------------------------
@@ -125,25 +141,52 @@ export const useEditorStore = defineStore('editor', () => {
     )
   }
 
-  async function open(deckToken: string): Promise<void> {
+  /**
+   * Open a deck. Unsaved typing is never dropped: reopening the same deck keeps
+   * it, and another deck opens only once it is saved — false when it couldn't
+   * be (this deck then stays open), or when a newer open() took over.
+   */
+  async function open(deckToken: string): Promise<boolean> {
+    const same = deckToken === token.value && snapshot.value !== null
+    if (!same && token.value !== null && hasUnsaved.value && !(await ensureSaved())) return false
     clearTimer()
-    token.value = deckToken
-    snapshot.value = null // never build a draft from the previous deck's snapshot
-    images.value = []
-    drafts.clear()
-    conflict.value = null
-    saveState.value = 'saved'
+    const epoch = ++loadEpoch.value
     loadError.value = null
-    index.value = 0
+    if (same) {
+      for (const [slideId, d] of drafts) {
+        if (fingerprint(d.block) === d.baseline && !conflicts.has(slideId)) drafts.delete(slideId)
+      }
+    } else {
+      token.value = deckToken
+      snapshot.value = null // never build a draft from the previous deck's snapshot
+      images.value = []
+      drafts.clear()
+      conflicts.clear()
+      saveFailed.value = false
+      index.value = 0
+    }
     try {
-      if (meta.value === null) meta.value = await client.value.meta()
+      if (meta.value === null) {
+        const m = await client.value.meta()
+        if (epoch !== loadEpoch.value) return false
+        meta.value = m
+      }
       const snap = await client.value.snapshot(deckToken, engine.value)
-      snapshot.value = snap
-      revision.value = snap.revisions.narration
-      images.value = snap.pages.map((p) => p.image_url ?? null)
+      if (epoch !== loadEpoch.value) return false // a newer open won
+      if (same) {
+        reconcile(snap)
+        const dirty = dirtySlides.value[0]
+        if (dirty !== undefined) touch(dirty) // the autosave was waiting on it
+      } else {
+        snapshot.value = snap
+        revision.value = snap.revisions.narration
+        images.value = snap.pages.map((p) => p.image_url ?? null)
+      }
     } catch (e) {
+      if (epoch !== loadEpoch.value) return false
       loadError.value = e instanceof ApiError ? e.message : 'The editor server could not be reached.'
     }
+    return true
   }
 
   /** Refetch the snapshot and reconcile drafts with it (coalesced). */
@@ -156,13 +199,20 @@ export const useEditorStore = defineStore('editor', () => {
       do {
         refreshAgain = false
         if (token.value === null) return
+        const epoch = loadEpoch.value
+        const asked = engine.value
         let snap: DeckSnapshot
         try {
-          snap = await client.value.snapshot(token.value, engine.value)
+          snap = await client.value.snapshot(token.value, asked)
         } catch (e) {
           // a half-written file on disk: keep the last good snapshot, say why
-          if (e instanceof ApiError) flash(e.message, 'warn')
+          if (e instanceof ApiError && epoch === loadEpoch.value) flash(e.message, 'warn')
           return
+        }
+        if (epoch !== loadEpoch.value) continue // another deck (or load) since: not ours
+        if (asked !== engine.value) {
+          refreshAgain = true // the engine changed meanwhile: ask again, for the new one
+          continue
         }
         reconcile(snap)
       } while (refreshAgain)
@@ -183,24 +233,28 @@ export const useEditorStore = defineStore('editor', () => {
     const samePdf = snapshot.value?.revisions.pdf === snap.revisions.pdf
     snapshot.value = snap
     images.value = snap.pages.map((p, i) => p.image_url ?? (samePdf ? images.value[i] : null) ?? null)
-    if (inFlight === 0) revision.value = newRevision
+    if (inFlight.value === 0) revision.value = newRevision
     for (const [slideId, draft] of drafts) {
       const theirs = serverBlock(snap, slideId)
       const theirsFp = fingerprint(theirs)
-      if (theirsFp === draft.serverFp) continue // this slide didn't change on the server
-      draft.serverFp = theirsFp
+      if (theirsFp === draft.serverFp) {
+        conflicts.delete(slideId) // the file is back to what this draft was edited against
+        continue
+      }
       if (draft.ackRevision !== null && draft.ackRevision === newRevision) {
+        draft.serverFp = theirsFp
         draft.baseline = theirsFp // our own save, as the server wrote it
         continue
       }
-      const dirty = fingerprint(draft.block) !== draft.baseline
-      if (!dirty) {
+      if (fingerprint(draft.block) === draft.baseline) {
         draft.block = keepKeys(draft.block, theirs) // changed elsewhere, nothing typed here: take it
         draft.baseline = theirsFp
+        draft.serverFp = theirsFp
         draft.ackRevision = null
-      } else if (conflict.value === null) {
-        conflict.value = { slideId, mine: plainText(draft.block), theirs: plainText(theirs) }
-        saveState.value = 'conflict'
+        conflicts.delete(slideId)
+      } else {
+        // both sides changed: hold both until the user chooses (serverFp moves only then)
+        conflicts.set(slideId, { slideId, mine: plainText(draft.block), theirs: plainText(theirs) })
       }
     }
     if (index.value >= snap.pages.length) index.value = Math.max(0, snap.pages.length - 1)
@@ -231,11 +285,7 @@ export const useEditorStore = defineStore('editor', () => {
     const d = drafts.get(slideId)
     if (d === undefined || snapshot.value === null) return
     syncSilenceFields(d.block, snapshot.value.silence)
-    if (!isDirty(slideId)) {
-      if (saveState.value === 'unsaved' && dirtySlides.value.length === 0) saveState.value = 'saved'
-      return
-    }
-    if (saveState.value !== 'conflict' && saveState.value !== 'saving') saveState.value = 'unsaved'
+    if (!isDirty(slideId)) return
     clearTimer()
     if (immediate) void flush()
     else timer = setTimeout(() => void flush(), AUTOSAVE_MS)
@@ -248,16 +298,29 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
-  /** Save every dirty slide now and wait for the server to acknowledge them. */
-  function flush(): Promise<void> {
+  /**
+   * Save every dirty slide now and wait for the server to acknowledge them.
+   * True only when nothing is left unsaved or in conflict: whatever consumes
+   * the narration (play, generate, export, review, leaving the deck) stops on false.
+   */
+  function flush(): Promise<boolean> {
     clearTimer()
     saving = saving.then(async () => {
       for (const slideId of dirtySlides.value) {
-        if (conflict.value?.slideId === slideId) continue
+        if (conflicts.has(slideId)) continue // never saved over an outside edit
         await saveSlide(slideId)
       }
     })
-    return saving
+    return saving.then(() => dirtySlides.value.length === 0 && conflicts.size === 0)
+  }
+
+  /** flush(), saying why when something is still unsaved. */
+  async function ensureSaved(): Promise<boolean> {
+    if (await flush()) return true
+    if (conflicts.size > 0) flash('First choose which version of the narration to keep.', 'warn')
+    else if (!saveFailed.value) flash('Your latest changes aren’t saved yet — try again in a moment.', 'warn')
+    // a failed save already said why, and stays shown as "Not saved"
+    return false
   }
 
   async function saveSlide(slideId: string, retried = false): Promise<void> {
@@ -265,8 +328,8 @@ export const useEditorStore = defineStore('editor', () => {
     if (draft === undefined || token.value === null) return
     const sent = fingerprint(draft.block)
     if (sent === draft.baseline) return
-    saveState.value = 'saving'
-    inFlight++
+    const epoch = loadEpoch.value
+    inFlight.value++
     try {
       const result = await client.value.saveSlide(token.value, slideId, {
         expected_revision: revision.value,
@@ -274,23 +337,25 @@ export const useEditorStore = defineStore('editor', () => {
         transition_in: draft.block.transitionIn,
         transition_out: draft.block.transitionOut,
       })
+      inFlight.value--
+      if (epoch !== loadEpoch.value) return // another deck is open now
       revision.value = result.revision
       ownRevisions.add(result.revision)
       draft.baseline = sent // acknowledges exactly what was sent; newer typing stays dirty
       draft.ackRevision = result.revision
-      saveState.value = dirtySlides.value.length > 0 ? 'unsaved' : 'saved'
+      saveFailed.value = false
       for (const listener of savedListeners) listener({ slideId, changed: result.changed })
-      inFlight--
       void refresh()
       if (fingerprint(draft.block) !== draft.baseline) touch(slideId)
     } catch (e) {
-      inFlight--
+      inFlight.value--
+      if (epoch !== loadEpoch.value) return
       if (e instanceof ApiError && e.code === 'revision_conflict' && !retried) {
         await refresh() // flags a conflict when this very slide changed on disk
-        if (conflict.value?.slideId !== slideId) return saveSlide(slideId, true)
+        if (!conflicts.has(slideId)) return saveSlide(slideId, true)
         return
       }
-      saveState.value = 'error'
+      saveFailed.value = true
       flash(e instanceof ApiError ? e.message : 'Saving failed — check that the editor is running.', 'err')
     }
   }
@@ -300,24 +365,27 @@ export const useEditorStore = defineStore('editor', () => {
     return () => savedListeners.delete(listener)
   }
 
-  /** Resolve a conflict: write the user's version over the file, or take the file's. */
+  /** Resolve the conflict shown: write the user's version over the file, or take the file's. */
   async function resolveConflict(choice: 'mine' | 'theirs'): Promise<void> {
     const c = conflict.value
     if (c === null) return
-    conflict.value = null
     const draft = drafts.get(c.slideId)
-    if (draft === undefined || snapshot.value === null) return
+    if (draft === undefined || snapshot.value === null) {
+      conflicts.delete(c.slideId)
+      return
+    }
+    if (choice === 'mine') await refresh() // replace the file's latest version, not an older one
+    const theirs = serverBlock(snapshot.value, c.slideId)
+    draft.serverFp = fingerprint(theirs)
+    draft.ackRevision = null
+    conflicts.delete(c.slideId)
     if (choice === 'theirs') {
-      draft.block = serverBlock(snapshot.value, c.slideId)
-      draft.baseline = fingerprint(draft.block)
-      saveState.value = dirtySlides.value.length > 0 ? 'unsaved' : 'saved'
+      draft.block = keepKeys(draft.block, theirs)
+      draft.baseline = draft.serverFp
       return
     }
     // keep mine: the file's version is now the baseline we knowingly replace
     draft.baseline = draft.serverFp
-    draft.ackRevision = null
-    await refresh()
-    touch(c.slideId, { immediate: true })
     await flush()
   }
 
@@ -339,8 +407,10 @@ export const useEditorStore = defineStore('editor', () => {
   /** Refetch page images only (cheap; used while pages render in the background). */
   async function refreshPages(): Promise<void> {
     if (token.value === null) return
+    const epoch = loadEpoch.value
     try {
-      images.value = (await client.value.pages(token.value)).images
+      const fresh = (await client.value.pages(token.value)).images
+      if (epoch === loadEpoch.value) images.value = fresh
     } catch {
       // keep what we have
     }
@@ -354,14 +424,17 @@ export const useEditorStore = defineStore('editor', () => {
   // ---- commands (orphans, voices) ---------------------------------------------------
   async function command(body: Parameters<ApiClient['command']>[1]): Promise<boolean> {
     if (token.value === null) return false
-    await flush()
+    if (!(await ensureSaved())) return false
+    const epoch = loadEpoch.value
     try {
       const result = await client.value.command(token.value, { ...body, expected_revision: revision.value })
+      if (epoch !== loadEpoch.value) return false
       revision.value = result.revision
       ownRevisions.add(result.revision)
       await refresh()
       return true
     } catch (e) {
+      if (epoch !== loadEpoch.value) return false
       if (e instanceof ApiError && e.code === 'revision_conflict') {
         await refresh()
         flash('The narration file changed on disk — look again and retry.', 'warn')
@@ -387,9 +460,9 @@ export const useEditorStore = defineStore('editor', () => {
 
   return {
     client, token, snapshot, meta, engine, activeEngine, index, loadError, drafts, saveState,
-    conflict, flashMessage, revision, images, externalChanges, pages, page, currentId, errorCount,
-    diagnosticsHere, dirtySlides, hasUnsaved,
-    open, refresh, refreshPages, draftFor, isDirty, touch, flush, onSaved, resolveConflict, go,
-    goToSlide, setEngine, command, flash,
+    conflict, conflicts, flashMessage, revision, images, externalChanges, loadEpoch, pages, page,
+    currentId, errorCount, diagnosticsHere, dirtySlides, hasUnsaved,
+    open, refresh, refreshPages, draftFor, isDirty, touch, flush, ensureSaved, onSaved,
+    resolveConflict, go, goToSlide, setEngine, command, flash,
   }
 })

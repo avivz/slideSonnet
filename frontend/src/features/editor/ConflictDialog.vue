@@ -29,6 +29,10 @@ async function copyMine(): Promise<void> {
       <span class="mono">@{{ editor.conflict?.slideId }}</span> while you had unsaved typing on it.
       Nothing has been overwritten yet — choose which version to keep.
     </p>
+    <p v-if="editor.conflicts.size > 1" class="lead" data-testid="conflict-more">
+      {{ editor.conflicts.size - 1 }} more slide{{ editor.conflicts.size === 2 ? '' : 's' }} changed the same way —
+      you'll choose for each one next.
+    </p>
     <div class="versions">
       <section>
         <h3 class="section-title">Your version (not saved)</h3>
