@@ -6,6 +6,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { ApiError, type Backend, type JobDTO } from '@/api/client'
 import { waitForJob } from '@/api/jobs'
 import AppIcon from '@/components/AppIcon.vue'
+import { formatLength } from '@/features/playback/cues'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
@@ -21,6 +22,8 @@ const editor = useEditorStore()
 const generation = useGenerationStore()
 const player = usePlayerStore()
 const exporting = ref<JobDTO | null>(null)
+/** The last export's video: shown until dismissed (or the next export). */
+const exported = ref<{ video: string; duration: number; draft: boolean } | null>(null)
 const now = ref(Date.now() / 1000)
 const clock = setInterval(() => (now.value = Date.now() / 1000), 500)
 onBeforeUnmount(() => clearInterval(clock))
@@ -103,11 +106,11 @@ async function runExport(token: string, draft: boolean, allowPaid: boolean): Pro
       kind: 'export', draft, engine: editor.activeEngine, allow_paid: allowPaid,
     })
     exporting.value = job
+    exported.value = null
     const wait = waitForJob(editor.client, job.id, (j) => (exporting.value = j))
     const done = await wait.done
     if (done.status === 'succeeded' && done.result) {
-      const r = done.result as { video: string; duration: number }
-      editor.flash(`Exported ${r.video} (${r.duration.toFixed(1)}s)`, 'ok')
+      exported.value = done.result as { video: string; duration: number; draft: boolean }
     } else if (done.status === 'failed') {
       editor.flash(`Export failed: ${done.error?.message ?? 'unknown error'}`, 'err')
     } else {
@@ -203,6 +206,18 @@ async function cancelExport(): Promise<void> {
         </button>
         <p class="status mono">{{ exportText }}</p>
       </div>
+      <div v-if="exported" class="result" role="status" data-testid="export-result">
+        <p>
+          {{ exported.draft ? 'Draft video' : 'Video' }} saved next to the PDF:
+          <span class="mono">{{ exported.video }}</span> · {{ formatLength(exported.duration) }} long
+        </p>
+        <button
+          class="icon-btn" type="button" title="Dismiss" aria-label="Dismiss" data-testid="export-result-dismiss"
+          @click="exported = null"
+        >
+          <AppIcon name="close" :size="14" />
+        </button>
+      </div>
     </section>
 
     <section class="group">
@@ -263,6 +278,22 @@ async function cancelExport(): Promise<void> {
   height: 100%;
   background: var(--accent);
   transition: width var(--pane);
+}
+.result {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--radius-field);
+  font-size: var(--text-sm);
+}
+.result p {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .status {
   grid-column: 1 / -1;

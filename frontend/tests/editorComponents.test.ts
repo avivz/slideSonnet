@@ -177,7 +177,10 @@ describe('console', () => {
     await vi.waitFor(() => expect(server.jobs).toHaveLength(1))
     expect(confirm.mock.calls[0]?.[0].lines[0]).toContain('plain build')
     expect(server.jobs[0]?.body).toMatchObject({ kind: 'export', draft: true })
-    await vi.waitFor(() => expect(useEditorStore().flashMessage?.text).toContain('Exported deck.draft.mp4'))
+    const result = await vi.waitFor(() => w.get('[data-testid="export-result"]'))
+    expect(result.text()).toContain('Draft video saved next to the PDF: deck.draft.mp4 · 3 s long')
+    await result.get('[data-testid="export-result-dismiss"]').trigger('click')
+    expect(w.find('[data-testid="export-result"]').exists()).toBe(false) // stays until dismissed
   })
 })
 

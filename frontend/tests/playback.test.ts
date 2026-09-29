@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { PlaybackController, type Frame, type MediaLike, type Scheduler } from '@/features/playback/controller'
-import { cueAt, cueStart, formatClock, nextInScope } from '@/features/playback/cues'
+import { cueAt, cueStart, formatClock, formatLength, nextInScope } from '@/features/playback/cues'
 import { StageOverlay, Transport } from '@/features/playback/dom'
 import type { PreviewManifest } from '@/features/playback/manifest'
 import { activeStep, effect, morphFrame } from '@/features/playback/morph'
@@ -42,6 +42,7 @@ describe('cues', () => {
     expect(cueStart(CUES, 'b')).toBe(4)
     expect(cueStart(CUES, 'zz')).toBeNull()
     expect([0, 9.9, 65, 600].map(formatClock)).toEqual(['0:00', '0:09', '1:05', '10:00'])
+    expect([3, 393.2, 3720].map(formatLength)).toEqual(['3 s', '6 min 33 s', '1 h 2 min'])
   })
 })
 
