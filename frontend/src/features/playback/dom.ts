@@ -1,8 +1,7 @@
-// Plain-DOM views for the playback controller: the stage overlay (the playing
-// slide plus transitions, drawn over the stage) and the transport (scrubber +
-// time label). Framework-free: the stage overlay is plain DOM driven per
-// animation frame, which is cheaper than re-rendering components 60 times a second.
-import { formatClock } from './cues'
+// Plain-DOM view for the playback controller: the stage overlay (the playing
+// slide plus transitions, drawn over the stage). Framework-free: it is plain DOM
+// driven per animation frame, which is cheaper than re-rendering components 60
+// times a second.
 import type { Frame } from './controller'
 import type { LayerStyle } from './morph'
 
@@ -135,66 +134,5 @@ export class StageOverlay {
     img.style.clipPath = style.clipPath
     img.style.zIndex = String(style.zIndex)
     return style.src
-  }
-}
-
-/** The scrubber and the `0:12 / 1:40` label. Seeking never waits on the server. */
-export class Transport {
-  readonly root: HTMLDivElement
-  private readonly range: HTMLInputElement
-  private readonly label: HTMLSpanElement
-  private scrubbing = false
-  private duration = 0
-
-  constructor(host: HTMLElement, onSeekFraction: (fraction: number) => void) {
-    host.querySelector(':scope > .ss-transport')?.remove()
-    this.root = document.createElement('div')
-    this.root.className = 'ss-transport'
-    this.range = document.createElement('input')
-    this.range.type = 'range'
-    this.range.min = '0'
-    this.range.max = '1000'
-    this.range.value = '0'
-    this.range.disabled = true
-    this.range.className = 'ss-scrub'
-    this.range.setAttribute('aria-label', 'Playback position')
-    this.label = document.createElement('span')
-    this.label.className = 'ss-time'
-    this.range.addEventListener('pointerdown', () => {
-      this.scrubbing = true
-    })
-    this.range.addEventListener('input', () => {
-      const fraction = Number(this.range.value) / 1000
-      this.label.textContent = this.clock(fraction * this.duration)
-    })
-    this.range.addEventListener('change', () => {
-      this.scrubbing = false
-      onSeekFraction(Number(this.range.value) / 1000) // one seek per scrub, on release
-    })
-    this.root.append(this.range, this.label)
-    host.appendChild(this.root)
-  }
-
-  render(frame: Frame): void {
-    this.duration = frame.duration
-    this.range.disabled = !frame.loaded
-    if (!frame.loaded) {
-      this.range.value = '0'
-      this.label.textContent = ''
-      return
-    }
-    if (!this.scrubbing) {
-      const fraction = frame.duration > 0 ? frame.time / frame.duration : 0
-      this.range.value = String(Math.round(Math.min(1, fraction) * 1000))
-      this.label.textContent = this.clock(frame.time)
-    }
-  }
-
-  dispose(): void {
-    this.root.remove()
-  }
-
-  private clock(t: number): string {
-    return `${formatClock(t)} / ${formatClock(this.duration)}`
   }
 }

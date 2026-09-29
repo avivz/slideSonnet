@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The console: deck-wide tools on top (engine, voices, generate, export), then
 // what concerns the open slide (checks, its audio, unattached narration).
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { ApiError, type Backend, type JobDTO } from '@/api/client'
 import { waitForJob } from '@/api/jobs'
@@ -24,9 +24,6 @@ const player = usePlayerStore()
 const exporting = ref<JobDTO | null>(null)
 /** The last export's video: shown until dismissed (or the next export). */
 const exported = ref<{ video: string; duration: number; draft: boolean } | null>(null)
-const now = ref(Date.now() / 1000)
-const clock = setInterval(() => (now.value = Date.now() / 1000), 500)
-onBeforeUnmount(() => clearInterval(clock))
 
 const engines = computed(() => {
   const snap = editor.snapshot

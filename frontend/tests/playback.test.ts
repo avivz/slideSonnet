@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PlaybackController, type Frame, type MediaLike, type Scheduler } from '@/features/playback/controller'
 import { cueAt, cueStart, formatClock, formatLength, nextInScope } from '@/features/playback/cues'
-import { StageOverlay, Transport } from '@/features/playback/dom'
+import { StageOverlay } from '@/features/playback/dom'
 import type { PreviewManifest } from '@/features/playback/manifest'
 import { activeStep, effect, morphFrame } from '@/features/playback/morph'
 import { OutputWaker } from '@/features/playback/wake'
@@ -293,20 +293,6 @@ describe('DOM views', () => {
       await paint('/b-stage.png')
       expect(overlay.root.classList.contains('ss-on')).toBe(false)
     })
-  })
-
-  it('the transport tracks position, seeks on release, and clears on stop', () => {
-    const host = document.createElement('div')
-    const seeks: number[] = []
-    const transport = new Transport(host, (f) => seeks.push(f))
-    transport.render(frame({}))
-    const range = host.querySelector('input') as HTMLInputElement
-    expect([range.value, host.querySelector('.ss-time')?.textContent]).toEqual(['300', '0:30 / 1:40'])
-    range.value = '500'
-    range.dispatchEvent(new Event('change'))
-    expect(seeks).toEqual([0.5])
-    transport.render(frame({ loaded: false }))
-    expect([range.disabled, host.querySelector('.ss-time')?.textContent]).toEqual([true, ''])
   })
 })
 
