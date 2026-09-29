@@ -1,20 +1,33 @@
 <script setup lang="ts">
 // A note to the agent: Enter (or Send) sends it; Shift+Enter starts a new line.
 // The text is a v-model so the panel can keep each slide's unsent note apart.
-defineProps<{ placeholder: string; testId: string }>()
-const emit = defineEmits<{ send: [text: string] }>()
-const text = defineModel<string>({ default: '' })
+// It is cleared only once the note went through; a failed send keeps it.
+import { ref } from 'vue'
 
-function send(): void {
+const props = defineProps<{
+  placeholder: string
+  testId: string
+  /** Sends the note; resolves true once it went through. */
+  send: (text: string) => Promise<boolean>
+}>()
+const text = defineModel<string>({ default: '' })
+const sending = ref(false)
+
+async function submit(): Promise<void> {
   const value = text.value.trim()
-  if (!value) return
-  emit('send', value)
-  text.value = ''
+  if (!value || sending.value) return
+  sending.value = true
+  try {
+    if (await props.send(value)) text.value = ''
+  } finally {
+    sending.value = false
+  }
 }
 function onKey(event: KeyboardEvent): void {
-  if (event.key === 'Enter' && !event.shiftKey) {
+  // Enter while an input method is composing picks a candidate: it doesn't send
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault()
-    send()
+    void submit()
   }
 }
 </script>
@@ -37,11 +50,11 @@ function onKey(event: KeyboardEvent): void {
         class="btn quiet"
         type="button"
         title="Send to the agent (Enter)"
-        :disabled="!text.trim()"
+        :disabled="!text.trim() || sending"
         :data-testid="`${testId}-add`"
-        @click="send"
+        @click="submit"
       >
-        Send
+        {{ sending ? 'Sending…' : 'Send' }}
       </button>
     </div>
   </div>

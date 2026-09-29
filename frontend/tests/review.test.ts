@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ReviewDTO } from '@/api/client'
+import { ApiError, type ReviewDTO } from '@/api/client'
 import ReviewPanel from '@/features/review/ReviewPanel.vue'
 import SlideLinks from '@/features/review/SlideLinks.vue'
 import { useEditorStore } from '@/stores/editor'
@@ -144,6 +144,23 @@ describe('review panel', () => {
       { type: 'reply', conversation: 'c1', text: 'Looks good.' },
       { type: 'accept', conversation: 'c1' },
     ])
+  })
+
+  it('keeps a note that failed to send, and doesn’t send mid-composition', async () => {
+    const { editor, sent } = await setup()
+    const w = mount(ReviewPanel, { attachTo: document.body })
+    await flushPromises()
+    const note = w.get('[data-testid="new-note"]')
+    await note.setValue('Shorter, please.')
+    await note.trigger('keydown', { key: 'Enter', isComposing: true }) // choosing an IME candidate
+    await flushPromises()
+    expect(sent).toEqual([])
+    editor.client.reviewCommand = async () => {
+      throw new ApiError(503, 'busy', 'The review is busy.')
+    }
+    await note.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect((note.element as HTMLTextAreaElement).value).toBe('Shorter, please.') // not lost
   })
 
   it('the whole-deck conversation sits in the list, and choosing it greys nothing out', async () => {

@@ -218,8 +218,8 @@ function time(at: string): string {
             :model-value="replies.get(chosen.id) ?? ''"
             :test-id="`reply-${chosen.id}`"
             :placeholder="chosen.is_deck ? 'Instructions for the agent about the whole deck…' : 'Reply…'"
+            :send="(text) => review.command({ type: 'reply', conversation: chosen!.id, text })"
             @update:model-value="(v) => replies.set(chosen!.id, v)"
-            @send="(text) => review.command({ type: 'reply', conversation: chosen!.id, text })"
           />
         </template>
         <button
@@ -263,7 +263,7 @@ function time(at: string): string {
           v-model="draft"
           test-id="new-note"
           placeholder="What should change…"
-          @send="(text) => review.startConversation(text)"
+          :send="(text) => review.startConversation(text)"
         />
       </section>
     </template>
