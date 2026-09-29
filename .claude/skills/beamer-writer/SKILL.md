@@ -120,8 +120,12 @@ compiled PDF with `slidesonnet init deck.pdf`, then fill in each block:
 Only needed to override defaults or define named voices/pronunciation:
 
 ```toml
+# Top-level keys go above the first [table]: TOML files everything after a
+# header under that table, so a key written below [voices.narrator] is ignored.
+pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
+
 [tts]
-backend = "kokoro"           # or "inworld"
+backend = "kokoro"           # or "inworld" (paid)
 
 [tts.kokoro]
 voice = "af_heart"
@@ -133,8 +137,6 @@ fps = 24
 [voices.narrator]
 kokoro = "af_bella"
 inworld = "Ashley"
-
-pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
 ```
 
 ## Workflow
@@ -154,7 +156,10 @@ pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
    each `@id` block as natural speech.
 6. **Reconcile** — `slidesonnet check deck.pdf` must report no errors (fix
    duplicate/auto/orphan ids).
-7. **(Optional) render** — `slidesonnet export deck.pdf -o deck.mp4 --engine kokoro`.
+7. **(Optional) render** — `slidesonnet export deck.pdf -o deck.mp4 --engine kokoro --draft`
+   (a plain build only exports as a draft, `deck.draft.mp4`; the final video
+   needs the final build above). Never pass `--engine inworld` or `--yes`
+   unasked: Inworld spends the user's paid credits.
 
 ## Content principles
 

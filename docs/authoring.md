@@ -52,7 +52,10 @@ latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex
 - Every emitted page should have exactly one `\ssid`. A page you forget gets a
   positional `auto-p<page>-s<sub>` default — `slidesonnet check` warns so you give
   it a real name.
-- Ids must be unique across the deck (duplicate ids are a hard error).
+- Ids must be unique across the deck. A repeated id is renamed on the later page
+  (`twin` → `twin-2`) with a warning; give each page its own `\ssid`.
+- A PDF with no `\ssid` on any page is an error in `init` and `check`: run
+  `slidesonnet sty`, add `\usepackage{slidesonnet}`, and recompile.
 - Ids are the *only* coupling to your source — the narration text never lives in
   the `.tex`.
 
@@ -64,7 +67,13 @@ slidesonnet check deck.pdf       # reconcile ids; exits non-zero on errors
 ```
 
 `init --merge` tops up an existing sidecar with blocks for new ids (leaving your
-text untouched); `init --force` overwrites.
+text untouched); `init --force` overwrites. The new file starts with a commented
+example of the grammar below.
+
+`check` reports, besides id problems: a voice the engine doesn't have (for
+engines that publish a voice list, like Kokoro), a slide-id with two `@` blocks
+(with both line numbers), and — as a warning — a plain build, which `export`
+only turns into a draft.
 
 ## 3. Write narration
 
@@ -102,8 +111,11 @@ transitions:
   hold several utterances and mix voices — each is its own synthesis call.
 - `pause: N` is an explicit silence in seconds: between utterances, as an
   end-of-slide hold, or alone as a silent slide.
-- `transition-in:` / `transition-out:` (`cut`, the default, or `crossfade N`)
-  bracket the slide. A boundary is written on only one side — setting an
+- `transition-in:` / `transition-out:` bracket the slide with a transition
+  name and a duration in seconds, e.g. `fade 0.5`. Names: `cut` (the default),
+  `fade`, `fadeblack`, `fadewhite`, `dissolve`, `crossfade`, `wipe…`, `slide…`,
+  `cover…` and `reveal…` with a direction (`left`, `right`, `up`, `down`, e.g.
+  `wipeleft`), and `circleopen` / `circleclose`. A boundary is written on only one side — setting an
   outgoing transition clears the next slide's incoming one.
 - A `#` on a `text:` line (or its wrapped continuation), a `voice:` line or a
   `direct:` line is spoken or kept as written ("Use issue #123"); only a line
@@ -116,38 +128,94 @@ transitions:
 ## 4. Render
 
 ```bash
-slidesonnet export deck.pdf -o deck.mp4 --engine kokoro     # narrated + subtitles
-slidesonnet export deck.pdf -o deck.mp4 --silent            # fast silent cut
+slidesonnet export deck.pdf -o deck.mp4 --draft             # writes deck.draft.mp4
+slidesonnet export deck.pdf -o deck.mp4 --silent --draft    # fast silent cut
 slidesonnet edit  deck.pdf                                  # GUI editor + preview
 slidesonnet edit  ~/courses/aicode                          # ...on a whole folder of decks
 ```
 
+A final export (no `--draft`) is refused until the deck is ready: a final
+build (`latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex`), no errors from
+`check`, some narration, and no open review conversations. `--draft` skips
+those checks and names the file `<name>.draft.mp4`, so a draft never overwrites
+the real video. Only `.mp4` output is supported.
+
+With a paid engine (`--engine inworld`), `tts` and `export` say how many new
+clips they would generate and ask first; `--yes` answers for you, and without a
+terminal (a script, CI) they refuse unless `--yes` is given. Clips already in
+the cache are reused for free.
+
 ## Config (`slidesonnet.toml`, optional)
 
+Place it next to the deck; it's auto-discovered. With no config, sensible
+defaults (Kokoro, 1080p) apply. Every key is optional; the values shown are the
+defaults unless marked as an example. Paths are relative to the toml.
+
 ```toml
+# Top-level keys go above the first [table]: TOML files everything after a
+# header under that table, so a key written below [voices.narrator] is ignored.
+pronunciation = ["pronunciation/names.md"]   # example; **word**: replacement entries
+
 [tts]
-backend = "kokoro"
+backend = "kokoro"           # kokoro | inworld (paid) | qwen3
 
 [tts.kokoro]
-voice = "af_heart"
+voice = "am_echo"            # any Kokoro voice, e.g. af_heart
+speed = 1.0
+
+[tts.inworld]
+voice = "Simon"
+model = "inworld-tts-2"
+speed = 1.0
+api_key_env = "INWORLD_API_KEY"   # the environment variable holding the key
+
+[tts.qwen3]
+model = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+device = "xpu"               # cpu | cuda | xpu
+voice_prompt = ""            # a .pt voice-clone prompt (with a ...-Base model)
+language = "English"
 
 [video]
 resolution = "1920x1080"
 fps = 24
+crf = 23                     # x264 quality: lower is better and bigger
+preset = "medium"            # x264 speed preset (ultrafast … veryslow)
+pre_silence = 0.3            # seconds before a slide's first word
+tail_seconds = 0.5           # seconds held after its last word
 keep_scratch = false         # true: keep render intermediates after export (debugging);
                              # same as `export --keep-scratch` for one run
 
+[logging]
+file = ".slidesonnet/slidesonnet.log"   # or false for no run log
+level = "DEBUG"              # what the file records; the console follows -v / -q
+max_bytes = 2_000_000        # rotate past ~2 MB
+backup_count = 3             # keep slidesonnet.log.1 … .3
+
 [cache]
-audio_dir = "~/.cache/slidesonnet/aicode"   # shared speech-clip pool (see below)
+audio_dir = "~/.cache/slidesonnet/aicode"   # example: a shared speech-clip pool (see below)
 
-[voices.narrator]            # named voice → per-backend voice id
+[voices.narrator]            # example: a named voice → per-engine voice id
 kokoro = "af_heart"
-
-pronunciation = ["pronunciation/names.md"]   # **word**: replacement entries
+inworld = "Ashley"
 ```
 
-Place it next to the deck; it's auto-discovered. With no config, sensible defaults
-(Kokoro, 1080p) apply.
+Named voices can also live in the sidecar itself (a `voices:` block and
+`default-voice:` above the first `@` block, as in the examples); the sidecar's
+entries win over the toml's.
+
+### Engines and keys
+
+- **Kokoro** (`pip install "slidesonnet[kokoro]"`) runs locally and is free.
+- **Inworld** (`pip install "slidesonnet[inworld]"`) is a paid cloud engine: the
+  narration text is sent to Inworld's servers, and each new clip spends API
+  credits. Put the key in a `.env` file beside the deck (or in any folder above
+  it, or the one you run from): `INWORLD_API_KEY=...`. A shell export wins over
+  `.env`, and `[tts.inworld] api_key_env` names a different variable. Never
+  commit `.env`.
+- **Qwen3** (`pip install "slidesonnet[qwen3]"`) runs locally on a GPU, is slow,
+  and can clone your own voice.
+
+Choose one per run with `--engine`, or per deck with `[tts] backend`.
 
 ### Sharing speech clips across checkouts (`[cache] audio_dir`)
 
