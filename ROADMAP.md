@@ -71,22 +71,27 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `(`/`)` plus a `check` note; new `[tts.inworld]` keys `temperature`, `delivery_mode`,
    `language`, `text_normalization`, unset by default and added to the cache key only
    when set. AICODE verified: 39 decks, 2191 Inworld and 2191 Kokoro clip names unchanged.
-   **Decisions for the maintainer (to discuss):**
-   (1) Should `/…/` values in the pronunciation dictionary go to Inworld only (Kokoro stops
-   receiving IPA; free Kokoro re-synthesis, no Inworld churn)? Today the dictionary is
-   engine-blind, as before.
-   (2) Should `send_direction` default to on for new decks (e.g. written by `init`)?
-   (3) Should the stray-bracket note also appear in the editor's Deck checks (today it is
-   in `slidesonnet check` only)?
-   (4) Later: pass inline fixes through to Kokoro (misaki reads `[word](/phonemes/)`, but
-   its phoneme set differs from IPA)?
+   **Decided 2026-09-29 (to build):**
+   (1) `/…/` values in the pronunciation dictionary go to Inworld only; Kokoro/Qwen3 get the
+   plain word (as inline fixes do). Respellings still go to every engine. Inworld clip names
+   unchanged; Kokoro clips with dictionary IPA re-key (free). Fixes the basel Kokoro demo,
+   whose nine IPA names reach Kokoro verbatim today.
+   (2) `send_direction` defaults to **on** everywhere (`= false` opts out). Re-keys only lines
+   with a `direct:` note — in AICODE exactly one (week01 `01-10_welcome_to_ai_code`, line 44,
+   "slowly, in a low voice"), accepted.
+   (3) The editor warns only on the likely typo `[word] (form)` (a space between `]` and
+   `(`); plain brackets like "[0, 1]" get no note in the editor or in `check`.
+   (4) Parked: nothing phoneme-level goes to Kokoro for now. A both-forms fix
+   `[Mengoli](/menˈɡoːli/ | men-GO-lee)` (IPA to Inworld, respelling to Kokoro) is the
+   cheap route if it is wanted later (Later backlog).
    **Paid spot-checks (human-triggered, a few cents; never in tests):**
    (i) `The work of Pietro [Mengoli](/menˈɡoːli/) began it.` on the default model and on
    `inworld-tts-1.5-max`; (ii) `[Leonhard Euler](/ˈleɪɒnhɑːrt/ /ˈɔɪlər/) summed it.`;
    (iii) `Drive at 50 km/h, and/or take 3/4 of it.`; (iv) `The interval [0, 1] is closed.`;
    (v) `This is the whole trick.` with `direct: slowly, in a low voice`, with and without
    `send_direction`; (vi) `delivery_mode` stable vs creative, two takes each; (vii)
-   optional `temperature = 0.6` vs unset on 1.5-max. **[human]**
+   optional `temperature = 0.6` vs unset on 1.5-max; (viii) `[Dijkstra](DYKE-struh)` vs
+   `[Dijkstra](dyke-struh)` on tts-2 (CAPS read as emphasis?). **[human]**
 3. [ ] **Cut 1.0.0a3.** *Why now:* PyPI users are on a2's NiceGUI editor; the
    Unreleased batch is the largest since the rewrite and includes a breaking
    `.sty` change (plain builds by default) and a `ProgressFn` signature change.
