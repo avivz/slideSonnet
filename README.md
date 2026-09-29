@@ -43,21 +43,31 @@ deck.narration  ──(@slide-id blocks)────┘                       (p
 PyMuPDF (PDF id extraction) and the editor's web server (FastAPI + Uvicorn)
 install as Python dependencies; the editor's browser interface comes built. After installing, run `slidesonnet doctor`.
 
+slideSonnet runs on Linux with Python 3.13+ (macOS is untested). Native Windows is not
+supported; on Windows, use it inside [WSL](https://learn.microsoft.com/windows/wsl/)
+(the editor can still open in your Windows browser — see the WSL note below).
+
 ### Install for use
 
 Install slideSonnet as an isolated, global CLI — its own virtualenv, separate
 from your system Python and any source checkout:
 
 ```bash
-uv tool install "slidesonnet[kokoro]"    # or: pipx install "slidesonnet[kokoro]"
+uv tool install --prerelease=allow "slidesonnet[kokoro]"
+# or: pipx install --pip-args=--pre "slidesonnet[kokoro]"
 ```
+
+v1 is still a pre-release (1.0.0a…), so the pre-release flag is needed until
+1.0 is final: without it, the installer picks the old 0.x tool, which works
+differently (it compiled slide *source*, not PDFs). `slidesonnet --version`
+should print 1.0.0a-something.
 
 The `[kokoro]` extra adds [Kokoro](https://github.com/hexgrad/kokoro) (82M,
 Apache-2.0) for free, natural-sounding local speech (~2x real-time on CPU;
 the model downloads on first use). Then run `slidesonnet doctor` to confirm the
 external tools above are visible.
 
-Upgrade with `uv tool upgrade slidesonnet`; remove with `uv tool uninstall
+Upgrade with `uv tool upgrade --prerelease=allow slidesonnet`; remove with `uv tool uninstall
 slidesonnet`. To hack on slideSonnet itself instead, see
 [Development](#development) for the editable install.
 
@@ -68,21 +78,30 @@ slidesonnet`. To hack on slideSonnet itself instead, see
 slidesonnet sty                      # writes slidesonnet.sty
 
 # 2. In your .tex: \usepackage{slidesonnet} and \ssid{...} on every frame,
-#    then compile however you like (a plain build: page numbers and
-#    progress bars hidden while you iterate):
+#    then compile. An ordinary compile is a *plain* build: page numbers and
+#    progress bars stay hidden while you iterate.
 latexmk -pdf deck.tex
-#    ...and for the final video, a final build that shows them:
-#    latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex
 
 # 3. Scaffold the narration sidecar from the PDF's slide-ids
 slidesonnet init deck.pdf            # writes deck.narration
 
-# 4. Write narration (edit deck.narration, or open the editor)
+# 4. Write narration (edit deck.narration, or open the editor), then check it
 slidesonnet edit deck.pdf
+slidesonnet check deck.pdf
 
-# 5. Render — narrated MP4 + subtitles
-slidesonnet export deck.pdf -o deck.mp4 --engine kokoro
+# 5. Render a draft from the plain build: narrated MP4 + subtitles
+slidesonnet export deck.pdf -o deck.mp4 --draft      # writes deck.draft.mp4
+
+# 6. For the final video, compile a final build (page numbers shown), then
+#    export without --draft
+latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex
+slidesonnet export deck.pdf -o deck.mp4              # writes deck.mp4
 ```
+
+A final export refuses a plain build, a deck `check` reports errors for, a deck
+with no narration yet, and one with review conversations still open, and says
+which. `--draft` exports anyway and names the file `<name>.draft.mp4`, so a
+draft never overwrites the real video.
 
 ## Marking slides — the `\ssid` macro
 
@@ -136,8 +155,11 @@ an `@id` block of one or more `utterance:` blocks and `pause:` lines:
   ignore). A slide can mix voices — each utterance is its own synthesis call.
 - `pause: N` is an explicit silence in seconds: between utterances, as an
   end-of-slide hold, or alone as a silent slide.
-- A slide can bracket itself with `transition-in:` / `transition-out:` lines
-  (`cut`, the default, or `crossfade N`).
+- A slide can bracket itself with `transition-in:` / `transition-out:` lines:
+  a name and seconds, e.g. `fade 0.5`. Besides `cut` (the default) there are
+  fades (`fade`, `fadeblack`, `fadewhite`, `dissolve`, `crossfade`), directional
+  `wipe…`/`slide…`/`cover…`/`reveal…` (e.g. `wipeleft`, `slideup`), and
+  `circleopen`/`circleclose`.
 
 The full authoring guide — marking overlay steps, the complete sidecar
 grammar, and the optional `slidesonnet.toml` config — is in
@@ -145,8 +167,9 @@ grammar, and the optional `slidesonnet.toml` config — is in
 
 ## The editor
 
-`slidesonnet edit deck.pdf` opens the editor in your browser (a local server —
-nothing leaves your machine): page through the deck, edit narration beside each
+`slidesonnet edit deck.pdf` opens the editor in your browser (a local server;
+with Kokoro nothing leaves your machine, while the paid Inworld engine sends the
+narration text to Inworld): page through the deck, edit narration beside each
 slide, set voice/pace, generate per-slide TTS, and play it back. Typing is saved
 as you go. **Play all** plays slide by slide from where you are, starting at
 once (the next slide is prepared while this one plays). **Watch as video**
@@ -220,13 +243,15 @@ one:
 slidesonnet sty    [-o PATH]                       write the LaTeX macro
 slidesonnet init   deck.pdf [--merge|--force]      scaffold a blank sidecar
 slidesonnet check  deck.pdf                         reconcile ids (exit≠0 on errors)
-slidesonnet tts    deck.pdf [--engine ...] [--id ID ...]   synthesize into the cache
+slidesonnet tts    deck.pdf [--engine ...] [--id ID ...] [--yes]   synthesize into the cache
 slidesonnet export deck.pdf -o OUT.mp4
+        [--draft]                      # not final yet: writes OUT.draft.mp4
         [--engine kokoro]              [--silent]
         [--timing tts|estimate|fixed:N] [--wpm N]
         [--subtitles srt|vtt|both|none] [--sub-granularity segment|slide]
         [--keep-scratch]               # keep render intermediates (debugging)
-slidesonnet subs   deck.pdf -o OUT.srt [--engine ...] [--format srt|vtt]
+        [--yes]                        # generate paid clips without asking
+slidesonnet subs   deck.pdf -o OUT.srt|OUT.vtt [--engine ...] [--format srt|vtt]
         [--timing ...] [--allow-estimates]    # export already writes these
 slidesonnet edit   [deck.pdf|FOLDER] [--root DIR]   launch the editor
 slidesonnet review comment|reply|title|list|status|wait|...   review conversations
@@ -237,6 +262,9 @@ slidesonnet pool   prune   --root DIR [--apply] [--keep current|exact|api] [--em
 slidesonnet doctor
 ```
 
+Errors print one line saying what went wrong and how to fix it; add `-v`
+before the command (`slidesonnet -v check …`) for the full traceback.
+
 `--audio-dir DIR` before any command (or `SLIDESONNET_AUDIO_DIR`, or
 `[cache] audio_dir` in `slidesonnet.toml`) points it at a **shared speech-clip
 pool**, so every worktree of a course reuses the same synthesized audio instead
@@ -245,6 +273,32 @@ of re-buying it. See the config section of the authoring guide.
 Every operation is also a typed Python function in `slidesonnet.api`
 (`init_sidecar`, `synthesize_deck`, `export`, `write_subs`, …) so an LLM/CI loop
 can drive the pipeline without the GUI.
+
+### Engines and keys
+
+| Engine | Install | Runs | Cost |
+|---|---|---|---|
+| `kokoro` (default) | `"slidesonnet[kokoro]"` | locally, CPU | free |
+| `inworld` | `"slidesonnet[inworld]"` | Inworld's cloud: narration text is sent to Inworld | paid per clip |
+| `qwen3` | `"slidesonnet[qwen3]"` | locally, GPU (slow); can clone your voice | free |
+
+Pick one per run with `--engine`, or per deck with `[tts] backend` in
+`slidesonnet.toml`. Inworld needs an API key: put `INWORLD_API_KEY=...` in a
+`.env` file beside the deck (a parent folder, or the folder you run from, also
+works; a shell export wins over `.env`). Keep `.env` out of git. Before
+generating paid clips, `tts` and `export` say how many new clips they would
+make and ask; `--yes` answers for you, and without a terminal (scripts, CI)
+they refuse unless `--yes` is given. Clips already generated are cached and
+reused for free.
+
+`slidesonnet.toml` (optional, beside the deck) also sets engine voices and
+speeds (`[tts.kokoro]`, `[tts.inworld]`, `[tts.qwen3]`), named voices
+(`[voices.<name>]`), video settings (`[video]`: `resolution`, `fps`, `crf`,
+`preset`, `pre_silence`, `tail_seconds`, `keep_scratch`), the run log
+(`[logging]`: `file`, `level`, `max_bytes`, `backup_count`), a shared clip pool
+(`[cache] audio_dir`), and `pronunciation` files (a top-level key, so it goes
+above the first `[table]`). Every key, with its default, is in the
+[authoring guide](docs/authoring.md#config-slidesonnettoml-optional).
 
 ### Timing & silent renders
 
