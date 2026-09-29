@@ -102,7 +102,8 @@ def diagnose(pages: list[str], blocks: list[PageNarration]) -> list[Diagnostic]:
             Diagnostic(
                 "info",
                 "order-drift",
-                "sidecar block order differs from PDF page order (save re-sorts to PDF order)",
+                "the narration file lists the slides in a different order than the PDF "
+                "(saving puts them back in PDF order)",
             )
         )
 

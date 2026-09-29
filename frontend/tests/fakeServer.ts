@@ -81,7 +81,7 @@ export class FakeServer {
           .map((_, i) => ({ cached: this.cached[id]?.[i] ?? false, seconds: null, bytes: null })),
       })),
       narration: structuredClone(this.narration),
-      orphans: [], diagnostics: [],
+      orphans: [], duplicates: {}, diagnostics: [],
       voices: { map: {}, default_voice: null, names: [], resolved: {} },
       missing_audio: 0,
       silence: { start: 0.3, end: 0.6 }, engine_warm: true, neighbours: { prev: null, next: null },

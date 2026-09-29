@@ -115,6 +115,11 @@ export const useEditorStore = defineStore('editor', () => {
   const diagnosticsHere = computed(
     () => snapshot.value?.diagnostics.filter((d) => d.slide_id === currentId.value) ?? [],
   )
+  /** Findings no slide shows: about the whole deck, or about narration whose slide is gone. */
+  const deckDiagnostics = computed(() => {
+    const onPage = new Set(pages.value.map((p) => p.slide_id))
+    return snapshot.value?.diagnostics.filter((d) => d.slide_id == null || !onPage.has(d.slide_id)) ?? []
+  })
   const dirtySlides = computed(() =>
     [...drafts.entries()].filter(([, d]) => fingerprint(d.block) !== d.baseline).map(([s]) => s),
   )
@@ -469,7 +474,7 @@ export const useEditorStore = defineStore('editor', () => {
   return {
     client, token, snapshot, meta, engine, activeEngine, index, loadError, drafts, saveState,
     conflict, conflicts, flashMessage, revision, images, externalChanges, loadEpoch, pages, page,
-    currentId, errorCount, diagnosticsHere, dirtySlides, hasUnsaved,
+    currentId, errorCount, diagnosticsHere, deckDiagnostics, dirtySlides, hasUnsaved,
     open, refresh, refreshPages, imageFailed, draftFor, isDirty, touch, flush, ensureSaved, onSaved,
     resolveConflict, go, goToSlide, setEngine, command, flash,
   }

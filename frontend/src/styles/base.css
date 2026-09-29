@@ -177,3 +177,16 @@ select.field {
 .dim-text {
   color: var(--dim);
 }
+
+/* a panel the error pill (or a deck check) led to: a brief glow says "this one" */
+.flash {
+  animation: flash-glow 1.6s ease-out;
+}
+@keyframes flash-glow {
+  from {
+    box-shadow: 0 0 0 3px var(--warn);
+  }
+  to {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}

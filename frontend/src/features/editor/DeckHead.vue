@@ -9,8 +9,8 @@ import { useEditorStore } from '@/stores/editor'
 
 // `inline`: one line (the narrow top bar); otherwise the name gets a line of its own
 defineProps<{ label: string; hasPrev: boolean; hasNext: boolean; inline?: boolean }>()
-// `orphans`: the errors are narration whose slide is gone — show the unattached narration
-const emit = defineEmits<{ switch: []; step: [delta: 1 | -1]; orphans: [] }>()
+// `checks`: no slide has the errors — show the deck's own checks
+const emit = defineEmits<{ switch: []; step: [delta: 1 | -1]; checks: [] }>()
 
 const editor = useEditorStore()
 const helpOpen = ref(false)
@@ -19,7 +19,7 @@ const errors = computed(() => editor.errorCount)
 function firstError(): void {
   const i = editor.pages.findIndex((p) => p.status === 'error')
   if (i >= 0) editor.go(i)
-  else emit('orphans')
+  else emit('checks')
 }
 
 const SHORTCUTS: [string, string][] = [

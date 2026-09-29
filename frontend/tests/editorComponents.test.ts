@@ -253,17 +253,51 @@ describe('voices and unattached narration', () => {
     })
   })
 
-  it('the error pill leads to the slide with the error, or to the unattached narration', async () => {
+  it('the error pill leads to the slide with the error, or to the deck checks', async () => {
     const server = new FakeServer()
     const { editor } = await setup(server)
     const snap = editor.snapshot!
     editor.snapshot = { ...snap, diagnostics: [{ code: 'orphan', severity: 'error', message: 'x', slide_id: 'gone' }] }
     const w = mount(DeckHead, { props: { label: 'deck', hasPrev: false, hasNext: false } })
     await w.get('[data-testid="error-pill"]').trigger('click')
-    expect(w.emitted('orphans')).toHaveLength(1) // no slide to go to: the tray instead
+    expect(w.emitted('checks')).toHaveLength(1) // no slide to go to: the deck's own checks instead
     editor.snapshot = { ...editor.snapshot, pages: snap.pages.map((p, i) => (i === 1 ? { ...p, status: 'error' } : p)) }
     await w.get('[data-testid="error-pill"]').trigger('click')
-    expect([editor.currentId, w.emitted('orphans')?.length]).toEqual(['b', 1])
+    expect([editor.currentId, w.emitted('checks')?.length]).toEqual(['b', 1])
+  })
+
+  it('lists the checks that belong to no slide under Deck checks, only when there are some', async () => {
+    const { editor } = await setup()
+    const snap = editor.snapshot!
+    const w = mount(ConsolePanel)
+    expect(w.find('[data-testid="deck-checks"]').exists()).toBe(false)
+    editor.snapshot = {
+      ...snap,
+      orphans: ['gone'],
+      diagnostics: [
+        { code: 'orphan-narration', severity: 'error', message: 'Gone from the PDF.', slide_id: 'gone' },
+        { code: 'missing-narration', severity: 'warning', message: 'Slide c is silent.', slide_id: 'c' },
+        { code: 'order-drift', severity: 'info', message: 'Out of order.', slide_id: null },
+      ],
+    }
+    await flushPromises()
+    const list = w.get('[data-testid="deck-checks"]')
+    expect(list.findAll('li').map((li) => li.text())).toEqual([
+      expect.stringContaining('Gone from the PDF.'), 'Out of order.',
+    ]) // the slide's own warning stays with its slide
+    await list.get('[data-testid="deck-check-orphans"]').trigger('click')
+    expect(w.emitted('orphans')).toHaveLength(1) // the orphan's error leads to its text
+  })
+
+  it('shows a repeated @id block under its own id, as the second block', async () => {
+    const server = new FakeServer({ a: 'Kept.', 'a-2': 'The second a.' })
+    const { editor } = await setup(server)
+    editor.snapshot = { ...editor.snapshot!, orphans: ['a-2'], duplicates: { 'a-2': 'a' } }
+    const w = mount(OrphanTray, { attachTo: document.body })
+    const card = w.get('[data-testid="orphan-a-2"]')
+    expect(card.text()).toContain('@a · second block')
+    expect(card.text()).not.toContain('a-2')
+    expect(w.text()).not.toContain('gone from the PDF')
   })
 
   it('attaches unattached narration to an empty slide', async () => {

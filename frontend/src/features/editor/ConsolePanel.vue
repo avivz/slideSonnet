@@ -15,7 +15,8 @@ import { usePlayerStore } from '@/stores/player'
 import { engineLabel } from './engines'
 import OrphanTray from './OrphanTray.vue'
 
-const emit = defineEmits<{ voices: [] }>()
+// `orphans`: show the unattached narration an error in the deck checks is about
+const emit = defineEmits<{ voices: []; orphans: [] }>()
 
 const editor = useEditorStore()
 const generation = useGenerationStore()
@@ -32,6 +33,7 @@ const engines = computed(() => {
   if (!snap) return []
   return snap.engines.filter((e) => e.installed || e.name === editor.activeEngine)
 })
+const orphanIds = computed(() => new Set(editor.snapshot?.orphans ?? []))
 const missing = computed(() => editor.snapshot?.missing_audio ?? 0)
 const slideAudio = computed(() => editor.page?.audio ?? { speech: 0, cached: 0 })
 
@@ -219,6 +221,25 @@ async function cancelExport(): Promise<void> {
       </div>
     </section>
 
+    <section v-if="editor.deckDiagnostics.length" class="group" data-testid="deck-checks-section">
+      <h3 class="section-title">Deck checks</h3>
+      <ul class="checks" data-testid="deck-checks">
+        <li
+          v-for="d in editor.deckDiagnostics"
+          :key="d.code + d.message"
+          :class="d.severity === 'error' ? 'err-text' : d.severity === 'warning' ? 'warn-text' : 'dim-text'"
+        >
+          {{ d.message }}
+          <button
+            v-if="d.slide_id && orphanIds.has(d.slide_id)"
+            class="link" type="button" data-testid="deck-check-orphans" @click="emit('orphans')"
+          >
+            Show the narration
+          </button>
+        </li>
+      </ul>
+    </section>
+
     <section class="group">
       <h3 class="section-title">This slide</h3>
       <ul class="checks" data-testid="checks">
@@ -309,6 +330,15 @@ async function cancelExport(): Promise<void> {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 1.4;
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .audio {
   margin: 0;

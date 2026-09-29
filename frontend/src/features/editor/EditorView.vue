@@ -363,18 +363,21 @@ onBeforeUnmount(() => {
   void generation.leave()
 })
 
-/** The error pill, for narration whose slide is gone: bring the Unattached narration panel into view. */
-async function showOrphans(): Promise<void> {
+/**
+ * Bring a panel of the console into view with a brief glow: the error pill's
+ * deck checks (errors no slide has), or the unattached narration one of them is about.
+ */
+async function reveal(testid: 'deck-checks-section' | 'orphan-tray'): Promise<void> {
   consoleTab.value = 'audio'
   if (narrow.value) overlay.value = 'console'
   else if (!consoleOpen.value) toggle('console')
   await nextTick()
-  const tray = document.querySelector<HTMLElement>('[data-testid="orphan-tray"]')
-  if (!tray) return
-  tray.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
-  tray.classList.remove('flash')
-  void tray.offsetWidth // restart the highlight when asked twice
-  tray.classList.add('flash')
+  const panel = document.querySelector<HTMLElement>(`[data-testid="${testid}"]`)
+  if (!panel) return
+  panel.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  panel.classList.remove('flash')
+  void panel.offsetWidth // restart the highlight when asked twice
+  panel.classList.add('flash')
 }
 
 function pick(deck: LibraryDeckDTO): void {
@@ -396,7 +399,7 @@ function pick(deck: LibraryDeckDTO): void {
       </button>
       <DeckHead
         class="bar-head" inline :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
-        @switch="switcherOpen = true" @step="stepDeck" @orphans="showOrphans"
+        @switch="switcherOpen = true" @step="stepDeck" @checks="reveal('deck-checks-section')"
       />
       <button
         class="icon-btn console-toggle" :class="{ on: overlay === 'console' }" type="button"
@@ -418,7 +421,7 @@ function pick(deck: LibraryDeckDTO): void {
       <div class="pane strip" :class="{ overlay: narrow && overlay === 'strip', hidden: narrow ? overlay !== 'strip' : !stripOpen }">
         <DeckHead
           v-if="!narrow" :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
-          @switch="switcherOpen = true" @step="stepDeck" @orphans="showOrphans"
+          @switch="switcherOpen = true" @step="stepDeck" @checks="reveal('deck-checks-section')"
         />
         <FilmStrip />
       </div>
@@ -499,7 +502,7 @@ function pick(deck: LibraryDeckDTO): void {
             >{{ review.waitingCount }}</span>
           </button>
         </div>
-        <ConsolePanel v-show="consoleTab === 'audio'" @voices="voicesOpen = true" />
+        <ConsolePanel v-show="consoleTab === 'audio'" @voices="voicesOpen = true" @orphans="reveal('orphan-tray')" />
         <div v-show="consoleTab === 'review'" class="review-pane"><ReviewPanel /></div>
       </div>
     </div>

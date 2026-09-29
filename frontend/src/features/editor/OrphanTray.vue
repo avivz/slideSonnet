@@ -10,6 +10,12 @@ const attaching = ref<string | null>(null)
 const deleting = ref<string | null>(null)
 const target = ref('')
 
+/** A repeated @id's later block is kept under a made-up id: name it by the id in the file. */
+function labelOf(id: string): string {
+  const repeats = editor.snapshot?.duplicates[id]
+  return repeats === undefined ? `@${id}` : `@${repeats} · second block`
+}
+
 const orphans = computed(() =>
   (editor.snapshot?.orphans ?? []).map((id) => {
     const block = editor.snapshot?.narration[id]
@@ -18,9 +24,11 @@ const orphans = computed(() =>
       .map((s) => (s.kind === 'speech' ? s.text : ''))
       .join(' ')
       .trim()
-    return { id, text: text || '(pauses only)' }
+    const repeats = editor.snapshot?.duplicates[id]
+    return { id, label: labelOf(id), repeats, text: text || '(pauses only)' }
   }),
 )
+const anyGone = computed(() => orphans.value.some((o) => o.repeats === undefined))
 const emptySlides = computed(() =>
   (editor.snapshot?.pages ?? [])
     .map((p) => p.slide_id)
@@ -38,7 +46,7 @@ async function copy(text: string): Promise<void> {
 async function appendHere(id: string): Promise<void> {
   const here = editor.currentId
   if (await editor.command({ type: 'append_orphan', expected_revision: '', orphan_id: id, target_id: here })) {
-    editor.flash(`Appended @${id} to @${here}`, 'ok')
+    editor.flash(`Appended ${labelOf(id)} to @${here}`, 'ok')
   }
 }
 function openAttach(id: string): void {
@@ -62,8 +70,9 @@ async function attach(): Promise<void> {
 async function remove(): Promise<void> {
   const id = deleting.value
   deleting.value = null
+  const label = id === null ? '' : labelOf(id)
   if (id && (await editor.command({ type: 'delete_orphan', expected_revision: '', orphan_id: id }))) {
-    editor.flash(`Deleted the narration @${id}`)
+    editor.flash(`Deleted the narration ${label}`)
   }
 }
 </script>
@@ -71,10 +80,10 @@ async function remove(): Promise<void> {
 <template>
   <section v-if="orphans.length" class="tray" data-testid="orphan-tray">
     <h3 class="title"><AppIcon name="unlink" :size="16" /> Unattached narration</h3>
-    <p class="hint">These slides are gone from the PDF — fold the text into a slide, or keep it here.</p>
+    <p v-if="anyGone" class="hint">These slides are gone from the PDF — fold the text into a slide, or keep it here.</p>
     <article v-for="o in orphans" :key="o.id" class="orphan" :data-testid="`orphan-${o.id}`">
       <header>
-        <span class="id mono">@{{ o.id }}</span>
+        <span class="id mono">{{ o.label }}</span>
         <span class="spacer"></span>
         <button class="icon-btn" type="button" title="Copy the text" aria-label="Copy the text" @click="copy(o.text)">
           <AppIcon name="copy" :size="15" />
@@ -90,6 +99,9 @@ async function remove(): Promise<void> {
           <AppIcon name="trash" :size="15" />
         </button>
       </header>
+      <p v-if="o.repeats !== undefined" class="hint">
+        The narration file has two @{{ o.repeats }} blocks. Append this one to that slide, or delete it.
+      </p>
       <p class="text" dir="auto">{{ o.text }}</p>
       <footer>
         <button
@@ -108,7 +120,7 @@ async function remove(): Promise<void> {
       </footer>
     </article>
 
-    <AppDialog :open="attaching !== null" :title="`Attach @${attaching} to which slide?`" @close="attaching = null">
+    <AppDialog :open="attaching !== null" :title="`Attach ${attaching === null ? '' : labelOf(attaching)} to which slide?`" @close="attaching = null">
       <select v-model="target" class="field" aria-label="Slide to attach to" data-testid="attach-target" autofocus>
         <option v-for="id in emptySlides" :key="id" :value="id">{{ id }}</option>
       </select>
@@ -119,7 +131,7 @@ async function remove(): Promise<void> {
     </AppDialog>
     <AppDialog :open="deleting !== null" title="Delete this narration?" @close="deleting = null">
       <p>
-        This removes the text of <span class="mono">@{{ deleting }}</span> from the narration file.
+        This removes the text of <span class="mono">{{ deleting === null ? '' : labelOf(deleting) }}</span> from the narration file.
       </p>
       <template #actions>
         <button class="btn quiet" type="button" @click="deleting = null">Cancel</button>
@@ -138,18 +150,6 @@ async function remove(): Promise<void> {
   border: 1px solid rgb(255 200 87 / 32%);
   border-left: 3px solid var(--warn);
   border-radius: var(--radius-card);
-}
-/* the error pill led here: a brief glow says "this one" */
-.tray.flash {
-  animation: glow 1.6s ease-out;
-}
-@keyframes glow {
-  from {
-    box-shadow: 0 0 0 3px var(--warn);
-  }
-  to {
-    box-shadow: 0 0 0 3px transparent;
-  }
 }
 .title {
   display: flex;
