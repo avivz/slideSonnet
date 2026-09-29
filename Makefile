@@ -67,11 +67,11 @@ check-api-types: api-types
 	git diff --exit-code -- $(FRONTEND)/openapi.json $(FRONTEND)/src/api/schema.d.ts
 
 lint:
-	$(VENV)/ruff check src/ tests/
-	$(VENV)/ruff format --check src/ tests/
+	$(VENV)/ruff check src/ tests/ scripts/
+	$(VENV)/ruff format --check src/ tests/ scripts/
 
 fmt:
-	$(VENV)/ruff format src/ tests/
+	$(VENV)/ruff format src/ tests/ scripts/
 
 typecheck:
 	$(VENV)/mypy src/slidesonnet/
