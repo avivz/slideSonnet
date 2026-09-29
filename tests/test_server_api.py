@@ -591,8 +591,8 @@ def test_export_explains_blockers_and_runs_a_draft(
         draft = c.post(f"/api/v1/decks/{token}/jobs", json={"kind": "export", "draft": True})
         job = _wait(c, draft.json()["id"])
     assert job["status"] == "succeeded"
-    assert job["result"] == {"video": "d.draft.mp4", "duration": 3.0, "draft": True}
-    assert seen["draft"] is True and seen["keep_scratch"] is True
+    assert job["result"] == {"video": "d.draft.mp4", "duration": 3.0, "draft": True, "fast": False}
+    assert seen["draft"] is True and seen["keep_scratch"] is True and seen["fast"] is False
 
 
 def test_an_export_with_another_engine_is_not_merged_into_the_running_one(
@@ -612,12 +612,15 @@ def test_an_export_with_another_engine_is_not_merged_into_the_running_one(
     url = f"/api/v1/decks/{token}/jobs"
     try:
         ids = [
-            client.post(url, json={"kind": "export", "draft": True, "engine": e}).json()["id"]
-            for e in ("kokoro", "kokoro", "qwen3")
+            client.post(url, json={"kind": "export", "draft": True, "engine": e, "fast": f}).json()[
+                "id"
+            ]
+            for e, f in (("kokoro", False), ("kokoro", False), ("qwen3", False), ("kokoro", True))
         ]
     finally:
         gate.set()
     assert ids[0] == ids[1] != ids[2]
+    assert ids[3] not in ids[:3]  # a quick export is not the full-quality one
 
 
 # ---- the per-deck generation queue ---------------------------------------------------------
