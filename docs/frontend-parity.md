@@ -1,5 +1,9 @@
 # Frontend parity inventory
 
+> **Historical.** The migration finished on 2026-09-28. This document describes the
+> NiceGUI→Vue port and is kept for its history; the current architecture is in
+> `.claude/rules/architecture.md`.
+
 Companion to [`frontend-migration.md`](frontend-migration.md). Every behavior the
 NiceGUI editor has today, the tests that pin it, and what happens to those
 tests in the port. A box is checked when the Vue frontend implements the

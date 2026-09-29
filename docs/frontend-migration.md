@@ -1,5 +1,9 @@
 # Frontend migration: phased plan
 
+> **Historical.** The migration finished on 2026-09-28. This document describes the
+> NiceGUI→Vue port and is kept for its history; the current architecture is in
+> `.claude/rules/architecture.md`.
+
 - Date: 2026-09-28
 - Baseline: `0a4e920` on `main` (the agent review loop is merged)
 - Document branch: `docs/frontend-migration`
