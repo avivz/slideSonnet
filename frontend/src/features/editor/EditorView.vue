@@ -20,6 +20,7 @@ import ConsolePanel from './ConsolePanel.vue'
 import DeckHead from './DeckHead.vue'
 import DeckSwitcher from './DeckSwitcher.vue'
 import FilmStrip from './FilmStrip.vue'
+import { shortcut } from './keymap'
 import { useLeaveGuard } from './leave'
 import NarrationEditor from './NarrationEditor.vue'
 import SaveIndicator from './SaveIndicator.vue'
@@ -283,42 +284,50 @@ watch(() => editor.currentId, (id) => void generation.focus(id))
 watch(token, (t) => void openDeck(t))
 
 // ---- keyboard -------------------------------------------------------------------
-function typing(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null
-  return !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))
-}
 function onKey(event: KeyboardEvent): void {
-  if (document.querySelector('[role="dialog"]')) return
-  const key = event.key
-  if (event.altKey && (key === 'ArrowLeft' || key === 'ArrowRight')) {
-    event.preventDefault()
-    stepDeck(key === 'ArrowRight' ? 1 : -1)
-    return
+  const action = shortcut(event, {
+    dialogOpen: document.querySelector('[role="dialog"]') !== null,
+    reviewActive: review.active,
+  })
+  if (action === null) return
+  if (action.kind !== 'compare' && action.kind !== 'next-turn') event.preventDefault()
+  switch (action.kind) {
+    case 'deck':
+      stepDeck(action.delta)
+      break
+    case 'switcher':
+      switcherOpen.value = true
+      break
+    case 'save':
+      void editor.flush()
+      break
+    case 'compare':
+      review.beforeOnly = !review.beforeOnly // the base version full-size / side by side
+      break
+    case 'next-turn':
+      review.nextYourTurn()
+      break
+    case 'slide':
+      // within a chosen conversation, or off a removed slide; else the next page
+      if (!review.step(action.delta)) editor.go(editor.index + action.delta)
+      break
   }
-  if ((event.ctrlKey || event.metaKey) && key.toLowerCase() === 'k') {
-    event.preventDefault()
-    switcherOpen.value = true
-    return
-  }
-  if ((event.ctrlKey || event.metaKey) && key.toLowerCase() === 's') {
-    event.preventDefault()
-    void editor.flush()
-    return
-  }
-  if (typing(event.target) || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-  if (review.active && key.toLowerCase() === 'd') {
-    review.beforeOnly = !review.beforeOnly // the base version full-size / side by side
-    return
-  }
-  if (review.active && key.toLowerCase() === 'n') {
-    review.nextYourTurn()
-    return
-  }
-  const delta = key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : key === 'ArrowRight' || key === 'ArrowDown' ? 1 : 0
-  if (delta === 0) return
+}
+
+// the console's tabs: arrows (and Home/End) move between them, as tabs do
+const TABS = ['audio', 'review'] as const
+function onTabKey(event: KeyboardEvent): void {
+  const i = TABS.indexOf(consoleTab.value)
+  const next =
+    event.key === 'ArrowRight' ? (i + 1) % TABS.length
+    : event.key === 'ArrowLeft' ? (i + TABS.length - 1) % TABS.length
+    : event.key === 'Home' ? 0
+    : event.key === 'End' ? TABS.length - 1
+    : -1
+  if (next < 0) return
   event.preventDefault()
-  if (review.step(delta)) return // within a conversation, or off a removed slide
-  editor.go(editor.index + delta)
+  consoleTab.value = TABS[next] as (typeof TABS)[number]
+  ;(event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus()
 }
 
 function onBeforeUnload(event: BeforeUnloadEvent): void {
@@ -465,16 +474,16 @@ function pick(deck: LibraryDeckDTO): void {
         </button>
       </div>
       <div class="pane console" :class="{ overlay: narrow && overlay === 'console', hidden: narrow ? overlay !== 'console' : !consoleOpen }">
-        <div class="tabs" role="tablist" aria-label="Console">
+        <div class="tabs" role="tablist" aria-label="Console" @keydown="onTabKey">
           <button
             role="tab" type="button" class="tab" :class="{ on: consoleTab === 'audio' }"
-            :aria-selected="consoleTab === 'audio'" data-testid="console-tab-audio" @click="consoleTab = 'audio'"
+            :aria-selected="consoleTab === 'audio'" :tabindex="consoleTab === 'audio' ? 0 : -1" data-testid="console-tab-audio" @click="consoleTab = 'audio'"
           >
             Audio
           </button>
           <button
             role="tab" type="button" class="tab" :class="{ on: consoleTab === 'review' }"
-            :aria-selected="consoleTab === 'review'" data-testid="console-tab-review" @click="consoleTab = 'review'"
+            :aria-selected="consoleTab === 'review'" :tabindex="consoleTab === 'review' ? 0 : -1" data-testid="console-tab-review" @click="consoleTab = 'review'"
           >
             Review
             <span v-if="review.waitingHere" class="count" data-testid="console-tab-review-badge">{{ review.waitingHere }}</span>

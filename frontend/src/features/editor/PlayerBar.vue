@@ -44,7 +44,7 @@ function onScrubChange(event: Event): void {
 </script>
 
 <template>
-  <div class="bar" data-testid="player-bar">
+  <div class="bar" data-testid="player-bar" data-slide-keys>
     <button
       class="icon-btn" type="button" title="Previous slide (←)" aria-label="Previous slide"
       :disabled="editor.index === 0" data-testid="prev" @click="editor.go(editor.index - 1)"

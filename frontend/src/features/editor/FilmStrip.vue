@@ -78,7 +78,7 @@ watch(
 </script>
 
 <template>
-  <nav class="strip" aria-label="Slides">
+  <nav class="strip" aria-label="Slides" data-slide-keys>
     <ol ref="list" class="list">
       <li v-for="item in items" :key="item.kind === 'page' ? `p${item.index}-${item.slideId}` : `r-${item.slideId}`">
         <button
