@@ -136,16 +136,17 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `--subtitles-dir`; once `output_dir` is set, subtitles default to beside the
    deck; with neither set nothing changes; (c) `pool status` (or `export --where`)
    prints the resolved paths without rendering. *Appetite:* half a day. **[agent]**
-4. [ ] **Fast export for iterating.** *Story:* As a deck author who wants a
-   quick look, I want an export that trades quality for speed. *Note:* the name
-   `--draft` is **taken** — since the review loop it means "export a plain build /
-   open review anyway" — so this needs another name (`--fast`, or
-   `--quality draft`). *Acceptance examples:* (a) first **profile** a real export
-   with the per-phase timing line export now prints (`Timing: tts · assemble ·
-   video · concat · mux`) and pick the bottleneck; (b) the flag flips a preset
-   bundle (720p, faster x264 preset, higher crf, cuts instead of xfade) and is
-   measurably faster; (c) audio is untouched; (d) without the flag the output is
-   unchanged. *Appetite:* an afternoon. **[agent]**
+4. [ ] **Faster full export (follow-up to `--fast`).** The quick export shipped
+   (2026-09-29; basel warm-cache: full ~115 s, `--fast` ~15 s first run, ~2 s repeat). Its
+   profile found speed-ups that keep the full export's output **byte-identical**: (1) encode
+   the AAC in parallel with the video and copy it in (~12 s); (2) keep the assembled audio
+   track and page images between exports (~8 s); (3) cache each slide's encoded clip keyed on
+   image hash + frame count + encoder settings, so a re-export re-encodes only changed
+   slides (~90 s → seconds); (4) page lengths from WAV headers. Also: stills are rasterized
+   at 150 dpi and upscaled to 1080p — a higher dpi would sharpen text; and `--fast` needs
+   ffmpeg ≥ 5.1 (`-fps_mode vfr`) — add a `doctor` note. *Acceptance:* full-export
+   stream hashes unchanged before/after; warm re-export after a one-slide edit under 15 s.
+   *Appetite:* a day. **[agent]**
 5. [ ] **Showcase HQ render + refresh the release assets and YouTube.** Showcase
    is Kokoro-only; basel is on YouTube but the `v0.0.0` release MP4s are still the
    March Kokoro cuts. Human triggers the paid showcase render; agent commits the
@@ -234,6 +235,11 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **Quick export `--fast`** (2026-09-29, `5b98731`; was Next #4). 720p, cuts, one
+  variable-frame-rate encode, audio byte-identical to the full export; writes
+  `<name>.fast.mp4`; editor "Quick export" box. basel warm: ~15 s vs ~115 s.
+- [x] **Review Tier 3 closed** (2026-09-29): paid work pinned to the approved clip set,
+  frontend dead code, missing frontend/server tests, and all fix-batch follow-ups.
 - [x] **Deck-level checks in the editor** (2026-09-29, `3782666`; was Now #5). A
   "Deck checks" list shows findings no slide owns (out-of-order narration, an
   unattached block's error, linking to the tray); the error pill leads there.
