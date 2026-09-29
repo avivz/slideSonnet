@@ -53,7 +53,7 @@ make demos                             # Both demos
 make check-basel / make check-showcase # Run id reconciliation on a demo
 make clean-basel / make clean-showcase # slidesonnet clean (keeps API audio)
 make purge-examples                    # clean --keep nothing on both demos
-make clean                             # Remove build artifacts + __pycache__ + .slidesonnet/
+make clean                             # Remove build artifacts + __pycache__ (never deck caches)
 slidesonnet clean <deck.pdf>                       # Default: --keep api
 slidesonnet clean <deck.pdf> --keep nothing        # Nuke the deck's cache
 .venv/bin/pytest tests/test_narration_format.py -v # Single test file

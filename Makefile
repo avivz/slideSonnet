@@ -118,8 +118,8 @@ purge-examples:
 	$(SLIDESONNET) clean examples/basel-problem/basel-problem.pdf --keep nothing -y
 	$(SLIDESONNET) clean examples/showcase/showcase.pdf --keep nothing -y
 
+# Build artefacts only. Deck caches (.slidesonnet/) hold speech clips, some of them
+# paid and committed: those go through `slidesonnet clean` (make clean-examples).
 clean:
 	rm -rf dist/ *.egg-info/ src/slidesonnet/server/static/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	@# every deck cache goes, except its review base (not regenerable: what was already seen)
-	find . -type d -name .slidesonnet -prune -exec sh -c 'for d; do find "$$d" -mindepth 1 -maxdepth 1 ! -name review -exec rm -rf {} +; rmdir "$$d" 2>/dev/null || true; done' _ {} + 2>/dev/null || true
