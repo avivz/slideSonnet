@@ -8,6 +8,7 @@ PageNarration / Deck) lives in :mod:`slidesonnet.narration.model`.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -29,6 +30,16 @@ Backend = Literal["kokoro", "qwen3", "inworld"]
 #: Devices the local Qwen3 engine can load onto (base device; the engine appends
 #: ``:0`` for the accelerators). Validated on TTSConfig.
 _QWEN3_DEVICES = frozenset({"xpu", "cuda", "cpu"})
+
+
+def _require_positive(name: str, value: float) -> None:
+    if not (math.isfinite(value) and value > 0):
+        raise ValueError(f"{name} must be a positive number, got {value}")
+
+
+def _require_non_negative(name: str, value: float) -> None:
+    if not (math.isfinite(value) and value >= 0):
+        raise ValueError(f"{name} must be a non-negative number, got {value}")
 
 
 @dataclass
@@ -88,10 +99,8 @@ class TTSConfig:
     inworld_speed: float = 1.0  # base speaking_rate; per-utterance :pace multiplies this
 
     def __post_init__(self) -> None:
-        if self.kokoro_speed <= 0:
-            raise ValueError(f"kokoro_speed must be positive, got {self.kokoro_speed}")
-        if self.inworld_speed <= 0:
-            raise ValueError(f"inworld_speed must be positive, got {self.inworld_speed}")
+        _require_positive("kokoro_speed", self.kokoro_speed)
+        _require_positive("inworld_speed", self.inworld_speed)
         if self.qwen3_device not in _QWEN3_DEVICES:
             raise ValueError(
                 f"qwen3_device must be one of {sorted(_QWEN3_DEVICES)}, got {self.qwen3_device!r}"
@@ -128,7 +137,9 @@ class LoggingConfig:
             raise ValueError(f"backup_count must be non-negative, got {self.backup_count}")
 
 
-_RESOLUTION_RE = re.compile(r"^\d+x\d+$")
+_RESOLUTION_RE = re.compile(r"^(?P<w>\d+)x(?P<h>\d+)$")
+#: x264's CRF range (8-bit): 0 is lossless, 51 the worst quality.
+_CRF_RANGE = range(52)
 
 _VALID_PRESETS = frozenset(
     {
@@ -163,19 +174,24 @@ class VideoConfig:
     keep_scratch: bool = False
 
     def __post_init__(self) -> None:
-        if not _RESOLUTION_RE.match(self.resolution):
+        size = _RESOLUTION_RE.match(self.resolution)
+        if not size:
             raise ValueError(
                 f"Invalid resolution '{self.resolution}': expected 'WIDTHxHEIGHT' (e.g. '1920x1080')"
             )
+        if any(int(n) <= 0 or int(n) % 2 for n in (size["w"], size["h"])):
+            # yuv420p (the MP4 pixel format) halves the chroma planes
+            raise ValueError(
+                f"Invalid resolution '{self.resolution}': width and height must be positive "
+                "and even (e.g. '1920x1080')"
+            )
         if self.fps <= 0:
             raise ValueError(f"fps must be positive, got {self.fps}")
-        if self.crf < 0:
-            raise ValueError(f"crf must be non-negative, got {self.crf}")
+        if self.crf not in _CRF_RANGE:
+            raise ValueError(f"crf must be between 0 and 51, got {self.crf}")
         if self.preset not in _VALID_PRESETS:
             raise ValueError(
                 f"Invalid preset '{self.preset}': must be one of {sorted(_VALID_PRESETS)}"
             )
-        if self.pre_silence < 0:
-            raise ValueError(f"pre_silence must be non-negative, got {self.pre_silence}")
-        if self.tail_seconds < 0:
-            raise ValueError(f"tail_seconds must be non-negative, got {self.tail_seconds}")
+        _require_non_negative("pre_silence", self.pre_silence)
+        _require_non_negative("tail_seconds", self.tail_seconds)

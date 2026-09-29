@@ -143,10 +143,47 @@ voice_prompt = "voices/me.pt"
     assert cfg.tts.qwen3_voice_prompt == str((tmp_path / "voices" / "me.pt").resolve())
 
 
-def test_qwen3_invalid_device_raises(tmp_path: Path) -> None:
-    (tmp_path / "slidesonnet.toml").write_text('[tts.qwen3]\ndevice = "tpu"\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="qwen3_device must be one of"):
+@pytest.mark.parametrize(
+    ("toml", "match"),
+    [
+        ('[tts.qwen3]\ndevice = "tpu"\n', r"\[tts\].*qwen3_device must be one of"),
+        ("[tts.kokoro]\nspeed = nan\n", r"\[tts\.kokoro\] speed"),
+        ("[tts.inworld]\nspeed = inf\n", r"\[tts\.inworld\] speed"),
+        ("[video]\npre_silence = nan\n", r"\[video\] pre_silence"),
+        ("[video]\ntail_seconds = inf\n", r"\[video\] tail_seconds"),
+        ("[video]\ntail_seconds = -1.0\n", r"\[video\].*tail_seconds"),
+        ("[video]\nfps = inf\n", r"\[video\] fps"),
+        ("[video]\nfps = 29.97\n", r"\[video\] fps"),
+        ("[video]\nfps = true\n", r"\[video\] fps"),
+        ('[video]\nfps = "fast"\n', r"\[video\] fps"),
+        ("[video]\ncrf = 52\n", r"\[video\].*crf"),
+        ('[video]\nresolution = "0x1080"\n', r"\[video\].*resolution"),
+        ('[video]\nresolution = "1921x1080"\n', r"\[video\].*resolution.*even"),
+        ('[video]\nkeep_scratch = "false"\n', r"\[video\] keep_scratch"),
+        ("[video]\nkeep_scratch = 1\n", r"\[video\] keep_scratch"),
+        ("[logging]\nmax_bytes = 1.5\n", r"\[logging\] max_bytes"),
+    ],
+)
+def test_bad_settings_are_a_config_error_naming_the_key(
+    tmp_path: Path, toml: str, match: str
+) -> None:
+    (tmp_path / "slidesonnet.toml").write_text(toml, encoding="utf-8")
+    with pytest.raises(ConfigError, match=match):
         load_config(tmp_path / "deck.pdf")
+
+
+def test_video_settings_parse_strictly_typed(tmp_path: Path) -> None:
+    (tmp_path / "slidesonnet.toml").write_text(
+        "[video]\nfps = 30.0\ncrf = 0\npre_silence = 1\nkeep_scratch = true\n", encoding="utf-8"
+    )
+    video = load_config(tmp_path / "deck.pdf").video
+    assert (video.fps, video.crf, video.pre_silence, video.keep_scratch) == (30, 0, 1.0, True)
+
+
+def test_explicit_config_path_must_exist(tmp_path: Path) -> None:
+    missing = tmp_path / "nope.toml"
+    with pytest.raises(ConfigError, match="nope.toml"):
+        load_config(tmp_path / "deck.pdf", config_path=missing)
 
 
 def test_invalid_voice_value_raises(tmp_path: Path) -> None:

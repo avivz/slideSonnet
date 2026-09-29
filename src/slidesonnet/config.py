@@ -37,6 +37,7 @@ Example ``slidesonnet.toml``::
 from __future__ import annotations
 
 import logging
+import math
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -81,9 +82,12 @@ def default_config_path(deck_path: Path) -> Path:
 def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
     """Load config for *deck_path*.
 
-    Uses *config_path* if given, else ``slidesonnet.toml`` beside the deck if it
-    exists, else all-defaults. Pronunciation files are loaded and merged.
+    Uses *config_path* if given (it must exist), else ``slidesonnet.toml``
+    beside the deck if it exists, else all-defaults. Pronunciation files are
+    loaded and merged.
     """
+    if config_path is not None and not config_path.is_file():
+        raise ConfigError(f"Config file not found: {config_path}")
     path = config_path or default_config_path(deck_path)
     if not path.exists():
         return Config()
@@ -110,6 +114,31 @@ def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
     return config
 
 
+def _as_int(section: str, key: str, value: object) -> int:
+    """A TOML integer (an integral float like ``30.0`` too); never a bool or string."""
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return int(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise ConfigError(f"slidesonnet.toml [{section}] {key}: expected a whole number, got {value!r}")
+
+
+def _as_float(section: str, key: str, value: object) -> float:
+    """A finite TOML number; never a bool, string, ``nan`` or ``inf``."""
+    if isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value):
+        return float(value)
+    raise ConfigError(
+        f"slidesonnet.toml [{section}] {key}: expected a finite number, got {value!r}"
+    )
+
+
+def _as_bool(section: str, key: str, value: object) -> bool:
+    """A TOML ``true``/``false`` (the string ``"false"`` is not false-y here)."""
+    if isinstance(value, bool):
+        return value
+    raise ConfigError(f"slidesonnet.toml [{section}] {key}: expected true or false, got {value!r}")
+
+
 def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     kokoro = raw.get("kokoro", {})
     qwen3 = raw.get("qwen3", {})
@@ -121,7 +150,7 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     if "voice" in kokoro:
         kwargs["kokoro_voice"] = str(kokoro["voice"])
     if "speed" in kokoro:
-        kwargs["kokoro_speed"] = float(kokoro["speed"])
+        kwargs["kokoro_speed"] = _as_float("tts.kokoro", "speed", kokoro["speed"])
     for key, target in (
         ("model", "qwen3_model"),
         ("device", "qwen3_device"),
@@ -130,31 +159,38 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
     ):
         if key in qwen3:
             kwargs[target] = str(qwen3[key])
-    for key, target, cast in (
-        ("api_key_env", "inworld_api_key_env", str),
-        ("voice", "inworld_voice", str),
-        ("model", "inworld_model", str),
-        ("speed", "inworld_speed", float),
+    for key, target in (
+        ("api_key_env", "inworld_api_key_env"),
+        ("voice", "inworld_voice"),
+        ("model", "inworld_model"),
     ):
         if key in inworld:
-            kwargs[target] = cast(inworld[key])
-    return TTSConfig(**kwargs)
+            kwargs[target] = str(inworld[key])
+    if "speed" in inworld:
+        kwargs["inworld_speed"] = _as_float("tts.inworld", "speed", inworld["speed"])
+    try:
+        return TTSConfig(**kwargs)
+    except ValueError as e:
+        raise ConfigError(f"slidesonnet.toml [tts]: {e}") from e
 
 
 def _parse_video(raw: dict[str, Any]) -> VideoConfig:
     kwargs: dict[str, Any] = {}
-    for key, cast in (
-        ("resolution", str),
-        ("fps", int),
-        ("crf", int),
-        ("preset", str),
-        ("pre_silence", float),
-        ("tail_seconds", float),
-        ("keep_scratch", bool),
-    ):
+    for key in ("resolution", "preset"):
         if key in raw:
-            kwargs[key] = cast(raw[key])
-    return VideoConfig(**kwargs)
+            kwargs[key] = str(raw[key])
+    for key in ("fps", "crf"):
+        if key in raw:
+            kwargs[key] = _as_int("video", key, raw[key])
+    for key in ("pre_silence", "tail_seconds"):
+        if key in raw:
+            kwargs[key] = _as_float("video", key, raw[key])
+    if "keep_scratch" in raw:
+        kwargs["keep_scratch"] = _as_bool("video", "keep_scratch", raw["keep_scratch"])
+    try:
+        return VideoConfig(**kwargs)
+    except ValueError as e:
+        raise ConfigError(f"slidesonnet.toml [video]: {e}") from e
 
 
 def _parse_cache(raw: dict[str, Any], cfg_dir: Path) -> Path | None:
@@ -179,10 +215,9 @@ def _parse_logging(raw: dict[str, Any], cfg_dir: Path) -> LoggingConfig:
         kwargs["file"] = str((cfg_dir / file).resolve())
     if "level" in raw:
         kwargs["level"] = str(raw["level"])
-    if "max_bytes" in raw:
-        kwargs["max_bytes"] = int(raw["max_bytes"])
-    if "backup_count" in raw:
-        kwargs["backup_count"] = int(raw["backup_count"])
+    for key in ("max_bytes", "backup_count"):
+        if key in raw:
+            kwargs[key] = _as_int("logging", key, raw[key])
     try:
         return LoggingConfig(**kwargs)
     except ValueError as e:

@@ -70,15 +70,11 @@ class TestTTSConfigValidation:
         assert cfg.backend == "kokoro"
         assert cfg.kokoro_voice == "am_echo"
 
-    @pytest.mark.parametrize("speed", [0.0, -1.0])
-    def test_kokoro_speed_must_be_positive(self, speed: float) -> None:
-        with pytest.raises(ValueError, match="kokoro_speed"):
-            TTSConfig(kokoro_speed=speed)
-
-    @pytest.mark.parametrize("speed", [0.0, -0.5])
-    def test_inworld_speed_must_be_positive(self, speed: float) -> None:
-        with pytest.raises(ValueError, match="inworld_speed"):
-            TTSConfig(inworld_speed=speed)
+    @pytest.mark.parametrize("field", ["kokoro_speed", "inworld_speed"])
+    @pytest.mark.parametrize("speed", [0.0, -0.5, float("nan"), float("inf")])
+    def test_speeds_must_be_positive_and_finite(self, field: str, speed: float) -> None:
+        with pytest.raises(ValueError, match=field):
+            TTSConfig(**{field: speed})  # type: ignore[arg-type]
 
 
 class TestVideoConfigValidation:
@@ -87,37 +83,27 @@ class TestVideoConfigValidation:
         assert cfg.resolution == "1920x1080"
         assert cfg.preset == "medium"
 
-    @pytest.mark.parametrize("resolution", ["1920", "1920x", "x1080", "fullhd", "1920X1080"])
-    def test_invalid_resolution(self, resolution: str) -> None:
-        with pytest.raises(ValueError, match="resolution"):
-            VideoConfig(resolution=resolution)
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            *[("resolution", r) for r in ["1920", "1920x", "x1080", "fullhd", "1920X1080"]],
+            *[("resolution", r) for r in ["0x1080", "1920x0", "1921x1080", "1920x1081"]],
+            ("fps", 0),
+            ("fps", -24),
+            ("crf", -1),
+            ("crf", 52),
+            ("preset", "warp9"),
+            *[("pre_silence", v) for v in [-0.1, float("nan"), float("inf")]],
+            *[("tail_seconds", v) for v in [-0.1, float("nan"), float("inf")]],
+        ],
+    )
+    def test_invalid_values_name_the_field(self, field: str, value: object) -> None:
+        with pytest.raises(ValueError, match=field):
+            VideoConfig(**{field: value})  # type: ignore[arg-type]
 
-    def test_custom_resolution_accepted(self) -> None:
-        assert VideoConfig(resolution="640x360").resolution == "640x360"
-
-    @pytest.mark.parametrize("fps", [0, -24])
-    def test_fps_must_be_positive(self, fps: int) -> None:
-        with pytest.raises(ValueError, match="fps"):
-            VideoConfig(fps=fps)
-
-    def test_crf_must_be_non_negative(self) -> None:
-        with pytest.raises(ValueError, match="crf"):
-            VideoConfig(crf=-1)
-
-    def test_crf_zero_accepted(self) -> None:
-        assert VideoConfig(crf=0).crf == 0
-
-    def test_invalid_preset(self) -> None:
-        with pytest.raises(ValueError, match="preset"):
-            VideoConfig(preset="warp9")
-
-    def test_pre_silence_must_be_non_negative(self) -> None:
-        with pytest.raises(ValueError, match="pre_silence"):
-            VideoConfig(pre_silence=-0.1)
-
-    def test_tail_seconds_must_be_non_negative(self) -> None:
-        with pytest.raises(ValueError, match="tail_seconds"):
-            VideoConfig(tail_seconds=-0.1)
+    def test_boundary_values_accepted(self) -> None:
+        cfg = VideoConfig(resolution="640x360", crf=0)
+        assert (cfg.resolution, cfg.crf, VideoConfig(crf=51).crf) == ("640x360", 0, 51)
 
     def test_zero_paddings_accepted(self) -> None:
         cfg = VideoConfig(pre_silence=0.0, tail_seconds=0.0)
