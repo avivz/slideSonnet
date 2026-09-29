@@ -164,36 +164,62 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    docs pass. *Acceptance:* unit tier count and time drop; coverage stays ≥ 94%;
    `make lint typecheck test-unit test-frontend` green. *Appetite:* a day.
    **[agent]**
+9. [ ] **A zero "before" pause looks like a double pause** (inbox 2026-09-29, AICODE
+   02-20). The Script view shows a line's trailing `‖ 0.3`, then the next line's leading
+   `‖ 0.0` on its own row; the sidecar has one `pause: 0.3`, so it reads as a bug.
+   *Story:* As an author, I want the gap between two lines to look like one gap, so I
+   only see a double pause when there really is one. *Acceptance examples:* (a) lines
+   separated by a single `pause: 0.3` show one pause control; the zero leading pause is
+   hidden until hover (or merged into one gap control — pick while building); (b) a real
+   double pause (two `pause:` lines in a row, e.g. AICODE 03-60 `@brain-artificial`) still
+   shows both; (c) `slidesonnet check` warns on two consecutive `pause:` lines, naming the
+   slide id and line. *Tests:* Vitest on the script-view component; a parser/check test
+   in `tests/test_narration_format.py`. *Appetite:* half a day. **[agent]**
+
 ## Later — before 1.0 final
 
-1. **Review loop follow-ups** (spec `dev/DESIGN-review.md`): highlight the
+1. **Review: the deck-wide conversation becomes an ordinary conversation** (inbox
+   2026-09-29; agreed). Today one permanent `deck` conversation (`review/log.py` `DECK`)
+   never closes, can't be cleared, and has its own field in the Review tab. *Story:* As
+   an author, I want deck-wide notes to be conversations like any other, so I can have
+   several, accept them and clear them. *Acceptance examples:* (a) `review comment
+   deck.pdf "Tighten every intro"` with no slides opens a new deck-wide conversation
+   (the "needs at least one slide" error in `ops.comment` goes); (b) in the Review tab,
+   "New conversation" pre-fills the current slide as a chip; removing every chip makes it
+   deck-wide, and there is no separate deck field; (c) the agent narrows one with
+   `review reply … --add-slides @x` (and maybe `--remove-slides`); (d) an existing log
+   with the old `deck` conversation (AICODE, demos) loads it as an open, slide-less
+   conversation that can be accepted and cleared. *Open question before build:* where
+   standing deck-wide instructions ("always British spelling") live — an unaccepted
+   deck-wide conversation, or a file the agent reads. *Appetite:* a day. **[agent]**
+2. **Review loop follow-ups** (spec `dev/DESIGN-review.md`): highlight the
    pixels that changed in before/after; play the old narration next to its word
    diff (the base clip is already kept); quote selected narration text into a
    note; an optional Claude Code hook running `slidesonnet review status` after a
    LaTeX compile; plain-build support for themes beyond metropolis. *(Comment on
    several slides shipped — Ctrl-click in the filmstrip.)*
-2. **Line-as-unit editing** (inbox 2026-06): insert a line between lines, and move
+3. **Line-as-unit editing** (inbox 2026-06): insert a line between lines, and move
    a line together with the pause before it (new lines default to a 0.3 s leading
    pause). Re-check against the script view and Slide view before designing —
    the original note described the NiceGUI card editor.
-3. **A trailing pause becomes the End silence field** (inbox 2026-08-23): adding
+4. **A trailing pause becomes the End silence field** (inbox 2026-08-23): adding
    a pause after the last line makes it the block's end silence, so the added
    pause visibly disappears in the card editor. Re-check in the Vue Slide view
    (a pause is now a thin rule) before deciding whether it's still a problem.
-4. **Find a slide by its text** — search the PDF text layer (the review base
+5. **Find a slide by its text** — search the PDF text layer (the review base
    already extracts it) from Ctrl+K.
-5. **Cache inventory** — count + size of cached clips before clearing, and the
+6. **Cache inventory** — count + size of cached clips before clearing, and the
    before→after delta after; pairs with `clean --dry-run`. Now that clips live in
    a pool, `pool status` is the likely home.
-6. **Config audit** — inventory every `slidesonnet.toml` key, drop the vestigial
+7. **Config audit** — inventory every `slidesonnet.toml` key, drop the vestigial
    ones (`[tts] backend` is now only the editor's starting engine).
-7. **Narration schema validation** — EBNF of the sidecar in docs, `narration
+8. **Narration schema validation** — EBNF of the sidecar in docs, `narration
    export --json` + JSON Schema. Don't YAML-ify the format.
-8. **Multi-take TTS** — re-roll and compare takes; needs a take index in the cache
+9. **Multi-take TTS** — re-roll and compare takes; needs a take index in the cache
     key or a side `takes/` store.
-9. **`check --fix`**, **`clean --dry-run`**, **`init` scaffold with PDF-outline
+10. **`check --fix`**, **`clean --dry-run`**, **`init` scaffold with PDF-outline
     titles**, an **export dialog** with timing/subtitle options.
-10. **Per-segment voice switching mid-utterance.**
+11. **Per-segment voice switching mid-utterance.**
 
 ## Later — backlog
 
