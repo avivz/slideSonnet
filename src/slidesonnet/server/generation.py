@@ -18,13 +18,14 @@ import asyncio
 import logging
 import re
 import time
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
 from slidesonnet import api
 from slidesonnet.cache import resolve_audio_dir
 from slidesonnet.config import Config
-from slidesonnet.exceptions import SlideSonnetError
+from slidesonnet.exceptions import SlideSonnetError, UnapprovedClips
 from slidesonnet.models import Backend
 from slidesonnet.narration.model import Deck
 from slidesonnet.server.decks import deck_service
@@ -52,6 +53,8 @@ def explain_failure(engine: str, exc: BaseException | None) -> tuple[str, str]:
     """
     name = engine.capitalize()
     raw = str(exc) if exc is not None else ""
+    if isinstance(exc, UnapprovedClips):
+        return "narration_changed", raw
     low = raw.lower()
     key = _ENV_VAR.search(raw)
     if key is not None or "api key" in low:
@@ -101,7 +104,7 @@ class DeckGeneration:
         config = with_engine(loaded.config, self.engine)
         return loaded.deck, config, resolve_audio_dir(self.entry.pdf_path, config).path
 
-    def _synth(self, targets: set[Target], force: bool) -> object:
+    def _synth(self, targets: set[Target], force: bool, approved: frozenset[str] | None) -> object:
         with engine_lock(self.engine):
             made = api.synthesize_deck(
                 self.entry.pdf_path,
@@ -109,6 +112,7 @@ class DeckGeneration:
                 only_segments=set(targets),
                 force=force,
                 engine=self.engine,
+                approved_clips=approved,
             )
         deck_service(self.entry.pdf_path, self.entry.sidecar_path).schedule_prune()
         return made
@@ -153,9 +157,18 @@ class DeckGeneration:
 
     # ---- operations (call on the event loop) ----------------------------------
     def enqueue(
-        self, targets: set[Target], *, force: bool, allow_paid: bool, owner: str | None
+        self,
+        targets: set[Target],
+        *,
+        force: bool,
+        allow_paid: bool,
+        owner: str | None,
+        approved: Collection[str] | None = None,
     ) -> int:
-        return len(self.queue.enqueue(targets, force=force, allow_paid=allow_paid, owner=owner))
+        handles = self.queue.enqueue(
+            targets, force=force, allow_paid=allow_paid, owner=owner, approved=approved
+        )
+        return len(handles)
 
     def focus(self, slide_id: str | None) -> None:
         self.focus_slide = slide_id

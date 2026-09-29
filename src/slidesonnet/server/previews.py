@@ -21,7 +21,7 @@ import contextlib
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -130,6 +130,7 @@ def build_preview_artifact(
     slide_id: str | None,
     engine: Backend | None,
     progress: ProgressFn | None = None,
+    approved_clips: Collection[str] | None = None,
 ) -> PreviewArtifact:
     """Build (or reuse) the preview for one slide or the whole deck. Blocking.
 
@@ -153,6 +154,7 @@ def build_preview_artifact(
             only_id=slide_id,
             progress=progress,
             render_dir=rdir,
+            approved_clips=approved_clips,
         )
         artifact_id, path = _publish(preview.track, previews_dir(pdf))
         prune_previews(pdf, protect=path)

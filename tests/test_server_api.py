@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from slidesonnet.api import Preview
 from slidesonnet.audio.track import Cue
+from slidesonnet.exceptions import UnapprovedClips
 from slidesonnet.server.app import create_api_app
 from slidesonnet.server.context import SESSION_HEADER
 from slidesonnet.server.library import DeckRegistry
@@ -320,6 +321,51 @@ def test_forced_whole_deck_generation_on_a_cached_paid_deck_needs_approval(
     assert forced.json()["error"]["code"] == "paid_confirmation_required"
 
 
+_INTRO = {"slide_id": "intro", "speech_index": 0}
+
+
+@pytest.mark.parametrize(
+    "job",
+    [
+        {"kind": "generate"},
+        {"kind": "generate", "targets": [_INTRO]},
+        {"kind": "generate", "targets": [_INTRO], "force": True},
+        {"kind": "preview", "slide_id": "intro"},
+        {"kind": "export", "draft": True},
+    ],
+    ids=["deck", "clip", "force", "preview", "export"],
+)
+def test_paid_work_makes_only_what_was_approved(
+    client: TestClient, deck: Path, monkeypatch: pytest.MonkeyPatch, job: dict[str, Any]
+) -> None:
+    """The narration changes while an approved job waits: it refuses rather than bill the edit."""
+    from slidesonnet.audio import synth as synth_mod
+    from slidesonnet.server.engines import engine_lock
+
+    made: list[str] = []
+
+    class Counting(_StubTTS):
+        def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
+            made.append(text)
+            return super().synthesize(text, output_path, voice)
+
+    monkeypatch.setattr(synth_mod, "create_tts", lambda cfg: Counting(cfg.backend))
+    token = _token(client)
+    paid = {"engine": "inworld", "allow_paid": True}
+    if job.get("force"):  # regenerating needs the clip made first
+        first = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "generate", **paid})
+        assert _wait(client, first.json()["id"])["status"] == "succeeded"
+        made.clear()
+    with engine_lock("inworld"):  # the approved job waits its turn…
+        r = client.post(f"/api/v1/decks/{token}/jobs", json={**job, **paid})
+        assert r.status_code == 202, r.text
+        edited = SIDECAR.replace("Hello there.", "Hello there, and a line nobody approved.")
+        (deck.parent / "talk.narration").write_text(simple_narration(edited), encoding="utf-8")
+    done = _wait(client, r.json()["id"])  # …and the sidecar changed meanwhile
+    assert done["status"] == "failed" and made == []
+    assert "approve again to generate" in done["error"]["message"]
+
+
 def test_previews_are_immutable_per_build_and_served_with_ranges(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -580,6 +626,7 @@ def test_a_failed_clip_is_announced_with_its_line_and_a_plain_reason(
         ("qwen3", RuntimeError("qwen-tts package not installed. Install with: pip install x"),
          "engine_missing", "Qwen3 isn't installed"),
         ("kokoro", RuntimeError("disk full"), "failed", "Couldn't generate this line"),
+        ("inworld", UnapprovedClips(2), "narration_changed", "approve again to generate 2 new"),
     ],
 )  # fmt: skip
 def test_generation_failures_are_explained_in_plain_words(

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
+import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -17,7 +19,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
 from slidesonnet import api
-from slidesonnet.audio.synth import ref_cache_status
+from slidesonnet.audio.synth import clip_keys, ref_cache_status
 from slidesonnet.cache import resolve_audio_dir
 from slidesonnet.config import load_config
 from slidesonnet.deck import resolve_voice_files
@@ -232,18 +234,24 @@ def _resolve_engine(entry: DeckEntry, engine: Backend | None) -> Backend:
 
 
 def _uncached(
-    entry: DeckEntry, engine: Backend, *, slide_id: str | None = None, everything: bool = False
+    entry: DeckEntry, engine: Backend, *, slide_id: str | None = None
 ) -> set[tuple[str, int]]:
-    """Clips that would be synthesized: the uncached ones, or with *everything*
-    (a forced regenerate) every clip, cached or not."""
+    """The utterances (by position) whose clip isn't generated yet."""
     loaded = _service(entry).load()
     config = with_engine(loaded.config, engine)
     audio_dir = resolve_audio_dir(entry.pdf_path, config).path
     return {
         (ref.slide_id, ref.speech_index)
         for ref, cached in ref_cache_status(loaded.deck, config, audio_dir)
-        if (everything or not cached) and (slide_id is None or ref.slide_id == slide_id)
+        if not cached and (slide_id is None or ref.slide_id == slide_id)
     }
+
+
+def _digest(approved: frozenset[str] | None) -> str:
+    """A short stable name for an approved clip set (``-`` when unpinned)."""
+    if approved is None:
+        return "-"
+    return hashlib.sha1("\n".join(sorted(approved)).encode()).hexdigest()[:12]
 
 
 def _require_paid_approval(engine: Backend, count: int, allow_paid: bool) -> None:
@@ -257,8 +265,41 @@ def _require_paid_approval(engine: Backend, count: int, allow_paid: bool) -> Non
         )
 
 
+def _approved_clips(
+    entry: DeckEntry,
+    engine: Backend,
+    allow_paid: bool,
+    *,
+    targets: set[tuple[str, int]] | None = None,
+    slide_id: str | None = None,
+    force: bool = False,
+) -> frozenset[str] | None:
+    """The clips paid work is approved to make (cache filenames); ``None`` on a free engine.
+
+    Refuses paid work that would make any clip without *allow_paid*. The job
+    carries the set and refuses at run time any clip outside it, so an edit
+    made while the job waited is never billed on this approval.
+    """
+    if not BACKENDS[engine].paid:
+        return None
+    loaded = _service(entry).load()
+    config = with_engine(loaded.config, engine)
+    audio_dir = resolve_audio_dir(entry.pdf_path, config).path
+    only_ids = {slide_id} if slide_id is not None else None
+    keys = clip_keys(
+        loaded.deck, config, audio_dir, only_ids=only_ids, only_segments=targets, force=force
+    )
+    _require_paid_approval(engine, len(keys), allow_paid)
+    return frozenset(keys)
+
+
 def generate_work(
-    entry: DeckEntry, targets: set[tuple[str, int]] | None, *, force: bool, engine: Backend
+    entry: DeckEntry,
+    targets: set[tuple[str, int]] | None,
+    *,
+    force: bool,
+    engine: Backend,
+    approved: frozenset[str] | None = None,
 ) -> Any:
     def work(ctx: JobContext) -> dict[str, Any]:
         with engine_lock(engine):
@@ -270,6 +311,7 @@ def generate_work(
                 force=force,
                 engine=engine,
                 progress=ctx.progress,
+                approved_clips=approved,
             )
         _service(entry).schedule_prune()
         return {"generated": made}
@@ -277,11 +319,17 @@ def generate_work(
     return work
 
 
-def preview_work(entry: DeckEntry, req: PreviewJob, engine: Backend) -> Any:
+def preview_work(
+    entry: DeckEntry, req: PreviewJob, engine: Backend, approved: frozenset[str] | None = None
+) -> Any:
     def work(ctx: JobContext) -> dict[str, Any]:
         service = _service(entry)
         artifact = build_preview_artifact(
-            service, slide_id=req.slide_id, engine=engine, progress=ctx.progress
+            service,
+            slide_id=req.slide_id,
+            engine=engine,
+            progress=ctx.progress,
+            approved_clips=approved,
         )
         loaded = service.load()
         images = snapshots.ensure_page_images(entry.pdf_path, len(loaded.deck.pages))
@@ -299,7 +347,9 @@ def preview_work(entry: DeckEntry, req: PreviewJob, engine: Backend) -> Any:
     return work
 
 
-def export_work(entry: DeckEntry, *, draft: bool, engine: Backend) -> Any:
+def export_work(
+    entry: DeckEntry, *, draft: bool, engine: Backend, approved: frozenset[str] | None = None
+) -> Any:
     def work(ctx: JobContext) -> dict[str, Any]:
         service = _service(entry)
         output = entry.pdf_path.with_suffix(".mp4")
@@ -312,6 +362,7 @@ def export_work(entry: DeckEntry, *, draft: bool, engine: Backend) -> Any:
                 keep_scratch=True,  # an open preview may be streaming the page audio
                 draft=draft,
                 progress=ctx.progress,
+                approved_clips=approved,
             )
         return {"video": result.video.name, "duration": result.duration, "draft": draft}
 
@@ -349,13 +400,12 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
     narration_rev = _service(entry).narration_revision()
     if isinstance(body, GenerateJob):
         engine = _resolve_engine(entry, body.engine)
-        if body.targets is None:
-            targets: set[tuple[str, int]] | None = None
-            count = len(_uncached(entry, engine, everything=body.force))
-        else:
+        targets: set[tuple[str, int]] | None = None
+        if body.targets is not None:
             targets = {(t.slide_id, t.speech_index) for t in body.targets}
-            count = len(targets) if body.force else len(targets & _uncached(entry, engine))
-        _require_paid_approval(engine, count, body.allow_paid)
+        approved = _approved_clips(
+            entry, engine, body.allow_paid, targets=targets, force=body.force
+        )
         inputs: dict[str, Any] = {
             "engine": engine,
             "narration_revision": narration_rev,
@@ -366,13 +416,13 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
             "generate",
             token,
             inputs,
-            generate_work(entry, targets, force=body.force, engine=engine),
+            generate_work(entry, targets, force=body.force, engine=engine, approved=approved),
             dedupe_key=f"generate:{token}:{engine}:{narration_rev}:{inputs['targets']}:{body.force}",
         )
     elif isinstance(body, PreviewJob):
         engine = _resolve_engine(entry, body.engine)
+        approved = _approved_clips(entry, engine, body.allow_paid, slide_id=body.slide_id)
         needed = _uncached(entry, engine, slide_id=body.slide_id)
-        _require_paid_approval(engine, len(needed), body.allow_paid)
         if needed:
             _preempt_generation(ctx, entry, engine, needed)
         inputs = {
@@ -384,7 +434,7 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
             "preview",
             token,
             inputs,
-            preview_work(entry, body, engine),
+            preview_work(entry, body, engine, approved),
             dedupe_key=(
                 f"preview:{token}:{engine}:{narration_rev}:{body.slide_id}:"
                 f"{body.start_slide}:{body.single_slide_transitions}"
@@ -392,7 +442,7 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
         )
     elif isinstance(body, ExportJob):
         engine = _resolve_engine(entry, body.engine)
-        _require_paid_approval(engine, len(_uncached(entry, engine)), body.allow_paid)
+        approved = _approved_clips(entry, engine, body.allow_paid)
         if not body.draft:
             blockers = api.export_blockers(entry.pdf_path)
             if blockers:
@@ -402,8 +452,9 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
             "export",
             token,
             inputs,
-            export_work(entry, draft=body.draft, engine=engine),
-            dedupe_key=f"export:{token}:{engine}:{body.draft}",
+            export_work(entry, draft=body.draft, engine=engine, approved=approved),
+            # a paid export is pinned to its approval: a new approval is a new job
+            dedupe_key=f"export:{token}:{engine}:{body.draft}:{_digest(approved)}",
         )
     elif isinstance(body, WarmJob):
         engine = _resolve_engine(entry, body.engine)
@@ -477,16 +528,20 @@ async def post_generation(
     ctx = _ctx(request)
     entry = _entry(ctx, token)
     engine = await run_in_threadpool(_resolve_engine, entry, body.engine)
-    uncached = await run_in_threadpool(_uncached, entry, engine)
     if body.targets is None:
-        targets = uncached
+        targets = await run_in_threadpool(_uncached, entry, engine)
     else:
         targets = {(t.slide_id, t.speech_index) for t in body.targets}
-    count = len(targets) if body.force else len(targets & uncached)
-    _require_paid_approval(engine, count, body.allow_paid)
+    approved = await run_in_threadpool(
+        functools.partial(
+            _approved_clips, entry, engine, body.allow_paid, targets=targets, force=body.force
+        )
+    )
     gen = ctx.generation().get(entry, engine)
     assert gen is not None
-    queued = gen.enqueue(targets, force=body.force, allow_paid=body.allow_paid, owner=body.owner)
+    queued = gen.enqueue(
+        targets, force=body.force, allow_paid=body.allow_paid, owner=body.owner, approved=approved
+    )
     return _status(gen, queued)
 
 

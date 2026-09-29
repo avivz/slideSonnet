@@ -72,9 +72,14 @@ def _make_queue(
     deck = _deck(same_text=same_text)
     config = Config()
 
-    def synth(targets: set[tuple[str, int]], force: bool) -> None:
+    def synth(targets: set[tuple[str, int]], force: bool, approved: frozenset[str] | None) -> None:
         synth_mod.synthesize(
-            deck, config, audio_dir=tmp_path, only_segments=set(targets), force=force
+            deck,
+            config,
+            audio_dir=tmp_path,
+            only_segments=set(targets),
+            force=force,
+            approved=approved,
         )
 
     queue = JobQueue(
@@ -114,6 +119,33 @@ def test_byte_identical_segments_coalesce_to_one_job(
         assert engine.calls == 1  # one synthesis satisfies both refs
 
     asyncio.run(body())
+
+
+@pytest.mark.parametrize("paid", [True, False])
+def test_a_paid_clip_makes_only_the_text_that_was_approved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, paid: bool
+) -> None:
+    """The line changes while its clip waits: a paid queue refuses; a free one makes it."""
+    from slidesonnet.exceptions import UnapprovedClips
+
+    engine = FakeEngine()
+
+    async def body() -> JobHandle:
+        queue, _, deck = _make_queue(tmp_path, monkeypatch, engine=engine, paid=paid)
+        queue.start()
+        if paid:  # a key nobody approved is never queued
+            assert queue.enqueue({("b", 0)}, allow_paid=True, approved=set()) == []
+        (handle,) = queue.enqueue({("a", 0)}, allow_paid=True)
+        deck.narration["a"] = PageNarration("a", [Segment.speech("An unapproved insert.")])
+        await queue.drain()
+        queue.stop()
+        return handle
+
+    handle = asyncio.run(body())
+    assert engine.calls == (0 if paid else 1)
+    if paid:
+        assert isinstance(handle.error, UnapprovedClips)
+        assert "approve again to generate 1 new clip" in str(handle.error)
 
 
 def test_distinct_segments_make_distinct_jobs(
@@ -267,7 +299,7 @@ def _priority_queue(
     config = Config()
     order: list[tuple[str, int]] = []
 
-    def synth(targets: set[tuple[str, int]], force: bool) -> None:
+    def synth(targets: set[tuple[str, int]], force: bool, _approved: object) -> None:
         order.extend(sorted(targets))
         synth_mod.synthesize(
             deck, config, audio_dir=tmp_path, only_segments=set(targets), force=force
@@ -348,7 +380,7 @@ def test_cancelled_job_is_requeued_and_retried(
         config = Config()
         calls = {"n": 0}
 
-        def synth(targets: set[tuple[str, int]], force: bool) -> None:
+        def synth(targets: set[tuple[str, int]], force: bool, _approved: object) -> None:
             calls["n"] += 1
             if calls["n"] == 1:
                 raise GenerationCancelled("preempted on the first attempt")
@@ -382,7 +414,7 @@ def test_failed_job_invokes_the_error_callback(
         config = Config()
         errored: list[str] = []
 
-        def synth(targets: set[tuple[str, int]], force: bool) -> None:
+        def synth(targets: set[tuple[str, int]], force: bool, _approved: object) -> None:
             synth_mod.synthesize(
                 deck, config, audio_dir=tmp_path, only_segments=set(targets), force=force
             )
@@ -459,7 +491,7 @@ def test_cancel_all_aborts_the_running_clip_without_requeue(
         config = Config()
         calls = {"n": 0}
 
-        def synth(targets: set[tuple[str, int]], force: bool) -> None:
+        def synth(targets: set[tuple[str, int]], force: bool, _approved: object) -> None:
             calls["n"] += 1
             evt = current_cancel()  # cooperative cancel, like the qwen3 engine
             if evt is not None:

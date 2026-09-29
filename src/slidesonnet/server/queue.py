@@ -20,7 +20,7 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -40,7 +40,9 @@ Target = tuple[str, int]  # (slide_id, speech_index)
 
 # Injected dependencies (`generation` binds these to a deck and engine; tests fake them).
 DeckProvider = Callable[[], tuple[Deck, Config, Path]]  # -> (deck, config, audio_dir)
-SynthFn = Callable[[set[Target], bool], object]  # (targets, force) -> synthesize; result ignored
+#: (targets, force, approved) -> synthesize; result ignored. *approved* pins a paid clip
+#: to its content (the job's key): the synth must refuse any other clip it would make.
+SynthFn = Callable[[set[Target], bool, frozenset[JobKey] | None], object]
 IsPaid = Callable[[], bool]
 CurrentIndex = Callable[[], int | None]  # -> the slide index the user is on (drives priority)
 
@@ -139,13 +141,17 @@ class JobQueue:
         force: bool = False,
         allow_paid: bool = False,
         owner: str | None = None,
+        approved: Collection[JobKey] | None = None,
     ) -> list[JobHandle]:
         """Queue synthesis of *targets*; return a handle per launched/attached job.
 
         Already-cached clips are skipped unless *force*. A target whose clip is
         already in flight attaches to that job (no duplicate synthesis). On a
         paid engine the call is refused unless *allow_paid* (a defensive
-        invariant so an automatic trigger can never silently bill).
+        invariant so an automatic trigger can never silently bill), and only
+        the clips in *approved* (cache filenames, when given) are queued.
+        A queued paid clip is pinned to its content: if its line changes before
+        it runs, the run is refused rather than billing the unapproved text.
         """
         if self._is_paid() and not allow_paid:
             return []
@@ -161,6 +167,8 @@ class JobQueue:
             if not force and audio_cache_path_or_alt(target) is not None:
                 continue
             key = target.name
+            if approved is not None and self._is_paid() and key not in approved:
+                continue
             existing = self._inflight.get(key)
             if existing is not None:
                 existing.refs.add(rid)
@@ -283,7 +291,8 @@ class JobQueue:
             self._emit()
             try:
                 with cancel_scope(handle.cancel):
-                    await asyncio.to_thread(self._synth, set(handle.refs), handle.force)
+                    pin = frozenset({handle.key}) if self._is_paid() else None
+                    await asyncio.to_thread(self._synth, set(handle.refs), handle.force, pin)
             except GenerationCancelled:
                 if not handle.discarded:
                     # Preempted (e.g. by play): re-queue this clip and free the
