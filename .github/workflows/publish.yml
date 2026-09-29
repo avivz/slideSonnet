@@ -9,7 +9,8 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
-  publish-testpypi:
+  # Build once: TestPyPI and PyPI publish these exact files.
+  build:
     needs: ci
     runs-on: ubuntu-latest
     steps:
@@ -17,6 +18,14 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - name: The tag must match __version__
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(python -c "import re, pathlib; print(re.search(r'__version__\s*=\s*[\"\x27]([^\"\x27]+)', pathlib.Path('src/slidesonnet/__init__.py').read_text()).group(1))")
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match __version__ = $VERSION in src/slidesonnet/__init__.py"
+            exit 1
+          fi
       - uses: actions/setup-node@v5
         with:
           node-version-file: frontend/.nvmrc
@@ -24,6 +33,25 @@ jobs:
         run: cd frontend && npm ci && npm run build
       - run: pip install build twine
       - run: python -m build
+      - run: twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish-testpypi:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install twine
       - name: Upload to TestPyPI
         env:
           TWINE_USERNAME: __token__
@@ -31,26 +59,33 @@ jobs:
         run: twine upload --repository testpypi dist/*
       - name: Verify install from TestPyPI
         run: |
-          pip install --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
-            slidesonnet
-          slidesonnet --version
+          VERSION="${GITHUB_REF_NAME#v}"
+          python -m venv /tmp/verify
+          # TestPyPI's index can lag the upload by a minute; retry before failing.
+          for attempt in 1 2 3 4 5; do
+            /tmp/verify/bin/pip install --pre --no-cache-dir \
+              --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ \
+              "slidesonnet==${VERSION}" && break
+            [ "$attempt" = 5 ] && exit 1
+            sleep 30
+          done
+          OUT=$(/tmp/verify/bin/slidesonnet --version)
+          echo "$OUT"
+          echo "$OUT" | grep -F "version ${VERSION}"
 
   publish-pypi:
     needs: publish-testpypi
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: frontend/.nvmrc
-      - name: Build the frontend into the package
-        run: cd frontend && npm ci && npm run build
-      - run: pip install build twine
-      - run: python -m build
+      - run: pip install twine
       - name: Upload to PyPI
         env:
           TWINE_USERNAME: __token__
