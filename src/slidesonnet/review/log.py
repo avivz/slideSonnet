@@ -27,6 +27,9 @@ indented fields; ``text:`` continues over lines indented four spaces. Every
 record ends with a blank line, so a record cut short by a crash mid-write is
 recognizable and skipped. An ``open`` or ``message`` may carry a ``title:``; the
 latest one names the conversation (a message with a title and no text renames it).
+
+Compaction drops cleared conversations, so it keeps their highest id in a
+``# last-id: cN`` comment below the format header: ids are never reused.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ import fcntl
 import logging
 import os
 import re
+import tempfile
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -63,6 +67,8 @@ _ORIGINS = frozenset(get_args(Origin))
 _HEADER_RE = re.compile(r"^== (\S+) (\S+) (\S+) (\S+)\s*$")
 _FIELD_RE = re.compile(r"^  ([a-z-]+):(?: (.*))?$")
 _TEXT_INDENT = "    "
+_LAST_ID_RE = re.compile(r"^# last-id: c(\d+)\s*$", re.MULTILINE)
+_ID_RE = re.compile(r"c(\d+)")
 
 
 def now() -> str:
@@ -226,11 +232,15 @@ class ReviewState:
     conversations: dict[str, Conversation]
     sends: int = 0  # how many ``send`` records — the ``review wait`` cursor
     retired: set[str] = field(default_factory=set)  # emptied unrequested conversations
+    last_id: int = 0  # highest id ever handed out, including compacted-away ones
+
+    def max_id(self) -> int:
+        ids = [*self.conversations, *self.retired]
+        numbers = [int(m.group(1)) for cid in ids if (m := _ID_RE.fullmatch(cid))]
+        return max([self.last_id, *numbers])
 
     def next_id(self) -> str:
-        ids = [*self.conversations, *self.retired]
-        numbers = [int(cid[1:]) for cid in ids if re.fullmatch(r"c\d+", cid)]
-        return f"c{max(numbers, default=0) + 1}"
+        return f"c{self.max_id() + 1}"
 
     def slide_conversations(self) -> list[Conversation]:
         return [c for c in self.conversations.values() if not c.is_deck]
@@ -343,22 +353,52 @@ def _exclusive_file(path: Path, timeout: float) -> Iterator[None]:
         path.unlink(missing_ok=True)
 
 
-def read_records(path: Path) -> list[Record]:
-    if not path.exists():
-        return []
-    records, warnings = parse_log(path.read_text(encoding="utf-8"))
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def _parse_logged(path: Path, text: str) -> list[Record]:
+    records, warnings = parse_log(text)
     for warning in warnings:
         logger.warning("%s: %s", path.name, warning)
     return records
 
 
+def read_records(path: Path) -> list[Record]:
+    return _parse_logged(path, _read_text(path))
+
+
+def read_state(path: Path) -> ReviewState:
+    """Replay the log at *path*, including the id high-water mark compaction kept."""
+    text = _read_text(path)
+    state = replay(_parse_logged(path, text))
+    state.last_id = max((int(n) for n in _LAST_ID_RE.findall(text)), default=0)
+    return state
+
+
+def append_unlocked(path: Path, *records: Record) -> None:
+    """Append *records* in a single write; the caller holds the lock.
+
+    A record torn by a crash (no closing blank line) is closed off first, so it
+    can't swallow the records appended after it.
+    """
+    payload = "".join(serialize_record(r) for r in records)
+    size = path.stat().st_size if path.exists() else 0
+    if size == 0:
+        prefix = FORMAT_HEADER + "\n"
+    else:
+        with path.open("rb") as fh:
+            fh.seek(max(0, size - 2))
+            tail = fh.read()
+        prefix = "" if tail == b"\n\n" else "\n" if tail.endswith(b"\n") else "\n\n"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(prefix + payload)
+
+
 def append(path: Path, *records: Record, lock_path: Path | None = None) -> None:
     """Append *records* in a single write while holding the lock."""
-    payload = "".join(serialize_record(r) for r in records)
     with locked(lock_path or default_lock_path(path)):
-        new = not path.exists() or path.stat().st_size == 0
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write((FORMAT_HEADER + "\n" if new else "") + payload)
+        append_unlocked(path, *records)
 
 
 def ensure_file(path: Path, *, lock_path: Path | None = None) -> None:
@@ -368,10 +408,23 @@ def ensure_file(path: Path, *, lock_path: Path | None = None) -> None:
             path.write_text(FORMAT_HEADER + "\n", encoding="utf-8")
 
 
-def write_records(path: Path, records: list[Record], *, lock_path: Path | None = None) -> None:
-    """Replace the whole log (compaction) atomically, under the lock."""
-    payload = FORMAT_HEADER + "\n" + "".join(serialize_record(r) for r in records)
-    with locked(lock_path or default_lock_path(path)):
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(payload, encoding="utf-8")
+def write_records_unlocked(path: Path, records: list[Record], *, last_id: int = 0) -> None:
+    """Replace the whole log (compaction) atomically; the caller holds the lock."""
+    mark = f"# last-id: c{last_id}\n" if last_id else ""
+    payload = FORMAT_HEADER + mark + "\n" + "".join(serialize_record(r) for r in records)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
         os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def write_records(
+    path: Path, records: list[Record], *, lock_path: Path | None = None, last_id: int = 0
+) -> None:
+    """Replace the whole log (compaction) atomically, under the lock."""
+    with locked(lock_path or default_lock_path(path)):
+        write_records_unlocked(path, records, last_id=last_id)

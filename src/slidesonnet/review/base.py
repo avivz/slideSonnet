@@ -4,13 +4,15 @@ Lives in ``<deck dir>/.slidesonnet/review/<deck stem>/`` — ``base.json`` plus
 ``pages/<hash>.png``. Only :func:`snapshot` (reset everything to current) and
 :func:`advance` (move named slides to current, on Clear) change it. It is never
 committed; losing it just means re-snapshotting, which loses pending diffs but
-no work.
+no work. Callers hold the review lock (:func:`slidesonnet.review.ops.transaction`)
+around :func:`snapshot` and :func:`advance`.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from slidesonnet.cache import REVIEW_DIRNAME, cache_root
@@ -61,9 +63,14 @@ def _save(pdf_path: Path, version: DeckVersion) -> None:
     }
     path = _base_file(pdf_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".base.", suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data, indent=1, ensure_ascii=False) + "\n")
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     _prune_images(pdf_path, version)
 
 

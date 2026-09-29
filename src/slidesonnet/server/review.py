@@ -29,12 +29,14 @@ _models: dict[Path, ReviewModel] = {}
 _models_lock = threading.Lock()
 
 
-def review_model(pdf_path: Path) -> ReviewModel:
+def review_model(pdf_path: Path, sidecar_path: Path | None = None) -> ReviewModel:
+    """The deck's review model, reading narration from *sidecar_path* when given."""
     pdf = Path(pdf_path).resolve()
+    sidecar = sidecar_path.resolve() if sidecar_path is not None else None
     with _models_lock:
         model = _models.get(pdf)
-        if model is None:
-            model = _models[pdf] = ReviewModel(pdf)
+        if model is None or model.sidecar_path != sidecar:
+            model = _models[pdf] = ReviewModel(pdf, sidecar)
         return model
 
 
@@ -59,7 +61,7 @@ def _conversation(conv: Any) -> dict[str, Any]:
 def review_snapshot(entry: DeckEntry) -> dict[str, Any]:
     """Everything the review panel shows, as plain data."""
     pdf = entry.pdf_path
-    model = review_model(pdf)
+    model = review_model(pdf, entry.sidecar_path)
     model.ensure_base()  # review is always on: the first look at a deck takes its base
     if not model.active:
         return {
@@ -134,7 +136,7 @@ class CommandOutcome:
 def run_command(entry: DeckEntry, command: str, args: dict[str, Any]) -> CommandOutcome:
     """Apply one review command as the author. Raises SlideSonnetError on refusal."""
     pdf = entry.pdf_path
-    model = review_model(pdf)
+    model = review_model(pdf, entry.sidecar_path)
     if command == "mark_seen":
         model.mark_seen()
         return CommandOutcome("Comparison reset — changes are shown from here")

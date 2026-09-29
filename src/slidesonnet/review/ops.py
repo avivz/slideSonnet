@@ -4,11 +4,21 @@ Everything that changes review state goes through here, as an append to the
 deck's ``.review`` log (see :mod:`slidesonnet.review.log`) or — for Clear — a
 compaction plus advancing the stored base (:mod:`slidesonnet.review.base`).
 Deck sources (``.tex``, ``.narration``) are never touched.
+
+Every write is one :func:`transaction`: the cross-process review lock is held
+from reading the log, through deciding (ids, validity), to appending,
+compacting or saving the base, so concurrent writers (the editor and an agent)
+never share an id or drop each other's records.
+
+Functions that capture the deck take an optional *sidecar_path* for a deck
+opened with an explicit ``--narration`` file (default: ``<deck>.narration``).
 """
 
 from __future__ import annotations
 
+import contextlib
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -18,16 +28,17 @@ from slidesonnet.pdf.reader import is_final_build, read_page_ids
 from slidesonnet.review import base as base_mod
 from slidesonnet.review.diff import SlideChange, diff_versions
 from slidesonnet.review.log import (
+    FORMAT_HEADER,
     Author,
     Conversation,
     Record,
     ReviewState,
-    append,
-    ensure_file,
+    append_unlocked,
+    locked,
     now,
     read_records,
-    replay,
-    write_records,
+    read_state,
+    write_records_unlocked,
 )
 from slidesonnet.review.versions import DeckVersion, PageCapture, capture, combine
 
@@ -43,8 +54,35 @@ def _lock(pdf_path: Path) -> Path:
     return base_mod.base_dir(pdf_path) / "review.lock"
 
 
-def _append(pdf_path: Path, *records: Record) -> None:
-    append(review_path(pdf_path), *records, lock_path=_lock(pdf_path))
+class Transaction:
+    """The review state, read under the lock, and the writes that go with it."""
+
+    def __init__(self, pdf_path: Path) -> None:
+        self.pdf_path = pdf_path
+        self.path = review_path(pdf_path)
+        self.state = read_state(self.path)
+
+    def append(self, *records: Record) -> None:
+        append_unlocked(self.path, *records)
+
+    def rewrite(self, records: list[Record]) -> None:
+        """Compact the log to *records*, keeping the id high-water mark."""
+        write_records_unlocked(self.path, records, last_id=self.state.max_id())
+
+    def ensure_file(self) -> None:
+        if not self.path.exists():
+            self.path.write_text(FORMAT_HEADER + "\n", encoding="utf-8")
+
+
+@contextlib.contextmanager
+def transaction(pdf_path: Path) -> Iterator[Transaction]:
+    """Hold the deck's review lock across load → decide → write.
+
+    Only unlocked helpers may run inside: ``flock`` locks belong to an open
+    file, so taking the lock again from inside would deadlock.
+    """
+    with locked(_lock(pdf_path)):
+        yield Transaction(pdf_path)
 
 
 def is_active(pdf_path: Path) -> bool:
@@ -53,16 +91,23 @@ def is_active(pdf_path: Path) -> bool:
     return review_path(pdf_path).exists() or base_mod.has_base(pdf_path)
 
 
-def start(pdf_path: Path) -> DeckVersion:
+def start(pdf_path: Path, *, sidecar_path: Path | None = None) -> DeckVersion:
     """Enter review mode: take the base from the deck as it is now and create
     ``<deck>.review``. Changes from here on are compared against this base."""
-    version = base_mod.snapshot(pdf_path)
-    ensure_file(review_path(pdf_path), lock_path=_lock(pdf_path))
+    with transaction(pdf_path) as txn:
+        version = base_mod.snapshot(pdf_path, sidecar_path=sidecar_path)
+        txn.ensure_file()
     return version
 
 
+def mark_seen(pdf_path: Path, *, sidecar_path: Path | None = None) -> DeckVersion:
+    """Everything as it is now becomes the base (the log is untouched)."""
+    with transaction(pdf_path):
+        return base_mod.snapshot(pdf_path, sidecar_path=sidecar_path)
+
+
 def load(pdf_path: Path) -> ReviewState:
-    return replay(read_records(review_path(pdf_path)))
+    return read_state(review_path(pdf_path))
 
 
 # ---- status ----------------------------------------------------------------------
@@ -83,26 +128,36 @@ class ReviewStatus:
     current: DeckVersion | None = None
 
 
-def ensure_base(pdf_path: Path) -> DeckVersion | None:
+def ensure_base(pdf_path: Path, *, sidecar_path: Path | None = None) -> DeckVersion | None:
     """The stored base, taking it now on first use (None on a final build)."""
     base = base_mod.load_base(pdf_path)
-    if base is None and not is_final_build(pdf_path):
-        base = base_mod.snapshot(pdf_path)
+    if base is not None or is_final_build(pdf_path):
+        return base
+    with transaction(pdf_path):
+        base = base_mod.load_base(pdf_path)  # another writer may have taken it meanwhile
+        if base is None:
+            base = base_mod.snapshot(pdf_path, sidecar_path=sidecar_path)
     return base
 
 
-def status(pdf_path: Path, *, pages: PageCapture | None = None) -> ReviewStatus:
+def _current(pdf_path: Path, pages: PageCapture | None, sidecar_path: Path | None) -> DeckVersion:
+    if pages is None:
+        return capture(
+            pdf_path, sidecar_path=sidecar_path, reference=base_mod.reference_images(pdf_path)
+        )
+    return combine(pages, load_deck(pdf_path, sidecar_path=sidecar_path)[0].narration)
+
+
+def status(
+    pdf_path: Path, *, pages: PageCapture | None = None, sidecar_path: Path | None = None
+) -> ReviewStatus:
     """Read current review state; *pages*, if supplied, must match the PDF on disk."""
     state = load(pdf_path)
     if is_final_build(pdf_path):
         return ReviewStatus(state=state, final_build=True, base=base_mod.load_base(pdf_path))
-    base = ensure_base(pdf_path)
+    base = ensure_base(pdf_path, sidecar_path=sidecar_path)
     assert base is not None  # a plain build always yields one
-    current = (
-        capture(pdf_path, reference=base_mod.reference_images(pdf_path))
-        if pages is None
-        else combine(pages, load_deck(pdf_path)[0].narration)
-    )
+    current = _current(pdf_path, pages, sidecar_path)
     changes = diff_versions(base, current)
     filed = {sid for c in state.slide_conversations() for sid in c.slides}
     unfiled = [c.slide_id for c in changes if c.slide_id not in filed]
@@ -174,11 +229,11 @@ def comment(
         )
     _check_slides(slide_ids)
     ensure_base(pdf_path)
-    conv_id = load(pdf_path).next_id()
-    _append(
-        pdf_path,
-        Record("open", conv_id, now(), author, slides=tuple(slide_ids), text=text, title=title),
-    )
+    with transaction(pdf_path) as txn:
+        conv_id = txn.state.next_id()
+        txn.append(
+            Record("open", conv_id, now(), author, slides=tuple(slide_ids), text=text, title=title)
+        )
     return conv_id
 
 
@@ -193,20 +248,20 @@ def reply(
 ) -> None:
     """Add a message to a conversation, optionally widening its slide scope or renaming it."""
     added = [s.removeprefix("@") for s in add_slides or []]
-    conv = _conversation(load(pdf_path), conv_id)
-    if added and conv.is_deck:
-        raise ReviewError(
-            "the deck conversation has no slides — open a slide conversation "
-            "for slide changes (`slidesonnet review comment`)"
+    with transaction(pdf_path) as txn:
+        conv = _conversation(txn.state, conv_id)
+        if added and conv.is_deck:
+            raise ReviewError(
+                "the deck conversation has no slides — open a slide conversation "
+                "for slide changes (`slidesonnet review comment`)"
+            )
+        if conv.status == "closed":
+            raise ReviewError(f"conversation {conv_id} is closed — reopen it first")
+        if added:
+            _check_slides(added)
+        txn.append(
+            Record("message", conv_id, now(), author, slides=tuple(added), text=text, title=title)
         )
-    if conv.status == "closed":
-        raise ReviewError(f"conversation {conv_id} is closed — reopen it first")
-    if added:
-        _check_slides(added)
-    _append(
-        pdf_path,
-        Record("message", conv_id, now(), author, slides=tuple(added), text=text, title=title),
-    )
 
 
 def retitle(pdf_path: Path, conv_id: str, title: str, *, author: Author = "author") -> None:
@@ -214,29 +269,33 @@ def retitle(pdf_path: Path, conv_id: str, title: str, *, author: Author = "autho
     title = " ".join(title.split())
     if not title:
         raise ReviewError("a title can't be empty")
-    _conversation(load(pdf_path), conv_id)
-    _append(pdf_path, Record("message", conv_id, now(), author, title=title))
+    with transaction(pdf_path) as txn:
+        _conversation(txn.state, conv_id)
+        txn.append(Record("message", conv_id, now(), author, title=title))
 
 
 def accept(pdf_path: Path, conv_id: str, *, author: Author = "author") -> None:
-    conv = _conversation(load(pdf_path), conv_id)
-    if conv.is_deck:
-        raise ReviewError("the deck conversation never closes")
-    if conv.status == "closed":
-        raise ReviewError(f"conversation {conv_id} is already closed")
-    _append(pdf_path, Record("accept", conv_id, now(), author))
+    with transaction(pdf_path) as txn:
+        conv = _conversation(txn.state, conv_id)
+        if conv.is_deck:
+            raise ReviewError("the deck conversation never closes")
+        if conv.status == "closed":
+            raise ReviewError(f"conversation {conv_id} is already closed")
+        txn.append(Record("accept", conv_id, now(), author))
 
 
 def reopen(pdf_path: Path, conv_id: str, *, author: Author = "author") -> None:
-    conv = _conversation(load(pdf_path), conv_id)
-    if conv.status == "open":
-        raise ReviewError(f"conversation {conv_id} is already open")
-    _append(pdf_path, Record("reopen", conv_id, now(), author))
+    with transaction(pdf_path) as txn:
+        conv = _conversation(txn.state, conv_id)
+        if conv.status == "open":
+            raise ReviewError(f"conversation {conv_id} is already open")
+        txn.append(Record("reopen", conv_id, now(), author))
 
 
 def send(pdf_path: Path, *, author: Author = "author") -> None:
     """Release anyone blocked in :func:`wait` (``review wait``)."""
-    _append(pdf_path, Record("send", None, now(), author))
+    with transaction(pdf_path) as txn:
+        txn.append(Record("send", None, now(), author))
 
 
 # ---- automatic filing ------------------------------------------------------------
@@ -244,30 +303,30 @@ def send(pdf_path: Path, *, author: Author = "author") -> None:
 
 def open_unrequested(pdf_path: Path, slide_ids: list[str]) -> str:
     """Open a system conversation filing *slide_ids* as unrequested changes."""
-    conv_id = load(pdf_path).next_id()
     note = f"Changed at {now()[11:16]} without a conversation."
-    _append(
-        pdf_path,
-        Record(
-            "open",
-            conv_id,
-            now(),
-            "system",
-            slides=tuple(slide_ids),
-            origin="unrequested",
-            text=note,
-        ),
-    )
+    with transaction(pdf_path) as txn:
+        conv_id = txn.state.next_id()
+        txn.append(
+            Record(
+                "open",
+                conv_id,
+                now(),
+                "system",
+                slides=tuple(slide_ids),
+                origin="unrequested",
+                text=note,
+            )
+        )
     return conv_id
 
 
-def file_unrequested(pdf_path: Path) -> str | None:
+def file_unrequested(pdf_path: Path, *, sidecar_path: Path | None = None) -> str | None:
     """File every changed slide that's in no conversation into a new one.
 
     Returns the new conversation id, or None when nothing was unfiled (or the
     PDF is a final build, where comparison pauses).
     """
-    current = status(pdf_path)
+    current = status(pdf_path, sidecar_path=sidecar_path)
     if not current.unfiled:
         return None
     return open_unrequested(pdf_path, current.unfiled)
@@ -280,16 +339,25 @@ def note_author_edit(pdf_path: Path, slide_id: str) -> None:
     sees the edit instead of overwriting it); without one, the slide joins the
     closed "Your edits" conversation — you don't approve your own changes.
     """
-    state = load(pdf_path)
+    with transaction(pdf_path) as txn:
+        _note_author_edit(txn, slide_id)
+
+
+def _note_author_edit(txn: Transaction, slide_id: str) -> None:
+    state = txn.state
     note = AUTHOR_EDIT_NOTE.format(slide=slide_id)
     open_convs = [
         c for c in state.slide_conversations() if c.status == "open" and slide_id in c.slides
     ]
     if open_convs:
-        for conv in open_convs:
-            if conv.messages and conv.messages[-1].text == note:
-                continue  # repeated saves of the same edit: one note is enough
-            _append(pdf_path, Record("message", conv.id, now(), "system", text=note))
+        notes = [
+            Record("message", conv.id, now(), "system", text=note)
+            for conv in open_convs
+            # repeated saves of the same edit: one note is enough
+            if not (conv.messages and conv.messages[-1].text == note)
+        ]
+        if notes:
+            txn.append(*notes)
         return
     mine = next(
         (
@@ -301,13 +369,12 @@ def note_author_edit(pdf_path: Path, slide_id: str) -> None:
     )
     if mine is not None:
         if slide_id not in mine.slides:
-            _append(pdf_path, Record("message", mine.id, now(), "system", slides=(slide_id,)))
+            txn.append(Record("message", mine.id, now(), "system", slides=(slide_id,)))
         return
     if any(slide_id in c.slides for c in state.slide_conversations()):
         return  # already filed in a closed conversation: its diff covers the edit
     conv_id = state.next_id()
-    _append(
-        pdf_path,
+    txn.append(
         Record(
             "open",
             conv_id,
@@ -347,7 +414,9 @@ def _pin_slides(rec: Record, state: ReviewState) -> Record:
     return replace(rec, slides=()) if rec.slides else rec
 
 
-def clear(pdf_path: Path, *, pages: PageCapture | None = None) -> ClearResult:
+def clear(
+    pdf_path: Path, *, pages: PageCapture | None = None, sidecar_path: Path | None = None
+) -> ClearResult:
     """Drop closed conversations and advance the base for their slides.
 
     A slide that's also in an open conversation keeps its base (it advances
@@ -355,30 +424,41 @@ def clear(pdf_path: Path, *, pages: PageCapture | None = None) -> ClearResult:
     open conversation holds a moved slide.
 
     The editor may supply a fresh cached page capture. Narration and the log
-    are always read from disk, including when that capture is reused.
+    are always read from disk, including when that capture is reused. The deck
+    is captured before taking the lock (the slow part); the log is read, the
+    base advanced and the log compacted under it.
     """
-    current = status(pdf_path, pages=pages)
-    if current.final_build:
+    if is_final_build(pdf_path):
         raise ReviewError("the PDF is a final build — recompile it normally before clearing")
-    state = current.state
+    ensure_base(pdf_path, sidecar_path=sidecar_path)
+    current = _current(pdf_path, pages, sidecar_path)
+    with transaction(pdf_path) as txn:
+        return _clear(txn, current)
+
+
+def _clear(txn: Transaction, current: DeckVersion) -> ClearResult:
+    pdf_path, state = txn.pdf_path, txn.state
     closed = [c for c in state.slide_conversations() if c.status == "closed"]
     if not closed:
         return ClearResult()
+    base = base_mod.load_base(pdf_path)
+    assert base is not None  # ensured before the lock; nothing deletes it
     open_slides = {
         sid for c in state.slide_conversations() if c.status == "open" for sid in c.slides
     }
     closed_slides = [sid for c in closed for sid in c.slides]
     advance = sorted({s for s in closed_slides if s not in open_slides})
     skipped = sorted({s for s in closed_slides if s in open_slides})
-    moved = {c.slide_id for c in current.changes if c.moved}
+    moved = {c.slide_id for c in diff_versions(base, current) if c.moved}
     adopt = not (moved & open_slides)
-    base_mod.advance(pdf_path, set(advance), adopt_order=adopt, current=current.current)
+    base_mod.advance(pdf_path, set(advance), adopt_order=adopt, current=current)
     drop = {c.id for c in closed} | state.retired
-    path = review_path(pdf_path)
     records = [
-        _pin_slides(r, state) for r in read_records(path) if r.conv is None or r.conv not in drop
+        _pin_slides(r, state)
+        for r in read_records(txn.path)
+        if r.conv is None or r.conv not in drop
     ]
-    write_records(path, records, lock_path=_lock(pdf_path))
+    txn.rewrite(records)
     return ClearResult(
         cleared=[c.id for c in closed], advanced=advance, skipped=skipped, order_adopted=adopt
     )

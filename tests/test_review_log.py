@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import errno
 import threading
 from pathlib import Path
 
 import pytest
 
+from slidesonnet.review import log as log_mod
 from slidesonnet.review.log import (
     DECK,
     Record,
     append,
+    locked,
     parse_log,
     read_records,
+    read_state,
     replay,
     serialize_record,
     write_records,
@@ -170,3 +174,50 @@ def test_a_title_round_trips_and_the_latest_one_names_the_conversation() -> None
     assert replay(back).conversations["c1"].title == "Two-line intro"
     renamed = replay([*back, _rec("message", title="Intro")]).conversations["c1"]
     assert renamed.title == "Intro" and len(renamed.messages) == 3  # a rename adds no message
+
+
+def test_append_after_a_torn_record_keeps_the_new_one(tmp_path: Path) -> None:
+    path = tmp_path / "deck.review"
+    append(path, _rec("open", slides=("a",), text="one"))
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("== message c1 2026-09-27T14:03:00 author\n  text: cut sh")  # a crash mid-write
+    append(path, _rec("message", text="two"))
+    assert [r.text for r in read_records(path)][-1] == "two"
+
+
+def test_compaction_keeps_the_id_high_water_mark(tmp_path: Path) -> None:
+    path = tmp_path / "deck.review"
+    write_records(path, [], last_id=7)
+    append(path, _rec("open", conv="c2", slides=("a",), text="x"))
+    assert read_state(path).next_id() == "c8"
+
+
+class TestFlockFallback:
+    """``flock`` fails on some filesystems (WSL's Windows mounts): O_EXCL lockfile."""
+
+    @pytest.fixture(autouse=True)
+    def _no_flock(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def refuse(fd: int, op: int) -> None:
+            raise OSError(errno.ENOLCK, "no locks available")
+
+        monkeypatch.setattr(log_mod.fcntl, "flock", refuse)
+
+    def test_lockfile_is_held_then_removed_even_on_error(self, tmp_path: Path) -> None:
+        lock = tmp_path / "review.lock"
+        marker = tmp_path / "review.lock.x"
+        with pytest.raises(RuntimeError), locked(lock):
+            assert marker.exists()
+            raise RuntimeError("boom")
+        assert not marker.exists()
+
+    def test_a_held_lockfile_times_out(self, tmp_path: Path) -> None:
+        lock = tmp_path / "review.lock"
+        (tmp_path / "review.lock.x").touch()  # another writer holds it
+        with pytest.raises(TimeoutError, match="could not lock"), locked(lock, timeout=0):
+            pass
+        assert (tmp_path / "review.lock.x").exists()  # someone else's: left alone
+
+    def test_appends_still_work(self, tmp_path: Path) -> None:
+        path = tmp_path / "deck.review"
+        append(path, _rec("open", slides=("a",), text="one"))
+        assert [r.text for r in read_records(path)] == ["one"]

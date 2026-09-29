@@ -89,6 +89,24 @@ def test_a_review_round_through_the_api(client: TestClient, pdf: Path) -> None:
     assert client.get(f"/api/v1/decks/{token}/review").json()["changes"] == []
 
 
+def test_review_compares_against_an_explicit_narration_file(tmp_path: Path) -> None:
+    """``edit --narration custom.narration``: base, diffs and Mark seen all use it."""
+    pdf = write_pdf(tmp_path / "deck.pdf", ["a", "b"])
+    custom = tmp_path / "custom.narration"
+    custom.write_text(simple_narration("@a\nHello.\n"), encoding="utf-8")
+    registry = DeckRegistry(tmp_path)
+    registry.rescan()
+    token = registry.register(pdf, sidecar_path=custom).token
+    with TestClient(create_api_app(registry)) as c:
+        c.headers[SESSION_HEADER] = c.get("/api/v1/session").json()["token"]
+        assert c.get(f"/api/v1/decks/{token}/review").json()["changes"] == []
+        custom.write_text(simple_narration("@a\nHello again.\n"), encoding="utf-8")
+        changes = c.get(f"/api/v1/decks/{token}/review").json()["changes"]
+        assert [ch["slide_id"] for ch in changes] == ["a"]
+        _cmd(c, token, type="mark_seen")
+        assert c.get(f"/api/v1/decks/{token}/review").json()["changes"] == []
+
+
 def test_unrequested_changes_are_filed_and_refusals_are_readable(
     client: TestClient, pdf: Path
 ) -> None:

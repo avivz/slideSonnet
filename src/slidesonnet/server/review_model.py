@@ -23,7 +23,7 @@ from slidesonnet.pdf.reader import is_final_build
 from slidesonnet.review import base as base_mod
 from slidesonnet.review import ops
 from slidesonnet.review.diff import SlideChange, diff_versions
-from slidesonnet.review.log import Conversation, ReviewState, read_records, replay
+from slidesonnet.review.log import Conversation, ReviewState
 from slidesonnet.review.versions import DeckVersion, PageCapture, capture_pages, combine
 
 Badge = Literal["your-turn", "agent-turn", "closed", "unfiled"]
@@ -71,8 +71,10 @@ class EditorReviewStatus:
 
 
 class ReviewModel:
-    def __init__(self, pdf_path: Path) -> None:
+    def __init__(self, pdf_path: Path, sidecar_path: Path | None = None) -> None:
         self.pdf_path = pdf_path.resolve()
+        #: An explicit narration file (``edit --narration``); None is ``<deck>.narration``.
+        self.sidecar_path = sidecar_path
         self._pages: tuple[tuple[float, int], PageCapture, bool] | None = None
         self._log: tuple[tuple[float, int], ReviewState] | None = None
         self._base: tuple[tuple[float, int], DeckVersion | None] | None = None
@@ -93,12 +95,12 @@ class ReviewModel:
     def ensure_base(self) -> None:
         """Take the base now if the deck has none (quietly: no file beside the deck)."""
         if self._base_version() is None:
-            ops.ensure_base(self.pdf_path)
+            ops.ensure_base(self.pdf_path, sidecar_path=self.sidecar_path)
             self._base = None
 
     def mark_seen(self) -> None:
         """Everything as it is now becomes the base."""
-        base_mod.snapshot(self.pdf_path)
+        ops.mark_seen(self.pdf_path, sidecar_path=self.sidecar_path)
         self._base = None
 
     def pages_fresh(self) -> bool:
@@ -123,7 +125,7 @@ class ReviewModel:
     def _state(self) -> ReviewState:
         stamp = self.log_stamp()
         if self._log is None or self._log[0] != stamp:
-            self._log = (stamp, replay(read_records(self.review_path)))
+            self._log = (stamp, ops.load(self.pdf_path))
         return self._log[1]
 
     def _base_version(self) -> DeckVersion | None:
@@ -196,7 +198,7 @@ class ReviewModel:
 
     def clear(self) -> ops.ClearResult:
         pages, _final = self._page_capture()
-        result = ops.clear(self.pdf_path, pages=pages)
+        result = ops.clear(self.pdf_path, pages=pages, sidecar_path=self.sidecar_path)
         self._base = None
         return result
 

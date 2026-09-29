@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import fcntl
+import os
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pymupdf
@@ -287,3 +290,59 @@ def test_a_slide_can_be_declared_before_it_is_compiled(deck: Path) -> None:
 def test_not_in_deck_names_ids_the_pdf_lacks(deck: Path) -> None:
     ops.status(deck)
     assert ops.not_in_deck(deck, ["a", "typo"]) == ["typo"]
+
+
+def test_ids_are_never_reused_after_clear(deck: Path) -> None:
+    first = ops.comment(deck, ["a"], "x")
+    ops.accept(deck, first)
+    ops.clear(deck)
+    assert ops.comment(deck, ["b"], "y") != first
+
+
+def _lock_held(pdf: Path) -> bool:
+    fd = os.open(ops._lock(pdf), os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    finally:
+        os.close(fd)  # closing also drops a lock this probe took
+    return False
+
+
+_WRITES: dict[str, Callable[[Path], object]] = {
+    "comment": lambda d: ops.comment(d, ["a"], "x"),
+    "reply": lambda d: ops.reply(d, DECK, "x"),
+    "accept": lambda d: ops.accept(d, "c1"),
+    "reopen": lambda d: (ops.accept(d, "c1"), ops.reopen(d, "c1")),
+    "retitle": lambda d: ops.retitle(d, "c1", "T"),
+    "unrequested": lambda d: ops.open_unrequested(d, ["b"]),
+    "author edit": lambda d: ops.note_author_edit(d, "c"),
+    "clear": lambda d: (ops.accept(d, "c1"), ops.clear(d)),
+    "mark seen": lambda d: ops.mark_seen(d),
+}
+
+
+@pytest.mark.parametrize("action", _WRITES.values(), ids=_WRITES.keys())
+def test_writes_decide_and_save_under_the_review_lock(
+    deck: Path, monkeypatch: pytest.MonkeyPatch, action: Callable[[Path], object]
+) -> None:
+    """Load → decide → append/compact/save is one transaction, so concurrent
+    writers can't share an id or drop each other's records."""
+    from slidesonnet.review import base as base_mod
+
+    ops.comment(deck, ["a"], "seed")
+    unlocked: list[str] = []
+
+    def guard(name: str, real: Callable[..., object]) -> Callable[..., object]:
+        def wrapper(*args: object, **kwargs: object) -> object:
+            if not _lock_held(deck):
+                unlocked.append(name)
+            return real(*args, **kwargs)
+
+        return wrapper
+
+    monkeypatch.setattr(ops, "read_state", guard("read", ops.read_state))
+    monkeypatch.setattr(base_mod, "_save", guard("save", base_mod._save))
+    action(deck)
+    assert unlocked == []
