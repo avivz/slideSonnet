@@ -18,20 +18,21 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# These mocked tests still need real numpy/torch (the engine flattens waveforms
-# with numpy and the fixture patches torch.load). Both ship with the heavy
-# [qwen3]/[kokoro] extras, not [dev], so CI (which installs [dev] only) skips the
-# whole module — it runs wherever those deps are present (local dev).
-pytest.importorskip("numpy")
-pytest.importorskip("torch")
-
 from slidesonnet.exceptions import TTSError
 from slidesonnet.tts.qwen3 import Qwen3TTS
 
 
 @pytest.fixture
 def fake_qwen3(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    """Patch the qwen_tts model, prompt item, and torch.load with fakes."""
+    """Patch the qwen_tts model, prompt item, and torch.load with fakes.
+
+    Synthesis tests still need real numpy/torch (the engine flattens waveforms
+    with numpy and this patches torch.load). Both ship with the heavy
+    [qwen3]/[kokoro] extras, not [dev], so CI (which installs [dev] only) skips
+    them; the cache-key tests below need neither and always run.
+    """
+    pytest.importorskip("numpy")
+    pytest.importorskip("torch")
     import numpy as np
     import torch
 
@@ -274,16 +275,69 @@ def test_generate_failure_leaves_no_partial_or_temp_file(
     assert list(out.parent.glob("*")) == []
 
 
-def test_cache_key_folds_prompt_content_hash(tmp_path: Path) -> None:
-    prompt = tmp_path / "v.pt"
-    prompt.write_bytes(b"version-one")
-    engine = Qwen3TTS(device="cpu", model="repoX", voice_prompt=str(prompt))
-    key1 = engine.cache_key()
-    assert key1.startswith("qwen3:repoX:")
+def _clip_name(engine: Qwen3TTS, voice: str | None) -> str:
+    """The cached filename synthesis would use for "Hello." in *voice*."""
+    from slidesonnet.hashing import audio_filename
 
-    # Editing the prompt's content changes the cache key (clips go stale).
-    prompt.write_bytes(b"version-two-different")
-    assert engine.cache_key() != key1
+    return audio_filename("Hello.", engine.name(), engine.cache_key(), voice)
+
+
+@pytest.mark.parametrize("per_voice", [False, True], ids=["default-prompt", "per-voice-prompt"])
+def test_clip_name_follows_prompt_content_not_path(tmp_path: Path, per_voice: bool) -> None:
+    """A clone prompt is keyed by its bytes: an in-place edit re-keys the clip,
+    while the same file at another path (moved deck, another worktree) hits."""
+    prompt = tmp_path / "a" / "calm.pt"
+    prompt.parent.mkdir()
+    prompt.write_bytes(b"version-one")
+
+    def name_for(path: Path) -> str:
+        if per_voice:
+            return _clip_name(Qwen3TTS(device="cpu", model=_BASE_MODEL), str(path))
+        return _clip_name(Qwen3TTS(device="cpu", model=_BASE_MODEL, voice_prompt=str(path)), None)
+
+    before = name_for(prompt)
+    copy = tmp_path / "elsewhere" / "renamed.pt"
+    copy.parent.mkdir()
+    copy.write_bytes(prompt.read_bytes())
+    assert name_for(copy) == before
+
+    prompt.write_bytes(b"version-two-longer")  # rewritten in place
+    assert name_for(prompt) != before
+
+
+@pytest.mark.parametrize("model", [_BASE_MODEL, _CUSTOM_MODEL])
+def test_language_keys_the_clip_but_default_keeps_old_keys(tmp_path: Path, model: str) -> None:
+    prompt = tmp_path / "v.pt"
+    prompt.write_bytes(b"bytes")
+    kw: dict[str, Any] = {"device": "cpu", "model": model, "voice_prompt": str(prompt)}
+    default = Qwen3TTS(**kw).cache_key()
+    assert Qwen3TTS(**kw, language=" english ").cache_key() == default  # normalized
+    chinese = Qwen3TTS(**kw, language="Chinese").cache_key()
+    assert chinese != default
+    assert Qwen3TTS(**kw, language="chinese").cache_key() == chinese
+
+
+def test_edited_prompt_is_reloaded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The per-engine prompt cache notices an in-place edit (no stale voice)."""
+    import sys
+
+    loads: list[bytes] = []
+
+    def fake_load(path: Path, **_kw: Any) -> dict[str, Any]:
+        loads.append(Path(path).read_bytes())
+        return {"ref_code": loads[-1]}
+
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(load=fake_load))
+    monkeypatch.setattr("slidesonnet.tts.qwen3.VoiceClonePromptItem", lambda **kw: kw)
+    prompt = tmp_path / "v.pt"
+    prompt.write_bytes(b"one")
+    engine = Qwen3TTS(device="cpu", model=_BASE_MODEL)
+
+    assert engine._load_prompt(str(prompt)) == [{"ref_code": b"one"}]
+    assert engine._load_prompt(str(prompt)) == [{"ref_code": b"one"}]
+    assert len(loads) == 1  # cached while unchanged
+    prompt.write_bytes(b"two-two")
+    assert engine._load_prompt(str(prompt)) == [{"ref_code": b"two-two"}]
 
 
 def test_voice_introspection_does_not_load_model(

@@ -24,7 +24,6 @@ editor calls them on every render tick.
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import logging
 import os
 import tempfile
@@ -35,6 +34,7 @@ from typing import Any
 
 from slidesonnet.cancellation import current_cancel
 from slidesonnet.exceptions import GenerationCancelled, TTSError
+from slidesonnet.hashing import file_content_hash
 from slidesonnet.tts.base import TTSEngine
 
 logger = logging.getLogger(__name__)
@@ -89,6 +89,16 @@ CUSTOM_VOICE_SPEAKERS: tuple[str, ...] = (
 )
 DEFAULT_CUSTOM_VOICE_SPEAKER = "Dylan"
 
+# The language the model narrates in unless ``[tts.qwen3] language`` says
+# otherwise. Only a *different* language enters the cache key, so clips cached
+# before the language was keyed stay valid.
+DEFAULT_LANGUAGE = "English"
+
+
+def _language_key(language: str) -> str:
+    """Case/whitespace-insensitive form of a language name, for the cache key."""
+    return language.strip().casefold()
+
 
 def _is_custom_voice_model(model_repo: str) -> bool:
     """True for a CustomVoice repo (built-in speakers) vs a Base clone repo.
@@ -107,14 +117,16 @@ class Qwen3TTS(TTSEngine):
         model: str = DEFAULT_CUSTOM_VOICE_MODEL,
         device: str = "xpu",
         voice_prompt: str = "",
-        language: str = "English",
+        language: str = DEFAULT_LANGUAGE,
     ) -> None:
         self.model_repo = model
         self.device = device
         self.voice_prompt = voice_prompt
         self.language = language
         self._model: Any = None
-        self._prompts: dict[str, Any] = {}  # prompt path -> [VoiceClonePromptItem]
+        # prompt path -> ((mtime_ns, size), [VoiceClonePromptItem]); the stamp
+        # makes an in-place edit of the .pt reload instead of cloning a stale voice.
+        self._prompts: dict[str, tuple[tuple[int, int], Any]] = {}
 
     def is_warm(self) -> bool:
         """True once this (model, device) is loaded in the process — see base."""
@@ -155,18 +167,20 @@ class Qwen3TTS(TTSEngine):
         self._ensure_model()
 
     def _load_prompt(self, prompt_path: str) -> Any:
-        """Load (and cache) a voice-clone prompt artifact from a ``.pt`` file."""
-        cached = self._prompts.get(prompt_path)
-        if cached is not None:
-            return cached
+        """Load (and cache, until the file changes) a ``.pt`` voice-clone prompt."""
         path = Path(prompt_path)
         if not path.is_file():
             raise TTSError(f"Qwen3 voice prompt not found: {prompt_path}")
+        st = path.stat()
+        stamp = (st.st_mtime_ns, st.st_size)
+        cached = self._prompts.get(prompt_path)
+        if cached is not None and cached[0] == stamp:
+            return cached[1]
         import torch
 
         data = torch.load(path, weights_only=True)
         prompt = [VoiceClonePromptItem(**data)]
-        self._prompts[prompt_path] = prompt
+        self._prompts[prompt_path] = (stamp, prompt)
         return prompt
 
     def synthesize(self, text: str, output_path: Path, voice: str | None = None) -> float:
@@ -229,20 +243,24 @@ class Qwen3TTS(TTSEngine):
         return "qwen3"
 
     def cache_key(self) -> str:
-        """Identify the config: model + a content hash of the default voice prompt.
+        """Identify the config: model, the default prompt's content, and language.
 
         Hashing the prompt's *content* (not its path) means editing the clone
         artifact invalidates cached audio, while moving/renaming the file does
-        not churn the cache.
+        not churn the cache. (A per-utterance ``.pt`` voice is content-keyed the
+        same way, in the clip's text hash.) A non-default language is appended;
+        the default adds nothing, keeping keys from before it was keyed.
         """
         key = f"qwen3:{self.model_repo}"
-        if _is_custom_voice_model(self.model_repo):
-            # Built-in speakers are opaque ids folded into each clip's text hash;
-            # the model repo already pins the speaker set, so nothing to add.
-            return key
-        digest = _prompt_content_hash(self.voice_prompt)
-        if digest:
-            key += f":{digest}"
+        if not _is_custom_voice_model(self.model_repo):
+            # Built-in speakers (CustomVoice) are opaque ids folded into each clip's
+            # text hash; the model repo already pins the speaker set.
+            digest = file_content_hash(Path(self.voice_prompt)) if self.voice_prompt else None
+            if digest:
+                key += f":{digest[:8]}"
+        language = _language_key(self.language)
+        if language != _language_key(DEFAULT_LANGUAGE):
+            key += f":lang={language}"
         return key
 
     def list_voices(self) -> tuple[str, ...]:
@@ -308,16 +326,6 @@ def _cancellable(model: Any) -> Any:
         talker.generate = original
         if evt.is_set():
             raise GenerationCancelled("qwen3 synthesis cancelled before completion")
-
-
-def _prompt_content_hash(voice_prompt: str) -> str:
-    """8-char content hash of a voice-prompt file ("" if missing/unset)."""
-    if not voice_prompt:
-        return ""
-    path = Path(voice_prompt)
-    if not path.is_file():
-        return ""
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:8]
 
 
 def _to_float_samples(wav: Any) -> list[float]:

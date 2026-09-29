@@ -57,13 +57,19 @@ def _inworld(**cfg: object) -> Callable[[Path], TTSEngine]:
     return make
 
 
+_PROMPT = "<calm.pt>"  # stands for the absolute path of the golden prompt file
+
+
 def _qwen3(*, prompt: bool = False, **kw: object) -> Callable[[Path], TTSEngine]:
+    """A Qwen3 engine; the golden prompt file is always written, and with
+    ``prompt=True`` it is also the engine's default ``voice_prompt``."""
+
     def make(tmp: Path) -> TTSEngine:
         from slidesonnet.tts.qwen3 import Qwen3TTS
 
+        p = tmp / "calm.pt"
+        p.write_bytes(b"golden-prompt-bytes")
         if prompt:
-            p = tmp / "calm.pt"
-            p.write_bytes(b"golden-prompt-bytes")
             kw["voice_prompt"] = str(p)
         return Qwen3TTS(**kw)  # type: ignore[arg-type]
 
@@ -95,6 +101,9 @@ GOLDEN: list[tuple[str, str | None, Callable[[Path], TTSEngine], str]] = [
         _qwen3(model=_BASE_MODEL, prompt=True),
         "f8c3bf62a9aa3e6f.qwen3.701c8f1b.wav",
     ),
+    # A per-utterance .pt voice is keyed by the file's bytes, not its path.
+    ("Hello, world.", _PROMPT, _qwen3(model=_BASE_MODEL), "dcfb77b59c04cb7b.qwen3.80dbcfff.wav"),
+    ("Hello, world.", "Ryan", _qwen3(language="Chinese"), "ed6902b3ccf73e32.qwen3.2f03a4fc.wav"),
 ]
 
 
@@ -109,6 +118,8 @@ GOLDEN: list[tuple[str, str | None, Callable[[Path], TTSEngine], str]] = [
         "inworld-pace-slow",
         "qwen3-speaker",
         "qwen3-clone-prompt",
+        "qwen3-voice-file",
+        "qwen3-language",
     ],
 )
 def test_golden_cache_filename(
@@ -121,6 +132,8 @@ def test_golden_cache_filename(
     from slidesonnet.tts import BACKENDS
 
     engine = make_engine(tmp_path)
+    if voice == _PROMPT:
+        voice = str(tmp_path / "calm.pt")
     name = audio_filename(text, engine.name(), engine.cache_key(), voice)
     assert name == expected
     assert audio_path(tmp_path, text, engine.name(), engine.cache_key(), voice) == tmp_path / name

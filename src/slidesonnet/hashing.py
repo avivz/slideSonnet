@@ -4,7 +4,8 @@ The single source of truth for how TTS audio filenames are computed, shared
 by synthesis (audio/synth.py) and selective cleanup (clean.py).
 
 Filename format: {text_hash}.{backend}.{config_hash}.{ext}
-  - text_hash:   sha256(text + voice)[:16]  — identifies the utterance content
+  - text_hash:   sha256(text + voice)[:16]  — identifies the utterance content;
+                 a ``.pt`` clone-prompt voice is keyed by its file *content*
   - backend:     "kokoro", "inworld", ...   — readable engine name
   - config_hash: sha256(cache_key)[:8]      — differentiates engine configs
   - ext:         backend-specific extension (.wav for kokoro/qwen3, .mp3 for inworld)
@@ -13,6 +14,7 @@ Filename format: {text_hash}.{backend}.{config_hash}.{ext}
 from __future__ import annotations
 
 import hashlib
+import stat
 from pathlib import Path
 
 #: Cached-audio file extension per TTS backend. Owned here (not derived from the
@@ -24,6 +26,48 @@ BACKEND_EXTENSIONS: dict[str, str] = {"kokoro": ".wav", "inworld": ".mp3", "qwen
 _VALID_EXTENSIONS: frozenset[str] = frozenset(BACKEND_EXTENSIONS.values())
 
 
+#: Suffix of a file-based voice (a Qwen3 voice-clone prompt): such a voice is a
+#: path, and is keyed by the file's bytes rather than by where it happens to live.
+FILE_VOICE_SUFFIX = ".pt"
+
+# Content hashes memoized by (resolved path, mtime_ns, size): cache keys are
+# computed for every utterance on every editor render, so a multi-MB prompt must
+# not be re-read each time — yet an in-place edit changes mtime/size and re-hashes.
+_CONTENT_HASHES: dict[tuple[str, int, int], str] = {}
+
+
+def file_content_hash(path: Path) -> str | None:
+    """Full sha256 hex of *path*'s bytes, or None if it is not a regular file."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode):
+        return None
+    memo = (str(path.resolve()), st.st_mtime_ns, st.st_size)
+    digest = _CONTENT_HASHES.get(memo)
+    if digest is None:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        _CONTENT_HASHES[memo] = digest
+    return digest
+
+
+def _voice_identity(voice: str) -> str:
+    """What a voice contributes to the text hash.
+
+    An opaque voice id is used verbatim. A file voice (a ``.pt`` clone prompt,
+    held as an absolute path) is replaced by its content hash, so editing the
+    file in place re-keys its clips while moving the deck, or opening it from
+    another worktree, still hits the cache. A missing file keeps the path (the
+    synthesis that would fill that slot fails loudly anyway).
+    """
+    if voice.endswith(FILE_VOICE_SUFFIX):
+        digest = file_content_hash(Path(voice))
+        if digest is not None:
+            return f"pt-sha256:{digest[:16]}"
+    return voice
+
+
 def audio_extension(backend: str) -> str:
     """Return the file extension for a TTS backend (e.g. '.wav', '.mp3')."""
     return BACKEND_EXTENSIONS.get(backend, ".wav")
@@ -33,7 +77,7 @@ def text_hash(text: str, voice: str | None = None) -> str:
     """16-char hex hash identifying an utterance's content and voice.
 
     Includes voice so the same text with different voices
-    produces different cache entries.
+    produces different cache entries (a ``.pt`` file voice by its content).
 
     TRIPWIRE: a segment's ``direct:`` notes are NOT hashed (engines ignore
     them today). The day an engine honors direction, add it to this hash —
@@ -41,7 +85,7 @@ def text_hash(text: str, voice: str | None = None) -> str:
     """
     h = text
     if voice:
-        h += f"\0voice={voice}"
+        h += f"\0voice={_voice_identity(voice)}"
     return hashlib.sha256(h.encode("utf-8")).hexdigest()[:16]
 
 

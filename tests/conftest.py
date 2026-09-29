@@ -64,13 +64,18 @@ def _isolate_model_cache() -> Iterator[None]:
     it only when the module is already imported — importing it pulls torch, and the
     bulk of the suite never touches qwen3, so this stays zero-cost for them.
     """
-    mod = sys.modules.get("slidesonnet.tts.qwen3")
-    if mod is not None:
-        mod._MODEL_CACHE.clear()
+
+    def clear() -> None:
+        mod = sys.modules.get("slidesonnet.tts.qwen3")
+        if mod is not None:
+            mod._MODEL_CACHE.clear()
+        hashing = sys.modules.get("slidesonnet.hashing")
+        if hashing is not None:
+            hashing._CONTENT_HASHES.clear()  # memoized .pt voice-prompt digests
+
+    clear()
     yield
-    mod = sys.modules.get("slidesonnet.tts.qwen3")
-    if mod is not None:
-        mod._MODEL_CACHE.clear()
+    clear()
 
 
 @pytest.fixture(autouse=True)
