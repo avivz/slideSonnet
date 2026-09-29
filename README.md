@@ -147,11 +147,41 @@ grammar, and the optional `slidesonnet.toml` config — is in
 
 `slidesonnet edit deck.pdf` opens the editor in your browser (a local server —
 nothing leaves your machine): page through the deck, edit narration beside each
-slide, set voice/pace, generate per-slide TTS, and **play the whole deck** (slide by slide, or as a video with its transitions).
-Typing is saved as you go. The preview plays one pre-rendered track with the
-pauses baked in and changes the slide on the audio's own clock — so the preview
-is sample-accurate to the exported video. A diagnostics panel flags duplicate,
-missing, orphan, or `auto-…` ids.
+slide, set voice/pace, generate per-slide TTS, and play it back. Typing is saved
+as you go. **Play all** plays slide by slide from where you are, starting at
+once (the next slide is prepared while this one plays). **Watch as video**
+plays one pre-rendered track with the pauses and transitions baked in, changing
+the slide on the audio's own clock, so it matches the exported video exactly.
+A diagnostics panel flags duplicate, missing, orphan, or `auto-…` ids.
+
+### Reviewing an agent's changes
+
+When an agent (e.g. Claude Code with the bundled `beamer-writer` skill) revises
+a deck, you review its work in the editor's **Review** tab. The first time the
+editor opens a deck it records a *base*, and every slide that has changed since
+shows its old version beside the new one, with a word-by-word diff of its narration.
+
+Work is organised into **conversations**: each covers one or more slides, and
+`deck` is the permanent deck-wide one. Choosing a conversation greys out the
+other slides and shows its messages. From there you reply, ✓ accept, or reopen
+it, and ✎ renames it. **Send** wakes an agent waiting for your notes. **Clear
+accepted** makes accepted changes the new base. A slide that changes
+with no conversation is filed and flagged, so nothing slips through unnoticed.
+Conversation history lives in `<deck>.review` beside the deck.
+
+The agent's side is `slidesonnet review …`:
+
+```bash
+slidesonnet review wait    deck.pdf --since N --json   # block until you press Send
+slidesonnet review list    deck.pdf --mine --json      # conversations awaiting the agent
+slidesonnet review comment deck.pdf @x @y -m "…" [--title "…"]   # open a conversation
+slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z] [--title "…"]
+slidesonnet review title   deck.pdf c3 "Shorter Euler proof"      # rename, no message
+slidesonnet review status  deck.pdf                   # changed slides, unfiled changes
+```
+
+A conversation's id (`c3`) never changes. Its title is only a display name,
+set by the latest `--title` or `review title` (or ✎ in the editor).
 
 ### Many decks in one session
 
@@ -199,6 +229,7 @@ slidesonnet export deck.pdf -o OUT.mp4
 slidesonnet subs   deck.pdf -o OUT.srt [--engine ...] [--format srt|vtt]
         [--timing ...] [--allow-estimates]    # export already writes these
 slidesonnet edit   [deck.pdf|FOLDER] [--root DIR]   launch the editor
+slidesonnet review comment|reply|title|list|status|wait|...   review conversations
 slidesonnet clean  deck.pdf [--keep nothing|api|current|exact]   # this deck's cache only
 slidesonnet pool   status  [deck.pdf]               which clip pool a deck uses, and why
 slidesonnet pool   migrate --root DIR [--apply]     move old local caches into the pool
