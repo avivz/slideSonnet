@@ -299,15 +299,6 @@
             "title": "Aspect",
             "type": "number"
           },
-          "default_engine": {
-            "enum": [
-              "kokoro",
-              "qwen3",
-              "inworld"
-            ],
-            "title": "Default Engine",
-            "type": "string"
-          },
           "diagnostics": {
             "items": {
               "$ref": "#/components/schemas/DiagnosticDTO"
@@ -382,20 +373,8 @@
             "title": "Pages",
             "type": "array"
           },
-          "pdf_name": {
-            "title": "Pdf Name",
-            "type": "string"
-          },
-          "review_active": {
-            "title": "Review Active",
-            "type": "boolean"
-          },
           "revisions": {
             "$ref": "#/components/schemas/RevisionsDTO"
-          },
-          "sidecar_name": {
-            "title": "Sidecar Name",
-            "type": "string"
           },
           "silence": {
             "$ref": "#/components/schemas/SilenceDefaultsDTO"
@@ -412,11 +391,8 @@
           "token",
           "name",
           "label",
-          "pdf_name",
-          "sidecar_name",
           "revisions",
           "engine",
-          "default_engine",
           "engines",
           "pages",
           "narration",
@@ -424,7 +400,6 @@
           "diagnostics",
           "voices",
           "missing_audio",
-          "review_active",
           "silence",
           "engine_warm",
           "neighbours",
@@ -923,17 +898,6 @@
             "title": "Inflight",
             "type": "array"
           },
-          "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error"
-          },
           "queued": {
             "default": 0,
             "title": "Queued",
@@ -959,8 +923,7 @@
           "done",
           "total",
           "running",
-          "inflight",
-          "last_error"
+          "inflight"
         ],
         "title": "GenerationStatusDTO",
         "type": "object"
@@ -1220,13 +1183,6 @@
             "title": "Engines",
             "type": "array"
           },
-          "speeds": {
-            "items": {
-              "type": "number"
-            },
-            "title": "Speeds",
-            "type": "array"
-          },
           "transitions": {
             "items": {
               "$ref": "#/components/schemas/TransitionFamilyDTO"
@@ -1238,8 +1194,7 @@
         "required": [
           "transitions",
           "aliases",
-          "engines",
-          "speeds"
+          "engines"
         ],
         "title": "MetaDTO",
         "type": "object"
@@ -1319,15 +1274,10 @@
             },
             "title": "Images",
             "type": "array"
-          },
-          "rendered": {
-            "title": "Rendered",
-            "type": "integer"
           }
         },
         "required": [
-          "images",
-          "rendered"
+          "images"
         ],
         "title": "PagesDTO",
         "type": "object"

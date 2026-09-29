@@ -541,7 +541,7 @@ def get_pages(request: Request, token: str) -> PagesDTO:
         media_url(entry.pdf_path, found[i], stamp=True) if i in found else None
         for i in range(count)
     ]
-    return PagesDTO(images=images, rendered=len(found))
+    return PagesDTO(images=images)
 
 
 @router.get("/engines/{engine}/voices", response_model=EngineVoicesDTO)
@@ -567,7 +567,6 @@ def get_meta() -> MetaDTO:
         ],
         aliases=dict(trans._ALIASES),
         engines=snapshots.engine_dtos(),
-        speeds=[1.0, 1.25, 1.5, 2.0],
     )
 
 

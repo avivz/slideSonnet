@@ -51,7 +51,6 @@ class DeckGeneration:
     focus_slide: str | None = None
     _last_emit: float = 0.0
     _emit_pending: bool = False
-    _last_error: str | None = None
 
     def __post_init__(self) -> None:
         self.queue = JobQueue(
@@ -107,11 +106,11 @@ class DeckGeneration:
         self.bus.publish("generation.changed", deck=self.entry.token, data={"engine": self.engine})
 
     def _failed(self, handle: JobHandle) -> None:
-        self._last_error = str(handle.error) if handle.error else "generation failed"
+        message = str(handle.error) if handle.error else "generation failed"
         self.bus.publish(
             "generation.failed",
             deck=self.entry.token,
-            data={"engine": self.engine, "message": self._last_error},
+            data={"engine": self.engine, "message": message},
         )
 
     # ---- operations (call on the event loop) ----------------------------------
@@ -150,7 +149,6 @@ class DeckGeneration:
             "total": total,
             "running": running_info,
             "inflight": [{"slide_id": s, "speech_index": i} for s, i in inflight],
-            "last_error": self._last_error,
         }
 
     def _estimate(self, slide_id: str, speech_index: int) -> float | None:

@@ -14,7 +14,6 @@ from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.hashing import audio_cache_path_or_alt
 from slidesonnet.models import Backend, ProgressFn, resolve_voice
 from slidesonnet.pdf.reader import open_render, page_aspect
-from slidesonnet.review import ops as review_ops
 from slidesonnet.server import editing
 from slidesonnet.server.decks import LoadedDeck, deck_service
 from slidesonnet.server.engines import editor_engine, with_engine
@@ -133,13 +132,10 @@ def deck_snapshot(
         token=entry.token,
         name=entry.name,
         label=entry.label,
-        pdf_name=entry.pdf_path.name,
-        sidecar_name=service.sidecar_path.name,
         revisions=RevisionsDTO(
             narration=rev.narration, pdf=rev.pdf, config=rev.config, review=rev.review
         ),
         engine=active,
-        default_engine=editor_engine(config),
         engines=engine_dtos(),
         pages=pages,
         narration=narration,
@@ -155,7 +151,6 @@ def deck_snapshot(
             resolved={n: resolve_voice(n, {**config.voices, **deck.voices}, active) for n in names},
         ),
         missing_audio=sum(1 for flags in per_slide.values() for c in flags if not c),
-        review_active=review_ops.is_active(entry.pdf_path),
         silence=SilenceDefaultsDTO(start=config.video.pre_silence, end=config.video.tail_seconds),
         engine_warm=_engine_warm(active_config),
         neighbours=_neighbours(registry, entry.token) if registry is not None else {},

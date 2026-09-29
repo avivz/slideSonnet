@@ -182,11 +182,8 @@ class DeckSnapshot(_Model):
     token: str
     name: str
     label: str
-    pdf_name: str
-    sidecar_name: str
     revisions: RevisionsDTO
     engine: Backend
-    default_engine: Backend
     engines: list[EngineDTO]
     pages: list[PageDTO]
     #: Every narration block, keyed by slide id — including ids absent from the PDF.
@@ -196,7 +193,6 @@ class DeckSnapshot(_Model):
     diagnostics: list[DiagnosticDTO]
     voices: VoicesDTO
     missing_audio: int
-    review_active: bool
     silence: SilenceDefaultsDTO
     #: False while the snapshot's engine still has a heavy model to load.
     engine_warm: bool
@@ -388,7 +384,6 @@ class MetaDTO(_Model):
     transitions: list[TransitionFamilyDTO]
     aliases: dict[str, str]
     engines: list[EngineDTO]
-    speeds: list[float]
 
 
 class EngineVoicesDTO(_Model):
@@ -401,7 +396,6 @@ class PagesDTO(_Model):
     """Page images only — cheap to refetch while pages render in the background."""
 
     images: list[str | None]
-    rendered: int
 
 
 class GenerateRequest(_Model):
@@ -427,7 +421,6 @@ class GenerationStatusDTO(_Model):
     total: int
     running: GenerationRunningDTO | None
     inflight: list[ClipRef]
-    last_error: str | None
     queued: int = 0  # how many clips the request that returned this added
 
 

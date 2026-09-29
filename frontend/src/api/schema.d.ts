@@ -471,11 +471,6 @@ export interface components {
         DeckSnapshot: {
             /** Aspect */
             aspect: number;
-            /**
-             * Default Engine
-             * @enum {string}
-             */
-            default_engine: "kokoro" | "qwen3" | "inworld";
             /** Diagnostics */
             diagnostics: components["schemas"]["DiagnosticDTO"][];
             /**
@@ -505,13 +500,7 @@ export interface components {
             orphans: string[];
             /** Pages */
             pages: components["schemas"]["PageDTO"][];
-            /** Pdf Name */
-            pdf_name: string;
-            /** Review Active */
-            review_active: boolean;
             revisions: components["schemas"]["RevisionsDTO"];
-            /** Sidecar Name */
-            sidecar_name: string;
             silence: components["schemas"]["SilenceDefaultsDTO"];
             /** Token */
             token: string;
@@ -699,8 +688,6 @@ export interface components {
             engine: "kokoro" | "qwen3" | "inworld";
             /** Inflight */
             inflight: components["schemas"]["ClipRef"][];
-            /** Last Error */
-            last_error: string | null;
             /**
              * Queued
              * @default 0
@@ -801,8 +788,6 @@ export interface components {
             };
             /** Engines */
             engines: components["schemas"]["EngineDTO"][];
-            /** Speeds */
-            speeds: number[];
             /** Transitions */
             transitions: components["schemas"]["TransitionFamilyDTO"][];
         };
@@ -831,8 +816,6 @@ export interface components {
         PagesDTO: {
             /** Images */
             images: (string | null)[];
-            /** Rendered */
-            rendered: number;
         };
         /** PauseDTO */
         PauseDTO: {

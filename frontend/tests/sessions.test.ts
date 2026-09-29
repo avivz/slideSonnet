@@ -27,7 +27,7 @@ function review(active: boolean): ReviewDTO {
 }
 
 function status(engine: string, queued: number): GenerationStatusDTO {
-  return { engine, done: 0, total: 0, running: null, inflight: [], last_error: null, queued } as GenerationStatusDTO
+  return { engine, done: 0, total: 0, running: null, inflight: [], queued } as GenerationStatusDTO
 }
 
 async function setup() {

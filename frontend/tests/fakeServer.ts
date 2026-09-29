@@ -20,7 +20,6 @@ export const META: MetaDTO = {
     { name: 'inworld', paid: true, realtime: true, installed: true },
     { name: 'kokoro', paid: false, realtime: true, installed: true },
   ],
-  speeds: [1, 1.25, 1.5, 2],
 }
 
 export function speech(text: string): BlockDTO['segments'][number] {
@@ -71,10 +70,9 @@ export class FakeServer {
 
   snapshot(): DeckSnapshot {
     return {
-      token: 'tok', name: 'deck', label: 'week1/deck', pdf_name: 'deck.pdf',
-      sidecar_name: 'deck.narration',
+      token: 'tok', name: 'deck', label: 'week1/deck',
       revisions: { narration: this.revision, pdf: this.pdfRev, config: 'c', review: 'x' },
-      engine: 'kokoro', default_engine: 'kokoro', engines: META.engines,
+      engine: 'kokoro', engines: META.engines,
       pages: this.pages.map((id, index) => ({
         index, slide_id: id, status: this.narration[id] ? 'ready' : 'empty', image_url: this.imagesRendered ? `/img/${this.pdfRev}/${id}.png` : null,
         incoming: { kind: 'cut', seconds: 0 },
@@ -85,7 +83,7 @@ export class FakeServer {
       narration: structuredClone(this.narration),
       orphans: [], diagnostics: [],
       voices: { map: {}, default_voice: null, names: [], resolved: {} },
-      missing_audio: 0, review_active: false,
+      missing_audio: 0,
       silence: { start: 0.3, end: 0.6 }, engine_warm: true, neighbours: { prev: null, next: null },
       aspect: 16 / 9,
     } as DeckSnapshot
@@ -146,12 +144,12 @@ export class FakeServer {
       return { changed: true, revision: this.revision }
     }
     c.engineVoices = async (engine) => ({ engine: engine as 'kokoro', voices: engine === 'kokoro' ? ['am_echo', 'af_bella'] : [], default: engine === 'kokoro' ? 'am_echo' : null })
-    c.pages = async () => ({ images: this.pages.map((id) => `/img/${id}.png`), rendered: this.pages.length })
+    c.pages = async () => ({ images: this.pages.map((id) => `/img/${id}.png`) })
     return c
   }
 
   private status(queued = 0): GenerationStatusDTO {
-    return { engine: 'kokoro', done: 0, total: 0, running: null, inflight: [], last_error: null, queued }
+    return { engine: 'kokoro', done: 0, total: 0, running: null, inflight: [], queued }
   }
 
   release(): void {

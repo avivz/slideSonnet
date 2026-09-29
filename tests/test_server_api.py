@@ -624,14 +624,14 @@ def test_the_editor_starts_on_inworld_unless_the_deck_chooses(
     monkeypatch.setattr(engines, "EDITOR_DEFAULT_ENGINE", "inworld")
     token = _token(client)
     snap = client.get(f"/api/v1/decks/{token}").json()
-    assert (snap["engine"], snap["default_engine"]) == ("inworld", "inworld")
+    assert snap["engine"] == "inworld"
     # a job naming no engine runs on the same one — so it asks before billing
     r = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "generate"})
     assert r.json()["error"]["code"] == "paid_confirmation_required"
 
     (deck.parent / "slidesonnet.toml").write_text('[tts]\nbackend = "kokoro"\n', encoding="utf-8")
     snap = client.get(f"/api/v1/decks/{token}").json()
-    assert (snap["engine"], snap["default_engine"]) == ("kokoro", "kokoro")
+    assert snap["engine"] == "kokoro"
 
 
 def test_the_api_schema_is_written_to_its_file_not_through_stdout(tmp_path: Path) -> None:
