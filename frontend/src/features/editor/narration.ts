@@ -219,3 +219,22 @@ export function keepKeys(prev: EditBlock, next: EditBlock): EditBlock {
   })
   return next
 }
+
+/**
+ * An outside edit to a slide with nothing typed: `next` (the file's version),
+ * keeping the lines the user added but hasn't typed into yet.
+ *
+ * Such a line isn't written, so it can't conflict with the file — but it must
+ * not vanish under the cursor either. It keeps its key, and as many written
+ * cards after it as it had (a line added at the end stays last); the other
+ * cards keep their keys as in {@link keepKeys}.
+ */
+export function takeOutsideEdit(prev: EditBlock, next: EditBlock): EditBlock {
+  keepKeys({ ...prev, middle: prev.middle.filter(written) }, next)
+  prev.middle.forEach((seg, i) => {
+    if (written(seg)) return
+    const after = prev.middle.slice(i + 1).filter(written).length
+    next.middle.splice(Math.max(0, next.middle.length - after), 0, seg)
+  })
+  return next
+}

@@ -30,6 +30,8 @@ import {
   fingerprint,
   keepKeys,
   syncSilenceFields,
+  takeOutsideEdit,
+  written,
   type EditBlock,
 } from '@/features/editor/narration'
 
@@ -159,7 +161,9 @@ export const useEditorStore = defineStore('editor', () => {
     loadError.value = null
     if (same) {
       for (const [slideId, d] of drafts) {
-        if (fingerprint(d.block) === d.baseline && !conflicts.has(slideId)) drafts.delete(slideId)
+        // a clean draft is rebuilt from the file — unless it holds a new line still to type into
+        const clean = fingerprint(d.block) === d.baseline && d.block.middle.every(written)
+        if (clean && !conflicts.has(slideId)) drafts.delete(slideId)
       }
     } else {
       token.value = deckToken
@@ -254,7 +258,7 @@ export const useEditorStore = defineStore('editor', () => {
         continue
       }
       if (fingerprint(draft.block) === draft.baseline) {
-        draft.block = keepKeys(draft.block, theirs) // changed elsewhere, nothing typed here: take it
+        draft.block = takeOutsideEdit(draft.block, theirs) // changed elsewhere, nothing typed here: take it
         draft.baseline = theirsFp
         draft.serverFp = theirsFp
         draft.ackRevision = null

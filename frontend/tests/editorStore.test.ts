@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, type DeckSnapshot } from '@/api/client'
+import { newSpeech } from '@/features/editor/narration'
 import { useEditorStore, AUTOSAVE_MS } from '@/stores/editor'
 
 import { FakeServer } from './fakeServer'
@@ -97,6 +98,23 @@ describe('editor store', () => {
     await store.resolveConflict('theirs')
     expect(store.draftFor('a')?.middle[0]?.text).toBe('Theirs.')
     expect(store.hasUnsaved).toBe(false)
+  })
+
+  it('an outside edit or a reopen takes the file, and keeps a new line not typed into yet', async () => {
+    const { store, server } = await setup()
+    const block = store.draftFor('c')! // no narration yet
+    const line = newSpeech()
+    block.middle.push(line) // "+ Add a line", nothing typed yet
+    store.touch('c')
+    server.externalEdit('c', 'An agent wrote c.')
+    await store.refresh()
+    expect(store.conflict).toBeNull() // nothing typed: no reason to hold the outside edit
+    expect(store.draftFor('c')?.middle.map((s) => [s.text, s.key === line.key])).toEqual([
+      ['An agent wrote c.', false], ['', true], // the new line is still there to type into
+    ])
+    expect(store.isDirty('c')).toBe(false)
+    await store.open('tok') // the editor page mounted again
+    expect(store.draftFor('c')?.middle.at(-1)?.key).toBe(line.key)
   })
 
   it('navigating saves the slide being left', async () => {
