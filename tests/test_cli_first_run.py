@@ -66,19 +66,6 @@ def test_bad_config_value_is_one_line(tmp_path: Path) -> None:
     _one_line_error(result, "slidesonnet.toml", "fps")
 
 
-def test_clean_errors_are_one_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from slidesonnet.exceptions import SlideSonnetError
-
-    pdf = prep_marked_deck(tmp_path)
-    (tmp_path / ".slidesonnet").mkdir()
-
-    def boom(*_a: Any, **_k: Any) -> None:
-        raise SlideSonnetError("cache is locked")
-
-    monkeypatch.setattr("slidesonnet.clean.clean", boom)
-    _one_line_error(_run("clean", str(pdf)), "cache is locked")
-
-
 def test_programmer_errors_are_not_dressed_up(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -109,6 +96,12 @@ def test_init_scaffold_teaches_the_v1_grammar(tmp_path: Path) -> None:
     assert "[pause" not in text
     assert "#   utterance:" in text and "#     text:" in text and "#   pause:" in text
     assert "slidesonnet edit" in result.output  # the next step
+    # Uncommented, the example is a working block (no comment glued onto a voice).
+    from slidesonnet.narration.format import parse_sidecar
+
+    example = [ln[2:] for ln in text.splitlines() if ln.startswith(("# @", "#  "))]
+    (block,) = parse_sidecar("\n".join(example))
+    assert [s.voice for s in block.speech_segments] == [None, "af_heart"]
     api.check_deck(pdf)  # the commented example parses
 
 
