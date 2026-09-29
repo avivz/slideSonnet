@@ -200,6 +200,22 @@ regression test.
   are listed there (only when there are some), and an unattached block's error
   links to its text. Before, they raised the error count while every slide said
   "No issues on this slide".
+- **Inworld delivery controls.** Existing decks keep every clip they have: nothing
+  below changes a line's audio until you use it.
+  - **Fix how a word is said, not how it's captioned:** `[Mengoli](/menˈɡoːli/)`
+    (IPA) or `[Dijkstra](DYKE-struh)` (a respelling) in a line. Subtitles and the
+    editor show "Mengoli"; Inworld says the IPA; Kokoro and Qwen3 say a
+    respelling, or the word as written (never IPA).
+  - **Director's notes reach Inworld:** with `send_direction = true` under
+    `[tts.inworld]`, a line's `direct:` note is performed by `inworld-tts-2`. Off by
+    default; the editor's note field says only Inworld follows it.
+  - **`temperature`, `delivery_mode` (stable/balanced/creative), `language` and
+    `text_normalization`** under `[tts.inworld]`, sent only when set.
+  - **Square brackets are said, not swallowed:** `inworld-tts-2` drops anything in
+    `[...]` as a stage direction, so "[0, 1]" is now sent as "(0, 1)"; sound tags
+    like `[sigh]` still work. `check` notes slides with square brackets.
+  - Each setting, fix and note is part of the clip's cache key, so a change
+    re-generates exactly the clips it affects.
 - **Script view** (the editor's default; **Slide** switches back): the whole
   deck's narration as one editable document, each line its own paragraph, pauses
   at the end of the line before them. While playing, the line being spoken is

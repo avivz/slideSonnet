@@ -82,7 +82,7 @@ compiled PDF with `slidesonnet init deck.pdf`, then fill in each block:
   utterance:                     # voice/pace/direct are optional
     voice: narrator
     pace: slow                   # slow | normal | fast
-    # direct: director's note (forward-compat; local engine ignores it)
+    # direct: director's note (Inworld performs it with send_direction = true)
     direct: deliberate, calm
     text: We want the sum of one over n squared.
   pause: 0.8                     # explicit silence, in seconds
@@ -110,6 +110,9 @@ compiled PDF with `slidesonnet init deck.pdf`, then fill in each block:
   also works.
 - `pause: N` is the timing primitive: between utterances, an end-of-slide
   hold, or — as a block's only content — a silent slide.
+- Fix a hard name inline, keeping captions clean: `[Mengoli](/menˈɡoːli/)`
+  (IPA, one slash pair per word; Inworld only) or `[Dijkstra](DYKE-struh)` (a
+  respelling, every engine). Avoid other square brackets in `text:`.
 - Wrapped `text:` lines are fine: a line that isn't a known directive
   continues the text (don't start a wrapped line with a word + colon).
 - Hand-edits survive GUI saves: only blocks whose content changes are

@@ -151,8 +151,10 @@ an `@id` block of one or more `utterance:` blocks and `pause:` lines:
 ```
 
 - `@<slide-id>` starts a block; each `utterance:` carries the spoken `text:`
-  plus optional `voice:` / `pace:` / `direct:` (a director's note engines
-  ignore). A slide can mix voices — each utterance is its own synthesis call.
+  plus optional `voice:` / `pace:` / `direct:` (a director's note Inworld can
+  follow). A slide can mix voices — each utterance is its own synthesis call.
+- `[Mengoli](/menˈɡoːli/)` in a line fixes how a word is said (IPA or a
+  respelling) while the subtitles still read "Mengoli".
 - `pause: N` is an explicit silence in seconds: between utterances, as an
   end-of-slide hold, or alone as a silent slide.
 - A slide can bracket itself with `transition-in:` / `transition-out:` lines:
@@ -292,7 +294,9 @@ they refuse unless `--yes` is given. Clips already generated are cached and
 reused for free.
 
 `slidesonnet.toml` (optional, beside the deck) also sets engine voices and
-speeds (`[tts.kokoro]`, `[tts.inworld]`, `[tts.qwen3]`), named voices
+speeds (`[tts.kokoro]`, `[tts.inworld]`, `[tts.qwen3]`; Inworld also takes
+`temperature`, `delivery_mode`, `language`, `text_normalization` and
+`send_direction`), named voices
 (`[voices.<name>]`), video settings (`[video]`: `resolution`, `fps`, `crf`,
 `preset`, `pre_silence`, `tail_seconds`, `keep_scratch`), the run log
 (`[logging]`: `file`, `level`, `max_bytes`, `backup_count`), a shared clip pool

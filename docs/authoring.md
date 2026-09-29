@@ -89,9 +89,9 @@ transitions:
   utterance:               # voice/pace/direct are optional
     voice: narrator
     pace: slow             # slow | normal | fast
-    # direct: a director's note; engines ignore it
+    # direct: a director's note (Inworld follows it once send_direction is on)
     direct: warm, unhurried
-    text: We want the sum of one over n squared.
+    text: We want the sum of one over n squared, as [Mengoli](/menˈɡoːli/) asked.
   pause: 0.8
 
 @euler-trick
@@ -108,8 +108,8 @@ transitions:
 
 - `@<slide-id>` starts a block.
 - `utterance:` introduces one spoken line. Its `text:` holds the words; `voice:`,
-  `pace:` (`slow|normal|fast`), and `direct:` (a director's note the local engine
-  ignores) are optional. Voices are defined in `slidesonnet.toml`. A slide can
+  `pace:` (`slow|normal|fast`), and `direct:` (a director's note; see
+  [Delivery on Inworld](#delivery-on-inworld)) are optional. Voices are defined in `slidesonnet.toml`. A slide can
   hold several utterances and mix voices — each is its own synthesis call.
 - `pause: N` is an explicit silence in seconds: between utterances, as an
   end-of-slide hold, or alone as a silent slide.
@@ -119,6 +119,12 @@ transitions:
   `cover…` and `reveal…` with a direction (`left`, `right`, `up`, `down`, e.g.
   `wipeleft`), and `circleopen` / `circleclose`. A boundary is written on only one side — setting an
   outgoing transition clears the next slide's incoming one.
+- `[word](spoken form)` inside `text:` fixes how a word is said without
+  touching the captions: `[Mengoli](/menˈɡoːli/)` (IPA between slashes, one
+  pair per word: `[Leonhard Euler](/ˈleɪɒnhɑːrt/ /ˈɔɪlər/)`) or a respelling,
+  `[Dijkstra](DYKE-struh)`. Subtitles and the editor show `Mengoli`; Inworld
+  says the IPA or respelling; Kokoro and Qwen3 say a respelling but never IPA
+  (they say the word as written instead). The `(` must follow the `]` directly.
 - A `#` on a `text:` line (or its wrapped continuation), a `voice:` line or a
   `direct:` line is spoken or kept as written ("Use issue #123"); only a line
   that starts with `#` is a comment there.
@@ -170,6 +176,12 @@ voice = "Simon"
 model = "inworld-tts-2"
 speed = 1.0
 api_key_env = "INWORLD_API_KEY"   # the environment variable holding the key
+# Delivery settings: unset means Inworld's own default, and nothing is sent.
+# temperature = 0.8          # example: expressiveness, above 0 up to 2 (Inworld: 1)
+# delivery_mode = "stable"   # example: stable | balanced | creative (inworld-tts-2)
+# language = "en-US"         # example: skip Inworld's language detection
+# text_normalization = false # example: say "Dr." / "1999" exactly as written
+send_direction = false       # true: Inworld performs each line's direct: note
 
 [tts.qwen3]
 model = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
@@ -218,6 +230,27 @@ entries win over the toml's.
   and can clone your own voice.
 
 Choose one per run with `--engine`, or per deck with `[tts] backend`.
+
+### Delivery on Inworld
+
+- **Pronunciation.** Fix a word inline with `[word](/IPA/)` (see the narration
+  format above), or deck-wide with a `pronunciation` file of `**word**: form`
+  lines. A dictionary form is sent to every engine as written, so put IPA
+  there only for an Inworld deck; the inline fix is the engine-aware one.
+  Captions always show the word as written.
+- **Director's notes.** With `send_direction = true` under `[tts.inworld]`, a
+  line's `direct:` note (e.g. `warm, unhurried`) is sent ahead of it as an
+  Inworld stage direction. Only `inworld-tts-2` follows notes; Kokoro and Qwen3
+  ignore them. It is off by default, so turning it on changes how existing
+  lines with notes sound (and re-generates just those clips).
+- **Square brackets.** `inworld-tts-2` reads any `[...]` as a direction and
+  drops it, so slideSonnet sends brackets in the narration as round ones
+  (`[0, 1]` is said as "(0, 1)"); sound tags such as `[sigh]` and `[laugh]`
+  stay tags. `check` notes each slide that has them.
+- **Settings.** `temperature`, `delivery_mode`, `language` and
+  `text_normalization` are sent only when set. Every setting, fix and note is
+  part of a clip's cache key, so changing one re-generates exactly the clips it
+  affects; leaving a setting unset (or blank) keeps the clips you already have.
 
 ### Sharing speech clips across checkouts (`[cache] audio_dir`)
 

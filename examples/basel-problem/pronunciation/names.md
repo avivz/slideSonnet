@@ -1,9 +1,10 @@
 # Names
 
 # Spoken-form pronunciation hints in IPA. Applied to the narration text before
-# TTS (Inworld speaks the IPA). NOTE: with the current pronunciation pipeline the
-# IPA also lands in the SRT/VTT subtitles, since both are built from the
-# substituted text — see dev/INBOX.md (inline spoken-vs-subtitle override).
+# TTS (Inworld speaks the IPA). Subtitles are built from the narration as
+# written, so they never show it. A dictionary form goes to every engine as
+# written, Kokoro included; an inline fix in the narration,
+# [Mengoli](/menˈɡoːli/), sends IPA to Inworld only.
 
 **Basel**: /ˈbɑːzəl/
 **Pietro**: /ˈpjɛtroʊ/

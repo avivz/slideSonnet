@@ -42,6 +42,12 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   `serialize_body` (lossy plain-text view, used by review), `pace_to_speed`.
   `FORMAT_VERSION` + the optional `# slidesonnet-format: N` header (a comment, so
   old parsers skip it; a greater N logs an upgrade warning).
+- **narration/spoken.py** — inline pronunciation fixes `[display](spoken)` inside
+  `text:`: `display_text` (captions/editor), `engine_text` (per engine: IPA to
+  Inworld only, respellings to all; the dictionary applies outside fixes),
+  `round_brackets`/`has_stray_brackets`. `Config.speech_text(seg, backend)` is the
+  exact text an engine is sent and hashed (Inworld: + `tts.inworld.request_text`,
+  brackets → parens on tts-2, `direct:` note when `send_direction`).
 - **diagnostics.py** — id reconciliation (auto/missing/orphan/order/unmarked/
   transition-conflict); `boundary_transition` (earlier slide's transition wins).
   Duplicate ids (page *and* sidecar) are auto-disambiguated in `deck.py`, not here.
