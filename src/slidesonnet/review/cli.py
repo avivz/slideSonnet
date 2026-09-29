@@ -24,6 +24,9 @@ _AS = click.option(
     type=click.Choice(["agent", "author"]),
     help="Who is writing (default: agent for reply/comment, author for accept/reopen/send)",
 )
+#: ``review wait`` exit status when --timeout runs out (2 is Click's usage error).
+WAIT_TIMED_OUT = 3
+
 _JSON = click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
 
 
@@ -378,10 +381,18 @@ def send_cmd(pdf: Path) -> None:
 @review.command("wait")
 @_PDF
 @click.option("--since", type=int, default=0, show_default=True, help="Cursor from the last wait")
-@click.option("--timeout", type=float, help="Give up after this many seconds (exit code 2)")
+@click.option("--timeout", type=float, help="Give up after this many seconds (exit code 3)")
 @_JSON
 def wait_cmd(pdf: Path, since: int, timeout: float | None, as_json: bool) -> None:
-    """Block until the author presses Send; print what awaits the agent."""
+    """Block until the author presses Send; print what awaits the agent.
+
+    \b
+    Exit codes:
+      0  the author pressed Send
+      1  an error (e.g. not a slideSonnet deck)
+      2  a usage error (a bad option)
+      3  --timeout ran out first
+    """
     from slidesonnet.review import ops
 
     try:
@@ -390,7 +401,7 @@ def wait_cmd(pdf: Path, since: int, timeout: float | None, as_json: bool) -> Non
         raise click.ClickException(str(exc)) from exc
     if result is None:
         click.echo("timed out", err=True)
-        sys.exit(2)
+        sys.exit(WAIT_TIMED_OUT)
     if as_json:
         data = {
             "cursor": result.cursor,

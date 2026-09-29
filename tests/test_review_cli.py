@@ -115,11 +115,12 @@ def test_send_and_wait(deck: Path) -> None:
     assert data["cursor"] == 1 and [c["id"] for c in data["awaiting_agent"]] == ["c1"]
 
 
-def test_wait_timeout_exits_nonzero(deck: Path) -> None:
+def test_wait_timeout_exits_3_not_the_usage_error_code(deck: Path) -> None:
     result = CliRunner().invoke(
         main, ["--no-log-file", "review", "wait", str(deck), "--since", "0", "--timeout", "0.1"]
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 3
+    assert "exit code 3" in CliRunner().invoke(main, ["review", "wait", "--help"]).output
 
 
 def test_errors_are_clean(deck: Path) -> None:
