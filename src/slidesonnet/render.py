@@ -10,6 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -349,6 +351,16 @@ def frame_plan(fulls: list[float], morph: list[float], fps: int) -> list[FramePi
     return plan
 
 
+def _partial_path(output: Path) -> Path:
+    """A unique hidden sibling of *output* to write into, keeping its extension.
+
+    Not ``mkstemp``: ffmpeg creates the file itself, so it gets the same
+    permissions a direct write would (``mkstemp`` makes it owner-only).
+    """
+    tag = f"{os.getpid()}-{secrets.token_hex(4)}"
+    return output.with_name(f".{output.stem}.{tag}.partial{output.suffix}")
+
+
 def compose_video(
     timeline: DeckTimeline,
     page_images: list[Path],
@@ -459,14 +471,22 @@ def compose_video(
         pieces.append(clip)
         report("video", done, len(plan), label)
 
+    # ffmpeg writes a sibling temp file that replaces *output* only once it is
+    # whole: a failed or cancelled export leaves the last good video in place.
     output.parent.mkdir(parents=True, exist_ok=True)
-    if page_audios is None or audio_track is None:
-        concatenate_segments(pieces, output, on_time=ffmpeg_pass("concat"))
-        report("concat", total_s, total_s)
-    else:
-        silent_video = render_dir / "silent.mp4"
-        concatenate_segments(pieces, silent_video, on_time=ffmpeg_pass("concat"))
-        report("concat", total_s, total_s)
-        composer.mux_audio(silent_video, audio_track, output, on_time=ffmpeg_pass("mux"))
-        report("mux", total_s, total_s)
+    partial = _partial_path(output)
+    try:
+        if page_audios is None or audio_track is None:
+            concatenate_segments(pieces, partial, on_time=ffmpeg_pass("concat"))
+            report("concat", total_s, total_s)
+        else:
+            silent_video = render_dir / "silent.mp4"
+            concatenate_segments(pieces, silent_video, on_time=ffmpeg_pass("concat"))
+            report("concat", total_s, total_s)
+            composer.mux_audio(silent_video, audio_track, partial, on_time=ffmpeg_pass("mux"))
+            report("mux", total_s, total_s)
+        os.replace(partial, output)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
     return output

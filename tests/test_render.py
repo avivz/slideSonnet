@@ -290,6 +290,7 @@ def test_compose_video_silent_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     def fake_concat(segments: list[Path], output: Path, **kw: object) -> None:
         concat_calls.append((segments, output))
+        output.touch()
 
     monkeypatch.setattr("slidesonnet.render.compose_silent_segment", fake_silent)
     monkeypatch.setattr("slidesonnet.render.concatenate_segments", fake_concat)
@@ -310,7 +311,8 @@ def test_compose_video_silent_pages(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     v = config.video
     assert all(c[3:] == (v.resolution, v.fps, v.crf, v.preset) for c in silent_calls)
     expected_segs = [tmp_path / "r" / "segments" / f"seg-{i:04d}.mp4" for i in range(1, 5)]
-    assert concat_calls == [(expected_segs, output)]
+    assert [c[0] for c in concat_calls] == [expected_segs]
+    assert concat_calls[0][1].parent == output.parent  # renamed over *output* when whole
 
 
 def _fake_silent_recorder(
@@ -349,7 +351,9 @@ def test_compose_video_with_audio_sizes_silent_segments_and_muxes_track(
     )
     monkeypatch.setattr(
         "slidesonnet.video.composer.mux_audio",
-        lambda video, audio, output, **kw: mux_calls.append((video, audio, output)),
+        lambda video, audio, output, **kw: (
+            mux_calls.append((video, audio, output)) or output.touch()
+        ),
     )
     monkeypatch.setattr(
         "slidesonnet.video.composer.get_duration",
@@ -380,7 +384,8 @@ def test_compose_video_with_audio_sizes_silent_segments_and_muxes_track(
     assert concat_calls == [
         ([rdir / "segments" / f"seg-{i:04d}.mp4" for i in range(1, 5)], silent_video)
     ]
-    assert mux_calls == [(silent_video, track, output)]
+    assert [c[:2] for c in mux_calls] == [(silent_video, track)]
+    assert output.exists()
 
 
 def test_compose_video_centers_transition_and_preserves_total(
@@ -408,7 +413,7 @@ def test_compose_video_centers_transition_and_preserves_total(
     )
     monkeypatch.setattr(
         "slidesonnet.render.concatenate_segments",
-        lambda segments, output, **kw: concat_calls.append((segments, output)),
+        lambda segments, output, **kw: concat_calls.append((segments, output)) or output.touch(),
     )
 
     def fake_trans(
@@ -511,7 +516,8 @@ def test_compose_video_reports_every_clip_then_the_ffmpeg_passes(
     monkeypatch.setattr("slidesonnet.video.composer.compose_transition_clip", lambda *a, **kw: None)
     monkeypatch.setattr("slidesonnet.video.composer.get_duration", lambda path: 4.0)
 
-    def fake_ffmpeg_pass(*args: object, on_time: Any = None) -> None:
+    def fake_ffmpeg_pass(*args: Path, on_time: Any = None) -> None:
+        args[-1].touch()
         for t in (2.5, 8.0):
             on_time(t)
 
@@ -574,3 +580,53 @@ def test_frame_plan_skips_a_still_that_two_full_transitions_consume() -> None:
         ("morph", 1, 24),
         ("still", 2, 36),
     ]
+
+
+@pytest.mark.parametrize("audible", [False, True])
+@pytest.mark.parametrize("fails", [False, True])
+def test_compose_video_replaces_the_previous_export_only_on_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, audible: bool, fails: bool
+) -> None:
+    """The final ffmpeg pass writes beside the output and is renamed over it at the
+    end, so a failed or cancelled export leaves the last good MP4 untouched."""
+    tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
+    output = tmp_path / "out" / "deck.mp4"
+    output.parent.mkdir()
+    output.write_bytes(b"last good")
+
+    def final_pass(*args: Path, **kw: object) -> None:
+        target = args[-1]
+        assert target != output and target.parent == output.parent
+        target.write_bytes(b"new")
+        if fails:
+            raise KeyboardInterrupt  # a cancel lands mid-write
+
+    monkeypatch.setattr("slidesonnet.render.compose_silent_segment", lambda *a, **kw: None)
+    monkeypatch.setattr("slidesonnet.video.composer.get_duration", lambda path: 1.0)
+    if audible:
+        monkeypatch.setattr("slidesonnet.render.concatenate_segments", lambda *a, **kw: None)
+        monkeypatch.setattr("slidesonnet.video.composer.mux_audio", final_pass)
+    else:
+        monkeypatch.setattr("slidesonnet.render.concatenate_segments", final_pass)
+
+    audios = [tmp_path / f"page-{i}.wav" for i in range(4)] if audible else None
+
+    def run() -> None:
+        compose_video(
+            tl,
+            [tmp_path / f"p{i}.png" for i in range(4)],
+            output,
+            config=Config(),
+            page_audios=audios,
+            render_dir=tmp_path / "r",
+            audio_track=tmp_path / "track.wav" if audible else None,
+        )
+
+    if fails:
+        with pytest.raises(KeyboardInterrupt):
+            run()
+        assert output.read_bytes() == b"last good"
+    else:
+        run()
+        assert output.read_bytes() == b"new"
+    assert sorted(p.name for p in output.parent.iterdir()) == ["deck.mp4"]  # no temp left

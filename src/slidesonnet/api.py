@@ -481,15 +481,19 @@ def _write_if_changed(path: Path, text: str) -> bool:
 
     Subtitles come out byte-identical whenever the narration didn't move, and a
     rewrite would only bump the mtime — which is what make-style build graphs,
-    file watchers, and rsync key freshness on. Returns whether a write happened.
+    file watchers, and rsync key freshness on. A write goes through a temp file
+    and a rename, so an interrupted export never leaves half a subtitle file.
+    Returns whether a write happened.
     """
+    from slidesonnet.atomic import atomic_write_text
+
     data = text.encode("utf-8")
     try:
         if path.read_bytes() == data:
             return False
     except OSError:
         pass
-    path.write_bytes(data)
+    atomic_write_text(path, text)
     return True
 
 
