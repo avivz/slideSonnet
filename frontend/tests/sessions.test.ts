@@ -3,10 +3,11 @@
 // Whatever consumes the narration stops while it can't be saved.
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError, type GenerationStatusDTO, type ReviewDTO } from '@/api/client'
 import ConsolePanel from '@/features/editor/ConsolePanel.vue'
+import { useConfirm } from '@/stores/confirm'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { useReviewStore } from '@/stores/review'
@@ -91,7 +92,8 @@ describe('when the narration can’t be saved', () => {
     expect(server.generated).toEqual([])
     expect(await useReviewStore().command({ type: 'comment', slides: ['a'], text: 'Look.' })).toBe(false)
     expect(sent).toBe(0)
-    const w = mount(ConsolePanel, { props: { confirm: async () => true } })
+    vi.spyOn(useConfirm(), 'ask').mockResolvedValue(true)
+    const w = mount(ConsolePanel)
     await w.get('[data-testid="export"]').trigger('click')
     await flushPromises()
     expect(server.jobs).toEqual([])

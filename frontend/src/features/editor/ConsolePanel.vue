@@ -7,6 +7,7 @@ import { ApiError, type Backend, type JobDTO } from '@/api/client'
 import { waitForJob } from '@/api/jobs'
 import AppIcon from '@/components/AppIcon.vue'
 import { formatLength } from '@/features/playback/cues'
+import { useConfirm } from '@/stores/confirm'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
@@ -14,9 +15,6 @@ import { usePlayerStore } from '@/stores/player'
 import { engineLabel } from './engines'
 import OrphanTray from './OrphanTray.vue'
 
-const props = defineProps<{
-  confirm: (o: { title: string; lines: string[]; yes: string; danger?: boolean }) => Promise<boolean>
-}>()
 const emit = defineEmits<{ voices: [] }>()
 
 const editor = useEditorStore()
@@ -91,7 +89,7 @@ async function exportVideo(): Promise<void> {
   let draft = false
   const blockers = await editor.client.exportBlockers(token)
   if (blockers.length) {
-    draft = await props.confirm({
+    draft = await useConfirm().ask({
       title: 'Not ready for the final video',
       lines: [...blockers.map((b) => `• ${b}`), 'You can still export a draft (saved as a separate .draft.mp4 file).'],
       yes: 'Export draft',
@@ -120,7 +118,7 @@ async function runExport(token: string, draft: boolean, allowPaid: boolean): Pro
   } catch (e) {
     if (e instanceof ApiError && e.code === 'paid_confirmation_required' && !allowPaid) {
       exporting.value = null
-      const ok = await props.confirm({
+      const ok = await useConfirm().ask({
         title: 'This will spend API credits',
         lines: [e.message],
         yes: 'Generate & export',

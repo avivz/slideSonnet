@@ -7,6 +7,7 @@
 import { computed, nextTick, reactive, ref } from 'vue'
 
 import type { ConversationDTO } from '@/api/client'
+import { useConfirm } from '@/stores/confirm'
 import { useReviewStore } from '@/stores/review'
 
 import NoteBox from './NoteBox.vue'
@@ -63,11 +64,27 @@ async function finishRename(c: ConversationDTO, save: boolean): Promise<void> {
 
 async function resetComparison(): Promise<void> {
   const n = review.changes.size
-  const ok = window.confirm(
-    `Compare from the deck as it is now? The ${n} slide${n === 1 ? '' : 's'} changed so far ` +
-      'stop showing as changed. Conversations stay open or accepted as they are.',
-  )
+  const ok = await useConfirm().ask({
+    title: 'Compare from the deck as it is now?',
+    lines: [
+      `The ${n} slide${n === 1 ? '' : 's'} changed so far stop showing as changed.`,
+      'Conversations stay open or accepted as they are.',
+    ],
+    yes: 'Reset comparison',
+  })
   if (ok) await review.command({ type: 'mark_seen' })
+}
+
+async function clearAccepted(): Promise<void> {
+  const n = review.closedCount
+  const ok = await useConfirm().ask({
+    title: `Clear ${n} accepted conversation${n === 1 ? '' : 's'}?`,
+    lines: [
+      'Their slides become the new starting point: they stop showing as changed, and the conversations leave the list.',
+    ],
+    yes: 'Clear accepted',
+  })
+  if (ok) await review.command({ type: 'clear' })
 }
 
 function time(at: string): string {
@@ -105,7 +122,7 @@ function time(at: string): string {
           :disabled="review.closedCount === 0 || review.clearing"
           title="Make accepted changes the new starting point"
           data-testid="review-clear"
-          @click="review.command({ type: 'clear' })"
+          @click="clearAccepted"
         >
           {{ review.clearing ? 'Clearing…' : `Clear accepted (${review.closedCount})` }}
         </button>

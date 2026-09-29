@@ -1,56 +1,26 @@
 <script setup lang="ts">
-// A promise-based yes/no dialog: `ask()` resolves true only on an explicit yes.
-// Questions asked while one is open wait their turn; every one gets an answer.
-import { ref } from 'vue'
+// Shows the question `useConfirm().ask()` is waiting on (one at a time).
+import { useConfirm } from '@/stores/confirm'
 
 import AppDialog from './AppDialog.vue'
 
-interface Question {
-  title: string
-  lines: string[]
-  yes: string
-  danger?: boolean
-}
-
-const shown = ref<Question | null>(null)
-let settle: (ok: boolean) => void = () => {}
-const waiting: { question: Question; resolve: (ok: boolean) => void }[] = []
-
-function showNext(): void {
-  const next = waiting.shift()
-  shown.value = next?.question ?? null
-  settle = next?.resolve ?? (() => {})
-}
-
-function ask(question: Question): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    waiting.push({ question, resolve })
-    if (shown.value === null) showNext()
-  })
-}
-function close(ok: boolean): void {
-  if (shown.value === null) return
-  const answer = settle
-  showNext()
-  answer(ok)
-}
-defineExpose({ ask })
+const confirm = useConfirm()
 </script>
 
 <template>
-  <AppDialog :open="shown !== null" :title="shown?.title ?? ''" @close="close(false)">
-    <p v-for="line in shown?.lines ?? []" :key="line" class="line">{{ line }}</p>
+  <AppDialog :open="confirm.shown !== null" :title="confirm.shown?.title ?? ''" @close="confirm.answer(false)">
+    <p v-for="line in confirm.shown?.lines ?? []" :key="line" class="line">{{ line }}</p>
     <template #actions>
-      <button class="btn quiet" type="button" @click="close(false)">Cancel</button>
+      <button class="btn quiet" type="button" @click="confirm.answer(false)">Cancel</button>
       <button
         class="btn"
-        :class="shown?.danger ? 'danger' : 'primary'"
+        :class="confirm.shown?.danger ? 'danger' : 'primary'"
         type="button"
         data-testid="confirm-yes"
         autofocus
-        @click="close(true)"
+        @click="confirm.answer(true)"
       >
-        {{ shown?.yes ?? 'OK' }}
+        {{ confirm.shown?.yes ?? 'OK' }}
       </button>
     </template>
   </AppDialog>

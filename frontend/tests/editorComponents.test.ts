@@ -10,6 +10,7 @@ import DeckHead from '@/features/editor/DeckHead.vue'
 import NarrationEditor from '@/features/editor/NarrationEditor.vue'
 import OrphanTray from '@/features/editor/OrphanTray.vue'
 import VoicesDialog from '@/features/editor/VoicesDialog.vue'
+import { useConfirm } from '@/stores/confirm'
 import { AUTOSAVE_MS, useEditorStore } from '@/stores/editor'
 import { AUTO_BUILD_MS, useGenerationStore } from '@/stores/generation'
 
@@ -159,18 +160,17 @@ describe('console', () => {
     server.paid = true
     const { editor } = await setup(server)
     editor.snapshot = { ...editor.snapshot!, missing_audio: 2 }
-    const confirm = vi.fn(async () => true)
-    useGenerationStore().setConfirm(confirm)
-    const w = mount(ConsolePanel, { props: { confirm: async () => false } })
+    const confirm = vi.spyOn(useConfirm(), 'ask').mockResolvedValue(true)
+    const w = mount(ConsolePanel)
     await w.get('[data-testid="gen-missing"]').trigger('click')
     await flushPromises()
-    expect(confirm).toHaveBeenCalledWith(2, 'kokoro', 'Generate')
+    expect(confirm.mock.calls[0]?.[0]).toMatchObject({ yes: 'Generate', lines: [expect.stringContaining('2 clip(s)')] })
     expect(server.generated).toEqual([{ targets: null, force: false, allow_paid: true }])
   })
 
   it('says which engine is now in use, by name, for this session only', async () => {
     const { editor } = await setup()
-    const w = mount(ConsolePanel, { props: { confirm: async () => false } })
+    const w = mount(ConsolePanel)
     await w.get('[data-testid="engine-select"]').setValue('inworld')
     await flushPromises()
     expect(editor.flashMessage?.text).toBe('Now using Inworld for previews and export (this session only)')
@@ -180,8 +180,8 @@ describe('console', () => {
     const server = new FakeServer()
     server.blockers = ['deck.pdf is a plain build']
     await setup(server)
-    const confirm = vi.fn(async (_o: { title: string; lines: string[]; yes: string }) => true)
-    const w = mount(ConsolePanel, { props: { confirm } })
+    const confirm = vi.spyOn(useConfirm(), 'ask').mockResolvedValue(true)
+    const w = mount(ConsolePanel)
     await w.get('[data-testid="export"]').trigger('click')
     await vi.waitFor(() => expect(server.jobs).toHaveLength(1))
     expect(confirm.mock.calls[0]?.[0].lines[0]).toContain('plain build')

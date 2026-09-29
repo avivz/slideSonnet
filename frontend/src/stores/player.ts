@@ -298,7 +298,7 @@ export const usePlayerStore = defineStore('player', () => {
         const missing = key === 'video'
           ? (editor.snapshot?.missing_audio ?? 0)
           : (editor.page?.audio.speech ?? 0) - (editor.page?.audio.cached ?? 0)
-        if (await confirmPaid(missing)) return build(key, true, waker.wake(), place)
+        if (await generation.confirmPaid(missing, 'Generate & play')) return build(key, true, waker.wake(), place)
         return
       }
       editor.flash(e instanceof ApiError ? e.message : 'The preview could not be built.', 'err')
@@ -435,11 +435,6 @@ export const usePlayerStore = defineStore('player', () => {
     active = null
   }
 
-  let confirmPaid: (count: number) => Promise<boolean> = async () => false
-  function setConfirm(fn: (count: number) => Promise<boolean>): void {
-    confirmPaid = fn
-  }
-
   function cancelBuild(): void {
     current?.cancel()
     current = null
@@ -499,6 +494,6 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     transport, frame, speed, building, editing, spoken, allAt, allProgress,
-    attach, onFrame, press, stop, cycleSpeed, seekFraction, setEditing, setConfirm,
+    attach, onFrame, press, stop, cycleSpeed, seekFraction, setEditing,
   }
 })

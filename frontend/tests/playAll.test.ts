@@ -6,8 +6,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { PreviewManifest } from '@/features/playback/manifest'
 import { nextAfter, playable, progress, startAt } from '@/features/playback/playlist'
+import { useConfirm } from '@/stores/confirm'
 import { useEditorStore } from '@/stores/editor'
-import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
 
 import { FakeServer } from './fakeServer'
@@ -140,8 +140,7 @@ describe('Play all', () => {
     const server = new FakeServer()
     server.paid = true
     const { player, audio, previews } = await playing(server)
-    const asked = vi.fn(async () => true)
-    useGenerationStore().setConfirm(asked)
+    const asked = vi.spyOn(useConfirm(), 'ask').mockResolvedValue(true)
     await player.press('deck')
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     expect(asked).toHaveBeenCalledOnce()
@@ -184,8 +183,7 @@ describe('Play all', () => {
     server.cached = { a: [true], b: [true] } // everything generated: Play all starts without asking
     const { editor, player, audio } = await playing(server)
     editor.engine = 'inworld' // a paid engine (the fake server never calls it)
-    const asked = vi.fn(async () => true)
-    useGenerationStore().setConfirm(asked)
+    const asked = vi.spyOn(useConfirm(), 'ask').mockResolvedValue(true)
     await player.press('deck')
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     expect(asked).not.toHaveBeenCalled()

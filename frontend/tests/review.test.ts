@@ -6,6 +6,7 @@ import { ApiError, type ReviewDTO } from '@/api/client'
 import ReviewPanel from '@/features/review/ReviewPanel.vue'
 import SlideLinks from '@/features/review/SlideLinks.vue'
 import WaitingBanner from '@/features/review/WaitingBanner.vue'
+import { useConfirm } from '@/stores/confirm'
 import { useEditorStore } from '@/stores/editor'
 import { useReviewStore } from '@/stores/review'
 
@@ -268,15 +269,20 @@ describe('review panel', () => {
     await vi.waitFor(() => expect(sent).toEqual([{ type: 'retitle', conversation: 'c1', title: 'Why b changed' }]))
   })
 
-  it('resets the comparison after asking, leaving the conversations alone', async () => {
-    const { sent } = await setup()
+  it.each([
+    ['review-reset', { type: 'mark_seen' }],
+    ['review-clear', { type: 'clear' }],
+  ])('%s acts only after asking', async (button, command) => {
+    const { review, sent } = await setup()
+    review.showClosed = true // c2 is accepted: Clear has one to clear
     const w = mount(ReviewPanel, { attachTo: document.body })
     await flushPromises()
-    const ask = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
-    await w.get('[data-testid="review-reset"]').trigger('click')
+    const ask = vi.spyOn(useConfirm(), 'ask').mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    await w.get(`[data-testid="${button}"]`).trigger('click')
+    await flushPromises()
     expect(sent).toEqual([]) // said no
-    await w.get('[data-testid="review-reset"]').trigger('click')
-    await vi.waitFor(() => expect(sent).toEqual([{ type: 'mark_seen' }]))
+    await w.get(`[data-testid="${button}"]`).trigger('click')
+    await vi.waitFor(() => expect(sent).toEqual([command]))
     expect(ask).toHaveBeenCalledTimes(2)
   })
 })

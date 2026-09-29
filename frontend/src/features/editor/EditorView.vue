@@ -20,7 +20,6 @@ import ConflictDialog from './ConflictDialog.vue'
 import ConsolePanel from './ConsolePanel.vue'
 import DeckHead from './DeckHead.vue'
 import DeckSwitcher from './DeckSwitcher.vue'
-import { engineLabel } from './engines'
 import FilmStrip from './FilmStrip.vue'
 import { shortcut } from './keymap'
 import { useLeaveGuard } from './leave'
@@ -37,7 +36,6 @@ const generation = useGenerationStore()
 const player = usePlayerStore()
 const review = useReviewStore()
 const consoleTab = ref<'audio' | 'review'>('audio')
-const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null)
 const switcherOpen = ref(false)
 const voicesOpen = ref(false)
 
@@ -348,25 +346,6 @@ function onBeforeUnload(event: BeforeUnloadEvent): void {
   }
 }
 
-// ---- confirmations ----------------------------------------------------------------
-function confirm(o: { title: string; lines: string[]; yes: string; danger?: boolean }): Promise<boolean> {
-  return confirmDialog.value?.ask(o) ?? Promise.resolve(false)
-}
-generation.setConfirm((count, engine, action) =>
-  confirm({
-    title: 'This will spend API credits',
-    lines: [`${count} clip(s) aren't generated yet — making them with ${engineLabel(engine)} will spend API credits.`],
-    yes: action,
-  }),
-)
-player.setConfirm((count) =>
-  confirm({
-    title: 'This will spend API credits',
-    lines: [`${count} clip(s) aren't generated yet — making them with ${engineLabel(editor.activeEngine)} will spend API credits.`],
-    yes: 'Generate & play',
-  }),
-)
-
 onMounted(() => {
   onResize()
   window.addEventListener('resize', onResize)
@@ -520,7 +499,7 @@ function pick(deck: LibraryDeckDTO): void {
             >{{ review.waitingCount }}</span>
           </button>
         </div>
-        <ConsolePanel v-show="consoleTab === 'audio'" :confirm="confirm" @voices="voicesOpen = true" />
+        <ConsolePanel v-show="consoleTab === 'audio'" @voices="voicesOpen = true" />
         <div v-show="consoleTab === 'review'" class="review-pane"><ReviewPanel /></div>
       </div>
     </div>
@@ -533,7 +512,7 @@ function pick(deck: LibraryDeckDTO): void {
     <DeckSwitcher :open="switcherOpen" :current="token" @close="switcherOpen = false" @pick="pick" />
     <VoicesDialog :open="voicesOpen" @close="voicesOpen = false" />
     <ConflictDialog />
-    <ConfirmDialog ref="confirmDialog" />
+    <ConfirmDialog />
   </div>
 </template>
 

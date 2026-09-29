@@ -4,6 +4,8 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { ApiError, type ClipRef, type GenerationStatusDTO } from '@/api/client'
+import { engineLabel } from '@/features/editor/engines'
+import { useConfirm } from '@/stores/confirm'
 import { useEditorStore } from '@/stores/editor'
 
 /** Auto-generate waits this long after a slide's last save (the text is settling). */
@@ -16,9 +18,6 @@ export interface ClipFailure {
   detail: string
 }
 
-/** Asks the user before spending credits; resolves true only on an explicit yes. */
-export type PaidConfirm = (count: number, engine: string, action: string) => Promise<boolean>
-
 export const useGenerationStore = defineStore('generation', () => {
   const editor = useEditorStore()
   const status = ref<GenerationStatusDTO | null>(null)
@@ -28,7 +27,6 @@ export const useGenerationStore = defineStore('generation', () => {
   const singleSlideTransitions = ref(false)
   /** The utterance being typed in right now (auto-generate skips it). */
   const focusedSpeech = ref<{ slideId: string; index: number } | null>(null)
-  let confirmPaid: PaidConfirm = async () => false
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   /** Clips whose last generation failed (`slide#index`), until retried or generated. */
   const failures = reactive(new Map<string, ClipFailure>())
@@ -46,8 +44,15 @@ export const useGenerationStore = defineStore('generation', () => {
     return s !== null && (s.running !== null || s.done < s.total)
   })
 
-  function setConfirm(fn: PaidConfirm): void {
-    confirmPaid = fn
+  /** Ask before spending credits on `count` missing clips; true only on an explicit yes. */
+  function confirmPaid(count: number, action: string): Promise<boolean> {
+    return useConfirm().ask({
+      title: 'This will spend API credits',
+      lines: [
+        `${count} clip(s) aren't generated yet — making them with ${engineLabel(editor.activeEngine)} will spend API credits.`,
+      ],
+      yes: action,
+    })
   }
 
   /** Still the deck and engine a request was made for (else its answer is dropped). */
@@ -103,7 +108,7 @@ export const useGenerationStore = defineStore('generation', () => {
       if (!current()) return 0
       if (e instanceof ApiError && e.code === 'paid_confirmation_required' && !allowPaid) {
         const count = targets === null ? (editor.snapshot?.missing_audio ?? 0) : targets.length
-        if (await confirmPaid(count, editor.activeEngine ?? '', action)) {
+        if (await confirmPaid(count, action)) {
           return enqueue(targets, { force, action, allowPaid: true })
         }
         return 0
@@ -214,6 +219,6 @@ export const useGenerationStore = defineStore('generation', () => {
     status, owner, autoBuild, singleSlideTransitions, focusedSpeech, paid, realtime, inflight,
     busy, autoBuildAllowed,
     failures, noteFailure, failureFor,
-    setConfirm, refresh, enqueue, cancelAll, leave, focus, uncached, setAutoBuild, sweep,
+    confirmPaid, refresh, enqueue, cancelAll, leave, focus, uncached, setAutoBuild, sweep,
   }
 })
