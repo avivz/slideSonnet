@@ -9,11 +9,13 @@ cache key, so pace changes invalidate correctly).
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from slidesonnet.audio.durations import ClipDurations
 from slidesonnet.config import Config
+from slidesonnet.exceptions import UnapprovedClips
 from slidesonnet.hashing import audio_cache_path_or_alt, audio_path, parse_audio_filename
 from slidesonnet.models import ProgressFn, TTSConfig, resolve_voice
 from slidesonnet.narration.format import pace_to_speed
@@ -92,6 +94,55 @@ def engine_for_pace(tts: TTSConfig, pace: Pace | None, cache: dict[float, TTSEng
     return cache[speed]
 
 
+def _clips_to_make(
+    deck: Deck,
+    config: Config,
+    audio_dir: Path,
+    *,
+    only_ids: set[str] | None,
+    only_segments: set[tuple[str, int]] | None,
+    force: bool,
+    engines: dict[float, TTSEngine],
+) -> list[tuple[SpeechRef, TTSEngine, Path, Path | None]]:
+    """The in-scope speech segments: (ref, engine, cache target, cached clip or None)."""
+    out: list[tuple[SpeechRef, TTSEngine, Path, Path | None]] = []
+    for ref in speech_refs(deck, config):
+        if only_ids is not None and ref.slide_id not in only_ids:
+            continue
+        if only_segments is not None and (ref.slide_id, ref.speech_index) not in only_segments:
+            continue
+        engine = engine_for_pace(config.tts, ref.pace, engines)
+        target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
+        out.append((ref, engine, target, None if force else audio_cache_path_or_alt(target)))
+    return out
+
+
+def clip_keys(
+    deck: Deck,
+    config: Config,
+    audio_dir: Path,
+    *,
+    only_ids: set[str] | None = None,
+    only_segments: set[tuple[str, int]] | None = None,
+    force: bool = False,
+) -> set[str]:
+    """The clips :func:`synthesize` would generate with these arguments, by cache filename.
+
+    What a paid run is approved for: pass the result back as ``approved`` so the
+    run makes exactly these clips, whatever the narration says by then.
+    """
+    todo = _clips_to_make(
+        deck,
+        config,
+        audio_dir,
+        only_ids=only_ids,
+        only_segments=only_segments,
+        force=force,
+        engines={},
+    )
+    return {target.name for _, _, target, cached in todo if cached is None}
+
+
 def synthesize(
     deck: Deck,
     config: Config,
@@ -101,6 +152,7 @@ def synthesize(
     only_segments: set[tuple[str, int]] | None = None,
     force: bool = False,
     progress: ProgressFn | None = None,
+    approved: Collection[str] | None = None,
 ) -> dict[tuple[str, int], SynthResult]:
     """Synthesize (or reuse cached) audio for the deck's speech segments.
 
@@ -111,21 +163,31 @@ def synthesize(
     targeted segment, overwriting cached clips (the editor's "regenerate"
     action — useful for a fresh take from a non-deterministic engine, or to
     refresh a stale cache entry).
+
+    ``approved`` pins paid work to what was approved (see :func:`clip_keys`):
+    when any clip to generate is outside it — the narration changed since —
+    :class:`UnapprovedClips` is raised before anything is generated.
     """
     audio_dir.mkdir(parents=True, exist_ok=True)
-    refs = [
-        r
-        for r in speech_refs(deck, config)
-        if (only_ids is None or r.slide_id in only_ids)
-        and (only_segments is None or (r.slide_id, r.speech_index) in only_segments)
-    ]
     engines: dict[float, TTSEngine] = {}
+    todo = _clips_to_make(
+        deck,
+        config,
+        audio_dir,
+        only_ids=only_ids,
+        only_segments=only_segments,
+        force=force,
+        engines=engines,
+    )
+    if approved is not None:
+        needed = {target.name for _, _, target, cached in todo if cached is None}
+        if needed - set(approved):
+            raise UnapprovedClips(len(needed))
     results: dict[tuple[str, int], SynthResult] = {}
     lengths = _clip_lengths(audio_dir)
 
-    for i, ref in enumerate(refs):
-        engine = engine_for_pace(config.tts, ref.pace, engines)
-        target = audio_path(audio_dir, ref.text, engine.name(), engine.cache_key(), ref.voice)
+    for i, (ref, engine, target, _) in enumerate(todo):
+        # re-checked per clip: a byte-identical line earlier in the run made it already
         cached = None if force else audio_cache_path_or_alt(target)
         if cached is not None:
             result = SynthResult(path=cached, duration=lengths.get(cached), from_cache=True)
@@ -135,10 +197,10 @@ def synthesize(
             result = SynthResult(path=target, duration=duration, from_cache=False)
         results[(ref.slide_id, ref.speech_index)] = result
         if progress is not None:
-            progress("tts", i + 1, len(refs), ref.slide_id)
+            progress("tts", i + 1, len(todo), ref.slide_id)
 
     lengths.save()
-    _record_index(audio_dir, deck, refs, results)
+    _record_index(audio_dir, deck, [ref for ref, _, _, _ in todo], results)
     return results
 
 

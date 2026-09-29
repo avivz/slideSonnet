@@ -10,7 +10,7 @@ from __future__ import annotations
 import difflib
 import importlib.resources
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -396,6 +396,7 @@ def synthesize_deck(
     force: bool = False,
     progress: ProgressFn | None = None,
     approve: ApproveFn | None = None,
+    approved_clips: Collection[str] | None = None,
 ) -> int:
     """Synthesize narration into the content-addressed cache (cache-aware).
 
@@ -405,6 +406,9 @@ def synthesize_deck(
     ``force`` re-synthesizes the targeted segments even when already cached.
     *approve*, when given, sees the :class:`SynthesisPlan` first; returning
     False raises :class:`SynthesisDeclined` before anything is generated.
+    *approved_clips* pins deferred paid work to what was approved (clip cache
+    filenames, see :func:`slidesonnet.audio.synth.clip_keys`): any other clip
+    to generate raises :class:`UnapprovedClips` before anything is generated.
     """
     from slidesonnet.audio.synth import synthesize as _synth
 
@@ -421,6 +425,7 @@ def synthesize_deck(
         only_segments=only_segments,
         force=force,
         progress=progress,
+        approved=approved_clips,
     )
     return sum(1 for r in results.values() if not r.from_cache)
 
@@ -499,6 +504,7 @@ def export(
     progress: ProgressFn | None = None,
     draft: bool = False,
     approve: ApproveFn | None = None,
+    approved_clips: Collection[str] | None = None,
 ) -> ExportResult:
     """Render the deck to a narrated (or silent) MP4 with optional subtitles.
 
@@ -507,7 +513,7 @@ def export(
     or when the deck has errors ``check`` would report, or (for a narrated
     video) no slide has narration yet. A *draft* skips those checks and writes
     ``<name>.draft.mp4`` instead of *output*. *approve* is consulted before any
-    synthesis, as in :func:`synthesize_deck`.
+    synthesis, and *approved_clips* pins it, as in :func:`synthesize_deck`.
 
     On success the render intermediates (decoded page audio, assembled track,
     per-slide clips) are deleted unless *keep_scratch* is true — or, when it is
@@ -554,7 +560,9 @@ def export(
         audio_dir = _audio_dir(pdf_path, config)
         if approve is not None:
             _approve(_plan(deck, config, audio_dir, None), approve)
-        results = _synth(deck, config, audio_dir=audio_dir, progress=progress)
+        results = _synth(
+            deck, config, audio_dir=audio_dir, progress=progress, approved=approved_clips
+        )
         timeline = build_timeline(
             deck,
             mode,
@@ -752,12 +760,14 @@ def build_preview(
     only_id: str | None = None,
     progress: ProgressFn | None = None,
     render_dir: Path | None = None,
+    approved_clips: Collection[str] | None = None,
 ) -> Preview:
     """Build a sample-accurate preview track + cue sheet (whole deck or one slide).
 
     *render_dir* overrides where the page WAVs and ``track.wav`` are assembled
     (default: the deck's render directory, shared with export so an unchanged
-    deck reuses its page audio).
+    deck reuses its page audio). *approved_clips* pins synthesis as in
+    :func:`synthesize_deck`.
     """
     from slidesonnet.audio.synth import (
         page_speech_clips,
@@ -775,7 +785,12 @@ def build_preview(
         deck = deck.restricted_to(only_id)
     only_ids = {only_id} if only_id else None
     results = _synth(
-        deck, config, audio_dir=_audio_dir(pdf_path, config), only_ids=only_ids, progress=progress
+        deck,
+        config,
+        audio_dir=_audio_dir(pdf_path, config),
+        only_ids=only_ids,
+        progress=progress,
+        approved=approved_clips,
     )
     rdir = render_dir or deck_render_dir(pdf_path)
     timeline = build_timeline(

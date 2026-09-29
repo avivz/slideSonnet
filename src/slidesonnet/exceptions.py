@@ -72,3 +72,14 @@ class UnknownSlideId(SlideSonnetError):
 
 class SynthesisDeclined(SlideSonnetError):
     """Paid synthesis needed approval and didn't get it; nothing was generated."""
+
+
+class UnapprovedClips(SynthesisDeclined):
+    """Paid work met clips outside the set approved for it (the narration changed since)."""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        super().__init__(
+            "The narration changed after you approved it; "
+            f"approve again to generate {count} new clip{'s' if count != 1 else ''}."
+        )
