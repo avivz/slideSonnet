@@ -72,7 +72,7 @@ def speech_refs(deck: Deck, config: Config) -> list[SpeechRef]:
                     page_index=page_index,
                     slide_id=slide_id,
                     speech_index=speech_index,
-                    text=config.apply_pronunciation(seg.text),
+                    text=config.speech_text(seg, backend),
                     voice=resolve_voice(seg.voice or default_voice, voices, backend),
                     pace=seg.pace,
                 )

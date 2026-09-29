@@ -45,6 +45,8 @@ from typing import Any
 
 from slidesonnet.exceptions import ConfigError
 from slidesonnet.models import LoggingConfig, TTSConfig, VideoConfig, VoiceConfig
+from slidesonnet.narration.model import Segment
+from slidesonnet.narration.spoken import engine_text
 from slidesonnet.tts import BACKENDS
 from slidesonnet.tts.pronunciation import apply_pronunciation, load_pronunciation_files
 
@@ -72,6 +74,23 @@ class Config:
     def apply_pronunciation(self, text: str) -> str:
         """Apply the merged pronunciation dictionary to *text*."""
         return apply_pronunciation(text, self.pronunciation)
+
+    def speech_text(self, seg: Segment, backend: str | None = None) -> str:
+        """The exact text *backend* (default: the configured one) is sent for *seg*.
+
+        Inline pronunciation fixes resolve per engine, the dictionary applies,
+        and for Inworld the request text is finished (brackets, and the
+        ``direct:`` note when ``send_direction`` is on). This is what the audio
+        cache hashes, so it changes only when what the engine hears changes.
+        """
+        backend = backend or self.tts.backend
+        if backend != "inworld":
+            return engine_text(seg.text, ipa=False, dictionary=self.pronunciation)
+        from slidesonnet.tts.inworld import request_text
+
+        text = engine_text(seg.text, ipa=True, dictionary=self.pronunciation)
+        direction = seg.direction if self.tts.inworld_send_direction else None
+        return request_text(text, direction, self.tts.inworld_model)
 
 
 def default_config_path(deck_path: Path) -> Path:
@@ -163,15 +182,47 @@ def _parse_tts(raw: dict[str, Any]) -> TTSConfig:
         ("api_key_env", "inworld_api_key_env"),
         ("voice", "inworld_voice"),
         ("model", "inworld_model"),
+        ("delivery_mode", "inworld_delivery_mode"),
+        ("language", "inworld_language"),
     ):
         if key in inworld:
             kwargs[target] = str(inworld[key])
-    if "speed" in inworld:
-        kwargs["inworld_speed"] = _as_float("tts.inworld", "speed", inworld["speed"])
+    for key, target in (("speed", "inworld_speed"), ("temperature", "inworld_temperature")):
+        if key in inworld:
+            kwargs[target] = _as_float("tts.inworld", key, inworld[key])
+    for key, target in (
+        ("text_normalization", "inworld_text_normalization"),
+        ("send_direction", "inworld_send_direction"),
+    ):
+        if key in inworld:
+            kwargs[target] = _as_bool("tts.inworld", key, inworld[key])
     try:
-        return TTSConfig(**kwargs)
+        tts = TTSConfig(**kwargs)
     except ValueError as e:
         raise ConfigError(f"slidesonnet.toml [tts]: {e}") from e
+    _warn_unused_inworld_settings(tts)
+    return tts
+
+
+def _warn_unused_inworld_settings(tts: TTSConfig) -> None:
+    """Say so when an Inworld setting has no effect on the chosen model."""
+    if not (tts.inworld_delivery_mode or tts.inworld_send_direction):
+        return
+    from slidesonnet.tts.inworld import follows_directions, is_tts2_family
+
+    model = tts.inworld_model
+    if tts.inworld_delivery_mode and not is_tts2_family(model):
+        logger.warning(
+            "slidesonnet.toml [tts.inworld] delivery_mode only affects the inworld-tts-2 "
+            "models; %s ignores it",
+            model,
+        )
+    if tts.inworld_send_direction and not follows_directions(model):
+        logger.warning(
+            "slidesonnet.toml [tts.inworld] send_direction: only inworld-tts-2 follows "
+            "director's notes; with %s they are not sent",
+            model,
+        )
 
 
 def _parse_video(raw: dict[str, Any]) -> VideoConfig:

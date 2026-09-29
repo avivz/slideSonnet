@@ -148,6 +148,21 @@ def test_keep_current_keeps_text_matches_any_engine(tmp_path: Path) -> None:
     assert result.kept_files == 2
 
 
+def test_keep_current_knows_each_engines_form_of_a_pronunciation_fix(tmp_path: Path) -> None:
+    """A Kokoro deck still owns the paid Inworld clip of a line with an IPA fix."""
+    pdf = _seed_deck(tmp_path)
+    blocks = [PageNarration("intro-title", [Segment.speech("Ask [Mengoli](/menˈɡoːli/).")])]
+    (tmp_path / "marked.narration").write_text(serialize_sidecar(blocks), encoding="utf-8")
+    ad = audio_dir(pdf)
+    ad.mkdir(parents=True)
+    inworld = audio_filename("Ask /menˈɡoːli/.", "inworld", "inworld:v:m")
+    kokoro = audio_filename("Ask Mengoli.", "kokoro", "kokoro:am_echo")
+    for name in (inworld, kokoro):
+        (ad / name).write_bytes(b"a")
+    clean(pdf, keep="current")
+    assert (ad / inworld).exists() and (ad / kokoro).exists()
+
+
 def test_keep_current_includes_preset_voice_variants(tmp_path: Path) -> None:
     pdf = _seed_deck(tmp_path, with_voices=True)
     ad = audio_dir(pdf)

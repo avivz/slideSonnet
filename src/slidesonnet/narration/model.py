@@ -8,8 +8,9 @@ page-ordered slide-ids) to the parsed narration.
 
 Per-utterance attributes (voice, pace, director's note) live on the speech
 segment itself, so one slide can mix voices and paces — each speech segment is
-its own synthesis call. ``direction`` is stored and serialized for forward
-compatibility; the current local engine ignores it.
+its own synthesis call. ``direction`` (the ``direct:`` note) is performed by
+Inworld's inworld-tts-2 when the deck sets ``[tts.inworld] send_direction``;
+the other engines ignore it.
 """
 
 from __future__ import annotations

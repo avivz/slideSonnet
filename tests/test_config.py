@@ -8,6 +8,7 @@ import pytest
 
 from slidesonnet.config import Config, default_config_path, load_config
 from slidesonnet.exceptions import ConfigError
+from slidesonnet.models import TTSConfig
 
 
 def test_missing_config_is_all_defaults(tmp_path: Path) -> None:
@@ -111,6 +112,11 @@ api_key_env = "MY_INWORLD_KEY"
 voice = "Ashley"
 model = "inworld-tts-1.5-mini"
 speed = 1.2
+temperature = 0.7
+delivery_mode = "Creative"
+language = "en-US"
+text_normalization = false
+send_direction = true
 """,
         encoding="utf-8",
     )
@@ -119,6 +125,21 @@ speed = 1.2
     assert cfg.tts.inworld_voice == "Ashley"
     assert cfg.tts.inworld_model == "inworld-tts-1.5-mini"
     assert cfg.tts.inworld_speed == 1.2
+    assert cfg.tts.inworld_temperature == 0.7
+    assert cfg.tts.inworld_delivery_mode == "creative"
+    assert cfg.tts.inworld_language == "en-US"
+    assert cfg.tts.inworld_text_normalization is False
+    assert cfg.tts.inworld_send_direction is True
+    assert TTSConfig().inworld_send_direction is False  # opt-in: old decks sound the same
+
+
+def test_blank_inworld_delivery_settings_mean_unset(tmp_path: Path) -> None:
+    """An empty value is the same as leaving the key out (so no clip re-keys)."""
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[tts.inworld]\ndelivery_mode = ""\nlanguage = " "\n', encoding="utf-8"
+    )
+    tts = load_config(tmp_path / "deck.pdf").tts
+    assert (tts.inworld_delivery_mode, tts.inworld_language) == (None, None)
 
 
 def test_qwen3_settings_parsed_and_prompt_resolved(tmp_path: Path) -> None:
@@ -149,6 +170,10 @@ voice_prompt = "voices/me.pt"
         ('[tts.qwen3]\ndevice = "tpu"\n', r"\[tts\].*qwen3_device must be one of"),
         ("[tts.kokoro]\nspeed = nan\n", r"\[tts\.kokoro\] speed"),
         ("[tts.inworld]\nspeed = inf\n", r"\[tts\.inworld\] speed"),
+        ("[tts.inworld]\ntemperature = 2.5\n", r"\[tts\].*temperature"),
+        ("[tts.inworld]\ntemperature = 0\n", r"\[tts\].*temperature"),
+        ('[tts.inworld]\ndelivery_mode = "wild"\n', r"\[tts\].*delivery_mode"),
+        ('[tts.inworld]\ntext_normalization = "on"\n', r"\[tts\.inworld\] text_normalization"),
         ("[video]\npre_silence = nan\n", r"\[video\] pre_silence"),
         ("[video]\ntail_seconds = inf\n", r"\[video\] tail_seconds"),
         ("[video]\ntail_seconds = -1.0\n", r"\[video\].*tail_seconds"),

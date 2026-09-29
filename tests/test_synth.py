@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from slidesonnet.audio import synth as synth_mod
 from slidesonnet.config import Config
+from slidesonnet.models import TTSConfig
 from slidesonnet.narration.model import Deck, PageNarration, Segment
 from slidesonnet.tts.base import TTSEngine
 
@@ -189,6 +192,67 @@ def test_a_clip_length_is_saved_when_made_and_reused(tmp_path: Path, monkeypatch
     for _ in range(2):
         assert synth_mod.synthesize(deck, Config(), audio_dir=tmp_path)[("a", 0)].duration == 2.5
     assert measured == [clip]
+
+
+def _delivery_deck(*lines: Segment) -> Deck:
+    return Deck(
+        pdf_path=Path("x.pdf"),
+        sidecar_path=Path("x.narration"),
+        pages=["a"],
+        narration={"a": PageNarration("a", list(lines))},
+    )
+
+
+# A deck as the AICODE course writes it — dictionary IPA and a respelling, a
+# `direct:` note, no [tts.inworld] delivery settings — must keep every clip name
+# it had before delivery controls existed (computed from that code; never
+# regenerate: a failure here means paid clips would be re-bought).
+_PRE_DELIVERY_NAMES = {
+    "inworld": [
+        "a1718851531e222c.inworld.a38b87e4.mp3",
+        "81ca9c4dc40ba464.inworld.a38b87e4.mp3",
+        "d5732b2764cd0930.inworld.10d7a799.mp3",
+    ],
+    "kokoro": [
+        "a1718851531e222c.kokoro.8746f0a4.wav",
+        "81ca9c4dc40ba464.kokoro.8746f0a4.wav",
+        "d5732b2764cd0930.kokoro.f5fd2fc1.wav",
+    ],
+}
+
+
+@pytest.mark.parametrize("backend", sorted(_PRE_DELIVERY_NAMES))
+def test_existing_decks_keep_their_clip_names(backend: str) -> None:
+    deck = _delivery_deck(
+        Segment.speech("Ask Claude to run npx."),
+        Segment.speech("Now quietly.", direction="slowly, in a low voice"),
+        Segment.speech("The interval (0, 1).", pace="slow"),
+    )
+    config = Config(
+        tts=TTSConfig(backend=backend),  # type: ignore[arg-type]
+        pronunciation={"Claude": "/klɔːd/", "npx": "N-P-X"},
+    )
+    names = [p.name for _ref, p in synth_mod._ref_targets(deck, config, Path("/pool"))]
+    assert names == _PRE_DELIVERY_NAMES[backend]
+
+
+def test_each_engine_is_sent_its_own_form_of_a_line() -> None:
+    """Inline fixes resolve per engine; a note is sent only when the deck opts in."""
+    deck = _delivery_deck(
+        Segment.speech("Ask [Mengoli](/menˈɡoːli/) about [0, 1].", direction="warmly")
+    )
+
+    def sent(backend: str, **tts: object) -> str:
+        config = Config(tts=TTSConfig(backend=backend, **tts))  # type: ignore[arg-type]
+        (ref,) = synth_mod.speech_refs(deck, config)
+        return ref.text
+
+    assert sent("kokoro") == "Ask Mengoli about [0, 1]."
+    assert sent("inworld") == "Ask /menˈɡoːli/ about (0, 1)."
+    assert sent("inworld", inworld_send_direction=True) == "[warmly] Ask /menˈɡoːli/ about (0, 1)."
+    assert sent("inworld", inworld_model="inworld-tts-1.5-max", inworld_send_direction=True) == (
+        "Ask /menˈɡoːli/ about [0, 1]."
+    )
 
 
 def test_an_unreadable_saved_length_file_is_ignored(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]

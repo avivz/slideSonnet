@@ -32,6 +32,9 @@ Backend = Literal["kokoro", "qwen3", "inworld"]
 #: ``:0`` for the accelerators). Validated on TTSConfig.
 _QWEN3_DEVICES = frozenset({"xpu", "cuda", "cpu"})
 
+#: Inworld's ``delivery_mode`` values (lower-case here; sent upper-case).
+INWORLD_DELIVERY_MODES = frozenset({"stable", "balanced", "creative"})
+
 
 def _require_positive(name: str, value: float) -> None:
     if not (math.isfinite(value) and value > 0):
@@ -98,6 +101,18 @@ class TTSConfig:
     inworld_voice: str = "Simon"  # built-in default voice; any Inworld voice name (see library)
     inworld_model: str = "inworld-tts-2"  # default model; override per deck via [tts.inworld] model
     inworld_speed: float = 1.0  # base speaking_rate; per-utterance :pace multiplies this
+    # Delivery settings, sent only when set (None = the engine's own default).
+    #: Expressiveness, (0, 2]; 1.0 is Inworld's default.
+    inworld_temperature: float | None = None
+    #: ``stable`` / ``balanced`` / ``creative`` (inworld-tts-2 only).
+    inworld_delivery_mode: str | None = None
+    #: A BCP-47 tag such as ``en-US``; unset lets Inworld detect the language.
+    inworld_language: str | None = None
+    #: Whether Inworld expands numbers/abbreviations; unset lets Inworld decide.
+    inworld_text_normalization: bool | None = None
+    #: Send each line's ``direct:`` note to Inworld as a stage direction
+    #: (inworld-tts-2 only). Off by default, so existing decks sound the same.
+    inworld_send_direction: bool = False
     #: The deck's directory, whose ``.env`` supplies the API key (see :mod:`slidesonnet.env`).
     #: Not part of any cache key; None falls back to the cwd's ``.env``.
     env_dir: Path | None = None
@@ -105,6 +120,17 @@ class TTSConfig:
     def __post_init__(self) -> None:
         _require_positive("kokoro_speed", self.kokoro_speed)
         _require_positive("inworld_speed", self.inworld_speed)
+        t = self.inworld_temperature
+        if t is not None and not (math.isfinite(t) and 0 < t <= 2):
+            raise ValueError(f"inworld temperature must be above 0 and at most 2, got {t}")
+        mode = (self.inworld_delivery_mode or "").strip().lower() or None
+        if mode is not None and mode not in INWORLD_DELIVERY_MODES:
+            raise ValueError(
+                f"inworld delivery_mode must be one of {sorted(INWORLD_DELIVERY_MODES)}, "
+                f"got {self.inworld_delivery_mode!r}"
+            )
+        self.inworld_delivery_mode = mode
+        self.inworld_language = (self.inworld_language or "").strip() or None
         if self.qwen3_device not in _QWEN3_DEVICES:
             raise ValueError(
                 f"qwen3_device must be one of {sorted(_QWEN3_DEVICES)}, got {self.qwen3_device!r}"

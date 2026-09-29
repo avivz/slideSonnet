@@ -79,8 +79,10 @@ def text_hash(text: str, voice: str | None = None) -> str:
     Includes voice so the same text with different voices
     produces different cache entries (a ``.pt`` file voice by its content).
 
-    TRIPWIRE: a segment's ``direct:`` notes are NOT hashed (engines ignore
-    them today). The day an engine honors direction, add it to this hash —
+    *text* is the exact text the engine is sent (``Config.speech_text``): an
+    Inworld ``direct:`` note, when sent, is part of it, so the note is hashed
+    exactly when it changes the audio. Anything else an engine starts honoring
+    must reach the hash too (the text, or the engine's ``cache_key``) —
     otherwise every previously-cached clip is silently stale.
     """
     h = text

@@ -219,3 +219,77 @@ def test_default_voice():
     from slidesonnet.tts.inworld import InworldTTS
 
     assert InworldTTS(config).default_voice() == "Ashley"
+
+
+@patch.dict(os.environ, {"INWORLD_API_KEY": "test-key-123"})
+@patch("slidesonnet.tts.inworld.InworldClient")
+def test_delivery_settings_reach_the_request(mock_client_cls, tmp_path):
+    """Each [tts.inworld] delivery setting is sent only when set."""
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    mock_client.generate.return_value = b"audio"
+
+    from slidesonnet.tts.inworld import InworldTTS
+
+    def sent(**cfg):
+        tts = InworldTTS(TTSConfig(backend="inworld", **cfg))
+        with patch("slidesonnet.tts.inworld._get_audio_duration", return_value=1.0):
+            tts.synthesize("Hi", tmp_path / "x.mp3")
+        kwargs = mock_client.generate.call_args.kwargs
+        return {k: v for k, v in kwargs.items() if k not in {"voice", "model"}}
+
+    assert sent() == {}
+    assert sent(
+        inworld_temperature=0.7,
+        inworld_delivery_mode="stable",
+        inworld_language="en-US",
+        inworld_text_normalization=False,
+    ) == {
+        "temperature": 0.7,
+        "delivery_mode": "STABLE",
+        "language": "en-US",
+        "apply_text_normalization": "OFF",
+    }
+
+
+def test_delivery_settings_join_the_cache_key():
+    """A set value re-keys the clips; unset (or the engine default) keeps today's key."""
+    from slidesonnet.tts.inworld import InworldTTS
+
+    def key(**cfg):
+        return InworldTTS(TTSConfig(backend="inworld", **cfg)).cache_key()
+
+    base = key()
+    assert base == "inworld:Simon:inworld-tts-2"
+    assert key(inworld_temperature=1.0) == base  # the engine's own default
+    variants = [
+        key(inworld_temperature=0.7),
+        key(inworld_delivery_mode="creative"),
+        key(inworld_language="en-US"),
+        key(inworld_text_normalization=True),
+        key(inworld_text_normalization=False),
+    ]
+    assert len({base, *variants}) == 1 + len(variants)
+
+
+@pytest.mark.parametrize(
+    ("model", "text", "direction", "expected"),
+    [
+        # tts-2 reads any [...] as a stage direction and drops it: send round brackets
+        ("inworld-tts-2", "the interval [0, 1]", None, "the interval (0, 1)"),
+        ("inworld-tts-2", "a stray ] and [", None, "a stray ) and ("),
+        ("inworld-tts-2-flash", "the interval [0, 1]", None, "the interval (0, 1)"),
+        # ...but its sound tags stay tags
+        ("inworld-tts-2", "Well [sigh] fine", None, "Well [sigh] fine"),
+        # a director's note leads the line, on tts-2 only
+        ("inworld-tts-2", "Hello.", "warm, unhurried", "[warm, unhurried] Hello."),
+        ("inworld-tts-2", "Hello.", "say [very] softly", "[say very softly] Hello."),
+        ("inworld-tts-2", "Hello.", " [ ] ", "Hello."),
+        ("inworld-tts-2-flash", "Hello.", "warm", "Hello."),
+        ("inworld-tts-1.5-max", "Hello [0, 1].", "warm", "Hello [0, 1]."),
+    ],
+)
+def test_request_text(model, text, direction, expected):
+    from slidesonnet.tts.inworld import request_text
+
+    assert request_text(text, direction, model) == expected

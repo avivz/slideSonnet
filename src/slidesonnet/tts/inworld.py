@@ -4,6 +4,18 @@ Inworld is a low-cost, high-quality cloud engine, with a speaking-rate
 control that maps onto the deck's per-utterance ``:pace``. The
 engine talks to the ``inworld-tts`` SDK; its client returns the full audio as
 bytes, so synthesis is naturally atomic — a failed call writes nothing.
+
+Delivery controls:
+
+* ``[tts.inworld]`` settings (``temperature``, ``delivery_mode``, ``language``,
+  ``text_normalization``) are sent only when set, and join :meth:`cache_key`;
+* inline pronunciation fixes arrive already resolved to their spoken form
+  (:mod:`slidesonnet.narration.spoken`);
+* :func:`request_text` turns an utterance into the exact text Inworld gets: on
+  the inworld-tts-2 family square brackets are stage directions, so stray ones
+  are sent as round brackets; and with ``send_direction = true`` a ``direct:``
+  note leads the line as a ``[...]`` direction (inworld-tts-2 itself only).
+  Synthesis hashes that text, so a changed note re-keys exactly that clip.
 """
 
 from __future__ import annotations
@@ -18,6 +30,7 @@ from typing import TYPE_CHECKING
 from slidesonnet.env import getenv
 from slidesonnet.exceptions import TTSError
 from slidesonnet.models import TTSConfig
+from slidesonnet.narration.spoken import round_brackets
 from slidesonnet.tts.base import TTSEngine
 
 logger = logging.getLogger(__name__)
@@ -26,6 +39,41 @@ logger = logging.getLogger(__name__)
 #: configured speed past either end, so we clamp before calling the API.
 _SPEAKING_RATE_MIN = 0.5
 _SPEAKING_RATE_MAX = 1.5
+
+#: Inworld's own temperature default: setting it explicitly changes nothing.
+_DEFAULT_TEMPERATURE = 1.0
+
+
+def is_tts2_family(model: str) -> bool:
+    """True for the inworld-tts-2 family: it takes any ``[...]`` as a direction and
+    has ``delivery_mode``."""
+    return model.startswith("inworld-tts-2")
+
+
+def follows_directions(model: str) -> bool:
+    """True for the model that performs a free-text ``[...]`` direction.
+
+    inworld-tts-2 only: ``-flash`` drops directions, and the 1.5 models may read
+    them aloud.
+    """
+    return model == "inworld-tts-2"
+
+
+def request_text(text: str, direction: str | None, model: str) -> str:
+    """The exact text sent to Inworld for an utterance *text* under *model*.
+
+    *direction* is the ``direct:`` note to perform, or None to send none. Text
+    without square brackets and without a (followed) direction comes back
+    unchanged, so clips cached before delivery controls existed keep their names.
+    """
+    if is_tts2_family(model) and ("[" in text or "]" in text):
+        text = round_brackets(text)
+    if direction and follows_directions(model):
+        note = " ".join(direction.replace("[", " ").replace("]", " ").split())
+        if note:
+            text = f"[{note}] {text}"
+    return text
+
 
 if TYPE_CHECKING:
     from inworld_tts import InworldTTS as _InworldClientType
@@ -53,6 +101,13 @@ class InworldTTS(TTSEngine):
         self.voice: str = config.inworld_voice
         self.model: str = config.inworld_model
         self.speed: float = config.inworld_speed
+        temperature = config.inworld_temperature
+        self.temperature: float | None = (
+            None if temperature is None or temperature == _DEFAULT_TEMPERATURE else temperature
+        )
+        self.delivery_mode: str | None = config.inworld_delivery_mode
+        self.language: str | None = config.inworld_language
+        self.text_normalization: bool | None = config.inworld_text_normalization
 
     def _ensure_client(self) -> _InworldClientType:
         """Validate dependencies and create the client on first call."""
@@ -81,6 +136,14 @@ class InworldTTS(TTSEngine):
         kwargs: dict[str, object] = {"voice": voice_id, "model": self.model}
         if self.speed != 1.0:
             kwargs["speaking_rate"] = _clamp(self.speed, _SPEAKING_RATE_MIN, _SPEAKING_RATE_MAX)
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
+        if self.delivery_mode is not None:
+            kwargs["delivery_mode"] = self.delivery_mode.upper()
+        if self.language is not None:
+            kwargs["language"] = self.language
+        if self.text_normalization is not None:
+            kwargs["apply_text_normalization"] = "ON" if self.text_normalization else "OFF"
 
         # The SDK returns the whole clip as bytes, so a failure here happens
         # before any file is opened — there is nothing half-written to clean up.
@@ -109,6 +172,16 @@ class InworldTTS(TTSEngine):
         key = f"inworld:{self.voice}:{self.model}"
         if self.speed != 1.0:
             key += f":{self.speed}"
+        # Delivery settings append only when set, so an unconfigured deck keeps
+        # the key (and the paid clips) it had before they existed.
+        if self.temperature is not None:
+            key += f":t={self.temperature}"
+        if self.delivery_mode is not None:
+            key += f":dm={self.delivery_mode}"
+        if self.language is not None:
+            key += f":lang={self.language}"
+        if self.text_normalization is not None:
+            key += f":norm={'on' if self.text_normalization else 'off'}"
         return key
 
     def default_voice(self) -> str | None:
