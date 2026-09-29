@@ -140,6 +140,7 @@ def deck_snapshot(
         pages=pages,
         narration=narration,
         orphans=[b.slide_id for b in editing.orphan_blocks(deck)],
+        duplicates=dict(deck.duplicate_blocks),
         diagnostics=[
             DiagnosticDTO(severity=d.severity, code=d.code, message=d.message, slide_id=d.slide_id)
             for d in diags

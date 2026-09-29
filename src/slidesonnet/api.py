@@ -10,7 +10,6 @@ from __future__ import annotations
 import difflib
 import importlib.resources
 import logging
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -199,7 +198,6 @@ def _deck_diagnostics(
         diags.append(
             Diagnostic("error", "no-slide-ids", no_slide_ids_message(pdf_path, len(deck.pages)))
         )
-    diags = _duplicate_block_diagnostics(deck, diags)
     voices = {**config.voices, **deck.voices}  # deck wins over the shared library
     diags += voice_diagnostics(
         list(deck.narration.values()), voices, deck.default_voice, config.tts.backend
@@ -221,40 +219,6 @@ def _deck_diagnostics(
             )
         )
     return sort_diagnostics(diags)
-
-
-_HEADER_LINE_RE = re.compile(r"^\s*@(?P<id>\S+)\s*(?:#.*)?$")
-
-
-def _duplicate_block_diagnostics(deck: Deck, diags: list[Diagnostic]) -> list[Diagnostic]:
-    """Report a slide-id with several ``@`` blocks as one error, with their line numbers.
-
-    Loading keeps every block by renaming the later ones (``intro`` → ``intro-2``),
-    which would otherwise surface as a confusing orphan ``intro-2``.
-    """
-    if not deck.sidecar_path.exists():
-        return diags
-    lines: dict[str, list[int]] = {}
-    text = deck.sidecar_path.read_text(encoding="utf-8")
-    for lineno, raw in enumerate(text.splitlines(), start=1):
-        m = _HEADER_LINE_RE.match(raw)
-        if m:
-            lines.setdefault(m.group("id"), []).append(lineno)
-    renamed = set(deck.narration) - set(lines)  # the ids loading made up
-    kept = [d for d in diags if d.code != "duplicate-block" and d.slide_id not in renamed]
-    for sid, where in lines.items():
-        if len(where) > 1:
-            at = ", ".join(str(n) for n in where[:-1]) + f" and {where[-1]}"
-            kept.append(
-                Diagnostic(
-                    "error",
-                    "duplicate-block",
-                    f"slide-id '{sid}' has more than one narration block (lines {at} of "
-                    f"{deck.sidecar_path.name}) — merge them into a single @{sid} block",
-                    sid,
-                )
-            )
-    return kept
 
 
 def _unknown_voice_diagnostics(deck: Deck, config: Config) -> list[Diagnostic]:

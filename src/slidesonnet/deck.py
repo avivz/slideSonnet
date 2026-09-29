@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -122,22 +123,22 @@ def dedupe_page_ids(pages: list[str]) -> tuple[list[str], list[Diagnostic]]:
 
 def dedupe_block_ids(
     blocks: list[PageNarration],
-) -> tuple[list[PageNarration], list[Diagnostic]]:
+) -> tuple[list[PageNarration], dict[str, str]]:
     """Rename repeated sidecar ``@ids`` so no narration block is silently dropped.
 
     The narration is keyed by id, so two ``@same-id`` blocks would otherwise
     collapse to one (last wins) — losing the first block's text. Instead the
     first keeps its id and each later one is renamed to the smallest free
-    ``-n`` (n ≥ 2), avoiding collision with any other block id. A renamed block
-    usually has no matching page, so it surfaces in the unattached-narration
-    tray where it can be re-attached or deleted. Every rename is a warning;
-    de-duplicating the ``@blocks`` in the file is still the durable fix.
+    ``-n`` (n ≥ 2), avoiding collision with any other block id. Returns the
+    blocks and the renames (new id → the repeated id). A renamed block has no
+    page, so the editor offers it with the unattached narration, where it can be
+    appended to its slide or deleted; :func:`duplicate_block_diagnostics` says
+    what went wrong, in the file's own terms.
     """
     taken = {b.slide_id for b in blocks}
     seen: set[str] = set()
     out: list[PageNarration] = []
-    diags: list[Diagnostic] = []
-    flagged: set[str] = set()
+    renamed: dict[str, str] = {}
     for block in blocks:
         sid = block.slide_id
         if sid not in seen:
@@ -151,26 +152,39 @@ def dedupe_block_ids(
         taken.add(new)
         seen.add(new)
         out.append(replace(block, slide_id=new))
-        if sid not in flagged:
-            flagged.add(sid)
-            diags.append(
-                Diagnostic(
-                    "warning",
-                    "duplicate-block",
-                    f"slide-id '{sid}' has more than one narration block — later "
-                    "ones were renamed to disambiguate; merge the @blocks in the file",
-                    sid,
-                )
-            )
+        renamed[new] = sid
+    return out, renamed
+
+
+_HEADER_LINE_RE = re.compile(r"^\s*@(?P<id>\S+)\s*(?:#.*)?$")
+
+
+def duplicate_block_diagnostics(
+    text: str, repeated: set[str], sidecar_name: str
+) -> list[Diagnostic]:
+    """One error per slide-id in *repeated* with several ``@`` blocks, naming their lines.
+
+    The single diagnosis of a repeated ``@id`` — ``check`` and the editor both
+    show it — keyed to the id as written, never to a made-up ``id-2``.
+    """
+    lines: dict[str, list[int]] = {}
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        m = _HEADER_LINE_RE.match(raw)
+        if m and m.group("id") in repeated:
+            lines.setdefault(m.group("id"), []).append(lineno)
+    diags: list[Diagnostic] = []
+    for sid, where in lines.items():
+        at = ", ".join(str(n) for n in where[:-1]) + f" and {where[-1]}"
         diags.append(
             Diagnostic(
-                "warning",
+                "error",
                 "duplicate-block",
-                f"a second '{sid}' block was renamed to '{new}' so its text is kept",
-                new,
+                f"slide-id '{sid}' has more than one narration block (lines {at} of "
+                f"{sidecar_name}) — merge them into a single @{sid} block",
+                sid,
             )
         )
-    return out, diags
+    return diags
 
 
 def load_deck(
@@ -195,16 +209,21 @@ def load_deck(
 
     blocks: list[PageNarration] = []
     block_diags: list[Diagnostic] = []
+    renamed: dict[str, str] = {}
     voices: dict[str, VoiceConfig] = {}
     default_voice: str | None = None
     preamble_source: str | None = None
     if sidecar.exists():
-        doc = parse_document(sidecar.read_text(encoding="utf-8"))
-        blocks, block_diags = dedupe_block_ids(doc.blocks)
+        text = sidecar.read_text(encoding="utf-8")
+        doc = parse_document(text)
+        blocks, renamed = dedupe_block_ids(doc.blocks)
+        block_diags = duplicate_block_diagnostics(text, set(renamed.values()), sidecar.name)
         voices = resolve_voice_files(doc.voices, sidecar.resolve().parent)
         default_voice, preamble_source = doc.default_voice, doc.preamble_source
 
-    diags = sort_diagnostics(dedupe_diags + block_diags + diagnose(page_ids, blocks))
+    # a renamed block's only problem is the repeat, reported once above
+    id_diags = [d for d in diagnose(page_ids, blocks) if d.slide_id not in renamed]
+    diags = sort_diagnostics(dedupe_diags + block_diags + id_diags)
     deck = Deck(
         pdf_path=pdf_path,
         sidecar_path=sidecar,
@@ -213,6 +232,7 @@ def load_deck(
         voices=voices,
         default_voice=default_voice,
         preamble_source=preamble_source,
+        duplicate_blocks=renamed,
     )
     return deck, diags
 

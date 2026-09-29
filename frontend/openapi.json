@@ -306,6 +306,13 @@
             "title": "Diagnostics",
             "type": "array"
           },
+          "duplicates": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Duplicates",
+            "type": "object"
+          },
           "engine": {
             "enum": [
               "kokoro",
@@ -397,6 +404,7 @@
           "pages",
           "narration",
           "orphans",
+          "duplicates",
           "diagnostics",
           "voices",
           "missing_audio",

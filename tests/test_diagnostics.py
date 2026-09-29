@@ -53,15 +53,14 @@ def test_missing_narration_is_warning() -> None:
     assert any(d.code == "missing-narration" and d.slide_id == "b" for d in diags)
 
 
-def test_duplicate_sidecar_block_is_renamed_with_warnings() -> None:
-    # a repeated @id is disambiguated upstream (deck.dedupe_block_ids), not an error,
-    # so the second block's text is preserved instead of collapsing away
+def test_duplicate_sidecar_block_is_renamed_so_its_text_is_kept() -> None:
+    # a repeated @id is disambiguated upstream (deck.dedupe_block_ids), so the
+    # second block's text is preserved instead of collapsing away
     from slidesonnet.deck import dedupe_block_ids
 
-    blocks, diags = dedupe_block_ids(_blocks("a", "a", "b"))
+    blocks, renamed = dedupe_block_ids(_blocks("a", "a", "b"))
     assert [b.slide_id for b in blocks] == ["a", "a-2", "b"]
-    assert not has_errors(diags)
-    assert any(d.code == "duplicate-block" and d.severity == "warning" for d in diags)
+    assert renamed == {"a-2": "a"}
 
 
 def test_orphan_narration_is_error() -> None:

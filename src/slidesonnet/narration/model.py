@@ -247,6 +247,8 @@ class Deck:
     voices: dict[str, VoiceConfig] = field(default_factory=dict)
     default_voice: str | None = None
     preamble_source: str | None = field(default=None, compare=False, repr=False)
+    #: Blocks renamed on load because their ``@id`` repeats an earlier one (new id → id).
+    duplicate_blocks: dict[str, str] = field(default_factory=dict, compare=False, repr=False)
 
     def page_narration(self, slide_id: str) -> PageNarration:
         """Return the narration for *slide_id*, or an empty silent block if none."""

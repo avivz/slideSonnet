@@ -125,8 +125,23 @@ def test_edits_leave_hand_written_blocks_byte_stable(tmp_path: Path) -> None:
     assert "# slide b is the punchline\n@b\n  utterance:\n    text: Goodbye, rewritten.\n" in text
 
 
-def test_duplicate_blocks_are_disambiguated_and_both_kept(tmp_path: Path) -> None:
+def test_duplicate_blocks_are_kept_and_diagnosed_as_check_does(tmp_path: Path) -> None:
+    from slidesonnet.api import check_deck
+
     pdf = _deck(tmp_path, ["a", "b"], "@a\nFirst.\n\n@a\nSecond.\n\n@b\nBye.\n")
+    registry = DeckRegistry(tmp_path)
+    registry.rescan()
+    snap = deck_snapshot(registry.entries()[0])
+    # one error, the same one `slidesonnet check` prints: no made-up "a-2" orphan
+    found = [(d.severity, d.code, d.slide_id, d.message) for d in snap.diagnostics]
+    assert found == [
+        (d.severity, d.code, d.slide_id, d.message)
+        for d in check_deck(pdf)
+        if d.code == "duplicate-block"
+    ]
+    assert len(found) == 1 and "(lines 1 and 5 of deck.narration)" in found[0][3]
+    assert snap.pages[0].status == "error"
+    assert snap.duplicates == {"a-2": "a"}  # the tray shows the second block's text
     changed, deck = _edit(
         pdf, lambda d: editing.apply_block_edit(d, "b", [Segment.speech("edited b")])
     )

@@ -190,6 +190,8 @@ class DeckSnapshot(_Model):
     narration: dict[str, BlockDTO]
     #: Slide ids with narration but no page in the current PDF (unattached).
     orphans: list[str]
+    #: Unattached ids that are a repeated ``@id``'s later block (tray id → the id repeated).
+    duplicates: dict[str, str]
     diagnostics: list[DiagnosticDTO]
     voices: VoicesDTO
     missing_audio: int

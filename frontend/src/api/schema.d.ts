@@ -473,6 +473,10 @@ export interface components {
             aspect: number;
             /** Diagnostics */
             diagnostics: components["schemas"]["DiagnosticDTO"][];
+            /** Duplicates */
+            duplicates: {
+                [key: string]: string;
+            };
             /**
              * Engine
              * @enum {string}
