@@ -73,12 +73,13 @@ an `@id` block of `utterance:` blocks and `pause:` lines, optionally bracketed b
 transitions:
 
 ```
-# a comment (line-leading '#', or a trailing ' #...' on a content line)
+# a comment (line-leading '#', or a trailing ' #...' on a structural line)
 @euler-setup
-  utterance:
-    voice: narrator        # optional per-utterance directives
+  utterance:               # voice/pace/direct are optional
+    voice: narrator
     pace: slow             # slow | normal | fast
-    direct: warm, unhurried  # optional director's note; engines ignore it
+    # direct: a director's note; engines ignore it
+    direct: warm, unhurried
     text: We want the sum of one over n squared.
   pause: 0.8
 
@@ -104,6 +105,9 @@ transitions:
 - `transition-in:` / `transition-out:` (`cut`, the default, or `crossfade N`)
   bracket the slide. A boundary is written on only one side — setting an
   outgoing transition clears the next slide's incoming one.
+- A `#` on a `text:` line (or its wrapped continuation), a `voice:` line or a
+  `direct:` line is spoken or kept as written ("Use issue #123"); only a line
+  that starts with `#` is a comment there.
 - Indentation is cosmetic (lines are classified by their leading `key:` token).
   After a `text:` line, any line that isn't a known directive continues the
   text, so hand-wrapped narration parses; the file round-trips byte-for-byte

@@ -125,8 +125,8 @@ an `@id` block of one or more `utterance:` blocks and `pause:` lines:
   pause: 3                  # silent slide — held 3s while they read
 
 @euler-trick
-  utterance:
-    voice: bernoulli        # optional per-utterance voice
+  utterance:                # voice and pace are optional
+    voice: bernoulli
     pace: slow              # slow | normal | fast
     text: Watch the denominators carefully. This is the trick.
 ```

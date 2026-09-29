@@ -76,12 +76,14 @@ An indented, line-oriented, git-diffable block format. Scaffold it from the
 compiled PDF with `slidesonnet init deck.pdf`, then fill in each block:
 
 ```
-# comments start with '#' (line-leading, or trailing ' #...')
+# comments start with '#' (line-leading, or trailing ' #...' -- but not on
+# text:/voice:/direct: lines, where '#' is part of the words)
 @euler-setup
-  utterance:
-    voice: narrator              # optional per-utterance directives
+  utterance:                     # voice/pace/direct are optional
+    voice: narrator
     pace: slow                   # slow | normal | fast
-    direct: deliberate, calm     # director's note (forward-compat; local engine ignores it)
+    # direct: director's note (forward-compat; local engine ignores it)
+    direct: deliberate, calm
     text: We want the sum of one over n squared.
   pause: 0.8                     # explicit silence, in seconds
 
