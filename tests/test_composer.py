@@ -139,6 +139,22 @@ def test_concatenate_segments(work_dir):
 
 
 @pytest.mark.integration
+def test_concatenate_segments_path_with_apostrophe(tmp_path):
+    """A deck under a folder like O'Brien's must still concatenate."""
+    work = tmp_path / "O'Brien's talk"
+    segs = []
+    for i in range(2):
+        _gray_png(work / f"s{i}.png", 60 + 60 * i)
+        segs.append(work / "segments" / f"seg-{i}.mp4")
+        compose_silent_segment(
+            work / f"s{i}.png", segs[-1], duration=0.5, resolution="16x16", preset="ultrafast"
+        )
+    out = work / "deck.mp4"
+    concatenate_segments(segs, out)
+    assert get_duration(out) == pytest.approx(1.0, abs=1 / 24)
+
+
+@pytest.mark.integration
 def test_concatenate_segments_xfade_output_duration(work_dir):
     """xfade assembly should produce video with duration ≈ sum(durations) - (N-1)*crossfade."""
     segments = []
@@ -720,42 +736,30 @@ class TestConcatenateSegmentsMocked:
     """Mocked tests for concatenate_segments()."""
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
-    def test_writes_concat_file_and_cleans_up(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
-        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
-        output = tmp_path / "out.mp4"
+    def test_list_file_is_private_scratch_and_removed(
+        self, mock_ffmpeg: MagicMock, tmp_path: Path
+    ) -> None:
+        """The list lives in the segments' scratch dir under a unique name: a user's
+        own concat_list.txt beside the output survives, and parallel exports can't
+        share one."""
+        scratch = tmp_path / "segments"
+        segs = [scratch / "a.mp4", scratch / "b.mp4"]
+        user_file = tmp_path / "concat_list.txt"
+        user_file.write_text("mine")
+        seen: list[tuple[Path, str]] = []
 
-        concatenate_segments(segs, output)
+        def capture(cmd: list[str], **kw: object) -> None:
+            listing = Path(cmd[cmd.index("-i") + 1])
+            seen.append((listing, listing.read_text()))
 
-        mock_ffmpeg.assert_called_once()
-        cmd = mock_ffmpeg.call_args[0][0]
-        assert "concat" in cmd
-        assert "-safe" in cmd
-        assert "copy" in cmd
+        mock_ffmpeg.side_effect = capture
+        concatenate_segments(segs, tmp_path / "out.mp4")
 
-        # Concat file should be cleaned up after run
-        concat_file = tmp_path / "concat_list.txt"
-        assert not concat_file.exists()
-
-    @patch("slidesonnet.video.composer._run_ffmpeg")
-    def test_concat_file_contents(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
-        segs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
-        output = tmp_path / "out.mp4"
-        concat_file = tmp_path / "concat_list.txt"
-
-        # Capture concat file contents before cleanup
-        written_content: list[str] = []
-
-        def capture_and_run(cmd: list[str], **kw: object) -> None:
-            if concat_file.exists():
-                written_content.append(concat_file.read_text())
-
-        mock_ffmpeg.side_effect = capture_and_run
-
-        concatenate_segments(segs, output)
-
-        assert len(written_content) == 1
-        for seg in segs:
-            assert str(seg.resolve()) in written_content[0]
+        [(listing, text)] = seen
+        assert listing.parent == scratch and listing.name != "concat_list.txt"
+        assert not listing.exists()
+        assert user_file.read_text() == "mine"
+        assert text == "".join(f"file '{seg.resolve()}'\n" for seg in segs)
 
     @patch("slidesonnet.video.composer._run_ffmpeg")
     def test_forwards_output_time_reports(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:

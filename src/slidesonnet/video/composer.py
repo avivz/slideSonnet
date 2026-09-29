@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import tempfile
 from collections.abc import Callable
@@ -240,32 +241,42 @@ def concatenate_segments(
 ) -> None:
     """Concatenate video segments into a single video using ffmpeg concat demuxer.
 
-    *on_time*, if given, is called with seconds of output written as ffmpeg runs.
+    The demuxer's list file is a uniquely named temp file beside the segments
+    (render scratch), never in the output's folder: a fixed name there would
+    overwrite, then delete, a user's own file, and two exports into one folder
+    would race on it. *on_time*, if given, is called with seconds of output
+    written as ffmpeg runs.
     """
     logger.debug("concatenate: %d segments → %s", len(segments), output.name)
     output.parent.mkdir(parents=True, exist_ok=True)
-    concat_file = output.parent / "concat_list.txt"
-
-    with open(concat_file, "w") as f:
-        f.writelines(f"file '{seg.resolve()}'\n" for seg in segments)
-
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(concat_file),
-        "-c",
-        "copy",
-        str(output),
-    ]
+    scratch = segments[0].parent if segments else output.parent
+    scratch.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=scratch, prefix=".concat-", suffix=".txt")
+    concat_file = Path(name)
     try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.writelines(f"file {_concat_quote(seg.resolve())}\n" for seg in segments)
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-c",
+            "copy",
+            str(output),
+        ]
         _run_ffmpeg(cmd, on_time=on_time)
     finally:
         concat_file.unlink(missing_ok=True)
+
+
+def _concat_quote(path: Path) -> str:
+    """Single-quote *path* for an ffmpeg concat list; an embedded ``'`` becomes ``'\\''``."""
+    return "'" + str(path).replace("'", "'\\''") + "'"
 
 
 def concatenate_segments_xfade(
