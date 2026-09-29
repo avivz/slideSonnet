@@ -1,13 +1,20 @@
 // Clip generation for the open deck: the server's per-deck queue seen from
 // this tab, plus the tab's own "Auto-generate as I edit" behavior.
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import { ApiError, type ClipRef, type GenerationStatusDTO } from '@/api/client'
 import { useEditorStore } from '@/stores/editor'
 
 /** Auto-generate waits this long after a slide's last save (the text is settling). */
 export const AUTO_BUILD_MS = 2500
+
+/** Why a clip couldn't be generated: a plain message, and the engine's own words. */
+export interface ClipFailure {
+  engine: string
+  message: string
+  detail: string
+}
 
 /** Asks the user before spending credits; resolves true only on an explicit yes. */
 export type PaidConfirm = (count: number, engine: string, action: string) => Promise<boolean>
@@ -23,6 +30,8 @@ export const useGenerationStore = defineStore('generation', () => {
   const focusedSpeech = ref<{ slideId: string; index: number } | null>(null)
   let confirmPaid: PaidConfirm = async () => false
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Clips whose last generation failed (`slide#index`), until retried or generated. */
+  const failures = reactive(new Map<string, ClipFailure>())
 
   const engineInfo = computed(() =>
     editor.snapshot?.engines.find((e) => e.name === editor.activeEngine) ?? null,
@@ -54,6 +63,7 @@ export const useGenerationStore = defineStore('generation', () => {
     () => {
       status.value = null
       focusedSpeech.value = null
+      failures.clear()
       for (const t of timers.values()) clearTimeout(t)
       timers.clear()
     },
@@ -78,6 +88,9 @@ export const useGenerationStore = defineStore('generation', () => {
   ): Promise<number> {
     if (editor.token === null) return 0
     if (!(await editor.ensureSaved())) return 0 // the server reads the narration from disk
+    // a retry: the old failure goes (it comes back if this one fails too)
+    if (targets === null) failures.clear()
+    else for (const t of targets) failures.delete(`${t.slide_id}#${t.speech_index}`)
     const current = asOf()
     try {
       const s = await editor.client.generate(editor.token, {
@@ -98,6 +111,25 @@ export const useGenerationStore = defineStore('generation', () => {
       editor.flash(e instanceof ApiError ? e.message : 'Generation could not start.', 'err')
       return 0
     }
+  }
+
+  /** The server's `generation.failed`: mark the clips it names. */
+  function noteFailure(data: Record<string, unknown>): void {
+    const clips = Array.isArray(data.clips) ? (data.clips as ClipRef[]) : []
+    const failure: ClipFailure = {
+      engine: String(data.engine ?? ''),
+      message: String(data.message ?? ''),
+      detail: String(data.detail ?? ''),
+    }
+    for (const c of clips) failures.set(`${c.slide_id}#${c.speech_index}`, failure)
+  }
+
+  /** Why this line's audio couldn't be made with the engine in use; null when it didn't fail (or exists now). */
+  function failureFor(slideId: string, speechIndex: number): ClipFailure | null {
+    const failure = failures.get(`${slideId}#${speechIndex}`)
+    if (failure === undefined || failure.engine !== editor.activeEngine) return null
+    const page = editor.snapshot?.pages.find((p) => p.slide_id === slideId)
+    return page?.clips?.[speechIndex]?.cached ? null : failure
   }
 
   async function cancelAll(): Promise<number> {
@@ -181,6 +213,7 @@ export const useGenerationStore = defineStore('generation', () => {
   return {
     status, owner, autoBuild, singleSlideTransitions, focusedSpeech, paid, realtime, inflight,
     busy, autoBuildAllowed,
+    failures, noteFailure, failureFor,
     setConfirm, refresh, enqueue, cancelAll, leave, focus, uncached, setAutoBuild, sweep,
   }
 })

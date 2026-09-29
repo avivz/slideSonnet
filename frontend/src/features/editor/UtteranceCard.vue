@@ -3,6 +3,9 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
 import type { ClipDTO } from './types'
 import AppIcon from '@/components/AppIcon.vue'
+import type { ClipFailure } from '@/stores/generation'
+
+import LineFailure from './LineFailure.vue'
 
 import type { EditSeg } from './narration'
 
@@ -14,6 +17,8 @@ const props = defineProps<{
   savedText: string | null
   clip: ClipDTO | null
   generating: boolean
+  /** Its last generation failed (shown until it's retried). */
+  failure?: ClipFailure | null
   voices: { value: string; label: string }[]
   /** The deck's default voice: naming it explicitly is still "the default". */
   defaultVoice?: string | null
@@ -145,6 +150,7 @@ watch(
         <AppIcon v-else :name="fresh ? 'refresh' : 'wave'" :size="16" />
       </button>
     </div>
+    <LineFailure v-if="failure && !generating" class="failure" :failure="failure" @retry="emit('generate', false)" />
     <button
       v-if="!open && chips.length" class="chips mono" type="button" title="Change voice, pace or note"
       :data-testid="`uchips-${index}`" @click="open = true"
@@ -245,6 +251,10 @@ watch(
   color: var(--dim);
   font-style: italic;
   opacity: 0.6;
+}
+.failure {
+  grid-column: 1 / -1;
+  margin-bottom: 3px;
 }
 .chips {
   grid-column: 1 / -1;

@@ -123,6 +123,25 @@ describe('narration editor', () => {
     expect(w.find('[data-testid="uchips-0"]').exists()).toBe(false)
   })
 
+  it('a line whose generation failed says so until retried, the reason one click away', async () => {
+    const { server, generation } = await setup()
+    const failed = { engine: 'kokoro', code: 'unknown_voice', message: 'Kokoro doesn’t know the voice this line uses.',
+      detail: 'AssertionError', clips: [{ slide_id: 'a', speech_index: 0 }] }
+    generation.noteFailure(failed)
+    generation.noteFailure({ ...failed, engine: 'inworld', clips: [{ slide_id: 'b', speech_index: 0 }] }) // not this engine's
+    expect(generation.failureFor('b', 0)).toBeNull()
+    const w = mount(NarrationEditor, { attachTo: document.body })
+    const line = w.get('[data-testid="line-failed"]')
+    expect(line.text()).toContain('Couldn’t generate this line')
+    expect(line.text()).not.toContain('know the voice') // the reason: behind "Why?"
+    await line.get('[data-testid="line-failed-why"]').trigger('click')
+    expect(line.text()).toContain('Kokoro doesn’t know the voice this line uses.')
+    await line.get('[data-testid="line-failed-retry"]').trigger('click')
+    await flushPromises()
+    expect(server.generated).toEqual([{ targets: [{ slide_id: 'a', speech_index: 0 }], force: false, allow_paid: false }])
+    expect(w.find('[data-testid="line-failed"]').exists()).toBe(false) // retrying clears it
+  })
+
   it('a slide without an id cannot be edited', async () => {
     const server = new FakeServer()
     server.pages = ['']

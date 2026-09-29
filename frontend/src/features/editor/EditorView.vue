@@ -246,7 +246,9 @@ events.on('generation.changed', (e) => {
   if (e.deck === token.value) void generation.refresh().then(() => editor.refresh())
 })
 events.on('generation.failed', (e) => {
-  if (e.deck === token.value) editor.flash(`Generation failed: ${String(e.data.message ?? '')}`, 'err')
+  if (e.deck !== token.value) return
+  generation.noteFailure(e.data) // the line says so until it's retried
+  editor.flash(String(e.data.message || 'Couldn’t generate a line.'), 'err')
 })
 for (const type of ['job.progress', 'job.finished'] as const) {
   events.on(type, (e) => {

@@ -165,6 +165,7 @@ function onKey(event: KeyboardEvent): void {
             :saved-text="savedSpeech[speech.get(seg.key) ?? -1] ?? null"
             :clip="clips[speech.get(seg.key) ?? -1] ?? null"
             :generating="generation.inflight.has(`${slideId}#${speech.get(seg.key)}`)"
+            :failure="generation.failureFor(slideId, speech.get(seg.key) ?? -1)"
             :voices="voiceOptions"
             :default-voice="editor.snapshot?.voices.default_voice ?? null"
             @patch="(changes, now) => patch(seg, changes, now)"

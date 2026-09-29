@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,6 +39,37 @@ logger = logging.getLogger(__name__)
 
 #: ``generation.changed`` events per deck are sent at most this often.
 _EMIT_INTERVAL_S = 0.2
+
+
+_ENV_VAR = re.compile(r"variable '([A-Z0-9_]+)' not set")
+
+
+def explain_failure(engine: str, exc: BaseException | None) -> tuple[str, str]:
+    """A failed clip's (code, plain message) for the editor: the raw text is for the log.
+
+    Engines report the common failures in their own words; these patterns turn
+    them into something a lecture author can act on.
+    """
+    name = engine.capitalize()
+    raw = str(exc) if exc is not None else ""
+    low = raw.lower()
+    key = _ENV_VAR.search(raw)
+    if key is not None or "api key" in low:
+        var = key.group(1) if key else "the API key"
+        return "missing_api_key", f"The API key is missing: add {var} to your .env file."
+    spec = BACKENDS.get(engine)
+    engine_module = f"'{spec.import_name}'" if spec is not None and spec.import_name else None
+    if "not installed" in low or (
+        isinstance(exc, ModuleNotFoundError) and engine_module is not None and engine_module in raw
+    ):
+        return "engine_missing", f"{name} isn't installed on this computer. Choose another engine."
+    # Kokoro asserts on a voice whose language it doesn't know (or can't load its
+    # language pack); other engines name the voice in the error
+    if (engine == "kokoro" and isinstance(exc, (AssertionError, ModuleNotFoundError))) or (
+        "voice" in low and any(w in low for w in ("not found", "unknown", "invalid", "404"))
+    ):
+        return "unknown_voice", f"{name} doesn't know the voice this line uses. Pick another voice."
+    return "failed", "Couldn't generate this line."
 
 
 @dataclass
@@ -106,11 +138,17 @@ class DeckGeneration:
         self.bus.publish("generation.changed", deck=self.entry.token, data={"engine": self.engine})
 
     def _failed(self, handle: JobHandle) -> None:
-        message = str(handle.error) if handle.error else "generation failed"
+        code, message = explain_failure(self.engine, handle.error)
         self.bus.publish(
             "generation.failed",
             deck=self.entry.token,
-            data={"engine": self.engine, "message": message},
+            data={
+                "engine": self.engine,
+                "code": code,
+                "message": message,
+                "detail": str(handle.error) if handle.error else "",
+                "clips": [{"slide_id": s, "speech_index": i} for s, i in sorted(handle.refs)],
+            },
         )
 
     # ---- operations (call on the event loop) ----------------------------------

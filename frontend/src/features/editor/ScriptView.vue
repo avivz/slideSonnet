@@ -6,9 +6,11 @@
 import { nextTick, ref, watch } from 'vue'
 
 import { useEditorStore } from '@/stores/editor'
+import { useGenerationStore, type ClipFailure } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
 import { useReviewStore } from '@/stores/review'
 
+import LineFailure from './LineFailure.vue'
 import NarrationDiff from './NarrationDiff.vue'
 import { speechIndexes, type EditSeg } from './narration'
 import { useEditingFocus } from './useEditingFocus'
@@ -16,6 +18,7 @@ import { useEditingFocus } from './useEditingFocus'
 const editor = useEditorStore()
 const review = useReviewStore()
 const player = usePlayerStore()
+const generation = useGenerationStore()
 
 /** A spoken line split into what's been said (up to and including the current word) and the rest; null when it isn't playing. */
 function spokenParts(slideId: string, seg: EditSeg): [string, string, string] | null {
@@ -100,10 +103,20 @@ watch(
     reveal([...lines].find((el) => el.dataset.speech === line), 'center')
   },
 )
-function speechKey(slideId: string, seg: EditSeg): string | undefined {
+function speechIndex(slideId: string, seg: EditSeg): number | undefined {
   const block = editor.draftFor(slideId)
-  const index = block ? speechIndexes(block).get(seg.key) : undefined
+  return block ? speechIndexes(block).get(seg.key) : undefined
+}
+function speechKey(slideId: string, seg: EditSeg): string | undefined {
+  const index = speechIndex(slideId, seg)
   return index === undefined ? undefined : `${slideId}#${index}`
+}
+function failureOf(slideId: string, seg: EditSeg): ClipFailure | null {
+  return generation.failureFor(slideId, speechIndex(slideId, seg) ?? -1)
+}
+function retry(slideId: string, seg: EditSeg): void {
+  const index = speechIndex(slideId, seg)
+  if (index !== undefined) void generation.enqueue([{ slide_id: slideId, speech_index: index }])
 }
 </script>
 
@@ -169,6 +182,10 @@ function speechKey(slideId: string, seg: EditSeg): string | undefined {
               @input="onText(page.slide_id, row.seg, $event)"
             ></textarea>
           </div>
+          <LineFailure
+            v-if="row.kind === 'line' && failureOf(page.slide_id, row.seg)"
+            class="failure" :failure="failureOf(page.slide_id, row.seg)!" @retry="retry(page.slide_id, row.seg)"
+          />
           <label v-else class="pause" title="Pause, in seconds">
             <span aria-hidden="true">⏸</span>
             <input
@@ -333,6 +350,9 @@ function speechKey(slideId: string, seg: EditSeg): string | undefined {
 .secs:focus-visible {
   border-color: var(--line);
   color: var(--text);
+}
+.failure {
+  flex: 1 1 100%;
 }
 .changes {
   flex: 1 1 100%;

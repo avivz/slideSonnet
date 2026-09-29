@@ -538,6 +538,53 @@ def test_generation_cancel_by_owner_and_paid_gate(
     )
 
 
+def test_a_failed_clip_is_announced_with_its_line_and_a_plain_reason(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.exceptions import TTSError
+    from slidesonnet.server.context import context_of
+
+    def broken(*a: Any, **k: Any) -> None:
+        raise TTSError("Environment variable 'INWORLD_API_KEY' not set. Add it to your .env file.")
+
+    monkeypatch.setattr("slidesonnet.server.generation.api.synthesize_deck", broken)
+    token = _token(client)
+    target = {"slide_id": "middle", "speech_index": 0}
+    client.post(f"/api/v1/decks/{token}/generation", json={"targets": [target]})
+    bus = context_of(client.app).bus  # type: ignore[arg-type]
+    for _ in range(200):
+        failed = [e for e in bus.since(0) or [] if e.type == "generation.failed"]
+        if failed:
+            break
+        time.sleep(0.02)
+    data = failed[-1].data
+    assert data["code"] == "missing_api_key" and data["clips"] == [target]
+    assert data["message"] == "The API key is missing: add INWORLD_API_KEY to your .env file."
+    assert "not set" in data["detail"]  # the raw text, for the curious
+
+
+@pytest.mark.parametrize(
+    ("engine", "exc", "code", "words"),
+    [
+        ("inworld", RuntimeError("Inworld synthesis failed: voice 'Zed' not found"), "unknown_voice",
+         "Inworld doesn't know the voice"),
+        ("kokoro", AssertionError(), "unknown_voice", "Kokoro doesn't know the voice"),
+        ("kokoro", ModuleNotFoundError("No module named 'kokoro'"), "engine_missing",
+         "Kokoro isn't installed"),
+        ("qwen3", RuntimeError("qwen-tts package not installed. Install with: pip install x"),
+         "engine_missing", "Qwen3 isn't installed"),
+        ("kokoro", RuntimeError("disk full"), "failed", "Couldn't generate this line"),
+    ],
+)  # fmt: skip
+def test_generation_failures_are_explained_in_plain_words(
+    engine: str, exc: BaseException, code: str, words: str
+) -> None:
+    from slidesonnet.server.generation import explain_failure
+
+    got_code, message = explain_failure(engine, exc)
+    assert got_code == code and words in message
+
+
 def test_meta_voices_pages_and_snapshot_extras(client: TestClient) -> None:
     meta = client.get("/api/v1/meta").json()
     wipe = next(f for f in meta["transitions"] if f["key"] == "wipe")
