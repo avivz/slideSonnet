@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ApiError, type ReviewDTO } from '@/api/client'
 import ReviewPanel from '@/features/review/ReviewPanel.vue'
 import SlideLinks from '@/features/review/SlideLinks.vue'
+import WaitingBanner from '@/features/review/WaitingBanner.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useReviewStore } from '@/stores/review'
 
@@ -116,11 +117,50 @@ describe('review store', () => {
     expect(review.filter).toBe('c1')
   })
 
+  it('the author’s own edits carry no review markings, unless someone else changed the slide too', async () => {
+    const { editor, review } = await setup()
+    review.data = {
+      ...REVIEW,
+      conversations: [
+        ...REVIEW.conversations,
+        { id: 'c9', title: '', slides: ['a', 'c'], origin: 'author-edits', status: 'closed', turn: 'agent', is_deck: false, messages: [] },
+      ],
+      changes: [
+        ...REVIEW.changes,
+        { slide_id: 'a', kinds: ['edited'], image: false, narration: true, moved: false, base_index: 0, current_index: 0 },
+      ],
+      badges: { ...REVIEW.badges, a: 'closed' },
+      diffs: { ...REVIEW.diffs, a: [['-', 'Hi'], ['+', 'A.']] },
+    }
+    // a: only my edits — no badge, no diff box, no conversation link, no "changed:" line
+    expect([review.badge('a'), review.diffFor('a'), review.conversationsFor('a')]).toEqual([null, null, []])
+    const w = mount(SlideLinks)
+    await flushPromises()
+    expect(w.find('[data-testid="slide-links"]').exists()).toBe(false)
+    // c: also in an agent's conversation — marked as before (my edits' link stays out of it)
+    expect(review.badge('c')).toBe('closed')
+    expect(review.conversationsFor('c').map((c) => c.id)).toEqual(['c2'])
+    editor.goToSlide('b')
+    expect(review.diffFor('b')).toEqual([['=', 'World'], ['+', 'again']])
+  })
+
   it('jumps to the next slide waiting for you', async () => {
     const { editor, review } = await setup()
     review.nextYourTurn()
     expect(editor.currentId).toBe('b')
-    expect(review.waitingHere).toBe(1)
+  })
+
+  it('counts what waits for you across the whole deck, and a banner leads to it', async () => {
+    const { editor, review } = await setup()
+    expect(editor.currentId).toBe('a') // c1 waits on b, not here
+    expect(review.waitingCount).toBe(1) // the whole-deck one has nothing from the agent: not waiting
+    const w = mount(WaitingBanner)
+    await flushPromises()
+    expect(w.text()).toContain('The agent is waiting for you on 2 slides')
+    const asked = review.panelRequests
+    await w.get('[data-testid="waiting-show"]').trigger('click')
+    expect([review.filter, editor.currentId, review.panelRequests]).toEqual(['c1', 'b', asked + 1])
+    expect(w.find('[data-testid="waiting-banner"]').exists()).toBe(false) // shown: it goes
   })
 })
 
@@ -167,6 +207,7 @@ describe('review panel', () => {
     const { review, sent } = await setup()
     const w = mount(ReviewPanel, { attachTo: document.body })
     await flushPromises()
+    expect(w.get('[data-testid="conv-row-deck"]').text()).not.toContain('your turn') // nothing waits in it
     await w.get('[data-testid="conv-row-deck"]').trigger('click')
     expect(review.scope).toBeNull()
     const note = w.get('[data-testid="reply-deck"]')

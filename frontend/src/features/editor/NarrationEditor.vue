@@ -23,7 +23,7 @@ const player = usePlayerStore()
 const review = useReviewStore()
 const root = ref<HTMLElement | null>(null)
 /** Under review: how this slide's narration changed since the base, word by word. */
-const diff = computed(() => (review.active ? (review.data?.diffs[slideId.value] ?? null) : null))
+const diff = computed(() => review.diffFor(slideId.value))
 
 const slideId = computed(() => editor.currentId)
 const block = computed(() => editor.draftFor(slideId.value))

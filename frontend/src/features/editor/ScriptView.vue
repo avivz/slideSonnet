@@ -67,7 +67,7 @@ function rows(slideId: string): Row[] {
 }
 /** Under review: how this slide's narration changed since the review began. */
 function diffOf(slideId: string): string[][] | null {
-  return review.active ? (review.data?.diffs[slideId] ?? null) : null
+  return review.diffFor(slideId)
 }
 function dimmed(slideId: string): boolean {
   return review.scope !== null && !review.scope.has(slideId)

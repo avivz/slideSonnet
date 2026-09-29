@@ -14,6 +14,7 @@ import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
 import { useReviewStore } from '@/stores/review'
 import ReviewPanel from '@/features/review/ReviewPanel.vue'
+import WaitingBanner from '@/features/review/WaitingBanner.vue'
 
 import ConflictDialog from './ConflictDialog.vue'
 import ConsolePanel from './ConsolePanel.vue'
@@ -81,11 +82,16 @@ watch(
   () => review.panelRequests,
   () => {
     consoleTab.value = 'review'
-    consoleOpen.value = true
+    if (narrow.value) overlay.value = 'console'
+    else consoleOpen.value = true
   },
 )
 const narrow = ref(false)
 const overlay = ref<'strip' | 'console' | null>(null)
+/** The Review tab is on screen (the "agent is waiting" line would only repeat it). */
+const reviewShown = computed(
+  () => consoleTab.value === 'review' && (narrow.value ? overlay.value === 'console' : consoleOpen.value),
+)
 
 function toggle(which: 'strip' | 'console'): void {
   if (narrow.value) {
@@ -403,6 +409,8 @@ function pick(deck: LibraryDeckDTO): void {
       </button>
     </header>
 
+    <!-- the agent waits for you somewhere in the deck (maybe not on this slide) -->
+    <WaitingBanner v-if="snap && !editor.loadError && !reviewShown" />
     <p v-if="editor.loadError" class="load-error" role="alert">
       {{ editor.loadError }} <a href="/">Back to your decks</a>
     </p>
@@ -486,7 +494,10 @@ function pick(deck: LibraryDeckDTO): void {
             :aria-selected="consoleTab === 'review'" :tabindex="consoleTab === 'review' ? 0 : -1" data-testid="console-tab-review" @click="consoleTab = 'review'"
           >
             Review
-            <span v-if="review.waitingHere" class="count" data-testid="console-tab-review-badge">{{ review.waitingHere }}</span>
+            <span
+              v-if="review.waitingCount" class="count" data-testid="console-tab-review-badge"
+              :title="`${review.waitingCount} conversation(s) waiting for you`"
+            >{{ review.waitingCount }}</span>
           </button>
         </div>
         <ConsolePanel v-show="consoleTab === 'audio'" :confirm="confirm" @voices="voicesOpen = true" />

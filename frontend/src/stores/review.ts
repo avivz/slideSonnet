@@ -84,15 +84,54 @@ export const useReviewStore = defineStore('review', () => {
     panelRequests.value++
   }
 
+  /** The slide's conversations with someone else (the author's own edits are filed quietly, not listed). */
   function conversationsFor(slideId: string): ConversationDTO[] {
-    return slideConversations.value.filter((c) => c.slides.includes(slideId))
+    return slideConversations.value.filter((c) => c.slides.includes(slideId) && c.origin !== 'author-edits')
+  }
+  /**
+   * Only the author changed this slide: its narration, typed in the editor. Such
+   * a slide shows no review markings — a lecturer who never uses an agent sees
+   * nothing pile up. Any other change (the picture, a move, an agent's
+   * conversation, an unfiled outside edit) keeps them.
+   */
+  function authorOnly(slideId: string): boolean {
+    if (conversationsFor(slideId).length) return false
+    if (!slideConversations.value.some((c) => c.slides.includes(slideId))) return false
+    const change = changes.value.get(slideId)
+    return !change?.image && !change?.moved && !(data.value?.unfiled ?? []).includes(slideId)
   }
   function badge(slideId: string): Badge | null {
+    if (authorOnly(slideId)) return null
     return (data.value?.badges?.[slideId] as Badge | undefined) ?? null
   }
-  const waitingHere = computed(
-    () => conversationsFor(subject.value).filter((c) => c.status === 'open' && c.turn === 'author').length,
-  )
+  /** How the slide's narration changed since the base, word by word — when it's under review. */
+  function diffFor(slideId: string): string[][] | null {
+    if (!active.value || authorOnly(slideId)) return null
+    return data.value?.diffs[slideId] ?? null
+  }
+  /** The agent waits on the author here: it replied, or changed slides unasked. */
+  function waitsForYou(c: ConversationDTO): boolean {
+    return (
+      c.status === 'open' && c.turn === 'author' &&
+      (c.origin === 'unrequested' || c.messages.some((m) => m.author === 'agent'))
+    )
+  }
+  /** Every conversation waiting for the author, anywhere in the deck; slide ones first. */
+  const waiting = computed(() => [
+    ...slideConversations.value.filter(waitsForYou),
+    ...(deckConversation.value && waitsForYou(deckConversation.value) ? [deckConversation.value] : []),
+  ])
+  const waitingCount = computed(() => waiting.value.length)
+  /** The slides those conversations are about. */
+  const waitingSlides = computed(() => [...new Set(waiting.value.flatMap((c) => c.slides))])
+  /** The "agent is waiting" banner was closed (or followed) for this deck. */
+  const bannerDismissed = ref(false)
+  /** Show the first conversation waiting for the author, in the Review tab. */
+  function showWaiting(): void {
+    bannerDismissed.value = true
+    const first = waiting.value[0]
+    if (first) showInPanel(first.id)
+  }
   const closedCount = computed(() => slideConversations.value.filter((c) => c.status === 'closed').length)
 
   /** One filmstrip in the current order; a removed slide sits after its old predecessor. */
@@ -128,6 +167,7 @@ export const useReviewStore = defineStore('review', () => {
       viewingRemoved.value = null
       beforeOnly.value = false
       comparing.value = false
+      bannerDismissed.value = false
       resetPicked()
     },
     { flush: 'sync' },
@@ -261,9 +301,10 @@ export const useReviewStore = defineStore('review', () => {
 
   return {
     data, comparing, clearing, filter, showClosed, beforeOnly, viewingRemoved, active, conversations,
-    deckConversation, slideConversations, changes, removed, subject, scope, waitingHere, closedCount,
+    deckConversation, slideConversations, changes, removed, subject, scope, closedCount,
+    waitsForYou, waiting, waitingCount, waitingSlides, bannerDismissed, showWaiting,
     strip,
-    conversationsFor, badge, refresh, command, fileUnrequested, viewRemoved, leaveRemoved,
+    conversationsFor, authorOnly, badge, diffFor, refresh, command, fileUnrequested, viewRemoved, leaveRemoved,
     leaveFilterFor, step, select, toggle, nextYourTurn,
     chosen, picked, pickedByHand, newSlides, pick, unpick, resetPicked, startConversation,
     panelRequests, showInPanel,

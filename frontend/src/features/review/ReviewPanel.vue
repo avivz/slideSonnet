@@ -17,6 +17,7 @@ const AUTHOR: Record<string, string> = { author: 'You', agent: 'Agent', system: 
 
 function turnLabel(c: ConversationDTO): string {
   if (c.status === 'closed') return 'accepted'
+  if (c.is_deck && !review.waitsForYou(c)) return '' // standing instructions: nothing waits in it yet
   return c.turn === 'author' ? 'your turn' : "agent's turn"
 }
 function originLabel(c: ConversationDTO): string {

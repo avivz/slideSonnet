@@ -10,7 +10,7 @@ const review = useReviewStore()
 const convs = computed(() => review.conversationsFor(review.subject))
 const changed = computed(() => {
   const c = review.changes.get(review.subject)
-  if (!c) return ''
+  if (!c || review.authorOnly(review.subject)) return '' // only my own edits: nothing to review
   const what = [c.image ? 'slide' : '', c.narration ? 'narration' : ''].filter(Boolean)
   let text = what.length ? what.join(', ') : c.kinds.join(', ')
   if (c.moved && c.base_index !== null) text += ` (was slide ${c.base_index + 1})`
