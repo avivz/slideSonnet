@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import wave
-from dataclasses import replace
 from pathlib import Path
 
 from slidesonnet.audio.synth import _ref_targets
@@ -18,7 +17,7 @@ from slidesonnet.pdf.reader import open_render, page_aspect
 from slidesonnet.review import ops as review_ops
 from slidesonnet.server import editing
 from slidesonnet.server.decks import LoadedDeck, deck_service
-from slidesonnet.server.engines import editor_engine
+from slidesonnet.server.engines import editor_engine, with_engine
 from slidesonnet.server.library import DeckEntry, DeckRegistry
 from slidesonnet.server.media import media_url
 from slidesonnet.server.schemas import (
@@ -43,11 +42,13 @@ from slidesonnet.server.schemas import (
 from slidesonnet.tts import BACKENDS, available_backends, create_tts
 
 
-def with_engine(config: Config, engine: Backend | None) -> Config:
-    """*config* with its TTS backend swapped to *engine* (None keeps the configured one)."""
-    if engine is None or engine == config.tts.backend:
-        return config
-    return replace(config, tts=replace(config.tts, backend=engine))
+def engine_dtos() -> list[EngineDTO]:
+    """Every engine slideSonnet knows, and whether this machine has it installed."""
+    installed = set(available_backends())
+    return [
+        EngineDTO(name=n, paid=b.paid, realtime=b.realtime, installed=n in installed)
+        for n, b in sorted(BACKENDS.items())
+    ]
 
 
 def all_diagnostics(loaded: LoadedDeck, engine: Backend) -> list[Diagnostic]:
@@ -127,7 +128,6 @@ def deck_snapshot(
     }
     voice_map = relativize_voice_files(deck.voices, service.sidecar_path.parent)
     names = sorted(set(config.voices) | set(deck.voices))
-    installed = set(available_backends())
     rev = loaded.revisions
     return DeckSnapshot(
         token=entry.token,
@@ -140,10 +140,7 @@ def deck_snapshot(
         ),
         engine=active,
         default_engine=editor_engine(config),
-        engines=[
-            EngineDTO(name=n, paid=s.paid, realtime=s.realtime, installed=n in installed)
-            for n, s in sorted(BACKENDS.items())
-        ],
+        engines=engine_dtos(),
         pages=pages,
         narration=narration,
         orphans=[b.slide_id for b in editing.orphan_blocks(deck)],

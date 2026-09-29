@@ -28,6 +28,15 @@ _memo: dict[str, tuple[tuple[int, int, int, int], str]] = {}
 _memo_lock = threading.Lock()
 
 
+def file_sha256(path: Path) -> str:
+    """Hex SHA-256 of *path*'s bytes, read in 1 MiB chunks."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def content_revision(path: Path) -> str:
     """Short content hash of *path*, or :data:`ABSENT` when it is missing."""
     key = str(path)
@@ -42,14 +51,10 @@ def content_revision(path: Path) -> str:
             hit = _memo.get(key)
         if hit is not None and hit[0] == sig:
             return hit[1]
-    digest = hashlib.sha256()
     try:
-        with open(path, "rb") as fh:
-            for chunk in iter(lambda: fh.read(1 << 20), b""):
-                digest.update(chunk)
+        rev = file_sha256(path)[:_DIGEST_CHARS]
     except OSError:
         return ABSENT
-    rev = digest.hexdigest()[:_DIGEST_CHARS]
     if memoize:
         with _memo_lock:
             _memo[key] = (sig, rev)

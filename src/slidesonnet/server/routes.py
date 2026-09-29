@@ -34,7 +34,7 @@ from slidesonnet.server.context import (
     context_of,
 )
 from slidesonnet.server.decks import DeckService, RevisionConflict, deck_service
-from slidesonnet.server.engines import editor_engine, engine_lock
+from slidesonnet.server.engines import editor_engine, engine_lock, with_engine
 from slidesonnet.server.events import Event, EventBus, Subscription
 from slidesonnet.server.generation import DeckGeneration
 from slidesonnet.server.jobs import Job, JobContext
@@ -51,7 +51,6 @@ from slidesonnet.server.schemas import (
     DeckStatsDTO,
     DeleteOrphan,
     EditVoices,
-    EngineDTO,
     EngineVoicesDTO,
     ErrorBody,
     ErrorResponse,
@@ -240,7 +239,7 @@ def _uncached(
     """Clips that would be synthesized: the uncached ones, or with *everything*
     (a forced regenerate) every clip, cached or not."""
     loaded = _service(entry).load()
-    config = snapshots.with_engine(loaded.config, engine)
+    config = with_engine(loaded.config, engine)
     audio_dir = resolve_audio_dir(entry.pdf_path, config).path
     return {
         (ref.slide_id, ref.speech_index)
@@ -560,19 +559,14 @@ def get_engine_voices(engine: Backend) -> EngineVoicesDTO:
 @router.get("/meta", response_model=MetaDTO)
 def get_meta() -> MetaDTO:
     from slidesonnet.narration import transitions as trans
-    from slidesonnet.tts import available_backends
 
-    installed = set(available_backends())
     return MetaDTO(
         transitions=[
             TransitionFamilyDTO(key=f.key, label=f.label, options=list(f.options))
             for f in trans.FAMILIES
         ],
         aliases=dict(trans._ALIASES),
-        engines=[
-            EngineDTO(name=n, paid=b.paid, realtime=b.realtime, installed=n in installed)
-            for n, b in sorted(BACKENDS.items())
-        ],
+        engines=snapshots.engine_dtos(),
         speeds=[1.0, 1.25, 1.5, 2.0],
     )
 

@@ -18,7 +18,6 @@ schedule (the same absorb-into-hold timing the export uses).
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import os
 import shutil
 import tempfile
@@ -37,6 +36,7 @@ from slidesonnet.models import Backend, ProgressFn
 from slidesonnet.narration.model import Deck, PageNarration, Transition
 from slidesonnet.server.decks import DeckService
 from slidesonnet.server.engines import engine_lock
+from slidesonnet.server.revisions import file_sha256
 
 PREVIEWS_DIRNAME = "previews"
 SLIDE_PREVIEW_DIRNAME = "slide-preview"
@@ -84,17 +84,9 @@ def previews_dir(pdf_path: Path) -> Path:
     return render_dir(pdf_path) / PREVIEWS_DIRNAME
 
 
-def _file_digest(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()[:20]
-
-
 def _publish(track: Path, dest_dir: Path) -> tuple[str, Path]:
     """Copy *track* to ``<dest_dir>/<hash>.wav`` (atomically, once) and return it."""
-    artifact_id = _file_digest(track)
+    artifact_id = file_sha256(track)[:20]
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{artifact_id}{track.suffix}"
     if dest.exists():

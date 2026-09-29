@@ -27,7 +27,7 @@ from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.models import Backend
 from slidesonnet.narration.model import Deck
 from slidesonnet.server.decks import deck_service
-from slidesonnet.server.engines import engine_lock
+from slidesonnet.server.engines import engine_lock, with_engine
 from slidesonnet.server.events import EventBus
 from slidesonnet.server.library import DeckEntry
 from slidesonnet.server.queue import JobHandle, JobQueue, Target
@@ -38,14 +38,6 @@ logger = logging.getLogger(__name__)
 
 #: ``generation.changed`` events per deck are sent at most this often.
 _EMIT_INTERVAL_S = 0.2
-
-
-def with_engine(config: Config, engine: Backend) -> Config:
-    from dataclasses import replace
-
-    if engine == config.tts.backend:
-        return config
-    return replace(config, tts=replace(config.tts, backend=engine))
 
 
 @dataclass

@@ -13,6 +13,7 @@ Lock order: a deck's render lock (``DeckService.render_lock``) is always taken
 from __future__ import annotations
 
 import threading
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -27,6 +28,13 @@ EDITOR_DEFAULT_ENGINE: Backend = "inworld"
 def editor_engine(config: Config) -> Backend:
     """The engine the editor uses for a deck when the session picked none."""
     return config.tts.backend if config.tts.backend_configured else EDITOR_DEFAULT_ENGINE
+
+
+def with_engine(config: Config, engine: Backend | None) -> Config:
+    """*config* with its TTS backend swapped to *engine* (None keeps the configured one)."""
+    if engine is None or engine == config.tts.backend:
+        return config
+    return replace(config, tts=replace(config.tts, backend=engine))
 
 
 _locks: dict[str, threading.Lock] = {}
