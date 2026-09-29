@@ -119,18 +119,20 @@ Also `title`, `accept`, `reopen`, `send`, `clear`, `show`, `snapshot`. Never edi
 ### `slidesonnet clean` — prune the deck's cache
 
 ```bash
-slidesonnet clean deck.pdf [--keep nothing|api|current|exact] [--dry-run] [-y]
+slidesonnet clean deck.pdf [--keep nothing|api|current|exact] [--dry-run] [-y] [--narration PATH]
 ```
 
 | Level | Keeps | Removes |
 |-------|-------|---------|
-| `api` (default) | All paid (Inworld) audio | Other audio + renders |
-| `current` | Audio matching current sidecar text (any engine) | Orphans + renders |
-| `exact` | Audio matching current text + active engine config | Everything else |
-| `nothing` | Nothing | The entire `.slidesonnet/` cache |
+| `api` (default) | All paid (Inworld) clips | Local clips + renders |
+| `current` | Clips for text the deck still says (any engine) | Orphans + renders |
+| `exact` | Clips the deck would use with its current engine settings | Everything else |
+| `nothing` | Nothing | The deck's whole cache |
 
-`--dry-run` lists what would go without deleting anything; use it before any
-level other than `api`. A shared pool is never touched by `clean`.
+At every level, clips another deck in the same folder still says are kept, and
+paid clips go to `.slidesonnet/audio/trash/` rather than being deleted (it asks
+first unless `-y`). `--dry-run` shows what would go and changes nothing; run it
+before any level other than `api`. A shared pool is never touched by `clean`.
 
 ### `slidesonnet pool` — a shared speech-clip pool
 
