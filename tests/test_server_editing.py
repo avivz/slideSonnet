@@ -150,6 +150,15 @@ def test_orphans_listed_attached_appended_and_deleted(tmp_path: Path) -> None:
     assert [b.slide_id for b in editing.orphan_blocks(deck)] == ["gone", "old"]
     with pytest.raises(editing.EditError):
         editing.attach_orphan(deck, "gone", "a")  # a already has narration
+    # a slide's own narration is not unattached: the tray's actions refuse it
+    for act in (
+        lambda: editing.attach_orphan(deck, "a", "b"),
+        lambda: editing.append_orphan(deck, "a", "c"),
+        lambda: editing.delete_orphan(deck, "a"),
+    ):
+        with pytest.raises(editing.EditError, match="is on a slide in the PDF"):
+            act()
+    assert deck.narration["a"].speech_text == "Kept."
     _, deck = _edit(pdf, lambda d: editing.attach_orphan(d, "gone", "b") or True)
     assert deck.narration["b"].speech_text == "Lost text." and "gone" not in deck.narration
     _, deck = _edit(pdf, lambda d: editing.append_orphan(d, "old", "a") or True)
@@ -158,7 +167,7 @@ def test_orphans_listed_attached_appended_and_deleted(tmp_path: Path) -> None:
     other = tmp_path / "other"
     other.mkdir()
     pdf2 = _deck(other, ["a"], "@a\nA.\n\n@z\nZ.\n")
-    _, deck = _edit(pdf2, lambda d: editing.delete_orphan(d, "z") or True)
+    _, deck = _edit(pdf2, lambda d: editing.delete_orphan(d, "z"))
     assert "z" not in deck.narration and "Z." not in _sidecar(pdf2)
 
 

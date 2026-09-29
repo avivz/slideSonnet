@@ -260,6 +260,12 @@ def test_commands_attach_orphans_and_rename_voices(client: TestClient) -> None:
               "orphan_id": "nope", "target_id": "outro"},
     )  # fmt: skip
     assert bad.status_code == 422 and bad.json()["error"]["code"] == "invalid_edit"
+    on_page = client.post(
+        f"/api/v1/decks/{token}/commands",
+        json={"type": "delete_orphan", "expected_revision": snap["revisions"]["narration"],
+              "orphan_id": "outro"},
+    )  # fmt: skip
+    assert on_page.status_code == 422 and "isn't unattached" in on_page.json()["error"]["message"]
 
 
 # ---- jobs ------------------------------------------------------------------------------

@@ -191,9 +191,7 @@ def post_command(
         elif isinstance(body, AppendOrphan):
             editing.append_orphan(deck, body.orphan_id, body.target_id)
         elif isinstance(body, DeleteOrphan):
-            if body.orphan_id not in deck.narration:
-                return False
-            editing.delete_orphan(deck, body.orphan_id)
+            return editing.delete_orphan(deck, body.orphan_id)
         elif isinstance(body, EditVoices):
             voices = {
                 name: VoiceConfig(name=name, backend_voices=dict(mapping))

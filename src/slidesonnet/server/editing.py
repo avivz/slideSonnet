@@ -139,10 +139,17 @@ def orphan_blocks(deck: Deck) -> list[PageNarration]:
     return [b for sid, b in deck.narration.items() if sid not in on_page]
 
 
-def attach_orphan(deck: Deck, orphan_id: str, target_id: str) -> None:
-    """Move an orphan block's narration onto the empty page *target_id*."""
+def _require_orphan(deck: Deck, orphan_id: str) -> None:
+    """Refuse an id that isn't unattached narration (a slide's own, or none at all)."""
+    if orphan_id in deck.pages:
+        raise EditError(f"'{orphan_id}' is on a slide in the PDF, so it isn't unattached narration")
     if orphan_id not in deck.narration:
         raise EditError(f"no narration block '{orphan_id}'")
+
+
+def attach_orphan(deck: Deck, orphan_id: str, target_id: str) -> None:
+    """Move an orphan block's narration onto the empty page *target_id*."""
+    _require_orphan(deck, orphan_id)
     if target_id not in deck.pages:
         raise EditError(f"'{target_id}' is not a page in the deck")
     if has_narration(deck, target_id):
@@ -161,16 +168,17 @@ def append_orphan(deck: Deck, orphan_id: str, target_id: str) -> None:
         raise EditError("this page has no slide-id to append to")
     if target_id not in deck.pages:
         raise EditError(f"'{target_id}' is not a page in the deck")
-    if orphan_id not in deck.narration:
-        raise EditError(f"no narration block '{orphan_id}'")
+    _require_orphan(deck, orphan_id)
     orphan = deck.narration.pop(orphan_id)
     target = deck.page_narration(target_id)
     deck.narration[target_id] = target.with_content([*target.segments, *orphan.segments])
 
 
-def delete_orphan(deck: Deck, orphan_id: str) -> None:
-    """Drop an orphan block (and its text) from the deck."""
-    deck.narration.pop(orphan_id, None)
+def delete_orphan(deck: Deck, orphan_id: str) -> bool:
+    """Drop an orphan block (and its text) from the deck; False when already gone."""
+    if orphan_id in deck.pages:
+        _require_orphan(deck, orphan_id)
+    return deck.narration.pop(orphan_id, None) is not None
 
 
 # ---- the portable voice layer -------------------------------------------------
