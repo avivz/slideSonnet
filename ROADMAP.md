@@ -31,7 +31,9 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    merged too, and so are the follow-up batches (Kokoro voices in every language,
    `review --narration`, `-q`/`-v` anywhere, blank lines skipped in export, duplicate
    `@id` agreement, orphan-action guards, the empty-new-line conflict). Heavy suites
-   green on 9579d6f (36 passed); rerun before a3. Still open in Tier 3: paid work
+   green on 9579d6f (36 passed); on c1ec424 **one test failed** (36 passed, 1 skipped:
+   the Qwen3 real-prompt test) — which one wasn't captured; rerun with `-rf`, find and
+   fix it before a3. Still open in Tier 3: paid work
    pinned to approved content, frontend dead code and missing frontend tests. Original scope:
    Two
    reviews agree the new editor and pipeline have real data-loss and paid-audio
@@ -60,35 +62,31 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    playback" report. *Acceptance:* every Tier 1–2 box ticked with a regression
    test; Tier 3 ticked or consciously deferred in the file. *Appetite:* three to
    four days across parallel agents. **[agent]**
-2. [ ] **Inworld delivery controls — pronunciation, direction, creativity.**
-   *(Top feature priority, 2026-09-29: Inworld is now the main engine. Merges the
-   inline pronunciation override, the director's note, and per-engine generation
-   parameters into one Inworld-first design.)* Today the Inworld engine sends only
-   `voice`, `model` and `speaking_rate` (`tts/inworld.py`), so everything else about
-   delivery is out of the author's hands. *Story:* As a deck author narrating with
-   Inworld, I want to fix how a name is said, tell a line how to be delivered, and
-   dial expressiveness, without the fixes leaking into the captions or breaking the
-   other engines. *Acceptance examples:*
-   (a) **Spoken vs. caption form.** `…work of [Mengoli](menˈɡɔːli)…` (grammar TBD —
-   must round-trip in the sidecar and not collide with `[pause N]`/markdown) sends
-   the IPA to Inworld while SRT/VTT and the script view's spoken-word marking show
-   "Mengoli"; a lone form serves both; Kokoro/Qwen3 get the plain display form (a
-   Kokoro preview never speaks IPA). Today's respelling dictionary puts the
-   respelling in the captions — why basel shipped with an ad-hoc `/IPA/` hack.
-   (b) **Direction.** The `direct:` note (already in the sidecar and editor,
-   consumed by no engine) maps onto whatever style control Inworld offers; engines
-   without one ignore it, and the editor says which engines honour it.
-   (c) **Creativity/temperature** (and any other Inworld knob found) as a
-   `[tts.inworld]` key, per-deck first; editor control only if (d) shows it's worth it.
-   (d) Every value joins the audio cache key, so changing it re-synthesizes exactly
-   the affected clips; an empty value equals none (no cache churn).
-   *First step:* inventory what the Inworld API actually accepts (temperature,
-   emotion/style markup, IPA/phoneme input) and spot-check each on a couple of
-   short lines — a few cents of paid audio, human-triggered, never in tests.
-   *Open questions:* the pronunciation grammar; whether the global
-   `pronunciation/*.md` dictionary gains per-engine forms or is replaced.
-   *Appetite:* two to three days. **[agent→human]**
-
+2. [ ] **Inworld delivery controls — decide the open questions, then spot-check.**
+   **Built 2026-09-29** (CHANGELOG "Added"; `docs/authoring.md` "Delivery on Inworld"):
+   inline pronunciation fixes `[Mengoli](/menˈɡoːli/)` / `[Dijkstra](DYKE-struh)` (captions
+   and word marking show the display word; Inworld gets the spoken form; Kokoro/Qwen3 a
+   respelling or the word, never IPA); `direct:` notes sent to `inworld-tts-2` only with
+   `[tts.inworld] send_direction = true` (default off); stray `[`/`]` sent to tts-2 as
+   `(`/`)` plus a `check` note; new `[tts.inworld]` keys `temperature`, `delivery_mode`,
+   `language`, `text_normalization`, unset by default and added to the cache key only
+   when set. AICODE verified: 39 decks, 2191 Inworld and 2191 Kokoro clip names unchanged.
+   **Decisions for the maintainer (to discuss):**
+   (1) Should `/…/` values in the pronunciation dictionary go to Inworld only (Kokoro stops
+   receiving IPA; free Kokoro re-synthesis, no Inworld churn)? Today the dictionary is
+   engine-blind, as before.
+   (2) Should `send_direction` default to on for new decks (e.g. written by `init`)?
+   (3) Should the stray-bracket note also appear in the editor's Deck checks (today it is
+   in `slidesonnet check` only)?
+   (4) Later: pass inline fixes through to Kokoro (misaki reads `[word](/phonemes/)`, but
+   its phoneme set differs from IPA)?
+   **Paid spot-checks (human-triggered, a few cents; never in tests):**
+   (i) `The work of Pietro [Mengoli](/menˈɡoːli/) began it.` on the default model and on
+   `inworld-tts-1.5-max`; (ii) `[Leonhard Euler](/ˈleɪɒnhɑːrt/ /ˈɔɪlər/) summed it.`;
+   (iii) `Drive at 50 km/h, and/or take 3/4 of it.`; (iv) `The interval [0, 1] is closed.`;
+   (v) `This is the whole trick.` with `direct: slowly, in a low voice`, with and without
+   `send_direction`; (vi) `delivery_mode` stable vs creative, two takes each; (vii)
+   optional `temperature = 0.6` vs unset on 1.5-max. **[human]**
 3. [ ] **Cut 1.0.0a3.** *Why now:* PyPI users are on a2's NiceGUI editor; the
    Unreleased batch is the largest since the rewrite and includes a breaking
    `.sty` change (plain builds by default) and a `ProgressFn` signature change.
