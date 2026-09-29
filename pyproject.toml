@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=77"]  # PEP 639 license string
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -25,6 +25,7 @@ dependencies = [
     "pymupdf>=1.24",
     "numpy>=1.26",
     "fastapi>=0.115",
+    "pydantic>=2.7",
     "uvicorn>=0.30",
 ]
 
@@ -34,7 +35,6 @@ inworld = ["inworld-tts>=1.0"]
 qwen3 = ["qwen-tts>=0.1", "torch>=2.0"]
 dev = [
     "pytest>=8.0",
-    "pytest-cov",
     "pytest-asyncio",
     "pytest-timeout",
     "httpx",
@@ -78,7 +78,6 @@ module = [
     "torch.*",
     "transformers.*",
     "numpy.*",
-    "pymupdf.*",
 ]
 ignore_missing_imports = true
 

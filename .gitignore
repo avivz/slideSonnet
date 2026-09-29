@@ -30,14 +30,11 @@ htmlcov/
 # OS
 .DS_Store
 
-# Editor cache (page renders + locally-regenerated Piper audio)
+# Deck cache (page renders, audio clips, previews)
 **/.slidesonnet/
 
 # slidesonnet.sty is generated next to a deck via `slidesonnet sty`
 examples/**/slidesonnet.sty
-
-# doit (legacy)
-**/.doit.db
 
 # LaTeX build artifacts
 examples/**/.build/
@@ -56,16 +53,6 @@ examples/**/build.log
 # Built videos (hosted on GitHub Releases)
 examples/**/*.mp4
 
-# Legacy MARP-era cache dir (vestigial; the live cache is .slidesonnet/).
-# No audio is tracked here anymore — ignore leftover slide thumbnails + Piper wavs.
-examples/**/cache/**/slides/
-examples/**/cache/audio/*.piper.*.wav
-
-
 # setuptools build dir
 build/
 .claude/worktrees/
-
-# NiceGUI editor local UI state (app.storage.general)
-examples/**/.nicegui/
-.nicegui/
