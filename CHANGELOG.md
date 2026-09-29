@@ -132,14 +132,23 @@ regression test.
   screen.
 - Picking an engine says "Now using Kokoro for previews and export (this session
   only)" instead of "Generating with kokoro" while idle.
-- The error pill leads to the Unattached narration panel when the error belongs to
-  no slide; an empty slide in the Script view offers "+ Add a line".
+- The error pill leads to the Deck checks when the error belongs to no slide; an
+  empty slide in the Script view offers "+ Add a line".
 - Every confirmation uses the editor's own dialog, and "Clear accepted" asks first.
 - **A recompiled PDF no longer blanks the filmstrip and the slide.** Each slide
   keeps its last picture until its new one is rendered, then swaps it in place.
 - **"Watch as video" no longer flickers after a transition.** The transition's last
   frame stays up until the next slide's picture is ready, instead of for a fixed
   0.3 s (which could flash the previous slide, or an empty frame, back in).
+- **The editor agrees with `check` about a repeated `@id`**: one error on that
+  slide, naming both lines of the narration file. The second block waits in the
+  Unattached narration panel as "@intro · second block" instead of raising an
+  error of its own about a made-up `intro-2`.
+- **A new line you haven't typed into yet survives an outside change** to its
+  slide: the file's version is taken (nothing typed, so nothing to choose) and the
+  empty line stays where it was, also when the editor page is reopened.
+- The Unattached narration actions (attach, append, delete) refuse a slide's own
+  narration with a clear message instead of moving or deleting it.
 
 ### Security (September 2026 review)
 - **Slide images and audio (`/ssmedia`) get the same Host check as the API**,
@@ -186,6 +195,11 @@ regression test.
   NiceGUI-era idempotent app mounting. `review show` no longer requires `--base`.
 
 ### Added
+- **Deck checks** in the editor's console: findings that belong to no slide —
+  narration listed out of PDF order, narration whose slide is gone from the PDF —
+  are listed there (only when there are some), and an unattached block's error
+  links to its text. Before, they raised the error count while every slide said
+  "No issues on this slide".
 - **Script view** (the editor's default; **Slide** switches back): the whole
   deck's narration as one editable document, each line its own paragraph, pauses
   at the end of the line before them. While playing, the line being spoken is
