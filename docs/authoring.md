@@ -235,9 +235,9 @@ Choose one per run with `--engine`, or per deck with `[tts] backend`.
 
 - **Pronunciation.** Fix a word inline with `[word](/IPA/)` (see the narration
   format above), or deck-wide with a `pronunciation` file of `**word**: form`
-  lines. A dictionary form is sent to every engine as written, so put IPA
-  there only for an Inworld deck; the inline fix is the engine-aware one.
-  Captions always show the word as written.
+  lines. Both work the same way: a respelling (`DYKE-struh`) is said by every
+  engine, while IPA (`/menˈɡoːli/`) goes to Inworld only — Kokoro and Qwen3 say
+  the word as written instead. Captions always show the word as written.
 - **Director's notes.** With `send_direction = true` under `[tts.inworld]`, a
   line's `direct:` note (e.g. `warm, unhurried`) is sent ahead of it as an
   Inworld stage direction. Only `inworld-tts-2` follows notes; Kokoro and Qwen3

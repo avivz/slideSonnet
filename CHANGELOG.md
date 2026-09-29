@@ -204,12 +204,15 @@ regression test.
   are listed there (only when there are some), and an unattached block's error
   links to its text. Before, they raised the error count while every slide said
   "No issues on this slide".
-- **Inworld delivery controls.** Existing decks keep every clip they have: nothing
-  below changes a line's audio until you use it.
+- **Inworld delivery controls.** Existing Inworld clips keep their names; below
+  says which lines re-generate.
   - **Fix how a word is said, not how it's captioned:** `[Mengoli](/menˈɡoːli/)`
     (IPA) or `[Dijkstra](DYKE-struh)` (a respelling) in a line. Subtitles and the
     editor show "Mengoli"; Inworld says the IPA; Kokoro and Qwen3 say a
-    respelling, or the word as written (never IPA).
+    respelling, or the word as written (never IPA). The `pronunciation`
+    dictionary now works the same way: its IPA entries go to Inworld only, so
+    Kokoro and Qwen3 say "Mengoli" instead of reading `/menˈɡoːli/` out (their
+    lines with such a word re-generate once, for free).
   - **Director's notes reach Inworld:** with `send_direction = true` under
     `[tts.inworld]`, a line's `direct:` note is performed by `inworld-tts-2`. Off by
     default; the editor's note field says only Inworld follows it.

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from slidesonnet.audio import synth as synth_mod
 from slidesonnet.config import Config
 from slidesonnet.models import TTSConfig
@@ -204,8 +202,8 @@ def _delivery_deck(*lines: Segment) -> Deck:
 
 
 # A deck as the AICODE course writes it — dictionary IPA and a respelling, a
-# `direct:` note, no [tts.inworld] delivery settings — must keep every clip name
-# it had before delivery controls existed (computed from that code; never
+# `direct:` note, no [tts.inworld] delivery settings — must keep every Inworld clip
+# name it had before delivery controls existed (computed from that code; never
 # regenerate: a failure here means paid clips would be re-bought).
 _PRE_DELIVERY_NAMES = {
     "inworld": [
@@ -221,19 +219,33 @@ _PRE_DELIVERY_NAMES = {
 }
 
 
-@pytest.mark.parametrize("backend", sorted(_PRE_DELIVERY_NAMES))
-def test_existing_decks_keep_their_clip_names(backend: str) -> None:
+def _aicode_names(backend: str, pronunciation: dict[str, str], **tts: object) -> list[str]:
     deck = _delivery_deck(
         Segment.speech("Ask Claude to run npx."),
         Segment.speech("Now quietly.", direction="slowly, in a low voice"),
         Segment.speech("The interval (0, 1).", pace="slow"),
     )
     config = Config(
-        tts=TTSConfig(backend=backend),  # type: ignore[arg-type]
-        pronunciation={"Claude": "/klɔːd/", "npx": "N-P-X"},
+        tts=TTSConfig(backend=backend, **tts),  # type: ignore[arg-type]
+        pronunciation=pronunciation,
     )
-    names = [p.name for _ref, p in synth_mod._ref_targets(deck, config, Path("/pool"))]
-    assert names == _PRE_DELIVERY_NAMES[backend]
+    return [p.name for _ref, p in synth_mod._ref_targets(deck, config, Path("/pool"))]
+
+
+_AICODE_DICTIONARY = {"Claude": "/klɔːd/", "npx": "N-P-X"}
+
+
+def test_existing_inworld_clips_keep_their_names() -> None:
+    assert _aicode_names("inworld", _AICODE_DICTIONARY) == _PRE_DELIVERY_NAMES["inworld"]
+
+
+def test_kokoro_says_the_plain_word_for_a_dictionary_ipa_value() -> None:
+    """Only the line with a dictionary IPA word re-keys (free): it now sounds as if
+    the IPA entry were absent."""
+    names = _aicode_names("kokoro", _AICODE_DICTIONARY)
+    assert names[1:] == _PRE_DELIVERY_NAMES["kokoro"][1:]
+    assert names[0] == _aicode_names("kokoro", {"npx": "N-P-X"})[0]
+    assert names[0] != _PRE_DELIVERY_NAMES["kokoro"][0]
 
 
 def test_each_engine_is_sent_its_own_form_of_a_line() -> None:

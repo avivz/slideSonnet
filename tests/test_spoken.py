@@ -51,13 +51,13 @@ def test_each_reader_gets_its_form(text: str, captions: str, inworld: str, local
     assert engine_text(text, ipa=False, dictionary={}) == local
 
 
-def test_the_dictionary_applies_to_every_engine_as_before() -> None:
-    """Without inline fixes every engine gets exactly ``apply_pronunciation``'s text
-    (IPA values included), so no existing clip is re-keyed."""
+def test_dictionary_ipa_reaches_inworld_only() -> None:
+    """Inworld gets ``apply_pronunciation``'s text unchanged (so its clips keep their
+    names); Kokoro/Qwen3 get the plain word for an IPA value, a respelling as written."""
     d = {"Mengoli": "/menˈɡoːli/", "Euler": "OY-ler"}
     text = "Mengoli and Euler"
-    for ipa in (True, False):
-        assert engine_text(text, ipa=ipa, dictionary=d) == "/menˈɡoːli/ and OY-ler"
+    assert engine_text(text, ipa=True, dictionary=d) == "/menˈɡoːli/ and OY-ler"
+    assert engine_text(text, ipa=False, dictionary=d) == "Mengoli and OY-ler"
 
 
 def test_an_inline_fix_wins_over_the_dictionary() -> None:

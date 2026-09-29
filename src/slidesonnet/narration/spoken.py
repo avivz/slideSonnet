@@ -18,11 +18,10 @@ untouched), and resolved here per reader:
 The ``(`` must follow the ``]`` immediately, so ``[pause 2]`` and ordinary
 brackets are never read as a fix. A blank spoken form is no fix.
 
-The global pronunciation dictionary (``pronunciation/*.md``) applies, as it
-always has, to the words outside the fixes, for every engine. (A ``/…/``
-dictionary value therefore still reaches Kokoro/Qwen3 as written; keeping it
-engine-blind keeps every existing clip's cache key. Use an inline IPA fix for
-an Inworld-only pronunciation.)
+The global pronunciation dictionary (``pronunciation/*.md``) applies to the
+words outside the fixes, the same way: a respelling reaches every engine, a
+``/…/`` IPA value only Inworld (Kokoro/Qwen3 say the plain word). Inworld's
+text is exactly what it always was, so no paid clip changes name.
 """
 
 from __future__ import annotations
@@ -79,12 +78,13 @@ def engine_text(text: str, *, ipa: bool, dictionary: dict[str, str]) -> str:
 
     *ipa* says whether the engine reads IPA (Inworld). Fixes resolve to their
     spoken form where the engine can say it, else to the display form — which
-    the dictionary may still respell. Text without fixes comes out exactly as
-    ``apply_pronunciation`` gives it, for every engine, so existing cache keys
-    stand.
+    the dictionary may still respell. The dictionary's IPA values, like IPA
+    fixes, reach only an engine that reads IPA. For Inworld, text without fixes
+    comes out exactly as ``apply_pronunciation`` gives it, so its paid clips
+    keep their cache keys.
     """
-    # The dictionary applies as it always has — to every engine, IPA values
-    # included — so no existing clip (Kokoro's or paid Inworld's) changes name.
+    if not ipa:
+        dictionary = {word: form for word, form in dictionary.items() if not is_ipa(form)}
     out: list[str] = []
     plain = ""  # the run the dictionary still applies to
     pos = 0
