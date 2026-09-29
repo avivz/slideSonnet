@@ -15,7 +15,7 @@ from typing import NamedTuple
 from slidesonnet.exceptions import FFmpegError, RenderError
 from slidesonnet.proc import run_tool
 from slidesonnet.timing import PageTiming
-from slidesonnet.video.composer import concatenate_audio, get_duration
+from slidesonnet.video.composer import concatenate_audio, get_duration, partial_output
 
 _SAMPLE_RATE = 44100
 
@@ -30,9 +30,19 @@ class AudioPiece:
 
 
 def make_silence(duration: float, path: Path, *, sample_rate: int = _SAMPLE_RATE) -> Path:
-    """Write *duration* seconds of stereo silence to *path* (WAV)."""
+    """Write *duration* seconds of stereo silence to *path* (WAV).
+
+    Published whole: silence files are shared by name and reused, so an
+    interrupted write must never leave one behind.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     dur = max(duration, 0.001)
+    with partial_output(path) as partial:
+        _write_silence(dur, partial, sample_rate)
+    return path
+
+
+def _write_silence(dur: float, path: Path, sample_rate: int) -> None:
     cmd = [
         "ffmpeg",
         "-y",
@@ -52,7 +62,6 @@ def make_silence(duration: float, path: Path, *, sample_rate: int = _SAMPLE_RATE
         install_hint="ffmpeg",
         fail_message="ffmpeg failed making silence",
     )
-    return path
 
 
 def page_pieces(timing: PageTiming, speech_clips: list[Path]) -> list[AudioPiece]:

@@ -2,18 +2,41 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
+import secrets
 import shutil
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from slidesonnet.exceptions import FFmpegError
 from slidesonnet.proc import run_tool, run_tool_with_progress
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def partial_output(output: Path) -> Iterator[Path]:
+    """Yield a hidden sibling of *output* to write, renamed over *output* on success.
+
+    A reader — the editor's preview, the next export's cache check, the user's
+    player — sees the old file or the whole new one, never half of one, and a
+    failure or cancel inside the block leaves the old file untouched and no temp
+    behind. The sibling keeps *output*'s extension (ffmpeg picks the format from
+    it) and is not made by ``mkstemp``: the writer creates it, so it gets the
+    permissions a direct write would (``mkstemp`` makes it owner-only).
+    """
+    tag = f"{os.getpid()}-{secrets.token_hex(4)}"
+    partial = output.with_name(f".{output.stem}.{tag}.partial{output.suffix}")
+    try:
+        yield partial
+        os.replace(partial, output)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
 
 
 def _scale_pad_filter(resolution: str) -> str:
@@ -467,12 +490,14 @@ def concatenate_audio(audio_paths: list[Path], output: Path) -> None:
     """Concatenate multiple audio files into one using ffmpeg concat filter.
 
     Handles any format (WAV/MP3) since it decodes and re-encodes.
-    Single-file input just copies.
+    Single-file input just copies. The output is published whole
+    (:func:`partial_output`): page and track WAVs are reused by name.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
 
     if len(audio_paths) == 1:
-        shutil.copy2(audio_paths[0], output)
+        with partial_output(output) as partial:
+            shutil.copy2(audio_paths[0], partial)
         return
 
     inputs: list[str] = []
@@ -483,17 +508,18 @@ def concatenate_audio(audio_paths: list[Path], output: Path) -> None:
 
     concat_filter = f"{''.join(filter_labels)}concat=n={len(audio_paths)}:v=0:a=1[outa]"
 
-    cmd = [
-        "ffmpeg",
-        "-y",
-        *inputs,
-        "-filter_complex",
-        concat_filter,
-        "-map",
-        "[outa]",
-        str(output),
-    ]
-    _run_ffmpeg(cmd)
+    with partial_output(output) as partial:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            *inputs,
+            "-filter_complex",
+            concat_filter,
+            "-map",
+            "[outa]",
+            str(partial),
+        ]
+        _run_ffmpeg(cmd)
 
 
 def get_duration(media_path: Path, *, stream: str | None = None) -> float:

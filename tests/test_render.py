@@ -630,3 +630,79 @@ def test_compose_video_replaces_the_previous_export_only_on_success(
         run()
         assert output.read_bytes() == b"new"
     assert sorted(p.name for p in output.parent.iterdir()) == ["deck.mp4"]  # no temp left
+
+
+def test_render_audio_track_cancel_then_undo_serves_no_stale_audio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A page rebuilt for an edit, then cancelled before the manifest was saved, must
+    not be certified under its *old* fingerprint: undoing the edit restores that
+    fingerprint, and the cache would serve the edited audio as the original."""
+    import os
+
+    tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
+    rebuilt: list[str] = []
+
+    def fake_build_page_audio(
+        timing: PageTiming, speech_clips: list[Path], out_path: Path, *, silence_dir: Path
+    ) -> float:
+        rebuilt.append(timing.slide_id)
+        out_path.write_bytes(b"".join(c.read_bytes() for c in speech_clips) or b"hold")
+        return timing.duration
+
+    def cancel(page_audios: list[Path], out_path: Path) -> float:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("slidesonnet.render.build_page_audio", fake_build_page_audio)
+    monkeypatch.setattr(
+        "slidesonnet.render.assemble_track", lambda audios, out: out.write_bytes(b"t") or 0.0
+    )
+    render_dir = tmp_path / "render"
+    a, c = tmp_path / "a.wav", tmp_path / "c.wav"
+    a.write_bytes(b"orig")
+    c.write_bytes(b"c")
+    clips = [[a], [], [c], []]
+    render_audio_track(tl, clips, render_dir=render_dir)
+    original = os.stat(a)
+
+    a.write_bytes(b"edited")  # edit slide a, then cancel while the track assembles
+    monkeypatch.setattr("slidesonnet.render.assemble_track", cancel)
+    with pytest.raises(KeyboardInterrupt):
+        render_audio_track(tl, clips, render_dir=render_dir)
+    assert (render_dir / "page-0001.wav").read_bytes() == b"edited"
+
+    a.write_bytes(b"orig")  # undo: same size, same mtime as before
+    os.utime(a, ns=(original.st_atime_ns, original.st_mtime_ns))
+    monkeypatch.setattr(
+        "slidesonnet.render.assemble_track", lambda audios, out: out.write_bytes(b"t") or 0.0
+    )
+    rebuilt.clear()
+    render_audio_track(tl, clips, render_dir=render_dir)
+    assert rebuilt == ["a"]
+    assert (render_dir / "page-0001.wav").read_bytes() == b"orig"
+
+
+@pytest.mark.parametrize("manifest", ["[1, 2]", '{"pages": 7}', "{not json", '"x"'])
+def test_render_audio_track_treats_a_malformed_manifest_as_a_miss(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manifest: str
+) -> None:
+    tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
+    rebuilt: list[str] = []
+    monkeypatch.setattr(
+        "slidesonnet.render.build_page_audio",
+        lambda timing, clips, out, *, silence_dir: (
+            rebuilt.append(timing.slide_id) or out.write_bytes(b"p") or 0.0
+        ),
+    )
+    monkeypatch.setattr(
+        "slidesonnet.render.assemble_track", lambda audios, out: out.write_bytes(b"t") or 0.0
+    )
+    render_dir = tmp_path / "render"
+    render_dir.mkdir()
+    for i in range(1, 5):
+        (render_dir / f"page-{i:04d}.wav").write_bytes(b"old")
+    (render_dir / "track.cache.json").write_text(manifest)
+    render_audio_track(
+        tl, [[tmp_path / "a.wav"], [], [tmp_path / "c.wav"], []], render_dir=render_dir
+    )
+    assert rebuilt == tl.slide_ids

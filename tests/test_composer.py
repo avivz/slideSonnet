@@ -973,10 +973,14 @@ class TestConcatenateSegmentsXfadeMocked:
         assert cmd[map_indices[1] + 1] == "[a1]"
 
 
+def _ffmpeg_writes_output(cmd: list[str], **kw: object) -> None:
+    Path(cmd[-1]).write_bytes(b"out")
+
+
 class TestConcatenateAudioMocked:
     """Mocked tests for concatenate_audio()."""
 
-    @patch("slidesonnet.video.composer._run_ffmpeg")
+    @patch("slidesonnet.video.composer._run_ffmpeg", side_effect=_ffmpeg_writes_output)
     def test_multiple_files_concat_filter(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
         a = tmp_path / "a.wav"
         b = tmp_path / "b.wav"
@@ -994,7 +998,7 @@ class TestConcatenateAudioMocked:
         assert "-map" in cmd
         assert "[outa]" in cmd
 
-    @patch("slidesonnet.video.composer._run_ffmpeg")
+    @patch("slidesonnet.video.composer._run_ffmpeg", side_effect=_ffmpeg_writes_output)
     def test_three_files(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
         paths = [tmp_path / f"{i}.wav" for i in range(3)]
         output = tmp_path / "out.wav"
@@ -1006,6 +1010,24 @@ class TestConcatenateAudioMocked:
         fc = cmd[fc_idx + 1]
         assert "[0:a][1:a][2:a]concat=n=3:v=0:a=1[outa]" == fc
 
+    @patch("slidesonnet.video.composer._run_ffmpeg")
+    def test_interrupted_write_keeps_the_previous_file(
+        self, mock_ffmpeg: MagicMock, tmp_path: Path
+    ) -> None:
+        """ffmpeg writes a sibling temp file, renamed over the output only when whole."""
+        output = tmp_path / "track.wav"
+        output.write_bytes(b"previous")
+
+        def die_midway(cmd: list[str], **kw: object) -> None:
+            Path(cmd[-1]).write_bytes(b"half")
+            raise KeyboardInterrupt
+
+        mock_ffmpeg.side_effect = die_midway
+        with pytest.raises(KeyboardInterrupt):
+            concatenate_audio([tmp_path / "a.wav", tmp_path / "b.wav"], output)
+        assert output.read_bytes() == b"previous"
+        assert [p.name for p in tmp_path.iterdir()] == ["track.wav"]
+
     def test_single_file_copies(self, tmp_path: Path) -> None:
         src = tmp_path / "only.wav"
         src.write_bytes(b"audio-data")
@@ -1015,7 +1037,7 @@ class TestConcatenateAudioMocked:
 
         assert output.read_bytes() == b"audio-data"
 
-    @patch("slidesonnet.video.composer._run_ffmpeg")
+    @patch("slidesonnet.video.composer._run_ffmpeg", side_effect=_ffmpeg_writes_output)
     def test_creates_output_dir(self, mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
         a = tmp_path / "a.wav"
         b = tmp_path / "b.wav"

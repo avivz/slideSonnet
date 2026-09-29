@@ -10,13 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
-import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from slidesonnet.atomic import atomic_write_text
 from slidesonnet.audio.track import Cue, assemble_track, build_page_audio, cue_sheet, page_pieces
 from slidesonnet.config import Config
 from slidesonnet.models import ProgressFn, VideoConfig
@@ -195,43 +194,64 @@ def render_audio_track(
     silence_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_path = render_dir / "track.cache.json"
-    old: dict[str, object] = {}
-    if manifest_path.exists():
-        try:
-            old = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            old = {}
+    old = _read_manifest(manifest_path)
     raw_pages = old.get("pages")
-    old_pages: dict[str, str] = raw_pages if isinstance(raw_pages, dict) else {}
+    old_pages: dict[str, object] = raw_pages if isinstance(raw_pages, dict) else {}
 
-    page_audios: list[Path] = []
-    new_pages: dict[str, str] = {}
+    page_audios = [render_dir / f"page-{i + 1:04d}.wav" for i in range(len(timeline.pages))]
+    fingerprints = [_page_fingerprint(page, page_clips[i]) for i, page in enumerate(timeline.pages)]
+    fresh = [
+        out.exists() and old_pages.get(out.name) == fp
+        for out, fp in zip(page_audios, fingerprints, strict=True)
+    ]
+    new_pages = {out.name: fp for out, fp in zip(page_audios, fingerprints, strict=True)}
+    track = render_dir / "track.wav"
+    track_fp = hashlib.sha256("\x00".join(fingerprints).encode()).hexdigest()
+    track_fresh = track.exists() and old.get("track") == track_fp
+
+    if not (all(fresh) and track_fresh):
+        # Un-certify what is about to change *before* changing it. A page WAV or
+        # track rewritten while the manifest still vouches for its old inputs
+        # would be served as current if the run stops here and the inputs then
+        # revert (cancel, then undo). Only still-valid pages stay listed.
+        _write_manifest(
+            manifest_path,
+            {"pages": {k: v for (k, v), ok in zip(new_pages.items(), fresh) if ok}},
+        )
+
     for i, page in enumerate(timeline.pages):
-        out = render_dir / f"page-{i + 1:04d}.wav"
-        fp = _page_fingerprint(page, page_clips[i])
-        if not (out.exists() and old_pages.get(out.name) == fp):
-            build_page_audio(page, page_clips[i], out, silence_dir=silence_dir)
-        new_pages[out.name] = fp
-        page_audios.append(out)
+        if not fresh[i]:
+            build_page_audio(page, page_clips[i], page_audios[i], silence_dir=silence_dir)
         if progress is not None:
             progress("assemble", i + 1, total_steps, "")
 
-    track = render_dir / "track.wav"
-    track_fp = hashlib.sha256(
-        "\x00".join(new_pages[p.name] for p in page_audios).encode()
-    ).hexdigest()
-    if not (track.exists() and old.get("track") == track_fp):
+    if not track_fresh:
         assemble_track(page_audios, track)
     if progress is not None:
         progress("assemble", total_steps, total_steps, "")
 
-    try:
-        manifest_path.write_text(
-            json.dumps({"pages": new_pages, "track": track_fp}), encoding="utf-8"
-        )
-    except OSError:
-        pass
+    _write_manifest(manifest_path, {"pages": new_pages, "track": track_fp})
     return track, page_audios
+
+
+def _read_manifest(path: Path) -> dict[str, object]:
+    """The render manifest, or ``{}`` (a cache miss) if absent or malformed."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
+    """Replace the render manifest atomically; if it can't be written, remove it.
+
+    A missing manifest only costs a rebuild; a stale one serves wrong audio.
+    """
+    try:
+        atomic_write_text(path, json.dumps(manifest))
+    except OSError:
+        path.unlink(missing_ok=True)
 
 
 #: Render-dir entries that exist only to feed one ffmpeg run. Everything else
@@ -351,16 +371,6 @@ def frame_plan(fulls: list[float], morph: list[float], fps: int) -> list[FramePi
     return plan
 
 
-def _partial_path(output: Path) -> Path:
-    """A unique hidden sibling of *output* to write into, keeping its extension.
-
-    Not ``mkstemp``: ffmpeg creates the file itself, so it gets the same
-    permissions a direct write would (``mkstemp`` makes it owner-only).
-    """
-    tag = f"{os.getpid()}-{secrets.token_hex(4)}"
-    return output.with_name(f".{output.stem}.{tag}.partial{output.suffix}")
-
-
 def compose_video(
     timeline: DeckTimeline,
     page_images: list[Path],
@@ -474,8 +484,7 @@ def compose_video(
     # ffmpeg writes a sibling temp file that replaces *output* only once it is
     # whole: a failed or cancelled export leaves the last good video in place.
     output.parent.mkdir(parents=True, exist_ok=True)
-    partial = _partial_path(output)
-    try:
+    with composer.partial_output(output) as partial:
         if page_audios is None or audio_track is None:
             concatenate_segments(pieces, partial, on_time=ffmpeg_pass("concat"))
             report("concat", total_s, total_s)
@@ -485,8 +494,4 @@ def compose_video(
             report("concat", total_s, total_s)
             composer.mux_audio(silent_video, audio_track, partial, on_time=ffmpeg_pass("mux"))
             report("mux", total_s, total_s)
-        os.replace(partial, output)
-    except BaseException:
-        partial.unlink(missing_ok=True)
-        raise
     return output

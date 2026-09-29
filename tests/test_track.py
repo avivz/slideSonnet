@@ -40,23 +40,38 @@ def _timing(
 
 
 class TestMakeSilence:
-    @patch("slidesonnet.proc.subprocess.run")
-    def test_command_shape(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(("seconds", "flag"), [(1.5, "1.5000"), (0.0, "0.0010")])
+    def test_command_shape(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seconds: float, flag: str
+    ) -> None:
+        cmds: list[list[str]] = []
+
+        def fake_ffmpeg(cmd: list[str], **kw: object) -> None:
+            cmds.append(cmd)
+            Path(cmd[-1]).write_bytes(b"wav")
+
+        monkeypatch.setattr("slidesonnet.audio.track.run_tool", fake_ffmpeg)
         out = tmp_path / "sub" / "sil.wav"
-        result = make_silence(1.5, out)
-        assert result == out
-        assert out.parent.is_dir()  # created on demand
-        cmd = mock_run.call_args[0][0]
+        assert make_silence(seconds, out) == out
+        assert out.read_bytes() == b"wav"  # published under its name
+        [cmd] = cmds
         assert cmd[0] == "ffmpeg"
         assert "anullsrc=r=44100:cl=stereo" in cmd
-        assert cmd[cmd.index("-t") + 1] == "1.5000"
-        assert str(out) in cmd
+        assert cmd[cmd.index("-t") + 1] == flag  # never a zero-length stream
 
-    @patch("slidesonnet.proc.subprocess.run")
-    def test_duration_clamped_to_minimum(self, mock_run: MagicMock, tmp_path: Path) -> None:
-        make_silence(0.0, tmp_path / "sil.wav")
-        cmd = mock_run.call_args[0][0]
-        assert cmd[cmd.index("-t") + 1] == "0.0010"  # never a zero-length stream
+    def test_interrupted_silence_is_never_left_for_reuse(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Silence files are reused by name, so a half-written one must not exist."""
+
+        def die_midway(cmd: list[str], **kw: object) -> None:
+            Path(cmd[-1]).write_bytes(b"half")
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("slidesonnet.audio.track.run_tool", die_midway)
+        with pytest.raises(KeyboardInterrupt):
+            make_silence(1.0, tmp_path / "1.0000s.wav")
+        assert list(tmp_path.iterdir()) == []
 
     @patch("slidesonnet.proc.subprocess.run", side_effect=FileNotFoundError)
     def test_missing_ffmpeg_raises_ffmpeg_error(self, mock_run: MagicMock, tmp_path: Path) -> None:
