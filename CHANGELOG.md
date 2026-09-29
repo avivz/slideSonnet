@@ -126,6 +126,9 @@ regression test.
 - Every confirmation uses the editor's own dialog, and "Clear accepted" asks first.
 - **A recompiled PDF no longer blanks the filmstrip and the slide.** Each slide
   keeps its last picture until its new one is rendered, then swaps it in place.
+- **"Watch as video" no longer flickers after a transition.** The transition's last
+  frame stays up until the next slide's picture is ready, instead of for a fixed
+  0.3 s (which could flash the previous slide, or an empty frame, back in).
 
 ### Security (September 2026 review)
 - **Slide images and audio (`/ssmedia`) get the same Host check as the API**,

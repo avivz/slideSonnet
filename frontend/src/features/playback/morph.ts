@@ -5,9 +5,6 @@
 // editor's static/morph.html.)
 import type { MorphStep } from './manifest'
 
-/** Hold the incoming frame briefly after a boundary so a late frame can't flash. */
-export const GRACE = 0.3
-
 export type Direction = 'left' | 'right' | 'up' | 'down'
 
 export type Effect =
@@ -34,14 +31,18 @@ export function effect(kind: string): Effect {
   return { t: 'fade' }
 }
 
-/** The step animating at time `t` and its progress 0..1, or null when none is. */
+/**
+ * The step animating at time `t` and its progress 0..1, or null when none is.
+ * Past its boundary a step is done: the overlay (dom.ts) keeps the incoming
+ * frame up until the picture that follows it is painted — no fixed grace.
+ */
 export function activeStep(
   steps: readonly MorphStep[],
   t: number,
 ): { step: MorphStep; progress: number } | null {
   for (const step of steps) {
-    if (t >= step.at - step.dur && t <= step.at + GRACE) {
-      const raw = t <= step.at ? (t - (step.at - step.dur)) / step.dur : 1
+    if (t >= step.at - step.dur && t <= step.at) {
+      const raw = (t - (step.at - step.dur)) / step.dur
       return { step, progress: Math.min(1, Math.max(0, raw)) }
     }
   }

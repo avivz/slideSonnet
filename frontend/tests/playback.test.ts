@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PlaybackController, type Frame, type MediaLike, type Scheduler } from '@/features/playback/controller'
 import { cueAt, cueStart, formatClock, formatLength, nextInScope } from '@/features/playback/cues'
@@ -49,11 +50,11 @@ describe('cues', () => {
 describe('morph', () => {
   const step = { at: 4, dur: 1, kind: 'wipeleft', from: 'a.png', to: 'b.png' }
 
-  it('is active from dur before the boundary until a short grace after it', () => {
+  it('is active from dur before the boundary until the boundary', () => {
     expect(activeStep([step], 2.9)).toBeNull()
     expect(activeStep([step], 3.5)?.progress).toBeCloseTo(0.5)
-    expect(activeStep([step], 4.2)?.progress).toBe(1) // holding the incoming frame
-    expect(activeStep([step], 4.4)).toBeNull()
+    expect(activeStep([step], 4)?.progress).toBe(1)
+    expect(activeStep([step], 4.01)).toBeNull() // the overlay holds the incoming frame until the next is painted
   })
 
   it.each([
@@ -244,6 +245,54 @@ describe('DOM views', () => {
     expect(overlay.root.classList.contains('ss-on')).toBe(false)
     overlay.render(frame({ loaded: false }))
     expect(overlay.root.classList.contains('ss-on')).toBe(false)
+  })
+
+  describe('handing off after a transition', () => {
+    // the browser decodes a picture on its own time: each img.decode() waits for the test
+    const decoded = new Map<string, () => void>()
+    const paint = async (src: string): Promise<void> => {
+      decoded.get(new URL(src, location.href).href)?.()
+      await flushPromises()
+    }
+    beforeEach(() => {
+      decoded.clear()
+      HTMLImageElement.prototype.decode = function (this: HTMLImageElement) {
+        return new Promise<void>((resolve) => decoded.set(this.src, resolve))
+      }
+    })
+    afterEach(() => {
+      delete (HTMLImageElement.prototype as Partial<HTMLImageElement>).decode
+    })
+    const fade = { at: 1, dur: 1, kind: 'fade', from: '/a.png', to: '/b.png' }
+    const layers = (stage: HTMLElement) =>
+      [...stage.querySelectorAll<HTMLImageElement>('.ss-morph img')].map((img) => [img.getAttribute('src'), img.style.opacity])
+
+    it('keeps the incoming slide up until the still picture is painted (Watch as video)', async () => {
+      const stage = document.createElement('div')
+      const overlay = new StageOverlay(stage)
+      overlay.render(frame({ morph: morphFrame(fade, 1) })) // the fade has landed on b
+      // the stage holds b in its live picture — another URL, not loaded yet
+      overlay.render(frame({ slideId: 'b', imageUrl: '/b-live.png' }))
+      expect(layers(stage)).toEqual([['/b-live.png', '1'], ['/b.png', '1']]) // b stays up over it
+      await paint('/b-live.png')
+      expect(layers(stage)).toEqual([['/b-live.png', '1'], ['/b-live.png', '0']]) // painted: handed off
+      overlay.render(frame({ slideId: 'c', imageUrl: '/c.png' })) // a plain cut: nothing to hold
+      expect(layers(stage)[1]).toEqual(['/c.png', '0'])
+    })
+
+    it('lifts off a single-slide preview only once the stage shows the slide', async () => {
+      const stage = document.createElement('div')
+      const under = document.createElement('img')
+      under.src = '/b-stage.png'
+      stage.append(under)
+      const overlay = new StageOverlay(stage)
+      overlay.render(frame({ imageUrl: null, morph: morphFrame(fade, 1) }))
+      overlay.render(frame({ imageUrl: null })) // the transition is over
+      expect(overlay.root.classList.contains('ss-on')).toBe(true) // the stage isn't painted yet
+      expect(layers(stage)[1]).toEqual(['/b.png', '1'])
+      await paint('/b-stage.png')
+      expect(overlay.root.classList.contains('ss-on')).toBe(false)
+    })
   })
 
   it('the transport tracks position, seeks on release, and clears on stop', () => {

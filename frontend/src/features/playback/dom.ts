@@ -8,15 +8,29 @@ import type { LayerStyle } from './morph'
 
 const UNSET = Symbol('unset')
 
-/** Draws the playing slide and any transition over a stage element. */
+/**
+ * Draws the playing slide and any transition over a stage element.
+ *
+ * When a transition lands, the picture taking over (the still layer, or the
+ * stage's own image in a single-slide preview) may not be painted yet — a
+ * picture mid-load shows nothing, or the slide before. So the handoff waits for
+ * that picture to decode, not for a timer; until then the transition's incoming
+ * layer stays up.
+ */
 export class StageOverlay {
   readonly root: HTMLDivElement
   private readonly a: HTMLImageElement
   private readonly b: HTMLImageElement
   private srcA: string | null | typeof UNSET = UNSET
   private srcB: string | null | typeof UNSET = UNSET
+  /** A transition has landed; the picture taking over isn't known to be painted. */
+  private handoff = false
+  private last: Frame | null = null
+  /** Per image: the src it has decoded, and the src it is decoding. */
+  private readonly decoded = new WeakMap<HTMLImageElement, string>()
+  private readonly decoding = new WeakMap<HTMLImageElement, string>()
 
-  constructor(stage: HTMLElement) {
+  constructor(private readonly stage: HTMLElement) {
     const existing = stage.querySelector<HTMLDivElement>(':scope > .ss-morph')
     if (existing) existing.remove() // a previous controller's overlay
     this.root = document.createElement('div')
@@ -30,26 +44,43 @@ export class StageOverlay {
   }
 
   render(frame: Frame): void {
-    if (!frame.loaded || (frame.morph === null && frame.imageUrl === null)) {
+    this.last = frame
+    if (!frame.loaded) {
       this.hide()
       return
     }
-    this.root.classList.add('ss-on')
-    this.root.toggleAttribute('data-morph', frame.morph !== null) // a transition is drawing
     if (frame.morph !== null) {
+      this.root.classList.add('ss-on')
+      this.root.setAttribute('data-morph', '') // a transition is drawing
       this.root.style.background = frame.morph.background
       this.srcA = this.layer(this.a, frame.morph.a, this.srcA)
       this.srcB = this.layer(this.b, frame.morph.b, this.srcB)
+      this.handoff = true
+      return
+    }
+    this.root.removeAttribute('data-morph')
+    if (frame.imageUrl === null) {
+      // a single-slide preview: between transitions the stage's own image shows the slide
+      const under = this.stage.querySelector<HTMLImageElement>(':scope > img')
+      if (this.handoff && under !== null && !this.painted(under)) this.holdIncoming()
+      else this.hide()
       return
     }
     // no transition: the playing slide, still
-    this.root.style.background = ''
+    this.root.classList.add('ss-on')
     const still: LayerStyle = { src: frame.imageUrl, opacity: 1, transform: '', clipPath: '', zIndex: 1 }
     this.srcA = this.layer(this.a, still, this.srcA)
+    if (this.handoff && !this.painted(this.a)) {
+      this.holdIncoming()
+      return
+    }
+    this.handoff = false
+    this.root.style.background = ''
     this.srcB = this.layer(this.b, { ...still, opacity: 0, zIndex: 2 }, this.srcB)
   }
 
   hide(): void {
+    this.handoff = false
     this.root.classList.remove('ss-on')
     this.root.removeAttribute('data-morph')
     for (const layer of [this.a, this.b]) {
@@ -61,7 +92,32 @@ export class StageOverlay {
   }
 
   dispose(): void {
+    this.last = null
     this.root.remove()
+  }
+
+  /** The landed transition's incoming layer, whole and on top, as it last showed. */
+  private holdIncoming(): void {
+    this.root.classList.add('ss-on')
+    this.root.style.background = ''
+    const src = this.srcB === UNSET ? null : this.srcB
+    this.srcB = this.layer(this.b, { src, opacity: 1, transform: '', clipPath: '', zIndex: 2 }, this.srcB)
+  }
+
+  /** Has `img` decoded its current picture? If not, decodes it and redraws once it has. */
+  private painted(img: HTMLImageElement): boolean {
+    const src = img.src
+    if (!src || this.decoded.get(img) === src) return true
+    if (typeof img.decode !== 'function') return true // can't tell: don't hold
+    if (this.decoding.get(img) !== src) {
+      this.decoding.set(img, src)
+      const settle = (): void => {
+        this.decoded.set(img, src) // a broken picture too: never hold on it forever
+        if (img.src === src && this.last !== null) this.render(this.last)
+      }
+      img.decode().then(settle, settle)
+    }
+    return false
   }
 
   private layer(img: HTMLImageElement, style: LayerStyle, prev: string | null | typeof UNSET) {
