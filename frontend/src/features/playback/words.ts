@@ -30,15 +30,20 @@ export function voicedFraction(span: SpeechSpan, time: number): number {
   return voiced > 0 ? Math.min(1, Math.max(0, spoken / voiced)) : 1
 }
 
+// A pronunciation fix, `[shown](spoken)`: marked as one word, weighed as the shown one.
+const FIX = /\[([^[\]\n]+)\]\([^()\n]+\)/g
+const WORD = /(?:\[[^[\]\n]+\]\([^()\n]+\)|\S)+/g
+
 /** The `[start, end)` character range of the word at `fraction` (0..1) of `text`. */
 export function wordAt(text: string, fraction: number): [number, number] | null {
-  const words = [...text.matchAll(/\S+/g)]
+  const words = [...text.matchAll(WORD)]
   if (words.length === 0) return null
-  // a word's share: its letters plus the breath after it
-  const total = words.reduce((n, w) => n + w[0].length + 1, 0)
+  // a word's share: its letters (as shown, not as spelled for the voice) plus the breath after it
+  const share = (w: string): number => w.replace(FIX, '$1').length + 1
+  const total = words.reduce((n, w) => n + share(w[0]), 0)
   let target = Math.min(Math.max(fraction, 0), 1) * total
   for (const w of words) {
-    target -= w[0].length + 1
+    target -= share(w[0])
     if (target < 0) return [w.index, w.index + w[0].length]
   }
   const last = words[words.length - 1]

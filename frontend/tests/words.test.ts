@@ -17,6 +17,16 @@ describe('the spoken word, estimated', () => {
     expect(word(1)).toBe('behaviour.') // the very end still marks the last word
   })
 
+  it('marks a pronunciation fix as the word it shows, weighed by that word', () => {
+    const fixed = 'Ask [Leonhard Euler](/ˈleɪɒnhɑːrt/ /ˈɔɪlər/) now'
+    const at = (f: number): string => {
+      const r = wordAt(fixed, f)
+      return r ? fixed.slice(r[0], r[1]) : ''
+    }
+    expect(at(0.5)).toBe('[Leonhard Euler](/ˈleɪɒnhɑːrt/ /ˈɔɪlər/)') // one word, not five pieces
+    expect(at(0.9)).toBe('now') // its IPA doesn't stretch its share of the time
+  })
+
   it('has nothing to mark in an empty line', () => {
     expect(wordAt('   ', 0.5)).toBeNull()
   })

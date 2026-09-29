@@ -73,6 +73,9 @@ function onVoice(value: string): void {
 function onPace(value: string): void {
   emit('patch', { pace: value as EditSeg['pace'] }, true)
 }
+const DIRECTION_HINT =
+  'Only Inworld follows these notes (e.g. “warm, unhurried”), and only once the deck turns them on: ' +
+  'send_direction = true under [tts.inworld] in slidesonnet.toml. Kokoro and Qwen3 ignore them.'
 function onDirection(event: Event): void {
   emit('patch', { direction: (event.target as HTMLInputElement).value }, false)
 }
@@ -184,10 +187,10 @@ watch(
           <option value="fast">fast</option>
         </select>
       </label>
-      <label class="opt direction">
+      <label class="opt direction" :title="DIRECTION_HINT">
         <span class="label">Director's note</span>
         <input
-          class="field" dir="auto" placeholder="how to speak it (optional)" :value="seg.direction" :disabled="disabled"
+          class="field" dir="auto" placeholder="how to speak it — Inworld only (optional)" :value="seg.direction" :disabled="disabled"
           :data-testid="`udirect-${index}`" @input="onDirection" @blur="emit('commit')"
         />
       </label>
