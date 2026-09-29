@@ -2,7 +2,7 @@
 // the base, and the editor's review views (compare, filter to a conversation,
 // look at a removed slide). Writes go to the server as the author.
 import { defineStore } from 'pinia'
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 
 import { ApiError, type ConversationDTO, type ReviewCommand, type ReviewDTO } from '@/api/client'
 import { useEditorStore } from '@/stores/editor'
@@ -24,7 +24,6 @@ export const useReviewStore = defineStore('review', () => {
   const beforeOnly = ref(false)
   /** A removed slide shown on the stage (its base version). */
   const viewingRemoved = ref<string | null>(null)
-  let loadedFor: string | null = null
 
   const active = computed(() => data.value?.active ?? false)
   const conversations = computed(() => data.value?.conversations ?? [])
@@ -120,25 +119,36 @@ export const useReviewStore = defineStore('review', () => {
   })
 
   // ---- loading ---------------------------------------------------------------
-  async function refresh(): Promise<void> {
-    const token = editor.token
-    if (token === null) return
-    if (loadedFor !== token) {
+  // another deck (or a fresh load of this one): nothing of the old review carries over
+  watch(
+    () => editor.loadEpoch,
+    () => {
       data.value = null
       filter.value = null
       viewingRemoved.value = null
-      loadedFor = token
-    }
+      beforeOnly.value = false
+      comparing.value = false
+      resetPicked()
+    },
+    { flush: 'sync' },
+  )
+
+  async function refresh(): Promise<void> {
+    const token = editor.token
+    if (token === null) return
+    const epoch = editor.loadEpoch
     comparing.value = true
     try {
-      data.value = await editor.client.review(token)
+      const fresh = await editor.client.review(token)
+      if (epoch !== editor.loadEpoch) return // the answer for a deck no longer open
+      data.value = fresh
       // the chosen conversation was cleared, or accepted while closed ones are hidden: show every slide
       const chosen = conversations.value.find((c) => c.id === filter.value)
       if (filter.value !== null && (!chosen || (chosen.status === 'closed' && !showClosed.value))) filter.value = null
     } catch (e) {
-      if (e instanceof ApiError) editor.flash(e.message, 'warn')
+      if (e instanceof ApiError && epoch === editor.loadEpoch) editor.flash(e.message, 'warn')
     } finally {
-      comparing.value = false
+      if (epoch === editor.loadEpoch) comparing.value = false
     }
   }
 
@@ -147,16 +157,21 @@ export const useReviewStore = defineStore('review', () => {
     if (token === null) return false
     if (body.type === 'clear' && clearing.value) return false
     if (body.type === 'clear') clearing.value = true
+    const epoch = editor.loadEpoch
     try {
-      await editor.flush() // the agent should see the saved narration
+      // the agent should see the saved narration (filing outside edits reads only the file)
+      if (body.type !== 'file_unrequested' && !(await editor.ensureSaved())) return false
       const outcome = await editor.client.reviewCommand(token, body)
+      if (epoch !== editor.loadEpoch) return false
       if (outcome.message) editor.flash(outcome.message, body.type === 'file_unrequested' ? 'warn' : 'ok')
       if (outcome.focus && outcome.conversation) filter.value = outcome.conversation
       if (body.type === 'comment' && outcome.conversation) filter.value = outcome.conversation // show it
       await refresh()
       return true
     } catch (e) {
-      editor.flash(e instanceof ApiError ? e.message : 'The review couldn’t be updated.', 'warn')
+      if (epoch === editor.loadEpoch) {
+        editor.flash(e instanceof ApiError ? e.message : 'The review couldn’t be updated.', 'warn')
+      }
       return false
     } finally {
       if (body.type === 'clear') clearing.value = false

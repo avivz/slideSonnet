@@ -1,7 +1,7 @@
 // Clip generation for the open deck: the server's per-deck queue seen from
 // this tab, plus the tab's own "Auto-generate as I edit" behavior.
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { ApiError, type ClipRef, type GenerationStatusDTO } from '@/api/client'
 import { useEditorStore } from '@/stores/editor'
@@ -41,10 +41,31 @@ export const useGenerationStore = defineStore('generation', () => {
     confirmPaid = fn
   }
 
+  /** Still the deck and engine a request was made for (else its answer is dropped). */
+  function asOf(): () => boolean {
+    const epoch = editor.loadEpoch
+    const engine = editor.activeEngine
+    return () => epoch === editor.loadEpoch && engine === editor.activeEngine
+  }
+
+  // another deck: its queue and its pending auto-generates aren't this one's
+  watch(
+    () => editor.loadEpoch,
+    () => {
+      status.value = null
+      focusedSpeech.value = null
+      for (const t of timers.values()) clearTimeout(t)
+      timers.clear()
+    },
+    { flush: 'sync' },
+  )
+
   async function refresh(): Promise<void> {
     if (editor.token === null) return
+    const current = asOf()
     try {
-      status.value = await editor.client.generation(editor.token, editor.activeEngine)
+      const s = await editor.client.generation(editor.token, editor.activeEngine)
+      if (current()) status.value = s
     } catch {
       // the server is restarting: the next event refreshes
     }
@@ -56,14 +77,17 @@ export const useGenerationStore = defineStore('generation', () => {
     { force = false, action = 'Generate', allowPaid = false } = {},
   ): Promise<number> {
     if (editor.token === null) return 0
-    await editor.flush() // the server reads the narration from disk
+    if (!(await editor.ensureSaved())) return 0 // the server reads the narration from disk
+    const current = asOf()
     try {
       const s = await editor.client.generate(editor.token, {
         targets, force, engine: editor.activeEngine, allow_paid: allowPaid, owner,
       })
+      if (!current()) return 0
       status.value = s
       return s.queued ?? 0
     } catch (e) {
+      if (!current()) return 0
       if (e instanceof ApiError && e.code === 'paid_confirmation_required' && !allowPaid) {
         const count = targets === null ? (editor.snapshot?.missing_audio ?? 0) : targets.length
         if (await confirmPaid(count, editor.activeEngine ?? '', action)) {
