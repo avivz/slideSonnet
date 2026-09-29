@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import pytest
 
 from slidesonnet.atomic import atomic_write_text
-from slidesonnet.server.revisions import ABSENT, content_revision
+from slidesonnet.server.revisions import (
+    _MEMO_MIN_BYTES,
+    ABSENT,
+    content_revision,
+    text_revision,
+)
 
 
 def test_revision_tracks_content_not_mtime(tmp_path: Path) -> None:
@@ -22,15 +28,25 @@ def test_revision_tracks_content_not_mtime(tmp_path: Path) -> None:
     assert content_revision(f) not in (first, ABSENT)
 
 
-def test_same_second_rewrite_of_equal_size_still_changes_revision(tmp_path: Path) -> None:
-    """The stat stamp missed this (WSL second-granularity mtimes); content can't."""
-    f = tmp_path / "deck.narration"
-    f.write_text("aaaa", encoding="utf-8")
+@pytest.mark.parametrize("size", [4, _MEMO_MIN_BYTES], ids=["sidecar", "memoized-pdf"])
+def test_same_second_rewrite_of_equal_size_still_changes_revision(
+    tmp_path: Path, size: int
+) -> None:
+    """The stat stamp missed this (WSL second-granularity mtimes); content can't.
+
+    A big file's digest is memoized by stat signature, so the rewrite must also
+    invalidate the memo: the ctime moves even when mtime, size and inode don't.
+    """
+    f = tmp_path / "deck.pdf"
+    f.write_bytes(b"a" * size)
     os.utime(f, (5, 5))
     before = content_revision(f)
-    f.write_text("bbbb", encoding="utf-8")
+    assert content_revision(f) == before  # a second read (a memo hit for the big one)
+    time.sleep(0.05)  # past the kernel's coarse ctime tick (a same-tick rewrite can't be seen)
+    with open(f, "r+b") as fh:  # in place: same inode, same size
+        fh.write(b"b" * size)
     os.utime(f, (5, 5))
-    assert content_revision(f) != before
+    assert content_revision(f) == text_revision("b" * size)
 
 
 def test_atomic_write_replaces_whole_file_and_leaves_no_temp(tmp_path: Path) -> None:
