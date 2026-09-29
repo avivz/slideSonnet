@@ -13,6 +13,7 @@ from typing import Literal
 
 from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.model import PageNarration, Transition
+from slidesonnet.narration.spoken import has_stray_brackets
 
 Severity = Literal["error", "warning", "info"]
 
@@ -212,6 +213,26 @@ def voice_diagnostics(
                     )
                 )
     return diags
+
+
+def bracket_diagnostics(blocks: list[PageNarration]) -> list[Diagnostic]:
+    """Note square brackets that are neither a pronunciation fix nor a sound tag.
+
+    Inworld's newer voices take any ``[...]`` as a direction and drop it, so such
+    brackets are sent as round ones; a note here also catches a pronunciation fix
+    typed with a space before its ``(``. One note per slide.
+    """
+    return [
+        Diagnostic(
+            "info",
+            "square-brackets",
+            "square brackets in the narration: Inworld hears them as round brackets. "
+            "To fix how a word is said, write [word](/IPA/) with no space before the '('",
+            block.slide_id,
+        )
+        for block in blocks
+        if any(has_stray_brackets(seg.text) for seg in block.speech_segments)
+    ]
 
 
 def sort_diagnostics(diags: list[Diagnostic]) -> list[Diagnostic]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from slidesonnet.diagnostics import (
+    bracket_diagnostics,
     count_by_severity,
     diagnose,
     has_errors,
@@ -89,3 +90,16 @@ def test_count_by_severity() -> None:
     diags = diagnose(["a", "b"], _blocks("a", "b", "ghost"))
     counts = count_by_severity(diags)
     assert counts["error"] == 1  # orphan narration
+
+
+def test_stray_square_brackets_are_noted_once_per_slide() -> None:
+    """Brackets that aren't a pronunciation fix or a sound tag get a note (Inworld's
+    newer voices take ``[...]`` as a direction, so they are sent as round ones)."""
+    blocks = [
+        PageNarration("fix", [Segment.speech("[Mengoli](/menˈɡoːli/) [sigh] fine")]),
+        PageNarration("stray", [Segment.speech("[0, 1]"), Segment.speech("[Euler] (/ˈɔɪlər/)")]),
+    ]
+    diags = bracket_diagnostics(blocks)
+    assert [(d.severity, d.code, d.slide_id) for d in diags] == [
+        ("info", "square-brackets", "stray")
+    ]

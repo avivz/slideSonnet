@@ -183,6 +183,7 @@ def _deck_diagnostics(
 ) -> list[Diagnostic]:
     """Everything ``check`` reports for a loaded deck (see :func:`check_deck`)."""
     from slidesonnet.diagnostics import (
+        bracket_diagnostics,
         sort_diagnostics,
         transition_length_diagnostics,
         voice_diagnostics,
@@ -203,6 +204,7 @@ def _deck_diagnostics(
         list(deck.narration.values()), voices, deck.default_voice, config.tts.backend
     )
     diags += _unknown_voice_diagnostics(deck, config)
+    diags += bracket_diagnostics(list(deck.narration.values()))
     # Flag boundary transitions that the centered-overlay renderer would clamp.
     # Estimate timing keeps check audio-free; the clamp itself is duration-driven.
     timeline = build_timeline(deck, TimingMode("estimate"), video=config.video)
