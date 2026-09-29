@@ -122,6 +122,31 @@ def test_subtitles_split_long_segment_proportionally() -> None:
         assert e.end - e.start == pytest.approx(expected)
 
 
+@pytest.mark.parametrize("mode", [TimingMode("tts"), _MODE, TimingMode("fixed", fixed_seconds=6)])
+def test_blank_utterance_is_skipped_in_refs_timing_and_subtitles(mode: TimingMode) -> None:
+    from slidesonnet.audio.synth import speech_refs
+
+    deck = Deck(
+        pdf_path=Path("x.pdf"),
+        sidecar_path=Path("x.narration"),
+        pages=["a", "b"],
+        narration={
+            "a": PageNarration(
+                "a", [Segment.speech(""), Segment.speech("one two"), Segment.speech("  ")]
+            ),
+            "b": PageNarration("b", [Segment.speech("")]),  # only a blank line: unnarrated
+        },
+    )
+    refs = speech_refs(deck, Config())
+    assert [(r.slide_id, r.speech_index, r.text) for r in refs] == [("a", 0, "one two")]
+    tl = build_timeline(
+        deck, mode, video=_VIDEO, speech_durations_by_page=[[2.0], []], default_hold=2.5
+    )
+    assert [len(p.segments) for p in tl.pages] == [1, 1]
+    assert tl.page_durations[1] == pytest.approx(2.5)  # held like an unnarrated slide
+    assert [e.text for e in subtitle_entries(deck, tl)] == ["one two"]
+
+
 def test_render_audio_track_orchestration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     tl = build_timeline(_deck(), _MODE, video=_VIDEO, default_hold=2.5)
     page_calls: list[tuple[str, list[Path], Path, Path]] = []

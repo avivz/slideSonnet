@@ -192,8 +192,18 @@ class PageNarration:
         )
 
     @property
+    def timed_segments(self) -> list[Segment]:
+        """The segments that take time: pauses and speech with words.
+
+        A blank utterance (an empty ``text:``, or a new line not written yet)
+        has nothing to say, so synthesis, timing and subtitles all skip it.
+        """
+        return [s for s in self.segments if s.is_pause or s.text]
+
+    @property
     def speech_segments(self) -> list[Segment]:
-        return [s for s in self.segments if s.is_speech]
+        """The utterances to speak, in order; a clip's ``speech_index`` counts these."""
+        return [s for s in self.timed_segments if s.is_speech]
 
     @property
     def speech_text(self) -> str:
@@ -202,7 +212,7 @@ class PageNarration:
 
     @property
     def has_speech(self) -> bool:
-        return any(s.is_speech and s.text.strip() for s in self.segments)
+        return bool(self.speech_segments)
 
     @property
     def is_empty(self) -> bool:

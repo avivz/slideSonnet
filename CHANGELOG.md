@@ -56,6 +56,9 @@ regression test.
   narration, unless `--draft`**; only `.mp4` output is accepted. A PDF with no
   `\ssid` is an error in `init` and `check`, and a missing `--narration` file is an
   error rather than an empty deck.
+- **An empty utterance no longer fails the whole export.** Blank speech is skipped
+  in synthesis, timing and subtitles (a slide with only blank lines is held like an
+  unnarrated one), and the editor's clip numbering matches the server's again.
 
 **Editor**
 - **Two outside edits to slides you were typing on no longer save over the second

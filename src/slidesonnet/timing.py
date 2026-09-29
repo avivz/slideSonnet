@@ -108,7 +108,7 @@ def compute_page_timing(
     timeline: list[SegmentTiming] = []
     t = lead
     speech_idx = 0
-    for seg in block.segments:
+    for seg in block.timed_segments:
         if seg.is_pause:
             dur = seg.seconds
         else:
