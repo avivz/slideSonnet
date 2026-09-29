@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from slidesonnet.diagnostics import (
     bracket_diagnostics,
     count_by_severity,
@@ -92,14 +94,20 @@ def test_count_by_severity() -> None:
     assert counts["error"] == 1  # orphan narration
 
 
-def test_stray_square_brackets_are_noted_once_per_slide() -> None:
-    """Brackets that aren't a pronunciation fix or a sound tag get a note (Inworld's
-    newer voices take ``[...]`` as a direction, so they are sent as round ones)."""
-    blocks = [
-        PageNarration("fix", [Segment.speech("[Mengoli](/menˈɡoːli/) [sigh] fine")]),
-        PageNarration("stray", [Segment.speech("[0, 1]"), Segment.speech("[Euler] (/ˈɔɪlər/)")]),
-    ]
-    diags = bracket_diagnostics(blocks)
+@pytest.mark.parametrize(
+    ("text", "typos"),
+    [
+        ("The interval [0, 1] and [pause 2] [sigh] (quietly).", []),  # brackets are fine
+        ("[Mengoli](/menˈɡoːli/) and [Euler] (/ˈɔɪlər/)", ["[Euler] (/ˈɔɪlər/)"]),
+        (  # one warning per typo, however often it repeats
+            "Ask [Dijkstra] (DYKE-struh) and [Knuth] (kuh-NOOTH), [Dijkstra] (DYKE-struh)",
+            ["[Dijkstra] (DYKE-struh)", "[Knuth] (kuh-NOOTH)"],
+        ),
+    ],
+)
+def test_a_space_before_a_fixs_parenthesis_is_warned(text: str, typos: list[str]) -> None:
+    diags = bracket_diagnostics([PageNarration("s", [Segment.speech(text)])])
     assert [(d.severity, d.code, d.slide_id) for d in diags] == [
-        ("info", "square-brackets", "stray")
-    ]
+        ("warning", "spaced-fix", "s")
+    ] * len(typos)
+    assert [d.message.split("”")[0] for d in diags] == [f"“{t}" for t in typos]

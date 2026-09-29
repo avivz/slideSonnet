@@ -13,7 +13,7 @@ from typing import Literal
 
 from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.model import PageNarration, Transition
-from slidesonnet.narration.spoken import has_stray_brackets
+from slidesonnet.narration.spoken import spaced_fixes
 
 Severity = Literal["error", "warning", "info"]
 
@@ -216,23 +216,26 @@ def voice_diagnostics(
 
 
 def bracket_diagnostics(blocks: list[PageNarration]) -> list[Diagnostic]:
-    """Note square brackets that are neither a pronunciation fix nor a sound tag.
-
-    Inworld's newer voices take any ``[...]`` as a direction and drop it, so such
-    brackets are sent as round ones; a note here also catches a pronunciation fix
-    typed with a space before its ``(``. One note per slide.
-    """
-    return [
-        Diagnostic(
-            "info",
-            "square-brackets",
-            "square brackets in the narration: Inworld hears them as round brackets. "
-            "To fix how a word is said, write [word](/IPA/) with no space before the '('",
-            block.slide_id,
-        )
-        for block in blocks
-        if any(has_stray_brackets(seg.text) for seg in block.speech_segments)
-    ]
+    """Warn on ``[word] (form)``: a pronunciation fix typed with a space before
+    its ``(``, which is therefore read as written. Other brackets get no note."""
+    diags: list[Diagnostic] = []
+    for block in blocks:
+        seen: set[str] = set()
+        for seg in block.speech_segments:
+            for typed, word in spaced_fixes(seg.text):
+                if typed in seen:
+                    continue
+                seen.add(typed)
+                diags.append(
+                    Diagnostic(
+                        "warning",
+                        "spaced-fix",
+                        f"“{typed}” has a space before “(”, so it is read as written, not as "
+                        f"a pronunciation fix. To fix how “{word}” is said, remove the space.",
+                        block.slide_id,
+                    )
+                )
+    return diags
 
 
 def sort_diagnostics(diags: list[Diagnostic]) -> list[Diagnostic]:

@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from slidesonnet.atomic import atomic_write_text
-from slidesonnet.diagnostics import Diagnostic, diagnose, sort_diagnostics
+from slidesonnet.diagnostics import Diagnostic, bracket_diagnostics, diagnose, sort_diagnostics
 from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.format import parse_document, serialize_sidecar
 from slidesonnet.narration.model import Deck, PageNarration
@@ -223,7 +223,7 @@ def load_deck(
 
     # a renamed block's only problem is the repeat, reported once above
     id_diags = [d for d in diagnose(page_ids, blocks) if d.slide_id not in renamed]
-    diags = sort_diagnostics(dedupe_diags + block_diags + id_diags)
+    diags = sort_diagnostics(dedupe_diags + block_diags + id_diags + bracket_diagnostics(blocks))
     deck = Deck(
         pdf_path=pdf_path,
         sidecar_path=sidecar,

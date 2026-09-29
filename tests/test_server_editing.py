@@ -268,6 +268,28 @@ def test_a_voice_unmapped_for_the_engine_is_flagged_per_engine(api) -> None:  # 
     assert qwen["voices"]["resolved"] == {"guest": None}
 
 
+def test_a_spaced_fix_is_warned_on_its_slide_as_check_does(tmp_path: Path) -> None:
+    from slidesonnet.api import check_deck
+
+    pdf = _deck(tmp_path, ["a", "b"], "@a\nAsk [Dijkstra] (DYKE-struh).\n\n@b\nOn [0, 1].\n")
+    registry = DeckRegistry(tmp_path)
+    registry.rescan()
+    snap = deck_snapshot(registry.entries()[0])
+    found = [(d.code, d.slide_id, d.message) for d in snap.diagnostics]
+    assert found == [(d.code, d.slide_id, d.message) for d in check_deck(pdf)]
+    assert found == [
+        (
+            "spaced-fix",
+            "a",
+            (
+                "“[Dijkstra] (DYKE-struh)” has a space before “(”, so it is read as written, "
+                "not as a pronunciation fix. To fix how “Dijkstra” is said, remove the space."
+            ),
+        )
+    ]
+    assert [p.status for p in snap.pages] == ["warning", "ready"]
+
+
 # ---- statuses --------------------------------------------------------------------------------
 def test_slide_status_per_page(tmp_path: Path) -> None:
     pdf = prep_marked_deck(tmp_path, "@intro-title\nHello.\n\n@nowhere\nOrphaned.\n")

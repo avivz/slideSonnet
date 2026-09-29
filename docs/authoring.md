@@ -124,7 +124,9 @@ transitions:
   pair per word: `[Leonhard Euler](/ˈleɪɒnhɑːrt/ /ˈɔɪlər/)`) or a respelling,
   `[Dijkstra](DYKE-struh)`. Subtitles and the editor show `Mengoli`; Inworld
   says the IPA or respelling; Kokoro and Qwen3 say a respelling but never IPA
-  (they say the word as written instead). The `(` must follow the `]` directly.
+  (they say the word as written instead). The `(` must follow the `]` directly:
+  `check` and the editor warn about `[Dijkstra] (DYKE-struh)`, which is read as
+  written.
 - A `#` on a `text:` line (or its wrapped continuation), a `voice:` line or a
   `direct:` line is spoken or kept as written ("Use issue #123"); only a line
   that starts with `#` is a comment there.
@@ -246,7 +248,7 @@ Choose one per run with `--engine`, or per deck with `[tts] backend`.
 - **Square brackets.** `inworld-tts-2` reads any `[...]` as a direction and
   drops it, so slideSonnet sends brackets in the narration as round ones
   (`[0, 1]` is said as "(0, 1)"); sound tags such as `[sigh]` and `[laugh]`
-  stay tags. `check` notes each slide that has them.
+  stay tags.
 - **Settings.** `temperature`, `delivery_mode`, `language` and
   `text_normalization` are sent only when set. Every setting, fix and note is
   part of a clip's cache key, so changing one re-generates exactly the clips it

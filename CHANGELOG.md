@@ -221,7 +221,8 @@ regression test.
     `text_normalization`** under `[tts.inworld]`, sent only when set.
   - **Square brackets are said, not swallowed:** `inworld-tts-2` drops anything in
     `[...]` as a stage direction, so "[0, 1]" is now sent as "(0, 1)"; sound tags
-    like `[sigh]` still work. `check` notes slides with square brackets.
+    like `[sigh]` still work. `check` and the editor warn about a fix typed with a
+    space, `[Dijkstra] (DYKE-struh)`, which is read as written.
   - Each setting, fix and note is part of the clip's cache key, so a change
     re-generates exactly the clips it affects.
 - **Script view** (the editor's default; **Slide** switches back): the whole

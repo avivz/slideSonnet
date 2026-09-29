@@ -62,10 +62,21 @@ def round_brackets(text: str) -> str:
     return "".join(out)
 
 
-def has_stray_brackets(text: str) -> bool:
-    """True when *text* has square brackets besides its fixes and sound tags."""
-    shown = display_text(text)
-    return round_brackets(shown) != shown
+#: ``[word] (form)``: a fix typed with a space before its ``(`` — read as written.
+_SPACED_FIX_RE = re.compile(r"\[(?P<display>[^\[\]\n]+)\][ \t]+\((?P<spoken>[^()\n]+)\)")
+
+
+def spaced_fixes(text: str) -> list[tuple[str, str]]:
+    """Each likely pronunciation fix in *text* typed with a space before its ``(``.
+
+    Returns ``(as typed, the word)`` pairs; a sound tag like ``[sigh] (softly)``
+    or a blank form is not one.
+    """
+    return [
+        (m.group(0), m.group("display"))
+        for m in _SPACED_FIX_RE.finditer(text)
+        if m.group("spoken").strip() and m.group("display").strip().lower() not in SOUND_TAGS
+    ]
 
 
 def display_text(text: str) -> str:
