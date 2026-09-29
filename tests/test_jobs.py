@@ -8,6 +8,7 @@ no NiceGUI, no browser, no real TTS.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 
 import pytest
@@ -177,6 +178,60 @@ def test_failed_job_leaves_no_stuck_handle(tmp_path: Path, monkeypatch: pytest.M
         assert handles[0].error is not None
         assert handles[0].done.is_set()
         assert queue.handle_for("a", 0) is None  # not stuck in-flight
+
+    asyncio.run(body())
+
+
+def test_worker_survives_a_deck_that_cannot_be_read_while_picking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sidecar or PDF caught mid-rewrite when the worker ranks the backlog
+    mustn't kill it: the clip still runs, and later clips too."""
+
+    async def body() -> None:
+        queue, engine, _ = _make_queue(tmp_path, monkeypatch)
+        good = queue._deck_provider
+        calls = {"deck": 0, "index": 0}
+
+        def flaky_deck() -> tuple[Deck, Config, Path]:
+            calls["deck"] += 1
+            if calls["deck"] == 2:  # enqueue reads it once; the pick is the second read
+                raise ValueError("sidecar half-written")
+            return good()
+
+        def flaky_index() -> int | None:
+            calls["index"] += 1
+            if calls["index"] == 1:
+                raise OSError("PDF being rewritten")
+            return None
+
+        queue._deck_provider = flaky_deck
+        queue._current_index = flaky_index
+        queue.start()
+        first = queue.enqueue({("a", 0)})
+        await asyncio.wait_for(queue.drain(), 5)
+        second = queue.enqueue({("b", 0)})
+        await asyncio.wait_for(queue.drain(), 5)
+        queue.stop()
+        assert [h.status for h in first + second] == ["done", "done"]
+        assert engine.calls == 2
+
+    asyncio.run(body())
+
+
+def test_enqueue_restarts_a_dead_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def body() -> None:
+        queue, engine, _ = _make_queue(tmp_path, monkeypatch)
+        queue.start()
+        task = queue._worker_task
+        assert task is not None
+        task.cancel()  # the worker died of something unforeseen
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        handles = queue.enqueue({("a", 0)})
+        await asyncio.wait_for(queue.drain(), 5)
+        queue.stop()
+        assert handles[0].status == "done" and engine.calls == 1
 
     asyncio.run(body())
 

@@ -106,18 +106,32 @@ class JobQueue:
         self._burst_total = 0  # clips queued since the queue last went idle
         self._burst_done = 0  # of those, how many have finished (for the deck bar)
         self._worker_task: asyncio.Task[None] | None = None
+        self._stopped = False
 
     # ---- lifecycle ------------------------------------------------------
     def start(self) -> None:
         """Spawn the background worker (idempotent)."""
+        self._stopped = False
         if self._worker_task is None or self._worker_task.done():
             self._worker_task = asyncio.create_task(self._worker())
 
     def stop(self) -> None:
         """Cancel the background worker (e.g. on client disconnect)."""
+        self._stopped = True
         if self._worker_task is not None:
             self._worker_task.cancel()
             self._worker_task = None
+
+    def _revive(self) -> None:
+        """Restart a worker that died unexpectedly (a started, never-stopped queue)."""
+        task = self._worker_task
+        if self._stopped or task is None or not task.done():
+            return
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("[gen] the generation worker died; restarting", exc_info=task.exception())
+        else:
+            logger.warning("[gen] the generation worker stopped; restarting")
+        self._worker_task = asyncio.create_task(self._worker())
 
     # ---- producing ------------------------------------------------------
     def enqueue(
@@ -167,6 +181,7 @@ class JobQueue:
             self._idle.clear()
             handles.append(handle)
         if handles:
+            self._revive()
             self._wake.set()  # nudge the worker to (re)evaluate the backlog
         return handles
 
@@ -340,14 +355,29 @@ class JobQueue:
         while not self._pending:
             self._wake.clear()
             await self._wake.wait()
-        current = self._current_index()
+        try:
+            current = self._current_index()
+        except Exception:  # the PDF mid-rewrite: rank as if no slide were current
+            logger.warning(
+                "[gen] couldn't read the current slide; ranking in deck order", exc_info=True
+            )
+            current = None
         order = self._slide_order()
         key = min(self._pending, key=lambda k: self._priority(self._pending[k], current, order))
         return self._pending.pop(key)
 
     def _slide_order(self) -> dict[str, int]:
-        """slide-id → position in deck order (for distance-to-current ranking)."""
-        deck, _, _ = self._deck_provider()
+        """slide-id → position in deck order (for distance-to-current ranking).
+
+        Empty when the deck can't be read right now (a sidecar mid-rewrite): the
+        pick is then arbitrary, and the synthesis re-reads the deck itself and
+        fails or succeeds per clip — the worker lives on either way.
+        """
+        try:
+            deck, _, _ = self._deck_provider()
+        except Exception:
+            logger.warning("[gen] couldn't read the deck to rank clips", exc_info=True)
+            return {}
         return {sid: i for i, sid in enumerate(deck.pages)}
 
     def _priority(
