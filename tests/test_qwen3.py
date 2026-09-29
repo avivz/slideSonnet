@@ -252,13 +252,6 @@ def test_cancellable_is_a_noop_without_a_token(fake_qwen3: SimpleNamespace) -> N
         assert model.model.talker.generate is original  # left untouched
 
 
-def test_custom_voice_cache_key_is_just_the_model(tmp_path: Path) -> None:
-    # Per-utterance speaker rides the clip's text hash, so the engine config key
-    # only needs the model repo (the speaker set is fixed by it).
-    engine = Qwen3TTS(model=_CUSTOM_MODEL, device="cpu")
-    assert engine.cache_key() == f"qwen3:{_CUSTOM_MODEL}"
-
-
 def test_empty_audio_raises(fake_qwen3: SimpleNamespace, tmp_path: Path) -> None:
     fake_qwen3.model.generate_voice_clone.return_value = ([], 24000)
     engine = _engine(tmp_path)
@@ -291,11 +284,6 @@ def test_cache_key_folds_prompt_content_hash(tmp_path: Path) -> None:
     # Editing the prompt's content changes the cache key (clips go stale).
     prompt.write_bytes(b"version-two-different")
     assert engine.cache_key() != key1
-
-
-def test_cache_key_stable_without_prompt(tmp_path: Path) -> None:
-    engine = Qwen3TTS(device="cpu", model="repoY", voice_prompt="")
-    assert engine.cache_key() == "qwen3:repoY"
 
 
 def test_voice_introspection_does_not_load_model(

@@ -151,14 +151,6 @@ def test_api_failure_is_clean_tts_error(mock_client_cls, tmp_path):
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_name():
-    """name() works without API key or package."""
-    config = TTSConfig(backend="inworld", inworld_voice="v")
-    from slidesonnet.tts.inworld import InworldTTS
-
-    assert InworldTTS(config).name() == "inworld"
-
-
 # -- Speed (pace) tests -----------------------------------------------------
 
 
@@ -220,29 +212,6 @@ def test_speed_clamped_to_api_range(mock_client_cls, tmp_path):
         tts.synthesize("Hello", output)
 
     assert mock_client.generate.call_args.kwargs["speaking_rate"] == 1.5
-
-
-def test_cache_key_with_speed():
-    """cache_key includes speed when != 1.0."""
-    config = TTSConfig(backend="inworld", inworld_voice="v", inworld_speed=1.1)
-    from slidesonnet.tts.inworld import InworldTTS
-
-    assert ":1.1" in InworldTTS(config).cache_key()
-
-
-def test_cache_key_default_speed():
-    """cache_key omits speed at the default (1.0): inworld:voice:model."""
-    config = TTSConfig(backend="inworld", inworld_voice="v")
-    from slidesonnet.tts.inworld import InworldTTS
-
-    parts = InworldTTS(config).cache_key().split(":")
-    assert len(parts) == 3  # inworld:voice:model
-
-
-def test_inworld_is_paid():
-    from slidesonnet.tts.inworld import InworldTTS
-
-    assert InworldTTS(TTSConfig()).paid is True
 
 
 def test_default_voice():

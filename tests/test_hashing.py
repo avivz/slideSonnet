@@ -1,149 +1,151 @@
-"""Tests for the hashing module."""
+"""Tests for the hashing module — and the golden cache-key table.
 
+The golden table freezes the *exact* cached-audio filename each engine config
+produces today. Every paid Inworld clip (and every slow Qwen3 clip) on disk is
+addressed by these bytes, so a change to text normalisation, the key format, an
+engine's ``cache_key()`` or the pace→speed mapping would silently orphan them all.
+If a row here fails, the change is a cache migration — not a test to update.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
 from pathlib import Path
+
+import pytest
 
 from slidesonnet.hashing import (
     audio_cache_path_or_alt,
     audio_extension,
     audio_filename,
     audio_path,
-    config_hash,
     parse_audio_filename,
-    text_hash,
 )
+from slidesonnet.models import TTSConfig
+from slidesonnet.tts.base import TTSEngine
+
+_BASE_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 
 
-class TestTextHash:
-    def test_deterministic(self):
-        assert text_hash("hello") == text_hash("hello")
+def _kokoro(**kw: object) -> Callable[[Path], TTSEngine]:
+    def make(_tmp: Path) -> TTSEngine:
+        from slidesonnet.tts.kokoro import KokoroTTS
 
-    def test_16_chars(self):
-        assert len(text_hash("hello")) == 16
+        return KokoroTTS(**kw)  # type: ignore[arg-type]
 
-    def test_hex(self):
-        h = text_hash("hello")
-        int(h, 16)  # should not raise
-
-    def test_different_text_different_hash(self):
-        assert text_hash("hello") != text_hash("world")
-
-    def test_voice_changes_hash(self):
-        assert text_hash("hello") != text_hash("hello", voice="alice")
-
-    def test_different_voices_different_hash(self):
-        assert text_hash("hello", "alice") != text_hash("hello", "bob")
-
-    def test_none_voice_same_as_no_voice(self):
-        assert text_hash("hello") == text_hash("hello", voice=None)
+    return make
 
 
-class TestConfigHash:
-    def test_deterministic(self):
-        assert config_hash("kokoro:model:0") == config_hash("kokoro:model:0")
+def _paced(backend: str, pace: str, **cfg: object) -> Callable[[Path], TTSEngine]:
+    """The engine synthesis builds for a paced utterance (pins pace → speed too)."""
 
-    def test_8_chars(self):
-        assert len(config_hash("kokoro:model:0")) == 8
+    def make(_tmp: Path) -> TTSEngine:
+        from slidesonnet.audio.synth import engine_for_pace
 
-    def test_different_keys_different_hash(self):
-        assert config_hash("kokoro:model:0") != config_hash("inworld:voice:model:0.5:0.75")
+        tts = TTSConfig(backend=backend, **cfg)  # type: ignore[arg-type]
+        return engine_for_pace(tts, pace, {})  # type: ignore[arg-type]
 
-
-class TestAudioExtension:
-    def test_kokoro(self):
-        assert audio_extension("kokoro") == ".wav"
-
-    def test_inworld(self):
-        assert audio_extension("inworld") == ".mp3"
-
-    def test_unknown_defaults_to_wav(self):
-        assert audio_extension("unknown_engine") == ".wav"
+    return make
 
 
-class TestAudioFilename:
-    def test_format(self):
-        name = audio_filename("hello", "kokoro", "kokoro:model:0")
-        parts = name.split(".")
-        assert len(parts) == 4
-        assert parts[1] == "kokoro"
-        assert parts[3] == "wav"
+def _inworld(**cfg: object) -> Callable[[Path], TTSEngine]:
+    def make(_tmp: Path) -> TTSEngine:
+        from slidesonnet.tts.inworld import InworldTTS
 
-    def test_inworld_format(self):
-        name = audio_filename("hello", "inworld", "inworld:voice:model:0.5:0.75")
-        parts = name.split(".")
-        assert len(parts) == 4
-        assert parts[1] == "inworld"
-        assert parts[3] == "mp3"
+        return InworldTTS(TTSConfig(backend="inworld", **cfg))  # type: ignore[arg-type]
 
-    def test_text_hash_part(self):
-        name = audio_filename("hello", "kokoro", "kokoro:model:0")
-        th = name.split(".")[0]
-        assert th == text_hash("hello")
-
-    def test_config_hash_part(self):
-        name = audio_filename("hello", "kokoro", "kokoro:model:0")
-        ch = name.split(".")[2]
-        assert ch == config_hash("kokoro:model:0")
-
-    def test_voice_affects_filename(self):
-        name1 = audio_filename("hello", "kokoro", "kokoro:model:0")
-        name2 = audio_filename("hello", "kokoro", "kokoro:model:0", voice="alice")
-        assert name1 != name2
-
-    def test_different_backend_same_text(self):
-        name1 = audio_filename("hello", "kokoro", "kokoro:model:0")
-        name2 = audio_filename("hello", "inworld", "inworld:voice:model:0.5:0.75")
-        # Backend differs, text_hash is the same (no voice)
-        assert name1.split(".")[0] == name2.split(".")[0]
-        assert name1.split(".")[1] != name2.split(".")[1]
+    return make
 
 
-class TestAudioPath:
-    def test_returns_path_in_audio_dir(self):
-        p = audio_path(Path("/cache/audio"), "hello", "kokoro", "kokoro:model:0")
-        assert p.parent == Path("/cache/audio")
+def _qwen3(*, prompt: bool = False, **kw: object) -> Callable[[Path], TTSEngine]:
+    def make(tmp: Path) -> TTSEngine:
+        from slidesonnet.tts.qwen3 import Qwen3TTS
 
-    def test_filename_matches(self):
-        p = audio_path(Path("/cache/audio"), "hello", "kokoro", "kokoro:model:0")
-        assert p.name == audio_filename("hello", "kokoro", "kokoro:model:0")
+        if prompt:
+            p = tmp / "calm.pt"
+            p.write_bytes(b"golden-prompt-bytes")
+            kw["voice_prompt"] = str(p)
+        return Qwen3TTS(**kw)  # type: ignore[arg-type]
+
+    return make
 
 
-class TestParseAudioFilename:
-    def test_new_format(self):
-        result = parse_audio_filename("abcdef1234567890.kokoro.12345678.wav")
-        assert result == ("abcdef1234567890", "kokoro", "12345678")
+# (text, voice, engine factory) -> exact cached filename. Computed once from the
+# code as it stood when the table was written; never regenerate these.
+GOLDEN: list[tuple[str, str | None, Callable[[Path], TTSEngine], str]] = [
+    ("Hello, world.", None, _kokoro(), "f8c3bf62a9aa3e6f.kokoro.8746f0a4.wav"),
+    (
+        "Déjà vu — π ≈ 3.14",
+        "af_heart",
+        _kokoro(voice="af_heart"),
+        "f2e0da5796d525e1.kokoro.387ace0b.wav",
+    ),
+    ("Hello, world.", None, _paced("kokoro", "fast"), "f8c3bf62a9aa3e6f.kokoro.97a3a8aa.wav"),
+    (
+        "Hello, world.",
+        "Ashley",
+        _inworld(inworld_voice="Ashley"),
+        "1155b3b8d79c379a.inworld.b2ce7e91.mp3",
+    ),
+    ("Hello, world.", None, _paced("inworld", "slow"), "f8c3bf62a9aa3e6f.inworld.10d7a799.mp3"),
+    ("Hello, world.", "Ryan", _qwen3(), "ed6902b3ccf73e32.qwen3.070c5297.wav"),
+    (
+        "Hello, world.",
+        None,
+        _qwen3(model=_BASE_MODEL, prompt=True),
+        "f8c3bf62a9aa3e6f.qwen3.701c8f1b.wav",
+    ),
+]
 
-    def test_inworld(self):
-        result = parse_audio_filename("abcdef1234567890.inworld.12345678.mp3")
-        assert result == ("abcdef1234567890", "inworld", "12345678")
 
-    def test_concat_returns_none(self):
-        assert parse_audio_filename("abcdef1234567890_concat.wav") is None
+@pytest.mark.parametrize(
+    ("text", "voice", "make_engine", "expected"),
+    GOLDEN,
+    ids=[
+        "kokoro-default",
+        "kokoro-voice-unicode",
+        "kokoro-pace-fast",
+        "inworld-voice",
+        "inworld-pace-slow",
+        "qwen3-speaker",
+        "qwen3-clone-prompt",
+    ],
+)
+def test_golden_cache_filename(
+    tmp_path: Path,
+    text: str,
+    voice: str | None,
+    make_engine: Callable[[Path], TTSEngine],
+    expected: str,
+) -> None:
+    from slidesonnet.tts import BACKENDS
 
-    def test_old_format_returns_none(self):
-        assert parse_audio_filename("abcdef1234567890.wav") is None
+    engine = make_engine(tmp_path)
+    name = audio_filename(text, engine.name(), engine.cache_key(), voice)
+    assert name == expected
+    assert audio_path(tmp_path, text, engine.name(), engine.cache_key(), voice) == tmp_path / name
+    th, backend, ch = expected.split(".")[:3]
+    assert parse_audio_filename(name) == (th, backend, ch)
+    # The engine's own paid flag agrees with the registry clean/the editor use.
+    assert engine.paid is BACKENDS[engine.name()].paid
 
-    def test_unknown_ext_returns_none(self):
-        assert parse_audio_filename("abcdef1234567890.kokoro.12345678.ogg") is None
 
-    def test_roundtrip(self):
-        name = audio_filename("hello world", "kokoro", "kokoro:model:0", voice="alice")
-        parsed = parse_audio_filename(name)
-        assert parsed is not None
-        th, backend, ch = parsed
-        assert th == text_hash("hello world", "alice")
-        assert backend == "kokoro"
-        assert ch == config_hash("kokoro:model:0")
+def test_unknown_backend_extension_defaults_to_wav() -> None:
+    assert audio_extension("unknown_engine") == ".wav"
 
-    def test_roundtrip_inworld(self):
-        name = audio_filename(
-            "hello world", "inworld", "inworld:voice:model:0.5:0.75", voice="alice"
-        )
-        parsed = parse_audio_filename(name)
-        assert parsed is not None
-        th, backend, ch = parsed
-        assert th == text_hash("hello world", "alice")
-        assert backend == "inworld"
-        assert ch == config_hash("inworld:voice:model:0.5:0.75")
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    [
+        ("abcdef1234567890.kokoro.12345678.wav", ("abcdef1234567890", "kokoro", "12345678")),
+        ("abcdef1234567890.inworld.12345678.mp3", ("abcdef1234567890", "inworld", "12345678")),
+        ("abcdef1234567890_concat.wav", None),  # legacy pre-1.0 concat
+        ("abcdef1234567890.wav", None),  # old plain-hash format
+        ("abcdef1234567890.kokoro.12345678.ogg", None),  # unknown extension
+    ],
+)
+def test_parse_audio_filename(filename: str, expected: tuple[str, str, str] | None) -> None:
+    assert parse_audio_filename(filename) == expected
 
 
 class TestAudioCachePathOrAlt:

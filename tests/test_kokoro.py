@@ -134,18 +134,6 @@ class TestKokoroSynthesize:
         assert "slidesonnet[kokoro]" in str(exc_info.value)
 
 
-class TestCacheKey:
-    def test_default(self) -> None:
-        key = KokoroTTS().cache_key()
-        assert key == "kokoro:am_echo"
-
-    def test_with_speed(self) -> None:
-        assert KokoroTTS(speed=1.5).cache_key() == "kokoro:am_echo:1.5"
-
-    def test_name(self) -> None:
-        assert KokoroTTS().name() == "kokoro"
-
-
 class TestFactoryAndConfig:
     def test_create_tts_kokoro(self) -> None:
         from slidesonnet.models import TTSConfig
@@ -193,10 +181,6 @@ class TestFactoryAndConfig:
         engine = engine_for_pace(cfg, "fast", cache)
         assert isinstance(engine, KokoroTTS)
         assert engine.speed == pytest.approx(pace_to_speed("fast"))
-
-
-def test_kokoro_is_not_paid() -> None:
-    assert KokoroTTS().paid is False
 
 
 class TestWriteWav:
