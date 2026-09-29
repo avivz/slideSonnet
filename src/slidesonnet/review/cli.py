@@ -18,7 +18,15 @@ from slidesonnet.cli_options import EXISTING_NARRATION_OPT
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.review.log import Author, Conversation
 
-_PDF = click.argument("pdf", type=click.Path(exists=True, path_type=Path))
+
+def _working_build(_ctx: click.Context, _param: click.Parameter, pdf: Path) -> Path:
+    """Review compares the deck's working build: ``X.plain.pdf`` when it's beside ``X.pdf``."""
+    from slidesonnet.builds import working_pdf
+
+    return working_pdf(pdf)
+
+
+_PDF = click.argument("pdf", type=click.Path(exists=True, path_type=Path), callback=_working_build)
 _AS = click.option(
     "--as",
     "author",

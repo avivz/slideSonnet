@@ -47,6 +47,19 @@ latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex
 # or: pdflatex "\def\ssfinal{}\input{deck}"
 ```
 
+**Keeping both side by side.** Since the two builds overwrite each other as
+`deck.pdf`, you can give the plain one its own name: compile it to
+`deck.plain.pdf`, and keep `deck.pdf` for the final build you hand out. Both are
+the same deck — one `deck.narration`, one `deck.review` — and the editor, the
+library and `slidesonnet review` all work on `deck.plain.pdf` when it's there,
+even when you name `deck.pdf`. Export still wants the final build:
+`slidesonnet export deck.pdf -o deck.mp4`.
+
+```bash
+latexmk -pdf -jobname=deck.plain deck.tex                    # the working build
+latexmk -pdf -usepretex='\def\ssfinal{}' deck.tex           # the final deck.pdf
+```
+
 **Rules**
 
 - Every emitted page should have exactly one `\ssid`. A page you forget gets a

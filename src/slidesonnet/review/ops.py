@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from slidesonnet.builds import deck_pdf
 from slidesonnet.deck import dedupe_page_ids, load_deck
 from slidesonnet.exceptions import ReviewError
 from slidesonnet.pdf.reader import is_final_build, read_page_ids
@@ -46,8 +47,9 @@ AUTHOR_EDIT_NOTE = "The author edited the narration of @{slide}."
 
 
 def review_path(pdf_path: Path) -> Path:
-    """``<deck>.review`` next to the PDF (like the ``.narration`` sidecar)."""
-    return pdf_path.resolve().with_suffix(".review")
+    """``<deck>.review`` next to the PDF (like the ``.narration`` sidecar); a plain
+    build ``X.plain.pdf`` shares its deck's ``X.review``."""
+    return deck_pdf(pdf_path.resolve()).with_suffix(".review")
 
 
 def _lock(pdf_path: Path) -> Path:

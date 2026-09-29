@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **A deck's plain and final builds can live side by side.** Name the plain
+  (working) build `deck.plain.pdf` and keep `deck.pdf` for the final one you hand
+  out and export. Both are one deck — same `deck.narration`, `deck.review` and
+  review base — and the editor, the library (which lists the deck once) and
+  `slidesonnet review` work on the plain build when it's there, even when given
+  `deck.pdf`. Each build keeps its own page renders. Export still refuses a plain
+  build; the editor names its videos `deck.mp4`.
+
 ## [1.0.0a3] — 2026-09-29
 
 ### Breaking

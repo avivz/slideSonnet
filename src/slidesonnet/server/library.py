@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from slidesonnet.builds import deck_pdf, working_pdf
 from slidesonnet.cache import CACHE_DIRNAME
 from slidesonnet.deck import default_sidecar_path
 
@@ -102,7 +103,7 @@ class DeckEntry:
         to use the default when it exists (and to mark the deck un-narrated when
         it does not).
         """
-        pdf = pdf_path.resolve()
+        pdf = working_pdf(pdf_path.resolve())  # a deck opens on its plain build, if any
         sidecar = sidecar_path.resolve() if sidecar_path is not None else None
         if sidecar is None:
             default = default_sidecar_path(pdf)
@@ -116,7 +117,7 @@ class DeckEntry:
             sidecar_path=sidecar,
             token=deck_token(pdf),
             group="" if group == "." else group,
-            name=pdf.stem,
+            name=deck_pdf(pdf).stem,
         )
 
 
@@ -138,7 +139,8 @@ def _prunable(name: str) -> bool:
 def discover_decks(root: Path, *, limits: ScanLimits | None = None) -> ScanResult:
     """Find decks under *root*, walking down within *limits*.
 
-    A deck is a ``*.pdf`` with a sibling ``<stem>.narration``; a PDF without one
+    A deck is a ``*.pdf`` with a sibling ``<stem>.narration`` (its plain build
+    ``<stem>.plain.pdf``, when present, is the same deck); a PDF without one
     lands in :attr:`ScanResult.unnarrated`. Results are naturally sorted by
     label. Unreadable directories are skipped rather than raising — a library
     listing must never be the thing that fails.
@@ -151,6 +153,7 @@ def discover_decks(root: Path, *, limits: ScanLimits | None = None) -> ScanResul
 
     pending: list[tuple[Path, int]] = [(root, 0)]
     visited = 0
+    seen: set[str] = set()
     while pending:
         directory, depth = pending.pop()
         if visited >= limits.max_dirs:
@@ -172,6 +175,9 @@ def discover_decks(root: Path, *, limits: ScanLimits | None = None) -> ScanResul
                 pending.append((child, depth + 1))
             elif child.suffix.lower() == ".pdf":
                 entry = DeckEntry.build(child, root=root)
+                if entry.token in seen:
+                    continue  # the deck's other build: listed once, by its working build
+                seen.add(entry.token)
                 target = result.decks if entry.sidecar_path else result.unnarrated
                 target.append(entry)
 

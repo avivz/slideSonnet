@@ -15,6 +15,7 @@ import os
 import tempfile
 from pathlib import Path
 
+from slidesonnet.builds import deck_pdf
 from slidesonnet.cache import REVIEW_DIRNAME, cache_root
 from slidesonnet.exceptions import ReviewError
 from slidesonnet.pdf.reader import is_final_build
@@ -24,7 +25,7 @@ _FORMAT = 1
 
 
 def base_dir(pdf_path: Path) -> Path:
-    return cache_root(pdf_path) / REVIEW_DIRNAME / pdf_path.stem
+    return cache_root(pdf_path) / REVIEW_DIRNAME / deck_pdf(pdf_path).stem  # one per deck
 
 
 def _base_file(pdf_path: Path) -> Path:
