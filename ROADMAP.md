@@ -9,9 +9,10 @@ decks and worktrees, and export reports progress for every phase. Anyone
 installing from PyPI still gets the old NiceGUI editor — so the release is the
 headline Now item.
 
-*Last PM pass 2026-09-29 (branch `pm/reconcile-ui-2026-09-29`).* Code and UX
-reviews of the new editor were running in parallel with this pass; their
-findings had not reached `dev/INBOX.md` yet. Triage them into Now #1.
+*Last PM pass 2026-09-29 (second pass, same day).* The code + UX reviews
+landed: two independent reviews (ours: 6 code + 2 UX agents; Astra's) merged into
+**`dev/REVIEW-TODO.md`** — the detailed, tiered checklist (importance × ease).
+Now #1 and Next #7–#8 below point at its tiers; tick items off there.
 
 **Demo status:** basel-problem HQ Inworld render shipped (YouTube). Showcase is
 still Kokoro-only (Next #5). The demo PDFs are still *plain* builds; they need a
@@ -23,15 +24,40 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — this week
 
-1. [ ] **Fix what the running editor reviews find.** Code and UX reviews of the
-   new editor (Vue frontend, `/api/v1`, review tab, script view, slide-by-slide
-   play) are in flight from other agents. Bugs they confirm come first; repro
-   each at the lowest level that can see it (API test / Vitest, browser tier only
-   for focus, timing, media). Also carried from the merge: the intermittent
-   browser-journey flake ("not stable" at `seg-up-2`, full suite only) and the
-   unreproduced "Clear accepted hangs during playback" report (1.2–3.8 s in every
-   mode tried; commit `36f14b1` sped clearing up). *Appetite:* depends on what the
-   reviews find; keep cosmetic findings for Next. **[agent]**
+1. [ ] **Fix the review's Tier 1–3 findings** (`dev/REVIEW-TODO.md`).
+   **Status 2026-09-29:** batches (a)–(f) below are **done and on `main`** (each with
+   regression tests; CHANGELOG "September 2026 review"), plus the Qwen3/golden
+   cache-key batch and the pipeline, server and docs cleanups from Next #8. Still
+   open: the editor UX quick-wins batch (in flight), the follow-ups listed at the end
+   of `dev/REVIEW-TODO.md`, and a local `make test` + `make test-browser` run before
+   a3. Original scope:
+   Two
+   reviews agree the new editor and pipeline have real data-loss and paid-audio
+   holes; a3 must not ship them. Work in parallel batches, each **repro test
+   first** at the lowest level that sees it (pytest / Vitest; browser tier only
+   for focus, timing, media):
+   (a) **audio loss & paid safety** — one clip GC over sibling decks (per-deck
+   `clean` and the on-save sweep delete other decks' clips, incl. paid),
+   `--narration` override in sweep + review, `clean` dry-run/trash like
+   `pool prune`, pool==legacy-dir `rmtree`, whole-deck `force` generate skipping
+   paid approval, `make clean` deleting committed Inworld audio;
+   (b) **narration round-trip** — ` #` truncates spoken text, newlines inject
+   pauses/voices/blocks, nan/inf/negative numbers;
+   (c) **frontend save soundness** — conflict map, load epochs, `flush()→bool`,
+   route guards, Script-view focus + save indicator, review note/picked leaks;
+   (d) **export correctness** — ~20 ms/slide A/V drift, atomic MP4 + render cache,
+   `concat_list.txt` in the output dir / apostrophe paths, `export` succeeding on
+   broken narration;
+   (e) **server robustness** — review-log transactions, queue-worker death, job
+   status/dedupe races, per-deck `.env`, media-route Host check, bare 500s;
+   (f) **first run** — README install (`--prerelease`), quick start with
+   `--draft`, v1 `init` header, pronunciation-in-toml docs, build skill's
+   Inworld guard, release verify step.
+   Also carried from the merge: the intermittent browser-journey flake ("not
+   stable" at `seg-up-2`) and the unreproduced "Clear accepted hangs during
+   playback" report. *Acceptance:* every Tier 1–2 box ticked with a regression
+   test; Tier 3 ticked or consciously deferred in the file. *Appetite:* three to
+   four days across parallel agents. **[agent]**
 2. [ ] **Inworld delivery controls — pronunciation, direction, creativity.**
    *(Top feature priority, 2026-09-29: Inworld is now the main engine. Merges the
    inline pronunciation override, the director's note, and per-engine generation
@@ -155,6 +181,24 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    `beamer-writer` emits a valid v2 preamble (checked against the demo sidecars);
    (d) `docs/frontend-parity.md`/`frontend-migration.md` are marked historical.
    *Appetite:* a day. **[agent]**
+7. [ ] **Review Tier 4 — structural refactors** (`dev/REVIEW-TODO.md`):
+   load-once `DeckContext` passed into `api` (root of the paid/positional-target
+   bugs), a single generation path through the per-(deck, engine) queue,
+   `VoicePlan` + one `effective_engine()` (editor defaults to Inworld, CLI to
+   Kokoro), module layering fixes, splitting `cli.py`/`routes.py`/`EditorView.vue`,
+   a frontend jobs store, typed job results, Play all that starts at once, and
+   plain-language progress. *Acceptance:* behaviour unchanged (existing suites
+   green), import graph has no cycles, the paid-approval tests from Now #1 still
+   pass against the new path. *Appetite:* a week, after Now #1. **[agent]**
+8. [ ] **Review Tier 5 — cleanup sweep** *(dead code, test trims, docs/rules drift
+   and CI hygiene done 2026-09-29; left: Ruff rules, Prettier, pre-commit hooks)* (`dev/REVIEW-TODO.md`): ~450 lines of
+   dead source + ~45 tests with it, ~100 more tests trimmed/parametrized, a
+   golden cache-key table (the one test that guards every paid clip), NiceGUI
+   remnants, stale rules/CLAUDE.md, pyproject/CI hygiene, stricter Ruff rules
+   (`I`, `B`, `UP`) and Prettier for the frontend, both enforced in CI, plus fast pre-commit hooks. Folds into Next #6's
+   docs pass. *Acceptance:* unit tier count and time drop; coverage stays ≥ 94%;
+   `make lint typecheck test-unit test-frontend` green. *Appetite:* a day.
+   **[agent]**
 ## Later — before 1.0 final
 
 1. **Review loop follow-ups** (spec `dev/DESIGN-review.md`): highlight the
@@ -188,6 +232,7 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Later — backlog
 
+
 1. **Cross-deck background generation.** The job queue is now server-side and
    survives a reload, but leaving a deck still cancels its generation
    (`stores/generation.ts` `leave`). Let deck A keep generating while you read
@@ -200,7 +245,10 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 4. **Layered reconciliation** — text-fingerprint fallback when ids are missing.
 5. **More TTS backends** — Cartesia, Azure, Google Cloud.
 6. **Multi-deck playlists** — several PDFs into one video.
-7. **`--json` output** for CI/automation.
+7. **`--json` output** for CI/automation (also review Tier 6).
+8. **Review Tier 6 polish** (`dev/REVIEW-TODO.md`): CLI surface consistency
+   (`tts --force`, `--config`, `check --json`, `NO_COLOR`), editor polish and
+   accessibility, minor correctness, type tightening.
 
 ## Done (v1 rewrite)
 

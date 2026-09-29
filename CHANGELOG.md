@@ -5,6 +5,150 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed (September 2026 code + UX review)
+Two independent reviews (checklist in `dev/REVIEW-TODO.md`); every fix below has a
+regression test.
+
+**Audio loss and paid safety**
+- **`clean` and the editor's automatic sweep no longer delete other decks' clips.**
+  The shared `.slidesonnet/audio/` is garbage-collected against every narrated deck
+  in the folder (paid clips included), and `pool prune` does the same for a deck
+  without a configured pool. `--keep nothing` removes only this deck's renders.
+- **The sweep honours `--narration`.** Clips made for an override sidecar were
+  deleted about a second after being generated.
+- **`clean` in pool mode and `pool migrate --apply` could delete the pool itself**
+  when it was the same directory as (or nested with) the deck's local cache.
+- **A forced whole-deck generate asks before re-billing paid clips.** On a fully
+  cached Inworld deck it used to regenerate everything without approval.
+- **`make clean` removes build artefacts only.** It deleted every `.slidesonnet/`
+  in the tree, including committed paid example audio.
+
+**Narration file**
+- **A `#` in narration text is kept** ("Use issue #123" lost everything from the
+  `#` on save). On `text:`, `voice:` and `direct:` lines only a line starting with
+  `#` is a comment.
+- **A line break typed into an utterance can no longer add a pause, change the voice
+  or start a new slide block** when saved; speech text collapses line breaks, and
+  a line break in a voice or director's note is refused.
+- **`pause: -1`, `pause: inf`, `pause: nan` and `transition-in: fade nan` give a
+  clear error with the line number** instead of a crash or a broken timeline; the
+  editor refuses them too. Durations are written exactly (no 6-digit rounding).
+- **The Voices dialog can't save a voice name the sidecar can't read back.**
+- **`slidesonnet.toml` is checked strictly**, each error naming its key:
+  `keep_scratch = "false"` is no longer true; nan/inf, odd or zero resolutions and
+  `crf` outside 0–51 are refused. An explicitly given config file that doesn't
+  exist is an error instead of silently meaning defaults.
+
+**Export**
+- **Slides stay in step with the narration.** Each segment was rounded to whole
+  frames on its own, so a 30-slide video ran about a second behind its audio; each
+  slide now starts within one frame of its narration, and a slide between two full
+  transitions no longer gains an invented 0.1 s.
+- **A failed or cancelled export keeps the previous video and subtitles.**
+- **Exporting no longer overwrites and deletes a `concat_list.txt` of yours** in the
+  output folder, and decks in folders named like `O'Brien` export again.
+- **Cancelling an export or preview and undoing an edit can no longer serve the
+  edited (or half-written) audio** from the render cache.
+- **Recompiling the PDF while its pages render no longer marks the old images as
+  current.**
+- **A slide whose narration is one MP3 clip gets a real WAV page file.**
+- **`export` refuses a deck that `check` reports errors for, or that has no
+  narration, unless `--draft`**; only `.mp4` output is accepted. A PDF with no
+  `\ssid` is an error in `init` and `check`, and a missing `--narration` file is an
+  error rather than an empty deck.
+
+**Editor**
+- **Two outside edits to slides you were typing on no longer save over the second
+  one**; each conflict is shown in turn, and "Saved" never shows while one is open.
+- **Switching decks or engines can't land a slow answer for the previous one on the
+  new one**; review picks and the compare view no longer carry over between decks.
+- **Leaving a deck by any route (switcher, links, back/forward) saves first** and
+  stays put if the save fails; play, generate, export and review stop instead of
+  using the old text.
+- **Script view shows the save state** (a lasting "Not saved" with Retry), and
+  playback and auto-generate leave the line you're typing alone.
+- **Stop wins over a play press that is still saving**; stopping Play all cancels
+  the track being prepared.
+- **A review note is kept if sending fails**, and Enter while composing (IME) no
+  longer sends it.
+- **Arrow keys on the console tabs, buttons and the pane divider no longer change
+  slides**; the console tabs respond to the arrows.
+- **"+ Line" puts the cursor in the new line**, and empty lines aren't saved.
+- **A second confirmation no longer leaves the first one waiting forever.**
+
+**Server and review**
+- **Review writes are one locked transaction**: concurrent comments no longer share
+  an id, Clear no longer drops replies or reopens made meanwhile, ids are never
+  reused, and a torn log record no longer swallows the next one.
+- **Review (Mark seen, diffs) uses the narration file given with `edit --narration`.**
+- **Clip generation keeps working after the sidecar or PDF is caught mid-rewrite.**
+- **A cancel racing an export's completion no longer leaves a stuck job** blocking
+  later exports; an export with a different engine or draft setting isn't merged
+  into a running one; shutdown settles queued jobs.
+- **Each deck's `.env` is read for that deck only.** One editor session used the
+  first deck's `INWORLD_API_KEY` and `SLIDESONNET_AUDIO_DIR` for every deck; now
+  `clean`, `pool` and the editor also honour a deck's `.env` pool. Shell exports
+  still win.
+- **A bad `slidesonnet.toml`, sidecar or missing PDF gives a readable error on every
+  editor route** instead of a bare 500, and unrelated errors are no longer reported
+  as "the PDF is being rewritten".
+- **A deck whose config turns logging off stops writing to the previous deck's log.**
+
+**Engines and CLI**
+- **Qwen3 clips depend on `[tts.qwen3] language`** (English keeps existing clips),
+  and **a per-voice `.pt` prompt is cached by content**, not path: editing it
+  regenerates its clips; moving the deck or using another worktree reuses them
+  (per-voice clips made before this are regenerated once). Qwen3 reloads a prompt
+  that changed on disk.
+- **CLI errors are one line saying what went wrong and how to fix it** (`-v` shows
+  the traceback) — including `clean`, config values, LaTeX source passed instead of
+  a PDF, unreadable PDFs and unwritable paths.
+- **`doctor` requires Python 3.13**, as the package does.
+
+### Security (September 2026 review)
+- **Slide images and audio (`/ssmedia`) get the same Host check as the API**,
+  blocking DNS-rebinding reads.
+
+### Added (September 2026 review)
+- **`clean --dry-run`, `--yes` and `--narration`.** `clean` never deletes paid clips
+  at any `--keep` level — they move to `.slidesonnet/audio/trash/` after a prompt —
+  and its summary reports the paid clips kept; `--keep` help explains each level.
+- **`tts` and `export` ask before generating paid (Inworld) clips**; `--yes` skips
+  the question, and without a terminal they refuse.
+- **`check` flags voices the engine doesn't have**, warns that a plain build exports
+  only as a draft, and reports a duplicate `@id` with both line numbers.
+- **`edit --allow-host NAME`** for network binds: `--host 0.0.0.0` requires it, any
+  non-loopback bind warns, `--host`/`--port` have help, and `--host ::1` opens a
+  valid URL.
+- Docs: pre-release install instructions, a quick start that reaches a video, an
+  "Engines and keys" section, and a full `slidesonnet.toml` reference.
+
+### Changed (September 2026 review)
+- **Narration comments:** `voice: x  # note` and `direct: y  # note` now keep the
+  `# note` as part of the value — put comments on their own line.
+- **The automatic sweep waits until a Kokoro clip has been orphaned for 10 minutes**,
+  so trying a voice or wording and reverting keeps the clips. `clean` now leaves
+  files it doesn't recognise (e.g. `durations.json`) alone.
+- **A silent export has no audio stream** (was a silent AAC track).
+- `review wait --timeout` exits 3 on timeout (was 2, Click's usage-error code).
+- `tts` reports "N generated, M reused"; an unknown `--id` is an error with a
+  suggestion; `subs` takes its format from the file extension; the file `init`
+  writes shows a v1 example and the next step.
+- Sidecar lines split only on `\n`/`\r\n` (U+2028 and similar no longer break a line).
+- Releases build once, check the tag against `__version__`, and verify the exact
+  TestPyPI version before publishing the same files. CI caches pip and pins ruff
+  and mypy.
+
+### Removed (September 2026 review)
+- About 330 lines of dead pipeline code (`compose_segment`,
+  `concatenate_segments_xfade`, the transition-picker helpers, test-only synth and
+  narration-model helpers) and ~120 tests that only covered it or restated each
+  other; a golden table now pins every engine's exact cache filenames.
+- About 200 lines of dead server and review code, unread API fields
+  (`DeckSnapshot.pdf_name`/`sidecar_name`/`default_engine`/`review_active`,
+  `PagesDTO.rendered`, `GenerationStatusDTO.last_error`, `MetaDTO.speeds`) and the
+  NiceGUI-era idempotent app mounting. `review show` no longer requires `--base`.
+
 ### Added
 - **Script view** (the editor's default; **Slide** switches back): the whole
   deck's narration as one editable document, each line its own paragraph, pauses
