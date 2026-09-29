@@ -1,7 +1,9 @@
 // Play all: the deck slide by slide, inside the chosen conversation.
+import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '@/api/client'
 import type { PreviewManifest } from '@/features/playback/manifest'
 import { nextAfter, playable, progress, startAt } from '@/features/playback/playlist'
 import { useEditorStore } from '@/stores/editor'
@@ -196,5 +198,52 @@ describe('Play all', () => {
     await vi.waitFor(() => expect(audio.paused).toBe(false))
     expect(asked).toHaveBeenCalledOnce()
     expect(server.jobs.filter((j) => j.kind === 'preview').at(-2)?.body).toMatchObject({ slide_id: 'a', allow_paid: true })
+  })
+})
+
+describe('Stop wins', () => {
+  function type(editor: ReturnType<typeof useEditorStore>, text: string): void {
+    const line = editor.draftFor('a')?.middle[0]
+    if (line?.kind === 'speech') line.text = text
+    editor.touch('a')
+  }
+
+  it('over a play press still saving the line being typed, or one that can’t be saved', async () => {
+    const { editor, player, server, previews } = await playing()
+    for (const key of ['a', 'deck']) {
+      server.holding = true
+      type(editor, `Typed just before playing ${key}.`)
+      const pressed = player.press(key)
+      await flushPromises()
+      player.stop()
+      server.release()
+      await pressed
+    }
+    editor.client.saveSlide = async () => {
+      throw new ApiError(500, 'io', 'Disk full.')
+    }
+    type(editor, 'Typed, never saved.')
+    await player.press('a')
+    await flushPromises()
+    expect(previews()).toEqual([])
+  })
+
+  it('cancels Play all’s track being built, and a superseded one', async () => {
+    const { editor, player, server } = await playing()
+    const cancelled: string[] = []
+    editor.client.job = async (id) => ({ id, kind: 'preview', status: 'running', result: null }) as never
+    editor.client.cancelJob = async (id) => {
+      cancelled.push(id)
+      return {} as never
+    }
+    void player.press('deck')
+    await vi.waitFor(() => expect(server.jobs.map((j) => j.body.slide_id)).toContain('a'))
+    editor.go(2) // on to c while a is still being built
+    await vi.waitFor(() => expect(server.jobs.map((j) => j.body.slide_id)).toContain('c'))
+    expect(cancelled).toContain('job-1')
+    player.stop()
+    await flushPromises()
+    const c = server.jobs.findIndex((j) => j.body.slide_id === 'c')
+    expect(cancelled).toContain(`job-${c + 1}`)
   })
 })

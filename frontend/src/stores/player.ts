@@ -33,6 +33,14 @@ interface Place {
   time: number
 }
 
+/** A Play all slide's track, prepared ahead; `cancel` drops its job and settles `manifest` with null. */
+interface Prepared {
+  slideId: string
+  revision: string
+  manifest: Promise<PreviewManifest | null>
+  cancel: () => void
+}
+
 /** A preview being built on the server; `cancel` drops it. */
 interface PreviewBuild {
   done: Promise<JobDTO>
@@ -54,6 +62,8 @@ export const usePlayerStore = defineStore('player', () => {
   let audio: HTMLAudioElement | null = null
   let controller: PlaybackController | null = null
   let current: PreviewBuild | null = null
+  /** Bumped by every play press and by Stop: a press that awaited past a newer one gives way. */
+  let operation = 0
   const frameListeners = new Set<(f: Frame) => void>()
   /** Plays silence ahead of the first word, so a sleeping output doesn't swallow it. */
   const waker = new OutputWaker()
@@ -66,12 +76,9 @@ export const usePlayerStore = defineStore('player', () => {
   /** Slides whose clips are missing may be generated (the user agreed, or the engine is free). */
   let allowPaidAll = false
   /** The next slide's track, prepared while this one plays. */
-  let ahead: {
-    slideId: string
-    revision: string
-    manifest: Promise<PreviewManifest | null>
-    cancel: () => void
-  } | null = null
+  let ahead: Prepared | null = null
+  /** The track Play all is waiting for now (cancelled when superseded or stopped). */
+  let active: Prepared | null = null
   const allProgress = computed(() =>
     allAt.value === null ? null : progress(editor.pages, review.scope, allAt.value),
   )
@@ -217,8 +224,14 @@ export const usePlayerStore = defineStore('player', () => {
 
   /** A play button: a slide (`key` = its id), Play all (`'deck'`), or the whole deck as one track (`'video'`). */
   async function press(key: TrackKey): Promise<void> {
+    const op = ++operation
     const awake = waker.wake() // starts now, in step with the build
-    await editor.flush() // a play press flushes the field being typed in
+    const saved = await editor.ensureSaved() // a play press flushes the field being typed in
+    if (op !== operation) return // Stop (or another press) came meanwhile: it wins
+    if (!saved) {
+      if (transport.loadedKey === null) waker.release()
+      return // never play words other than the ones on screen
+    }
     const action = transport.pressAction(key, editor.revision)
     if (action === 'wait') return
     if (action === 'pause') {
@@ -239,7 +252,7 @@ export const usePlayerStore = defineStore('player', () => {
       else await build(key, false, awake, place)
       return
     }
-    if (key === 'deck') await playAll(awake)
+    if (key === 'deck') await playAll(awake, op)
     else await build(key, false, awake)
   }
 
@@ -257,9 +270,15 @@ export const usePlayerStore = defineStore('player', () => {
     controller.pause()
     const ticket = transport.begin(key)
     building.value = key
+    let started: PreviewBuild | null = null
     try {
-      current = await startPreview(key === 'video' ? null : key, allowPaid)
-      const finished = await current.done
+      started = await startPreview(key === 'video' ? null : key, allowPaid)
+      if (!transport.mayStart(ticket)) {
+        started.cancel() // stopped or superseded while the job was being created
+        return
+      }
+      current = started
+      const finished = await started.done
       if (!transport.mayStart(ticket)) return // stopped or superseded meanwhile
       if (finished.status !== 'succeeded' || finished.result === null) {
         if (finished.status === 'failed') {
@@ -284,12 +303,12 @@ export const usePlayerStore = defineStore('player', () => {
       editor.flash(e instanceof ApiError ? e.message : 'The preview could not be built.', 'err')
     } finally {
       if (transport.mayStart(ticket)) building.value = null
-      current = null
+      if (current === started) current = null
     }
   }
 
   /** Play all from here: generate what's missing up front (asking once if it costs), then play. */
-  async function playAll(awake: Promise<void>): Promise<void> {
+  async function playAll(awake: Promise<void>, op: number): Promise<void> {
     const first = startAt(editor.pages, review.scope, editor.currentId)
     if (first === null) {
       editor.flash('No slides to play')
@@ -301,6 +320,7 @@ export const usePlayerStore = defineStore('player', () => {
     allowPaidAll = !generation.paid
     if (missing.length) {
       const queued = await generation.enqueue(missing, { action: 'Generate & play' })
+      if (op !== operation) return // stopped while generating was being asked for
       if (generation.paid) allowPaidAll = queued > 0
     }
     await playSlide(first, awake)
@@ -323,7 +343,11 @@ export const usePlayerStore = defineStore('player', () => {
       if (missing.length) allowPaidAll = (await generation.enqueue(missing, { action: 'Generate & play' })) > 0
       if (!transport.mayStart(ticket)) return
     }
-    const manifest = await prepared(slideId)
+    active?.cancel() // a slide Play all has moved on from
+    const track = take(slideId)
+    active = track
+    const manifest = await track.manifest
+    if (active === track) active = null
     if (!transport.mayStart(ticket)) return // stopped, or moved on meanwhile
     building.value = null
     if (manifest === null) {
@@ -353,6 +377,8 @@ export const usePlayerStore = defineStore('player', () => {
     ahead?.cancel()
     let cancelled = false
     let build: PreviewBuild | null = null
+    let dropped: () => void = () => {}
+    const cancelledNow = new Promise<null>((resolve) => (dropped = () => resolve(null)))
     const manifest = (async (): Promise<PreviewManifest | null> => {
       try {
         build = await startPreview(slideId, allowPaidAll)
@@ -360,7 +386,8 @@ export const usePlayerStore = defineStore('player', () => {
           build.cancel()
           return null
         }
-        const finished = await build.done
+        const finished = await Promise.race([build.done, cancelledNow])
+        if (finished === null) return null // cancelled while it was being built
         if (finished.status !== 'succeeded' || finished.result === null) {
           if (finished.status === 'failed') {
             const why = finished.error?.message ?? 'unknown error'
@@ -385,16 +412,17 @@ export const usePlayerStore = defineStore('player', () => {
       cancel: () => {
         cancelled = true
         build?.cancel()
+        dropped()
       },
     }
   }
 
   /** `slideId`'s track: the one prepared, unless the narration changed since. */
-  function prepared(slideId: string): Promise<PreviewManifest | null> {
+  function take(slideId: string): Prepared {
     prepare(slideId)
-    const ready = ahead
+    const ready = ahead as Prepared // prepare() always leaves one for slideId
     ahead = null
-    return ready?.manifest ?? Promise.resolve(null)
+    return ready
   }
 
   /** Leave Play all (the track loaded, if any, is someone else's to stop). */
@@ -402,6 +430,8 @@ export const usePlayerStore = defineStore('player', () => {
     allAt.value = null
     ahead?.cancel()
     ahead = null
+    active?.cancel()
+    active = null
   }
 
   let confirmPaid: (count: number) => Promise<boolean> = async () => false
@@ -417,6 +447,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   /** Stop wins: cancels a build in flight and unloads the player. */
   function stop(): void {
+    operation++
     cancelBuild()
     stopAll()
     transport.stop()
