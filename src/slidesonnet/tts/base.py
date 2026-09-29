@@ -48,6 +48,10 @@ class TTSEngine(ABC):
         """
         return ()
 
+    def missing_requirement(self, voice: str) -> str | None:
+        """What must be installed before *voice* can speak, or None if nothing is missing."""
+        return None
+
     def default_voice(self) -> str | None:
         """The voice used when an utterance has no explicit one, if known."""
         return None

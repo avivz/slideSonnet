@@ -154,7 +154,14 @@ def test_check_warns_a_plain_build_needs_draft(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("voice", "ok"),
-    [("nobody", False), ("af_hart", False), ("af_heart", True), ("narrator", True)],
+    [
+        ("nobody", False),
+        ("af_hart", False),
+        ("af_heart", True),
+        ("narrator", True),
+        ("ef_dora", True),  # every Kokoro language, not only English
+        ("pm_alex", True),
+    ],
 )
 def test_check_validates_voices(tmp_path: Path, voice: str, ok: bool) -> None:
     pdf = prep_marked_deck(tmp_path)
@@ -169,6 +176,23 @@ def test_check_validates_voices(tmp_path: Path, voice: str, ok: bool) -> None:
         assert f"'{voice}'" in result.output and "kokoro voice" in result.output
     if voice == "af_hart":
         assert "af_heart" in result.output  # a close-match suggestion
+
+
+def test_check_names_the_language_pack_a_voice_needs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Mandarin (z*) voices need misaki[zh]; Japanese (j*) misaki[ja] is installed here.
+    monkeypatch.setattr("slidesonnet.tts.kokoro._importable", lambda module: module != "misaki.zh")
+    pdf = prep_marked_deck(tmp_path)
+    _sidecar(
+        tmp_path,
+        "@intro-title\n  utterance:\n    voice: zf_xiaobei\n    text: Ni hao.\n"
+        "  utterance:\n    voice: zf_xiaobei\n    text: Zai jian.\n"
+        "  utterance:\n    voice: jf_alpha\n    text: Konnichiwa.\n",
+    )
+    result = _run("check", str(pdf))
+    assert result.exit_code == 0, result.output  # a warning: the deck itself is fine
+    assert result.output.count("misaki[zh]") == 1 and "misaki[ja]" not in result.output
 
 
 def test_check_reports_a_duplicate_block_with_both_lines(tmp_path: Path) -> None:

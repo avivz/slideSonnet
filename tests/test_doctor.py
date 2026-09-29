@@ -70,6 +70,16 @@ def test_run_all_checks_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     assert {"kokoro", "qwen-tts", "inworld-tts"} <= tts_names
 
 
+def test_kokoro_language_packs(monkeypatch: pytest.MonkeyPatch) -> None:
+    from slidesonnet.doctor import check_kokoro_language_packs
+
+    monkeypatch.setattr("slidesonnet.tts.kokoro._importable", lambda module: module == "misaki.ja")
+    packs = {c.name: c for c in check_kokoro_language_packs()}
+    assert packs["Kokoro Japanese voices (j*)"].status == "ok"
+    mandarin = packs["Kokoro Mandarin Chinese voices (z*)"]
+    assert mandarin.status == "missing" and "misaki[zh]" in mandarin.hint
+
+
 def test_get_cli_version_missing_command_returns_none() -> None:
     assert _get_cli_version(["definitely-not-a-command-xyz"], r"(\d+)") is None
 

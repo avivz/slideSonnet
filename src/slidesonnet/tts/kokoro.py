@@ -10,12 +10,14 @@ resolved cache-first afterwards — see ``_cache_first``.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import logging
 import os
 import tempfile
 import warnings
 import wave
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -144,11 +146,10 @@ def _quiet_torch_load_warnings() -> Iterator[None]:
         yield
 
 
-# The Kokoro-82M v1.0 English voices (``<lang><gender>_<name>``; lang a=American,
-# b=British). Offered as the voice choices in the editor — these need no extra
-# language packs, unlike the es/fr/hi/it/ja/pt/zh voices the model also ships.
+# Every Kokoro-82M v1.0 voice (``<lang><gender>_<name>``; the first letter is the
+# KPipeline language code). English first: the editor offers them in this order.
 KOKORO_VOICES: tuple[str, ...] = (
-    # American English — female
+    # a = American English
     "af_heart",
     "af_alloy",
     "af_aoede",
@@ -160,7 +161,6 @@ KOKORO_VOICES: tuple[str, ...] = (
     "af_river",
     "af_sarah",
     "af_sky",
-    # American English — male
     "am_adam",
     "am_echo",
     "am_eric",
@@ -170,17 +170,84 @@ KOKORO_VOICES: tuple[str, ...] = (
     "am_onyx",
     "am_puck",
     "am_santa",
-    # British English — female
+    # b = British English
     "bf_alice",
     "bf_emma",
     "bf_isabella",
     "bf_lily",
-    # British English — male
     "bm_daniel",
     "bm_fable",
     "bm_george",
     "bm_lewis",
+    # e = Spanish
+    "ef_dora",
+    "em_alex",
+    "em_santa",
+    # f = French
+    "ff_siwis",
+    # h = Hindi
+    "hf_alpha",
+    "hf_beta",
+    "hm_omega",
+    "hm_psi",
+    # i = Italian
+    "if_sara",
+    "im_nicola",
+    # j = Japanese (needs misaki[ja])
+    "jf_alpha",
+    "jf_gongitsune",
+    "jf_nezumi",
+    "jf_tebukuro",
+    "jm_kumo",
+    # p = Brazilian Portuguese
+    "pf_dora",
+    "pm_alex",
+    "pm_santa",
+    # z = Mandarin Chinese (needs misaki[zh])
+    "zf_xiaobei",
+    "zf_xiaoni",
+    "zf_xiaoxiao",
+    "zf_xiaoyi",
+    "zm_yunjian",
+    "zm_yunxi",
+    "zm_yunxia",
+    "zm_yunyang",
 )
+
+
+@dataclass(frozen=True)
+class LanguagePack:
+    """A Kokoro language whose text-to-phoneme step needs an extra ``misaki`` package.
+
+    Without it Kokoro fails at the first line in that language (for Mandarin with
+    "No module named 'ordered_set'"). English, and the espeak-based Spanish/French/
+    Hindi/Italian/Portuguese, come with the kokoro extra.
+    """
+
+    prefix: str  # the voice-id letter, e.g. "z"
+    language: str
+    extra: str  # misaki's extra, e.g. "zh"
+
+    @property
+    def requirement(self) -> str:
+        return f"misaki[{self.extra}]"
+
+    def installed(self) -> bool:
+        return _importable(f"misaki.{self.extra}")
+
+
+LANGUAGE_PACKS: tuple[LanguagePack, ...] = (
+    LanguagePack("j", "Japanese", "ja"),
+    LanguagePack("z", "Mandarin Chinese", "zh"),
+)
+
+
+def _importable(module: str) -> bool:
+    try:
+        importlib.import_module(module)
+    except ImportError:  # the extra, or one of its dependencies, is missing
+        return False
+    return True
 
 
 class KokoroTTS(TTSEngine):
@@ -231,6 +298,15 @@ class KokoroTTS(TTSEngine):
 
     def list_voices(self) -> tuple[str, ...]:
         return KOKORO_VOICES
+
+    def missing_requirement(self, voice: str) -> str | None:
+        for pack in LANGUAGE_PACKS:
+            if voice.startswith(pack.prefix) and not pack.installed():
+                return (
+                    f"Kokoro's {pack.language} voices need an extra package: "
+                    f"pip install '{pack.requirement}'"
+                )
+        return None
 
     def default_voice(self) -> str | None:
         return self.voice

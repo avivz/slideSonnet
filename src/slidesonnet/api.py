@@ -258,7 +258,8 @@ def _duplicate_block_diagnostics(deck: Deck, diags: list[Diagnostic]) -> list[Di
 
 
 def _unknown_voice_diagnostics(deck: Deck, config: Config) -> list[Diagnostic]:
-    """Error where an utterance asks the engine for a voice it doesn't have.
+    """Error where an utterance asks the engine for a voice it doesn't have, and a
+    warning where a voice needs a package that isn't installed (Kokoro's j*/z*).
 
     Only engines that publish their voice list (Kokoro; Qwen3's CustomVoice
     model) can be checked; cloud voices are account-specific and pass through.
@@ -277,7 +278,15 @@ def _unknown_voice_diagnostics(deck: Deck, config: Config) -> list[Diagnostic]:
     reported: set[tuple[str | None, str]] = set()
 
     def flag(name: str, resolved: str, slide_id: str | None) -> None:
-        if resolved in known or resolved.endswith(".pt") or (slide_id, name) in reported:
+        if resolved in known:
+            need = engine.missing_requirement(resolved)
+            if need and (None, resolved) not in reported:  # once per voice, deck-wide
+                reported.add((None, resolved))
+                diags.append(
+                    Diagnostic("warning", "voice-needs-package", f"voice '{resolved}': {need}")
+                )
+            return
+        if resolved.endswith(".pt") or (slide_id, name) in reported:
             return
         reported.add((slide_id, name))
         via = f" (the voice map sends '{name}' to '{resolved}')" if resolved != name else ""

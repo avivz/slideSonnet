@@ -110,6 +110,9 @@ regression test.
   the traceback) — including `clean`, config values, LaTeX source passed instead of
   a PDF, unreadable PDFs and unwritable paths.
 - **`doctor` requires Python 3.13**, as the package does.
+- **`check` knows every Kokoro voice**, not only the English ones (`ef_dora`,
+  `ff_siwis`, … no longer need `--draft`), and warns when a Japanese (`j*`) or
+  Mandarin (`z*`) voice needs `misaki[ja]`/`misaki[zh]`; `doctor` lists both packs.
 - **`-q`/`-v` work after the subcommand too** (`slidesonnet export deck.pdf -v`,
   `slidesonnet review status deck.pdf -q`), not only before it.
 

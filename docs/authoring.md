@@ -71,9 +71,11 @@ text untouched); `init --force` overwrites. The new file starts with a commented
 example of the grammar below.
 
 `check` reports, besides id problems: a voice the engine doesn't have (for
-engines that publish a voice list, like Kokoro), a slide-id with two `@` blocks
-(with both line numbers), and — as a warning — a plain build, which `export`
-only turns into a draft.
+engines that publish a voice list, like Kokoro — all its languages), a slide-id
+with two `@` blocks (with both line numbers), and, as warnings, a plain build
+(which `export` only turns into a draft) and a Kokoro Japanese (`j*`) or Mandarin
+(`z*`) voice whose extra package isn't installed (`pip install 'misaki[ja]'` /
+`'misaki[zh]'`; `doctor` lists both).
 
 ## 3. Write narration
 

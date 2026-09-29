@@ -178,6 +178,22 @@ def check_kokoro() -> CheckResult:
     )
 
 
+def check_kokoro_language_packs() -> list[CheckResult]:
+    """Kokoro's Japanese and Mandarin voices each need an extra ``misaki`` package."""
+    from slidesonnet.tts.kokoro import LANGUAGE_PACKS
+
+    return [
+        CheckResult(
+            f"Kokoro {pack.language} voices ({pack.prefix}*)",
+            "ok" if pack.installed() else "missing",
+            "installed",
+            f"pip install '{pack.requirement}'",
+            f"Only for Kokoro's {pack.prefix}* voices",
+        )
+        for pack in LANGUAGE_PACKS
+    ]
+
+
 def check_qwen3() -> CheckResult:
     return _check_python_package(
         "qwen-tts", "qwen_tts", "pip install slidesonnet[qwen3]", "Local own-voice TTS (free)"
@@ -206,6 +222,8 @@ def check_inworld_api_key() -> CheckResult:
 
 def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
     """Run all checks and return named groups of results."""
+    kokoro = check_kokoro()
+    packs = check_kokoro_language_packs() if kokoro.status == "ok" else []
     return [
         ("Python", [check_python()]),
         (
@@ -216,7 +234,7 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
         ("Beamer toolchain (for compiling your deck)", [check_latexmk(), check_pdflatex()]),
         (
             "TTS backends (at least one required)",
-            [check_kokoro(), check_qwen3(), check_inworld()],
+            [kokoro, *packs, check_qwen3(), check_inworld()],
         ),
         ("API keys", [check_inworld_api_key()]),
     ]
