@@ -1,8 +1,10 @@
 """Running the editor: build the deck library, serve it, open a browser.
 
 ``slidesonnet edit`` lands here. The server is Uvicorn on the loopback address
-by default; a deliberate ``--host`` is allowed (and added to the accepted Host
-names). The browser opens once the server is listening — under WSL in the
+by default. Binding beyond this machine is deliberate (:func:`check_bind`): a
+specific ``--host`` address is accepted as a Host name and warned about; a
+wildcard (``0.0.0.0``/``::``) needs the names other machines will use, given
+with ``--allow-host``. The browser opens once the server is listening — under WSL in the
 *Windows* browser via ``wslview`` (never a Linux one), with ``--browser`` for
 any command, or as a chromeless app window with ``--app``.
 
@@ -13,6 +15,7 @@ slideSonnet's own source; parameters reach the reloaded worker through
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import shutil
@@ -74,17 +77,64 @@ def build_registry(
     return registry
 
 
-def editor_app(registry: DeckRegistry, *, host: str) -> FastAPI:
+def editor_app(
+    registry: DeckRegistry, *, host: str, allow_hosts: list[str] | None = None
+) -> FastAPI:
     app = create_app(registry, host=host)
-    context_of(app).on_deck_open = retarget_deck_log
+    ctx = context_of(app)
+    ctx.on_deck_open = retarget_deck_log
+    for name in allow_hosts or ():
+        ctx.allow_host(name)
     return app
+
+
+_WILDCARDS = frozenset({"0.0.0.0", "::"})
+
+
+class BindRefused(ValueError):
+    """A bind that would expose the editor without saying who may reach it."""
+
+
+def is_loopback(host: str) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
+def check_bind(host: str, port: int, allow_hosts: list[str]) -> str | None:
+    """A warning for a bind beyond this machine (None on loopback).
+
+    Raises :class:`BindRefused` for a wildcard bind without ``--allow-host``:
+    it would listen on the network yet answer only ``localhost`` (the Host check
+    refuses every other name), so it is either a mistake or unusable.
+    """
+    if is_loopback(host):
+        return None
+    if host in _WILDCARDS and not allow_hosts:
+        raise BindRefused(
+            f"--host {host} listens on every network interface, but the editor only "
+            "answers to the names it is told. Add --allow-host with the address or name "
+            "other machines will use (e.g. --allow-host 192.168.1.20), or drop --host "
+            "to stay on this machine."
+        )
+    names = ", ".join([h for h in [host] if h not in _WILDCARDS] + allow_hosts)
+    return (
+        f"Warning: the editor on port {port} is reachable from other machines ({names}). "
+        "Anyone who can reach it can read and change your decks and generate audio "
+        "(including paid clips). Use it only on a network you trust."
+    )
 
 
 def start_url(pdf_path: Path | None, host: str, port: int) -> str:
     """Open the deck that was asked for, else the library."""
     from slidesonnet.server.library import deck_token
 
-    shown = "localhost" if host in ("0.0.0.0", "::") else host
+    shown = "localhost" if host in _WILDCARDS else host
+    if ":" in shown and not shown.startswith("["):
+        shown = f"[{shown}]"  # an IPv6 literal
     base = f"http://{shown}:{port}"
     return f"{base}/d/{deck_token(pdf_path)}" if pdf_path is not None else f"{base}/"
 
@@ -145,10 +195,11 @@ def run_editor(
     open_browser: bool = True,
     browser: str | None = None,
     app_window: bool = False,
+    allow_hosts: list[str] | None = None,
 ) -> None:
     """Serve the editor until Ctrl-C (blocking)."""
     registry = build_registry(pdf_path, sidecar_path=sidecar_path, root=root)
-    app = editor_app(registry, host=host)
+    app = editor_app(registry, host=host, allow_hosts=allow_hosts)
     url = start_url(pdf_path, host, port)
     if open_browser:
         open_when_ready(url, browser=browser, app_window=app_window)
@@ -167,9 +218,12 @@ def dev_environment(
     sidecar_path: Path | None,
     host: str,
     port: int,
+    allow_hosts: list[str] | None = None,
 ) -> dict[str, str]:
     """The ``SLIDESONNET_DEV_*`` variables :func:`dev_app` rebuilds the app from."""
     env = {f"{_DEV_PREFIX}HOST": host, f"{_DEV_PREFIX}PORT": str(port)}
+    if allow_hosts:
+        env[f"{_DEV_PREFIX}ALLOW_HOSTS"] = ",".join(allow_hosts)
     if pdf_path is not None:
         env[f"{_DEV_PREFIX}PDF"] = str(pdf_path.resolve())
     if root is not None:
@@ -205,7 +259,12 @@ def dev_app() -> FastAPI:
         sidecar_path=Path(sidecar) if sidecar else None,
         root=Path(root) if root else None,
     )
-    return editor_app(registry, host=os.environ.get(f"{_DEV_PREFIX}HOST", "127.0.0.1"))
+    allowed = os.environ.get(f"{_DEV_PREFIX}ALLOW_HOSTS", "")
+    return editor_app(
+        registry,
+        host=os.environ.get(f"{_DEV_PREFIX}HOST", "127.0.0.1"),
+        allow_hosts=[h for h in allowed.split(",") if h],
+    )
 
 
 def run_dev(
@@ -218,12 +277,20 @@ def run_dev(
     open_browser: bool,
     browser: str | None,
     app_window: bool,
+    allow_hosts: list[str] | None = None,
 ) -> None:
     """Serve with auto-reload on slideSonnet's own source changes (blocking)."""
     from slidesonnet.logging_setup import ENV_LEVEL
 
     os.environ.update(
-        dev_environment(pdf_path, root=root, sidecar_path=sidecar_path, host=host, port=port)
+        dev_environment(
+            pdf_path,
+            root=root,
+            sidecar_path=sidecar_path,
+            host=host,
+            port=port,
+            allow_hosts=allow_hosts,
+        )
     )
     os.environ[ENV_LEVEL] = logging.getLevelName(
         logging.getLogger("slidesonnet").getEffectiveLevel()

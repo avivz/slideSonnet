@@ -795,8 +795,22 @@ def pool_prune_cmd(
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     help="Folder to scan for decks (default: the folder given, else the current one)",
 )
-@click.option("--host", default="127.0.0.1", show_default=True)
-@click.option("--port", default=8080, show_default=True, type=int)
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Address to listen on. The default keeps the editor on this machine; anything "
+    "else lets other machines reach it (0.0.0.0 = every interface, needs --allow-host).",
+)
+@click.option("--port", default=8080, show_default=True, type=int, help="Port to listen on")
+@click.option(
+    "--allow-host",
+    "allow_hosts",
+    multiple=True,
+    metavar="NAME",
+    help="Another address or host name the editor answers to, as other machines type it "
+    "(e.g. 192.168.1.20 or studio.local). Repeatable.",
+)
 @click.option("--no-browser", is_flag=True, help="Do not auto-open a browser tab")
 @click.option(
     "--browser",
@@ -825,6 +839,7 @@ def edit(
     root: Path | None,
     host: str,
     port: int,
+    allow_hosts: tuple[str, ...],
     no_browser: bool,
     browser: str | None,
     app_window: bool,
@@ -853,6 +868,12 @@ def edit(
     pdf, scan_root = _split_edit_target(target, root)
     from slidesonnet.server import run as server_run
 
+    try:
+        warning = server_run.check_bind(host, port, list(allow_hosts))
+    except server_run.BindRefused as exc:
+        raise click.UsageError(str(exc)) from exc
+    if warning:
+        click.echo(warning, err=True)
     if pdf is not None:
         _attach_deck_logging(ctx, pdf)
     server_run.set_log_preferences(
@@ -868,6 +889,7 @@ def edit(
             open_browser=not no_browser,
             browser=browser,
             app_window=app_window,
+            allow_hosts=list(allow_hosts),
         )
         return
     server_run.run_editor(
@@ -879,6 +901,7 @@ def edit(
         open_browser=not no_browser,
         browser=browser,
         app_window=app_window,
+        allow_hosts=list(allow_hosts),
     )
 
 
