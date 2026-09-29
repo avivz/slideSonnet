@@ -484,6 +484,85 @@ async def test_event_stream_replays_resyncs_and_goes_live() -> None:
     assert "event: resync" in gap[1]
 
 
+async def test_a_subscriber_that_falls_behind_is_told_to_resync_then_goes_live(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A full backlog drops the stale events for one resync, not a partial history."""
+    import asyncio
+
+    from slidesonnet.server import events
+    from slidesonnet.server.routes import event_stream
+
+    monkeypatch.setattr(events, "_SUBSCRIBER_BACKLOG", 2)
+    bus = events.EventBus()
+    sub = bus.subscribe()
+    for i in range(3):  # one more than the backlog holds
+        bus.publish("deck.changed", deck="d", data={"i": i})
+    await asyncio.sleep(0)  # deliveries hop onto this loop
+
+    async def never_gone() -> bool:
+        return False
+
+    stream = event_stream(bus, sub, None, never_gone, heartbeat=5)
+    assert (await anext(stream)).startswith("retry:")
+    assert await anext(stream) == 'id: 3\nevent: resync\ndata: {"type": "resync"}\n\n'
+    bus.publish("job.finished", deck="d", data={"job_id": "j1"})
+    live = await asyncio.wait_for(anext(stream), timeout=5)
+    assert live.startswith("id: 4\nevent: job.finished")  # not the dropped deck.changed
+    await stream.aclose()
+
+
+async def test_the_watcher_announces_an_outside_edit_once(
+    deck: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each changed deck gets one deck.changed; a read error or a vanished deck can't stop it."""
+    import asyncio
+
+    from slidesonnet.server import decks
+    from slidesonnet.server.context import ServerContext
+    from slidesonnet.server.revisions import content_revision
+
+    monkeypatch.setattr("slidesonnet.server.context.WATCH_INTERVAL_S", 0.01)
+    real_service = decks.deck_service
+    reads = {"n": 0}
+
+    class FlakyOnce:
+        def __init__(self, service: decks.DeckService) -> None:
+            self.service = service
+
+        def revisions(self) -> Any:
+            reads["n"] += 1
+            if reads["n"] == 1:
+                raise OSError("the file is being replaced")
+            return self.service.revisions()
+
+    monkeypatch.setattr(
+        decks, "deck_service", lambda pdf, sidecar: FlakyOnce(real_service(pdf, sidecar))
+    )
+    registry = DeckRegistry(deck.parent.parent)
+    registry.rescan()
+    ctx = ServerContext(registry)
+    (entry,) = registry.entries()
+    before = real_service(entry.pdf_path, entry.sidecar_path).revisions()
+    ctx.watch(entry.token, before)
+    ctx.watch("gone", before)  # a deck no longer in the library
+    sidecar = deck.with_suffix(".narration")
+    sidecar.write_text(simple_narration(SIDECAR.replace("Hello there.", "Hi.")), "utf-8")
+    ctx.ensure_watcher()
+    try:
+        for _ in range(200):
+            await asyncio.sleep(0.01)
+            if reads["n"] >= 5:  # several ticks past the first (failed) read
+                break
+    finally:
+        ctx.shutdown()
+    changed = [e for e in ctx.bus.since(0) or [] if e.type == "deck.changed"]
+    assert [(e.deck, e.data["narration"]) for e in changed] == [
+        (entry.token, content_revision(sidecar))
+    ]
+    assert "gone" not in ctx.watched
+
+
 def test_export_explains_blockers_and_runs_a_draft(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
