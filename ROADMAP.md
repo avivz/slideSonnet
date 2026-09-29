@@ -77,8 +77,8 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    unchanged; Kokoro clips with dictionary IPA re-key (free). Fixes the basel Kokoro demo,
    whose nine IPA names reach Kokoro verbatim today.
    (2) `send_direction` defaults to **on** everywhere (`= false` opts out). Re-keys only lines
-   with a `direct:` note — in AICODE exactly one (week01 `01-10_welcome_to_ai_code`, line 44,
-   "slowly, in a low voice"), accepted.
+   with a `direct:` note. AICODE's only note (week01 `01-10_welcome_to_ai_code`) was removed
+   by the maintainer, so no AICODE clip re-keys.
    (3) The editor warns only on the likely typo `[word] (form)` (a space between `]` and
    `(`); plain brackets like "[0, 1]" get no note in the editor or in `check`.
    (4) Parked: nothing phoneme-level goes to Kokoro for now. A both-forms fix
