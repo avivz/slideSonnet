@@ -130,11 +130,8 @@ def attach_file_handler(
     to *level* (DEBUG by default), independent of the console level.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    detach_file_handler()
     pkg = logging.getLogger(PACKAGE_LOGGER)
-    existing = _named_handler(pkg, _FILE_HANDLER_NAME)
-    if existing is not None:
-        pkg.removeHandler(existing)
-        existing.close()
     handler = RotatingFileHandler(
         path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
     )
@@ -144,6 +141,15 @@ def attach_file_handler(
     pkg.addHandler(handler)
     _lower_package_level(level)
     return handler
+
+
+def detach_file_handler() -> None:
+    """Stop writing the run-log (if one is attached)."""
+    pkg = logging.getLogger(PACKAGE_LOGGER)
+    existing = _named_handler(pkg, _FILE_HANDLER_NAME)
+    if existing is not None:
+        pkg.removeHandler(existing)
+        existing.close()
 
 
 def default_log_path(deck_path: Path) -> Path:
@@ -160,8 +166,12 @@ def attach_deck_file_logging(
     (``--log-file``); then the deck's ``[logging]`` config; else the default under
     ``.slidesonnet/``. A failure to open the file is warned and swallowed — logging
     must never sink the command itself. Shared by the CLI and the dev server.
+
+    When this deck logs nowhere, the previous deck's log is detached, so the
+    editor never keeps writing one deck's records into another deck's file.
     """
     if disabled:
+        detach_file_handler()
         return None
     try:
         if override is not None:
@@ -177,6 +187,7 @@ def attach_deck_file_logging(
             # config load surfaces the real error to the user.
             cfg = LoggingConfig()
         if not cfg.enabled:
+            detach_file_handler()
             return None
         path = Path(cfg.file) if cfg.file else default_log_path(deck_path)
         return attach_file_handler(

@@ -9,6 +9,7 @@ import pytest
 
 from slidesonnet.logging_setup import (
     PACKAGE_LOGGER,
+    attach_deck_file_logging,
     attach_file_handler,
     configure_console_logging,
     default_log_path,
@@ -153,6 +154,18 @@ def test_file_handler_rotates_by_size(tmp_path: Path) -> None:
     assert log.exists()
     assert (tmp_path / "rot.log.1").exists()
     assert not (tmp_path / "rot.log.3").exists()
+
+
+def test_a_deck_with_logging_off_detaches_the_previous_decks_log(tmp_path: Path) -> None:
+    """The editor opens deck A, then B with ``[logging] file = false``: B's records
+    must not keep landing in A's log."""
+    a, b = tmp_path / "a" / "a.pdf", tmp_path / "b" / "b.pdf"
+    b.parent.mkdir(parents=True)
+    (b.parent / "slidesonnet.toml").write_text("[logging]\nfile = false\n", encoding="utf-8")
+    assert attach_deck_file_logging(a) is not None
+    assert attach_deck_file_logging(b) is None
+    handlers = logging.getLogger(PACKAGE_LOGGER).handlers
+    assert not any(_is_file_handler(h) for h in handlers)
 
 
 def _is_file_handler(handler: logging.Handler) -> bool:
