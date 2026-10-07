@@ -9,6 +9,7 @@ import math
 import os
 import secrets
 import shutil
+import subprocess
 import tempfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -38,6 +39,23 @@ def partial_output(output: Path) -> Iterator[Path]:
     except BaseException:
         partial.unlink(missing_ok=True)
         raise
+
+
+def encoder_identity() -> str:
+    """The ffmpeg build and the CPU count: what, besides its inputs, shapes a clip's bytes.
+
+    x264 output depends on the library version and on its thread count, which it
+    picks from the CPU count — so a clip cached by another ffmpeg, or on another
+    machine sharing the deck folder, is not reused.
+    """
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-version"], capture_output=True, text=True, timeout=30, check=False
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    first = out.strip().split("\n", 1)[0] or "unknown"
+    return f"{first}|cpus={os.cpu_count()}"
 
 
 def _scale_pad_filter(resolution: str) -> str:
@@ -220,44 +238,6 @@ def _concat_quote(path: Path) -> str:
     return "'" + str(path).replace("'", "'\\''") + "'"
 
 
-def mux_audio(
-    video: Path, audio: Path, output: Path, *, on_time: Callable[[float], None] | None = None
-) -> None:
-    """Replace *video*'s audio with *audio*, copying the video stream (no re-encode).
-
-    Used by :func:`render.compose_video` for animated transitions: the video is
-    assembled silent (still segments + centered morph clips) and the single
-    continuous deck track is laid over it here, so a morph centered on a slide
-    boundary plays over whatever audio is there (silence *or* speech) without
-    changing the deck's total duration. The video is frame-planned to within a
-    frame of the track, so nothing is cut to the shorter stream (``-shortest``
-    would clip the track's last few milliseconds). *on_time*, if given, is
-    called with seconds of output written as ffmpeg runs.
-    """
-    output.parent.mkdir(parents=True, exist_ok=True)
-    logger.debug("mux: %s + %s → %s", video.name, audio.name, output.name)
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(video),
-        "-i",
-        str(audio),
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        "-c:v",
-        "copy",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        str(output),
-    ]
-    _run_ffmpeg(cmd, on_time=on_time)
-
-
 def compose_slideshow(
     images: list[Path],
     durations: list[float],
@@ -329,7 +309,7 @@ def compose_slideshow(
 
 
 def encode_aac(audio: Path, output: Path) -> None:
-    """Encode *audio* to AAC with the settings :func:`mux_audio` uses (same sound)."""
+    """Encode *audio* to AAC: the sound of every export (see ``render.track_aac``)."""
     output.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["ffmpeg", "-y", "-i", str(audio), "-vn", "-c:a", "aac", "-b:a", "192k", str(output)]
     _run_ffmpeg(cmd)

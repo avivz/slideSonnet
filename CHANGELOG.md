@@ -59,6 +59,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   lines, so it stops growing in git. An agent already waiting for your Send
   still hears it after a clear. Older logs are tidied the next time you Send or
   clear.
+- **Re-exporting after a small edit is much faster.** Each slide's video is kept
+  between exports and only the slides you changed are encoded again, the sound
+  is encoded alongside the picture instead of after it, and unchanged page images
+  are reused. The video comes out exactly as it would from scratch. On the Basel
+  demo a repeat export takes about 10 seconds instead of about two minutes, a
+  one-page edit 15–20 seconds, and a first export is a little faster too. A
+  narration edit that changes a slide's length can shift later slides by a
+  frame, and those are re-encoded too. The kept slides and sound take about the
+  size of the video itself in `.slidesonnet/render/`; `slidesonnet clean`
+  removes them.
+- **`slidesonnet doctor` says when your ffmpeg is too old for `export --fast`**
+  (it needs 5.1 or newer).
 - **Starting a review conversation no longer greys out the other slides.** You
   stay where you were; the new conversation is marked "new" in the Review tab's
   list, and clicking it opens it as before.

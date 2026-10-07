@@ -12,7 +12,8 @@ import dataclasses
 import hashlib
 import json
 import logging
-import wave
+import os
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -20,8 +21,16 @@ from pathlib import Path
 from typing import Literal
 
 from slidesonnet.atomic import atomic_write_text
-from slidesonnet.audio.track import Cue, assemble_track, build_page_audio, cue_sheet, page_pieces
+from slidesonnet.audio.track import (
+    Cue,
+    assemble_track,
+    build_page_audio,
+    cue_sheet,
+    page_pieces,
+    wav_seconds,
+)
 from slidesonnet.config import Config
+from slidesonnet.hashing import file_content_hash
 from slidesonnet.models import ProgressFn, VideoConfig
 from slidesonnet.narration import transitions as transitions_mod
 from slidesonnet.narration.model import Deck, PageNarration, Segment, Transition
@@ -37,6 +46,9 @@ logger = logging.getLogger(__name__)
 
 # Default hold (seconds) for a page with no speech and no explicit pause.
 DEFAULT_HOLD = 2.5
+
+#: Page WAVs built side by side (each is a light, single-threaded ffmpeg run).
+_PAGE_AUDIO_WORKERS = min(8, os.cpu_count() or 1)
 
 
 @dataclass
@@ -227,11 +239,31 @@ def render_audio_track(
             {"pages": {k: v for (k, v), ok in zip(new_pages.items(), fresh) if ok}},
         )
 
-    for i, page in enumerate(timeline.pages):
-        if not fresh[i]:
-            build_page_audio(page, page_clips[i], page_audios[i], silence_dir=silence_dir)
-        if progress is not None:
-            progress("assemble", i + 1, total_steps, "")
+    # Each page is its own small, single-threaded ffmpeg run, so they go side by
+    # side. Each worker runs in a copy of this context: a cancel reaches it too.
+    with ThreadPoolExecutor(max_workers=_PAGE_AUDIO_WORKERS) as pool:
+        builds = [
+            None
+            if fresh[i]
+            else pool.submit(
+                contextvars.copy_context().run,
+                build_page_audio,
+                page,
+                page_clips[i],
+                page_audios[i],
+                silence_dir=silence_dir,
+            )
+            for i, page in enumerate(timeline.pages)
+        ]
+        try:
+            for i, build in enumerate(builds):
+                if build is not None:
+                    build.result()
+                if progress is not None:
+                    progress("assemble", i + 1, total_steps, "")
+        except BaseException:
+            pool.shutdown(cancel_futures=True)
+            raise
 
     if not track_fresh:
         assemble_track(page_audios, track)
@@ -262,33 +294,27 @@ def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
         path.unlink(missing_ok=True)
 
 
-#: Render-dir entries that exist only to feed one ffmpeg run. Everything else
-#: under the render dir (``pages/`` — the rasterized slides) is reused by the
-#: editor filmstrip and the next export, so it is not scratch.
+#: Render-dir entries too big to keep for what they save. What stays is cheap
+#: and is what the next export builds on: the page images (``pages/``), the
+#: encoded clips (``clips/``) and the track's AAC (``track.m4a``, a few MB).
+#: ``segments/`` is where per-slide clips went before they were cached.
 _SCRATCH_DIRS = ("silence", "segments")
-_SCRATCH_FILES = (
-    "track.wav",
-    "track.cache.json",
-    "silent.mp4",
-    "track.m4a",
-    "track.m4a.json",
-)
+_SCRATCH_FILES = ("track.wav", "track.cache.json", "silent.mp4")
 _SCRATCH_GLOBS = ("page-*.wav",)
 
 
 def prune_render_scratch(render_dir: Path) -> int:
     """Delete the intermediates a finished export no longer needs.
 
-    The decoded per-page PCM, the assembled ``track.wav``, the silence files,
-    and the per-slide MP4 segments together run to roughly ten times the size of
-    the speech clips they were built from, and re-deriving them costs seconds.
-    The page images stay. Returns the number of bytes freed.
+    The decoded per-page PCM and the assembled ``track.wav`` are two uncompressed
+    copies of the narration (over a gigabyte per hour of video) that take only
+    seconds to rebuild, and the silent video the sound was muxed into is as big
+    as the export. The page images, the encoded clips and the track's AAC stay,
+    so the next export re-encodes only what changed; ``slidesonnet clean``
+    removes them. Returns the number of bytes freed.
 
-    The editor's whole-deck preview shares ``track.wav`` and the page WAVs (and
-    their fingerprint manifest) with export, so a preview after a pruning
-    export rebuilds them; an export launched *from* the editor keeps them so
-    the next preview reuses them. (What the preview player streams is a copy
-    under ``previews/``, which this never touches.)
+    The editor's Play builds each slide's track in a scratch dir of its own and
+    streams a copy under ``previews/``; this touches neither.
     """
     import shutil
 
@@ -329,10 +355,9 @@ def fast_video(video: VideoConfig) -> VideoConfig:
 def track_aac(track: Path, render_dir: Path) -> Path:
     """The deck track encoded for the MP4 (``track.m4a``), reused while the track is unchanged.
 
-    Keyed on the track's bytes, so a quick export after a slide-only change skips
-    the audio encode — the longest step left once the video is one pass. The
-    encoder settings are :func:`~slidesonnet.video.composer.mux_audio`'s, so the
-    sound is the full export's.
+    Keyed on the track's bytes and the ffmpeg build, so an export after a
+    slide-only change skips the audio encode. Full and quick exports share it,
+    so their sound is the same.
     """
     from slidesonnet.video import composer
 
@@ -342,29 +367,14 @@ def track_aac(track: Path, render_dir: Path) -> Path:
     with track.open("rb") as f:
         for block in iter(lambda: f.read(1 << 20), b""):
             digest.update(block)
-    key = digest.hexdigest()
-    if out.exists() and _read_manifest(key_path).get("track") == key:
+    key = {"track": digest.hexdigest(), "encoder": composer.encoder_identity()}
+    if out.exists() and _read_manifest(key_path) == key:
         return out
     key_path.unlink(missing_ok=True)  # un-certify before replacing
     with composer.partial_output(out) as partial:
         composer.encode_aac(track, partial)
-    _write_manifest(key_path, {"track": key})
+    _write_manifest(key_path, dict(key))
     return out
-
-
-def wav_seconds(path: Path) -> float:
-    """A page WAV's length from its header, without an ffprobe per page.
-
-    The quick export's measure (ffprobe costs ~0.1 s a call, a few seconds on a
-    long deck); anything :mod:`wave` can't read falls back to ffprobe.
-    """
-    from slidesonnet.video import composer
-
-    try:
-        with wave.open(str(path), "rb") as w:
-            return w.getnframes() / w.getframerate()
-    except (OSError, EOFError, wave.Error):
-        return composer.get_duration(path)
 
 
 def transition_morph_seconds(transitions: list[Transition], page_fulls: list[float]) -> list[float]:
@@ -488,9 +498,8 @@ def compose_video(
     # Real on-screen length of each page: the synthesized audio when audible,
     # else the timing model. The morph geometry and the muxed track both align
     # to these, so the centered overlay never shifts the timeline.
-    measure = wav_seconds if fast else composer.get_duration
     fulls = [
-        page.duration if page_audios is None else measure(page_audios[i])
+        page.duration if page_audios is None else wav_seconds(page_audios[i])
         for i, page in enumerate(timeline.pages)
     ]
     if fast:
@@ -504,8 +513,6 @@ def compose_video(
             audio_track=audio_track if page_audios is not None else None,
             progress=progress,
         )
-    seg_dir = render_dir / "segments"
-    seg_dir.mkdir(parents=True, exist_ok=True)
     morph = transition_morph_seconds(
         [*boundaries] + [Transition()] * (n - 1 - len(boundaries)), fulls
     )
@@ -533,56 +540,164 @@ def compose_video(
         return lambda t: report(phase, min(total_s, int(t)), total_s)
 
     report("video", 0, len(plan))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        # The deck track's AAC is encoded alongside the picture (and reused while
+        # the track is unchanged), then copied in — not encoded in a last pass
+        # after all the video. The worker runs in this context, so a cancel
+        # reaches its ffmpeg too.
+        aac = (
+            pool.submit(contextvars.copy_context().run, track_aac, audio_track, render_dir)
+            if page_audios is not None and audio_track is not None
+            else None
+        )
+        pieces = _encode_pieces(
+            timeline, page_images, plan, xnames, video=v, render_dir=render_dir, report=report
+        )
+        # ffmpeg writes a sibling temp file that replaces *output* only once it is
+        # whole: a failed or cancelled export leaves the last good video in place.
+        with composer.partial_output(output) as partial:
+            if aac is None:
+                concatenate_segments(pieces, partial, on_time=ffmpeg_pass("concat"))
+                report("concat", total_s, total_s)
+            else:
+                silent_video = render_dir / "silent.mp4"
+                concatenate_segments(pieces, silent_video, on_time=ffmpeg_pass("concat"))
+                report("concat", total_s, total_s)
+                composer.mux_copy(silent_video, aac.result(), partial, on_time=ffmpeg_pass("mux"))
+                report("mux", total_s, total_s)
+    _drop_unused_clips(render_dir / CLIPS_DIRNAME, keep=pieces)
+    return output
+
+
+#: Under the render dir: every slide's (and morph's) encoded clip, named by
+#: :func:`clip_key` and kept between exports, so a re-export encodes only what changed.
+CLIPS_DIRNAME = "clips"
+
+#: Bump when the clip encoding recipe (the composer's ffmpeg arguments) changes,
+#: so a clip the old recipe encoded is never spliced into a new export.
+CLIP_RECIPE = 1
+
+
+def clip_key(
+    images: list[str], frames: int, video: VideoConfig, *, transition: str | None, encoder: str
+) -> str:
+    """The name of an encoded clip: a hash of everything that decides its bytes.
+
+    *images* are the content hashes of the still (or of a morph's two ends),
+    *frames* its length, *video* the picture settings, *transition* a morph's
+    xfade name (``None`` for a still), *encoder* the ffmpeg build and CPU count
+    (:func:`~slidesonnet.video.composer.encoder_identity`). Narration, silences
+    and transition lengths reach a clip only through *frames*.
+    """
+    fields = {
+        "recipe": CLIP_RECIPE,
+        "images": images,
+        "frames": frames,
+        "resolution": video.resolution,
+        "fps": video.fps,
+        "crf": video.crf,
+        "preset": video.preset,
+        "transition": transition,
+        "encoder": encoder,
+    }
+    return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:32]
+
+
+def _encode_pieces(
+    timeline: DeckTimeline,
+    page_images: list[Path],
+    plan: list[FramePiece],
+    xnames: list[str | None],
+    *,
+    video: VideoConfig,
+    render_dir: Path,
+    report: Callable[[str, int, int, str], None],
+) -> list[Path]:
+    """Every clip of *plan*: encoded, or reused from an earlier export.
+
+    A clip is named by :func:`clip_key` and published whole (a hidden temp file
+    renamed into place), so a failed or cancelled encode never leaves a clip
+    under a name a later export would trust.
+    """
+    from slidesonnet.video import composer
+
+    clips_dir = render_dir / CLIPS_DIRNAME
+    clips_dir.mkdir(parents=True, exist_ok=True)
+    encoder = composer.encoder_identity()
+    digests: dict[int, str] = {}
+
+    def digest(i: int) -> str:
+        if i not in digests:
+            digests[i] = file_content_hash(page_images[i]) or f"unreadable:{page_images[i]}"
+        return digests[i]
 
     pieces: list[Path] = []
     for done, piece in enumerate(plan, start=1):
         i = piece.page
-        seconds = piece.frames / v.fps  # frame-exact, so the composer rounds nothing
-        if piece.kind == "still":
-            clip = seg_dir / f"seg-{i + 1:04d}.mp4"
-            compose_silent_segment(
-                page_images[i],
-                clip,
-                duration=seconds,
-                resolution=v.resolution,
-                fps=v.fps,
-                crf=v.crf,
-                preset=v.preset,
-            )
+        seconds = piece.frames / video.fps  # frame-exact, so the composer rounds nothing
+        xname = xnames[i] if piece.kind == "morph" else None
+        images = [digest(i)] if xname is None else [digest(i), digest(i + 1)]
+        key = clip_key(images, piece.frames, video, transition=xname, encoder=encoder)
+        clip = clips_dir / f"{key}.mp4"
+        if xname is None:
             label = timeline.pages[i].slide_id
+            if not clip.is_file():
+                with composer.partial_output(clip) as partial:
+                    compose_silent_segment(
+                        page_images[i],
+                        partial,
+                        duration=seconds,
+                        resolution=video.resolution,
+                        fps=video.fps,
+                        crf=video.crf,
+                        preset=video.preset,
+                    )
         else:
-            clip = seg_dir / f"trans-{i + 1:04d}.mp4"
-            xname = xnames[i]
-            assert xname is not None  # frame_plan only morphs where there is one
-            composer.compose_transition_clip(
-                page_images[i],
-                page_images[i + 1],
-                clip,
-                duration=seconds,
-                transition=xname,
-                resolution=v.resolution,
-                fps=v.fps,
-                crf=v.crf,
-                preset=v.preset,
-            )
             label = f"{timeline.pages[i].slide_id} → {timeline.pages[i + 1].slide_id}"
+            if not clip.is_file():
+                with composer.partial_output(clip) as partial:
+                    composer.compose_transition_clip(
+                        page_images[i],
+                        page_images[i + 1],
+                        partial,
+                        duration=seconds,
+                        transition=xname,
+                        resolution=video.resolution,
+                        fps=video.fps,
+                        crf=video.crf,
+                        preset=video.preset,
+                    )
         pieces.append(clip)
         report("video", done, len(plan), label)
+    return pieces
 
-    # ffmpeg writes a sibling temp file that replaces *output* only once it is
-    # whole: a failed or cancelled export leaves the last good video in place.
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with composer.partial_output(output) as partial:
-        if page_audios is None or audio_track is None:
-            concatenate_segments(pieces, partial, on_time=ffmpeg_pass("concat"))
-            report("concat", total_s, total_s)
-        else:
-            silent_video = render_dir / "silent.mp4"
-            concatenate_segments(pieces, silent_video, on_time=ffmpeg_pass("concat"))
-            report("concat", total_s, total_s)
-            composer.mux_audio(silent_video, audio_track, partial, on_time=ffmpeg_pass("mux"))
-            report("mux", total_s, total_s)
-    return output
+
+#: A temp clip this old belongs to an export that was killed outright, not to one
+#: still running beside this one.
+_STALE_PARTIAL_SECONDS = 3600.0
+
+
+def _drop_unused_clips(clips_dir: Path, *, keep: list[Path]) -> None:
+    """Delete the cached clips the export just made does not use.
+
+    Holds the cache to one export's worth; temp files left by an export that was
+    killed outright go too.
+    """
+    if not clips_dir.is_dir():
+        return
+    wanted = {p.name for p in keep}
+    now = time.time()
+    for path in clips_dir.iterdir():
+        try:
+            if path.name.startswith("."):
+                stale = now - path.stat().st_mtime > _STALE_PARTIAL_SECONDS
+                if path.name.endswith(".partial.mp4") and stale:
+                    path.unlink()
+            elif path.suffix == ".mp4" and path.name not in wanted:
+                path.unlink()
+        except OSError:
+            continue  # gone already, or in use: the next export retries
 
 
 def _compose_fast(

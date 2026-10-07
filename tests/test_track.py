@@ -131,7 +131,7 @@ class TestBuildPageAudio:
             "slidesonnet.audio.track.concatenate_audio",
             lambda paths, out: concatenated.append(list(paths)),
         )
-        monkeypatch.setattr("slidesonnet.audio.track.get_duration", lambda p: 3.8)
+        monkeypatch.setattr("slidesonnet.video.composer.get_duration", lambda p: 3.8)
 
         timing = _timing(
             [Segment.speech("Hi."), Segment.pause(2.0)],
@@ -172,7 +172,7 @@ class TestBuildPageAudio:
             "slidesonnet.audio.track.concatenate_audio",
             lambda paths, out: concatenated.append(list(paths)),
         )
-        monkeypatch.setattr("slidesonnet.audio.track.get_duration", lambda p: 1.0)
+        monkeypatch.setattr("slidesonnet.video.composer.get_duration", lambda p: 1.0)
 
         sil = tmp_path / "sil"
         timing = _timing([Segment.speech("Hi."), Segment.pause(2.0)], durations=[1.0], lead=0.3)
@@ -199,7 +199,7 @@ class TestBuildPageAudio:
             "slidesonnet.audio.track.concatenate_audio",
             lambda paths, out: concatenated.append(list(paths)),
         )
-        monkeypatch.setattr("slidesonnet.audio.track.get_duration", lambda p: 0.05)
+        monkeypatch.setattr("slidesonnet.video.composer.get_duration", lambda p: 0.05)
 
         timing = _timing([])  # no narration at all
         build_page_audio(timing, [], tmp_path / "page.wav", silence_dir=tmp_path / "sil")
@@ -215,7 +215,7 @@ class TestAssembleTrack:
             "slidesonnet.audio.track.concatenate_audio",
             lambda paths, out: calls.append((list(paths), out)),
         )
-        monkeypatch.setattr("slidesonnet.audio.track.get_duration", lambda p: 12.5)
+        monkeypatch.setattr("slidesonnet.video.composer.get_duration", lambda p: 12.5)
 
         pages = [tmp_path / "p1.wav", tmp_path / "p2.wav"]
         out = tmp_path / "track.wav"

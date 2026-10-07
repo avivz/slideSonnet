@@ -151,7 +151,7 @@ def test_track_aac_is_reused_while_the_track_is_unchanged(
     track.write_bytes(b"one")
     first = track_aac(track, tmp_path)
     assert first == tmp_path / "track.m4a" and first.read_bytes() == b"aac"
-    # the encoder settings of the full export's mux, so the audio is the same
+    # the one AAC encode both exports use, so the audio is the same
     assert mock_ffmpeg.call_args.args[0][:-1] == [
         "ffmpeg", "-y", "-i", str(track), "-vn", "-c:a", "aac", "-b:a", "192k",
     ]  # fmt: skip

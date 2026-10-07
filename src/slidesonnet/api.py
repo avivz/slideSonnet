@@ -627,11 +627,12 @@ def export(
     one encoding pass — see :func:`slidesonnet.render.fast_video`) and writes
     ``<name>.fast.mp4``. The audio and subtitles are the full export's.
 
-    On success the render intermediates (decoded page audio, assembled track,
-    per-slide clips) are deleted unless *keep_scratch* is true — or, when it is
-    ``None``, unless ``[video] keep_scratch`` is set in the config (a *fast*
-    export keeps them by default: the next one reuses the assembled audio). A
-    failed render always leaves them for debugging.
+    The page images, every slide's encoded clip and the track's AAC are kept
+    for the next export, which re-encodes only what changed. On success the
+    one-off intermediates (:func:`slidesonnet.render.prune_render_scratch`) are
+    deleted unless *keep_scratch* is true — or, when it is ``None``, unless
+    ``[video] keep_scratch`` is set in the config (a *fast* export keeps them).
+    A failed render always leaves them for debugging.
     """
     from slidesonnet.audio.synth import (
         page_speech_clips,
@@ -703,8 +704,7 @@ def export(
     where.video.parent.mkdir(parents=True, exist_ok=True)
     compose_video(
         timeline,
-        # a quick export reuses an unchanged PDF's page images; the full one re-renders
-        _images(pdf_path, rdir, reuse=fast),
+        _images(pdf_path, rdir, reuse=True),  # an unchanged PDF's page images are reused
         where.video,
         config=config,
         page_audios=page_audios,

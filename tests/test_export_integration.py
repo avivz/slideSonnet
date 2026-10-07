@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -93,6 +94,58 @@ def test_centered_transition_with_audio_muxes_track(tmp_path: Path) -> None:
     api.export(wipe, out_wipe, engine="kokoro")
     assert get_duration(out_wipe, stream="audio") > 0
     assert get_duration(out_wipe) == pytest.approx(get_duration(out_cut), abs=0.2)
+
+
+def _stream_md5(video: Path, stream: str) -> str:
+    """The md5 of one stream's packets (``v`` or ``a``), container metadata aside."""
+    return subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(video), "-map", f"0:{stream}", "-c", "copy",
+         "-f", "md5", "-"],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+
+
+def test_reexport_after_a_one_slide_edit_reencodes_only_that_slide(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each slide's encoded clip is kept between exports: after a one-slide edit
+    only that slide is encoded again, and the video is the one a cold export makes."""
+    from slidesonnet import render
+    from slidesonnet.video import composer
+
+    _, wipe = _prep_pair(tmp_path)
+    encoded: list[str] = []
+    still, morph = render.compose_silent_segment, composer.compose_transition_clip
+
+    def counted_still(image: Path, *args: Any, **kw: Any) -> None:
+        encoded.append(image.name)
+        still(image, *args, **kw)
+
+    def counted_morph(a: Path, b: Path, *args: Any, **kw: Any) -> None:
+        encoded.append(f"{a.name}>{b.name}")
+        morph(a, b, *args, **kw)
+
+    monkeypatch.setattr(render, "compose_silent_segment", counted_still)
+    monkeypatch.setattr(composer, "compose_transition_clip", counted_morph)
+    api.export(wipe, tmp_path / "warm.mp4", silent=True)
+    assert len(encoded) == 7  # six slides and the wipe
+
+    # Slide 2 holds 0.5 s longer (a 1 s closing pause replaces its 0.5 s tail) —
+    # a whole number of frames, so no later slide's frame count moves.
+    sidecar = wipe.with_suffix(".narration")
+    sidecar.write_text(
+        _SIDECAR_WIPE.replace("Here is the setup.\n", "Here is the setup.\n  pause: 1\n"),
+        encoding="utf-8",
+    )
+    encoded.clear()
+    api.export(wipe, tmp_path / "warm.mp4", silent=True)
+    assert encoded == ["page-2.png"]
+
+    (tmp_path / "cold").mkdir()
+    cold = prep_marked_deck(tmp_path / "cold")
+    cold.with_suffix(".narration").write_text(sidecar.read_text(encoding="utf-8"), "utf-8")
+    api.export(cold, tmp_path / "cold.mp4", silent=True)
+    assert _stream_md5(tmp_path / "warm.mp4", "v") == _stream_md5(tmp_path / "cold.mp4", "v")
 
 
 @pytest.mark.skipif(

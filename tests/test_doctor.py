@@ -108,6 +108,22 @@ def test_cli_tool_unknown_version(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.version == "unknown"
 
 
+@pytest.mark.parametrize(
+    ("version", "warns"),
+    [("4.4.2-0ubuntu0.22.04.1", True), ("5.0", True), ("5.1", False), ("n7.0", False),
+     ("6.1.1-3ubuntu5", False), ("N-112233-gabcdef", False)],
+)  # fmt: skip
+def test_ffmpeg_too_old_for_fast_export_gets_a_note(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], version: str, warns: bool
+) -> None:
+    """``export --fast`` needs ``-fps_mode vfr`` (ffmpeg 5.1); an unparsed build isn't flagged."""
+    monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("slidesonnet.doctor._get_cli_version", lambda *a, **kw: version)
+    monkeypatch.setenv("NO_COLOR", "1")
+    print_report(_groups("Core (always required)", check_ffmpeg()))
+    assert ("needs ffmpeg 5.1" in capsys.readouterr().out) is warns
+
+
 def test_python_package_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
     result = check_uvicorn()

@@ -170,8 +170,15 @@ the real video. Only `.mp4` output is supported.
 long frames in one pass instead of 24 identical frames a second. The audio is
 the same track, encoded the same way, and the subtitles are unchanged. It writes
 `<name>.fast.mp4` (with `--draft`, `<name>.draft.fast.mp4`), so it never
-replaces the full-quality video, and it keeps the assembled audio in
-`.slidesonnet/render/` so the next quick export skips rebuilding it.
+replaces the full-quality video. `--fast` needs ffmpeg 5.1 or newer
+(`slidesonnet doctor` says if yours is older).
+
+Every export keeps what the next one can reuse in `.slidesonnet/render/`: the
+page images, each slide's encoded clip, and the encoded sound. So exporting
+again after a small edit re-encodes only the slides that changed, and the video
+comes out exactly as a from-scratch export would. A narration edit that changes
+a slide's length can nudge some later slides by a frame, and those are
+re-encoded too. `slidesonnet clean` removes it all.
 
 With a paid engine (`--engine inworld`), `tts` and `export` say how many new
 clips they would generate and ask first; `--yes` answers for you, and without a

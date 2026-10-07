@@ -24,6 +24,7 @@ class CheckResult:
     version: str  # "" if missing
     hint: str  # install command when missing
     context: str  # when is this needed
+    note: str = ""  # a caveat about an installed tool (shown under it)
 
 
 def _get_cli_version(
@@ -240,8 +241,16 @@ def run_all_checks() -> list[tuple[str, list[CheckResult]]]:
     ]
 
 
+#: ``export --fast`` encodes with ``-fps_mode vfr``, which ffmpeg added in 5.1.
+FAST_EXPORT_FFMPEG = (5, 1)
+
+
 def check_ffmpeg() -> CheckResult:
-    return _run_cli_check(_CHECKS_BY_NAME["ffmpeg"])
+    result = _run_cli_check(_CHECKS_BY_NAME["ffmpeg"])
+    m = re.match(r"n?(\d+)\.(\d+)", result.version)  # "6.1.1-3ubuntu5", "n7.0"; not "N-1234-g…"
+    if result.status == "ok" and m and (int(m[1]), int(m[2])) < FAST_EXPORT_FFMPEG:
+        result.note = "too old for 'export --fast', which needs ffmpeg 5.1 or newer"
+    return result
 
 
 def check_ffprobe() -> CheckResult:
@@ -286,6 +295,8 @@ def print_report(groups: list[tuple[str, list[CheckResult]]]) -> bool:
             click.echo(line)
             if check.status != "ok" and check.hint:
                 click.echo(f"    {check.hint}")
+            if check.note:
+                click.echo(f"    {check.note}")
 
     click.echo()
     if all_core_ok:

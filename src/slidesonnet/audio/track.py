@@ -8,6 +8,7 @@ image as the single ``<audio>`` element plays.
 
 from __future__ import annotations
 
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -15,7 +16,7 @@ from typing import NamedTuple
 from slidesonnet.exceptions import FFmpegError, RenderError
 from slidesonnet.proc import run_tool
 from slidesonnet.timing import PageTiming
-from slidesonnet.video.composer import concatenate_audio, get_duration, partial_output
+from slidesonnet.video.composer import concatenate_audio, partial_output
 
 _SAMPLE_RATE = 44100
 
@@ -109,7 +110,23 @@ def build_page_audio(
     if not paths:  # empty page — emit a hair of silence so the stream exists
         paths.append(_shared_silence(0.05, silence_dir))
     concatenate_audio(paths, out_path)
-    return get_duration(out_path)
+    return wav_seconds(out_path)
+
+
+def wav_seconds(path: Path) -> float:
+    """A WAV's length from its header, without an ffprobe.
+
+    ffprobe costs ~0.1 s a call — a few seconds over a long deck's pages; the
+    header gives the same sample-exact length. Anything :mod:`wave` can't read
+    falls back to ffprobe.
+    """
+    from slidesonnet.video import composer  # module-qualified: tests patch it at source
+
+    try:
+        with wave.open(str(path), "rb") as w:
+            return w.getnframes() / w.getframerate()
+    except (OSError, EOFError, wave.Error):
+        return composer.get_duration(path)
 
 
 def _shared_silence(seconds: float, silence_dir: Path) -> Path:
@@ -129,7 +146,7 @@ def _shared_silence(seconds: float, silence_dir: Path) -> Path:
 def assemble_track(page_audios: list[Path], out_path: Path) -> float:
     """Concatenate per-page audio into one deck track. Returns total duration."""
     concatenate_audio(page_audios, out_path)
-    return get_duration(out_path)
+    return wav_seconds(out_path)
 
 
 class Cue(NamedTuple):

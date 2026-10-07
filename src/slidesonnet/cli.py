@@ -496,9 +496,10 @@ def tts(
     "--keep-scratch",
     is_flag=True,
     help=(
-        "Keep the render intermediates (decoded page audio, assembled track, per-slide "
-        "clips) in .slidesonnet/render/ after a successful export, for debugging. "
-        "By default they are deleted; cached speech clips are never touched."
+        "Keep the render intermediates (decoded page audio, assembled track, silent "
+        "video) in .slidesonnet/render/ after a successful export, for debugging. What "
+        "the next export reuses (page images, encoded slides and sound) is kept either "
+        "way; cached speech clips are never touched."
     ),
 )
 @click.option(

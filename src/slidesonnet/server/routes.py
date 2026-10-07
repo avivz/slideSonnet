@@ -367,7 +367,6 @@ def export_work(
                 None,  # where the CLI would put it: [video] output_dir, else beside the deck
                 sidecar_path=entry.sidecar_path,
                 engine=engine,
-                keep_scratch=True,  # an open preview may be streaming the page audio
                 draft=draft,
                 fast=fast,
                 progress=ctx.progress,

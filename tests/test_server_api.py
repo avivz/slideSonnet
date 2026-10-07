@@ -665,7 +665,9 @@ def test_export_explains_blockers_and_runs_a_draft(
     # where the video goes is the api's call, as for the CLI; the editor shows the full path
     assert job["result"] == {"video": str(video), "duration": 3.0, "draft": True, "fast": False}
     assert seen["output"] is None
-    assert seen["draft"] is True and seen["keep_scratch"] is True and seen["fast"] is False
+    assert seen["draft"] is True and seen["fast"] is False
+    # Play builds each slide in its own scratch, so the export's PCM goes as from the CLI.
+    assert "keep_scratch" not in seen
 
 
 def test_an_export_with_another_engine_is_not_merged_into_the_running_one(

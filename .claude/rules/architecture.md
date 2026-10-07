@@ -58,7 +58,11 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **render.py** — `build_timeline` (`DeckTimeline`), `subtitle_entries`,
   `render_audio_track`, `compose_video` (transitions are visual overlays centred on
   the page boundary — `transition_morph_seconds`, `frame_plan` — so the audio
-  timeline and total duration don't change).
+  timeline and total duration don't change). Each still/morph clip is cached
+  under `render/<deck>/clips/` by `clip_key` (image hashes, frames, picture
+  settings, xfade, ffmpeg build + CPU count), so a re-export encodes only changed
+  clips; the track's AAC (`track_aac`, kept too) is encoded alongside and copied
+  in. `prune_render_scratch` drops the PCM page/track WAVs after export.
 - **audio/synth.py** — cache-aware per-segment TTS; pace→speed; `page_speech_durations`,
   `cached_durations`. **audio/durations.py** — `ClipDurations`, the saved clip
   lengths in `<pool>/durations.json` (a cache; stale entries are re-measured).
@@ -83,10 +87,10 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   Kokoro, Inworld, Qwen3, pronunciation. Adding an engine = one `BackendSpec` + the
   `Backend` Literal in models.py (a test pins them in sync).
 - **video/composer.py** — FFmpeg: `compose_silent_segment`, `compose_transition_clip`
-  (one xfade clip per animated boundary), `concatenate_segments`, `mux_audio`,
-  `concatenate_audio`, `get_duration`; for the quick export (`--fast`,
-  `render.fast_video`/`_compose_fast`) `compose_slideshow` (one VFR pass, a few
-  long frames per still), `encode_aac` + `mux_copy`.
+  (one xfade clip per animated boundary), `concatenate_segments`, `encode_aac` +
+  `mux_copy`, `concatenate_audio`, `get_duration`, `encoder_identity`; for the
+  quick export (`--fast`, `render.fast_video`/`_compose_fast`) `compose_slideshow`
+  (one VFR pass, a few long frames per still).
 - **proc.py** / **cancellation.py** — `run_tool`/`run_tool_with_progress` (uniform
   errors, timeout, kill on cancel); the cooperative cancel token (a ContextVar).
 - **atomic.py** (`atomic_write_text`), **progress.py** (`RunProgress`, the stable

@@ -198,6 +198,8 @@ def _seed_scratch(pdf: Path) -> dict[str, Path]:
         "manifest": rd / "track.cache.json",
         "silence": rd / "silence" / "2.0000s.wav",
         "segment": rd / "segments" / "seg-0001.mp4",
+        "clip": rd / "clips" / "0123456789abcdef0123456789abcdef.mp4",
+        "aac": rd / "track.m4a",
         "silent_video": rd / "silent.mp4",
         "page_png": rd / "pages" / "page-1.png",
     }
@@ -207,17 +209,16 @@ def _seed_scratch(pdf: Path) -> dict[str, Path]:
     return files
 
 
-def test_export_prunes_render_scratch_but_keeps_page_images(
+def test_export_prunes_only_what_the_next_export_cannot_reuse(
     tmp_path: Path, pipeline: dict[str, Any]
 ) -> None:
-    """PCM page audio, the assembled track, silences, and per-slide clips exist
-    only to feed ffmpeg once; a successful export drops them (~10× the size of
-    the audio they came from). Page images stay — the editor filmstrip and the
-    next export reuse them."""
+    """The PCM page audio and assembled track (two uncompressed copies of the
+    narration, seconds to rebuild), the silences, the silent video the sound was
+    muxed into and the old positional segments go; page images, the cached clips
+    and the track's AAC stay, so the next export re-encodes only what changed."""
     pdf = _prep(tmp_path, "@intro-title\nHello.\n")
     files = _seed_scratch(pdf)
     api.export(pdf, tmp_path / "out.mp4")
-    assert files["page_png"].exists()
     gone = {k for k, p in files.items() if not p.exists()}
     assert gone == {"page_wav", "track", "manifest", "silence", "segment", "silent_video"}
 

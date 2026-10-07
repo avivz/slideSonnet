@@ -199,9 +199,9 @@ class VideoConfig:
     pre_silence: float = 0.3
     tail_seconds: float = 0.5
     #: Leave the render intermediates (decoded page audio, the assembled track,
-    #: per-slide clips) in the cache after a successful export instead of
-    #: deleting them. They only feed ffmpeg once and dwarf the audio they came
-    #: from, so the default is to drop them; set for debugging a render.
+    #: the silent video) in the cache after a successful export instead of
+    #: deleting them; set for debugging a render. What the next export reuses
+    #: (page images, encoded clips, the track's AAC) is kept either way.
     keep_scratch: bool = False
 
     def __post_init__(self) -> None:

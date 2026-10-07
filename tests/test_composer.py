@@ -16,7 +16,7 @@ from slidesonnet.video.composer import (
     concatenate_audio,
     concatenate_segments,
     get_duration,
-    mux_audio,
+    mux_copy,
 )
 
 
@@ -203,7 +203,8 @@ def test_compose_video_absorbs_transition_into_hold(work_dir):
     )
 
     assert abs(get_duration(cut_out) - get_duration(wipe_out)) <= 0.25
-    assert (rdir / "wipe" / "segments" / "trans-0001.mp4").exists()
+    clips = [len(list((rdir / d / "clips").glob("*.mp4"))) for d in ("cut", "wipe")]
+    assert clips == [1, 2]  # the two (identical) stills share a clip; the wipe adds its morph
 
 
 @pytest.mark.integration
@@ -453,13 +454,15 @@ def test_run_ffmpeg_streams_progress_only_to_a_listener(
 
 
 @patch("slidesonnet.video.composer._run_ffmpeg")
-def test_mux_audio_argv(mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+def test_mux_copy_argv(mock_ffmpeg: MagicMock, tmp_path: Path) -> None:
+    """The deck track's AAC (encoded aside, see ``render.track_aac``) is copied in
+    beside the picture: neither stream is re-encoded."""
     seen: list[float] = []
-    v, a, out = tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4"
-    mux_audio(v, a, out, on_time=seen.append)
+    v, aac, out = tmp_path / "v.mp4", tmp_path / "a.m4a", tmp_path / "o.mp4"
+    mux_copy(v, aac, out, on_time=seen.append)
     assert mock_ffmpeg.call_args.args[0] == [
-        "ffmpeg", "-y", "-i", str(v), "-i", str(a), "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", str(out),
+        "ffmpeg", "-y", "-i", str(v), "-i", str(aac), "-map", "0:v:0", "-map", "1:a:0",
+        "-c", "copy", str(out),
     ]  # fmt: skip
     assert mock_ffmpeg.call_args.kwargs["on_time"] == seen.append
 
