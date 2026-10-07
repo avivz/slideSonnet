@@ -110,6 +110,8 @@ describe('script view', () => {
     }
     const { editor } = await setup(server)
     const w = mount(ScriptView, { attachTo: document.body })
+    // one pause in the file is one pause on screen (the line after it brings none)
+    expect(w.findAll('[data-testid^="script-pause-a-"]')).toHaveLength(1)
     // a pause sits at the end of the line before it, not on a row of its own
     const pause = w.get('[data-testid="script-line-a-0"] [data-testid="script-pause-a-1"]')
     expect((pause.element as HTMLInputElement).value).toBe('0.7')
@@ -117,6 +119,29 @@ describe('script view', () => {
     await pause.trigger('change')
     expect(editor.draftFor('a')?.middle[1]).toMatchObject({ kind: 'pause', seconds: 1.2 })
     await editor.flush()
+  })
+
+  it('shows a real double pause as two; a pause can be added between two lines', async () => {
+    const server = new FakeServer()
+    server.narration.a = {
+      ...server.narration.a!,
+      segments: [speech('One.'), { kind: 'pause', seconds: 0.3 }, { kind: 'pause', seconds: 0.5 }, speech('Two.'), speech('Three.')],
+    }
+    const { editor } = await setup(server)
+    const w = mount(ScriptView, { attachTo: document.body })
+    const pauses = () => w.findAll('[data-testid^="script-pause-a-"]').map((p) => p.attributes('data-testid'))
+    expect(pauses()).toEqual(['script-pause-a-1', 'script-pause-a-2'])
+    // only between two lines with no pause yet (not after the slide's last line)
+    expect(w.findAll('[data-testid^="script-add-pause-a-"]').map((p) => p.attributes('data-testid'))).toEqual([
+      'script-add-pause-a-3',
+    ])
+    const add = w.get('[data-testid="script-add-pause-a-3"]')
+    await add.setValue('0.4')
+    await add.trigger('change')
+    expect(pauses()).toEqual(['script-pause-a-1', 'script-pause-a-2', 'script-pause-a-4'])
+    await editor.flush()
+    const saved = server.narration.a?.segments.map((s) => (s.kind === 'pause' ? s.seconds : s.text))
+    expect(saved?.slice(1, -1)).toEqual(['One.', 0.3, 0.5, 'Two.', 0.4, 'Three.']) // within the start/end silences
   })
 
   // under review the server notes the edit right after saving it: an outside change

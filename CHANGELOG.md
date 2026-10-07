@@ -15,6 +15,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   build; the editor names its videos `deck.mp4`.
 
 ### Fixed
+- **One pause between two lines shows as one pause in the Script view.** Every
+  line used to be followed by an extra `⏸ 0.0` of its own, so a single pause read
+  as two, and a number typed into that extra box was quietly lost. To add a pause
+  between two lines that have none, point at the first line: a `⏸ 0.0` appears
+  after its last word; type the seconds there.
 - **A line you empty in the Script view goes away once you click away from it**,
   as deleting it in the Slide view does. It used to linger as an empty box until
   the page was reloaded (most visibly during a review). The file was already

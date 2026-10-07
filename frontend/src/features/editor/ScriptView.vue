@@ -12,7 +12,7 @@ import { useReviewStore } from '@/stores/review'
 
 import LineFailure from './LineFailure.vue'
 import NarrationDiff from './NarrationDiff.vue'
-import { newSpeech, speechIndexes, written, type EditSeg } from './narration'
+import { newPause, newSpeech, speechIndexes, written, type EditSeg } from './narration'
 import { useEditingFocus } from './useEditingFocus'
 
 const editor = useEditorStore()
@@ -73,18 +73,31 @@ function onPause(slideId: string, seg: EditSeg, event: Event): void {
   seg.seconds = Math.max(0, Number((event.target as HTMLInputElement).value) || 0)
   editor.touch(slideId, { immediate: true })
 }
+/** A pause typed between two lines that had none goes in after the first. */
+function addPause(slideId: string, j: number, event: Event): void {
+  const input = event.target as HTMLInputElement
+  const seconds = Math.max(0, Number(input.value) || 0)
+  input.value = '0.0'
+  const middle = editor.draftFor(slideId)?.middle
+  if (!middle || seconds === 0) return
+  middle.splice(j + 1, 0, { ...newPause(), seconds })
+  editor.touch(slideId, { immediate: true })
+}
 /**
  * A slide's lines, each carrying the pauses that follow it (drawn right after
  * its last word, not on a row of their own); a pause before any line stands alone.
  */
 type Row =
-  | { kind: 'line'; seg: EditSeg; j: number; pauses: { seg: EditSeg; j: number }[] }
+  | { kind: 'line'; seg: EditSeg; j: number; pauses: { seg: EditSeg; j: number }[]; between: boolean }
   | { kind: 'pause'; seg: EditSeg; j: number }
 function rows(slideId: string): Row[] {
   const out: Row[] = []
-  ;(editor.draftFor(slideId)?.middle ?? []).forEach((seg, j) => {
+  const middle = editor.draftFor(slideId)?.middle ?? []
+  middle.forEach((seg, j) => {
     const last = out[out.length - 1]
-    if (seg.kind === 'speech') out.push({ kind: 'line', seg, j, pauses: [] })
+    // `between`: the next line follows straight on, so a pause may be added here
+    const between = middle[j + 1]?.kind === 'speech'
+    if (seg.kind === 'speech') out.push({ kind: 'line', seg, j, pauses: [], between })
     else if (last?.kind === 'line') last.pauses.push({ seg, j })
     else out.push({ kind: 'pause', seg, j })
   })
@@ -175,7 +188,22 @@ function retry(slideId: string, seg: EditSeg): void {
               <span v-else aria-hidden="true">{{ row.seg.text }}</span>
               <!-- a trailing newline still takes its row -->
               <span aria-hidden="true">{{ '\u200b' }}</span>
-              <span v-if="row.pauses.length" class="tail">
+              <span v-if="row.pauses.length || row.between" class="tail">
+                <!-- two lines with no pause between them: one to add, shown on hover -->
+                <label v-if="row.between" class="pause add-pause" title="Add a pause, in seconds">
+                  <span aria-hidden="true">⏸</span>
+                  <input
+                    class="secs"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value="0.0"
+                    :aria-label="`Slide ${i + 1}, add a pause after this line, in seconds`"
+                    :data-testid="`script-add-pause-${page.slide_id}-${row.j}`"
+                    @focus="enter(i)"
+                    @change="addPause(page.slide_id, row.j, $event)"
+                  />
+                </label>
                 <label v-for="p in row.pauses" :key="p.seg.key" class="pause" title="Pause, in seconds">
                   <span aria-hidden="true">⏸</span>
                   <input
@@ -205,10 +233,6 @@ function retry(slideId: string, seg: EditSeg): void {
               @blur="onLeave(page.slide_id, row.seg, $event)"
             ></textarea>
           </div>
-          <LineFailure
-            v-if="row.kind === 'line' && failureOf(page.slide_id, row.seg)"
-            class="failure" :failure="failureOf(page.slide_id, row.seg)!" @retry="retry(page.slide_id, row.seg)"
-          />
           <label v-else class="pause" title="Pause, in seconds">
             <span aria-hidden="true">⏸</span>
             <input
@@ -223,6 +247,10 @@ function retry(slideId: string, seg: EditSeg): void {
               @change="onPause(page.slide_id, row.seg, $event)"
             />
           </label>
+          <LineFailure
+            v-if="row.kind === 'line' && failureOf(page.slide_id, row.seg)"
+            class="failure" :failure="failureOf(page.slide_id, row.seg)!" @retry="retry(page.slide_id, row.seg)"
+          />
         </template>
         <p v-if="!spoken(page.slide_id)" class="none">
           No narration yet ·
@@ -366,6 +394,14 @@ function retry(slideId: string, seg: EditSeg): void {
   gap: 2px;
   color: var(--dim);
   font-size: var(--text-xs);
+}
+/* a pause to add stays out of the way until the line is pointed at */
+.add-pause {
+  opacity: 0;
+}
+.line-wrap:hover .add-pause,
+.add-pause:focus-within {
+  opacity: 1;
 }
 .secs {
   width: 44px;
