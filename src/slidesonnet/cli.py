@@ -678,6 +678,7 @@ def clean(pdf: Path, keep: str, dry_run: bool, yes: bool, narration: Path | None
                 click.echo(f"    {f.name}")
         if plan.prune is not None:
             click.echo(f"Would keep {len(plan.kept_paid)} paid clip(s)")
+        _say_stray_renders(plan.stray_renders, "Would remove")
         click.echo("Dry run: nothing was changed.")
         _say_pool_left_alone(plan.pool)
         return
@@ -706,7 +707,16 @@ def clean(pdf: Path, keep: str, dry_run: bool, yes: bool, narration: Path | None
             f"Moved {result.trashed_files} paid/slow clip(s) to {result.trash_dir} "
             "(move one back to restore it)."
         )
+    _say_stray_renders(plan.stray_renders, "Removed")
     _say_pool_left_alone(result.pool)
+
+
+def _say_stray_renders(strays: list[Path], verb: str) -> None:
+    if strays:
+        click.echo(
+            f"{verb} the render scratch of {len(strays)} renamed or deleted deck(s) "
+            f"(no PDF here by that name): {', '.join(d.name for d in strays)}."
+        )
 
 
 def _say_pool_left_alone(pool: Path | None) -> None:
@@ -779,6 +789,7 @@ def pool_status_cmd(ctx: click.Context, pdf: Path | None) -> None:
     current directory would.
     """
     from slidesonnet.cache import default_audio_dir, resolve_audio_dir
+    from slidesonnet.clean import stray_render_dirs
     from slidesonnet.config import default_config_path, load_config
     from slidesonnet.pool import pool_status
 
@@ -818,6 +829,15 @@ def pool_status_cmd(ctx: click.Context, pdf: Path | None) -> None:
                 f"{default_audio_dir(deck)}; they are copied into the pool the next time "
                 "the deck is synthesized, and 'slidesonnet clean' removes the local copies."
             )
+    strays = stray_render_dirs(deck)
+    if strays:
+        size = sum(f.stat().st_size for d in strays for f in d.rglob("*") if f.is_file())
+        click.echo(
+            f"Note: {len(strays)} render folder(s) in {strays[0].parent} belong to no PDF "
+            f"here (renamed or deleted decks?): {', '.join(d.name for d in strays)}, "
+            f"{_mb(size)}. Render scratch only, no audio; 'slidesonnet clean' on any deck "
+            "in this folder removes them."
+        )
 
 
 @pool.command("migrate")

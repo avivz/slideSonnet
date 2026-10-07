@@ -44,6 +44,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   found and keeps its audio. It (and now `pool migrate`, which used to carry on
   regardless) still refuses when a folder is too big to search completely, and
   says how far it got and where it stopped.
+- **`slidesonnet clean` now clears the leftover render files of a renamed or
+  deleted deck.** They used to stay behind for good (hundreds of MB in a big
+  course). Cleaning any deck in a folder removes the render files that belong to
+  no PDF there any more and lists them; a deck's `deck.plain.pdf` build keeps its
+  own. Audio is never touched. `slidesonnet pool status` points such leftovers out.
 
 ## [1.0.0a3] — 2026-09-29
 

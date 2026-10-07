@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
 from slidesonnet.cache import audio_dir, cache_root, render_dir
 from slidesonnet.clean import (
@@ -14,6 +15,7 @@ from slidesonnet.clean import (
     prune_local_orphans,
     retire_legacy_audio,
 )
+from slidesonnet.cli import main
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.hashing import audio_filename, text_hash
 from slidesonnet.models import VoiceConfig
@@ -105,6 +107,31 @@ def test_keep_api_leaves_unrecognized_files_and_subdirs(tmp_path: Path) -> None:
     assert (ad / "oldformat.wav").exists()
     assert (sub / "stray.wav").exists()  # directories are skipped, not unlinked
     assert (ad / "cccc.inworld.dddd.mp3").exists()
+
+
+def test_clean_sweeps_render_scratch_no_pdf_here_owns(tmp_path: Path) -> None:
+    """Renaming a deck strands ``render/<old name>/``: ``pool status`` points it out
+    and ``clean`` removes it, saying so — but never a folder some PDF here still
+    owns (``deck.plain.pdf``'s too), and never audio."""
+    pdf = _seed(tmp_path)
+    plain = render_dir(tmp_path / "deck.plain.pdf")
+    plain.mkdir()
+    (tmp_path / "deck.plain.pdf").write_bytes(b"%PDF-1.4")
+    (plain / "page-0001.png").write_bytes(b"img")
+    stray = render_dir(tmp_path / "old_name.pdf")
+    stray.mkdir()
+    (stray / "track.wav").write_bytes(b"w")
+
+    status = CliRunner().invoke(main, ["pool", "status", str(pdf)])
+    assert "old_name" in status.output and "deck.plain" not in status.output
+    dry = CliRunner().invoke(main, ["clean", str(pdf), "--dry-run"])
+    assert "old_name" in dry.output and stray.exists()
+
+    result = CliRunner().invoke(main, ["clean", str(pdf)])
+    assert result.exit_code == 0, result.output
+    assert "old_name" in result.output and "deck.plain" not in result.output
+    assert not stray.exists() and (plain / "page-0001.png").exists()
+    assert (audio_dir(pdf) / "cccc.inworld.dddd.mp3").exists()
 
 
 # --- keep="current" / keep="exact" need a real deck (PDF + sidecar + optional config) ---

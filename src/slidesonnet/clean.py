@@ -1,6 +1,7 @@
 """Selective cache cleanup with graduated preservation levels.
 
-Render scratch and logs always go. ``--keep`` decides which speech clips of
+Render scratch and logs always go — the deck's own, and any ``render/<name>/``
+that no PDF beside the deck owns any more (a renamed or deleted deck's). ``--keep`` decides which speech clips of
 *this deck* survive:
 
 nothing — none
@@ -99,6 +100,8 @@ class CleanPlan:
     keep: KeepLevel
     #: Removed whole: the deck's render dir and the run logs.
     scratch: list[Path] = field(default_factory=list)
+    #: Removed whole: render dirs no PDF beside the deck owns (see :func:`stray_render_dirs`).
+    stray_renders: list[Path] = field(default_factory=list)
     #: The audio GC over the folder's shared clip dir (None in pool mode).
     prune: PrunePlan | None = None
     #: Pool mode: the shared pool, left alone.
@@ -110,7 +113,7 @@ class CleanPlan:
     def remove(self) -> list[Path]:
         """Every file that would be deleted (legacy local clips: after being
         copied into the pool)."""
-        files = [f for p in self.scratch for f in _files(p)]
+        files = [f for p in [*self.scratch, *self.stray_renders] for f in _files(p)]
         if self.legacy is not None:
             files += _files(self.legacy)
         if self.prune is not None:
@@ -149,6 +152,22 @@ def _size(files: list[Path]) -> int:
     return sum(f.stat().st_size for f in files)
 
 
+def stray_render_dirs(pdf_path: Path) -> list[Path]:
+    """Render folders in the deck's cache that no PDF beside it owns any more.
+
+    Render scratch is named after its PDF's stem, so renaming or deleting a deck
+    strands its folder. Every ``*.pdf`` there owns one — a plain build
+    ``deck.plain.pdf`` included — and those are never strays.
+    """
+    renders = render_dir(pdf_path).parent
+    if not renders.is_dir():
+        return []
+    stems = {p.stem for p in pdf_path.resolve().parent.iterdir() if p.suffix.lower() == ".pdf"}
+    return sorted(
+        d for d in renders.iterdir() if d.is_dir() and not d.is_symlink() and d.name not in stems
+    )
+
+
 def sibling_decks(pdf_path: Path) -> list[DeckRoot]:
     """The other decks sharing *pdf_path*'s folder (and so its default clip dir):
     every ``*.pdf`` beside it with a ``<stem>.narration``."""
@@ -178,7 +197,12 @@ def plan_clean(
 
     root = cache_root(pdf_path)
     logs = sorted(p for p in root.glob(f"{LOG_FILENAME}*") if p.is_file())
-    plan = CleanPlan(pdf=pdf_path, keep=keep, scratch=[render_dir(pdf_path), *logs])
+    plan = CleanPlan(
+        pdf=pdf_path,
+        keep=keep,
+        scratch=[render_dir(pdf_path), *logs],
+        stray_renders=stray_render_dirs(pdf_path),
+    )
     res = resolve_audio_dir(pdf_path, load_config(pdf_path))
     if res.shared:
         plan.pool = res.path
@@ -194,7 +218,7 @@ def plan_clean(
 def apply_clean(plan: CleanPlan) -> CleanResult:
     """Carry out *plan*: delete scratch and cheap clips, park paid / slow ones in trash."""
     result = CleanResult(pool=plan.pool)
-    for path in plan.scratch:
+    for path in [*plan.scratch, *plan.stray_renders]:
         files = _files(path)
         result.removed_files += len(files)
         result.removed_bytes += _size(files)
