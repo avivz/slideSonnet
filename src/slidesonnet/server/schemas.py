@@ -222,9 +222,17 @@ class LibrarySectionDTO(_Model):
 
 class LibraryDTO(_Model):
     root: str  # the scan root's folder name (never an absolute path)
+    #: Names of the folders above the root, outermost first ("~" for home); the
+    #: last is one folder up. Names only, so no absolute path goes on the wire.
+    parents: list[str]
     sections: list[LibrarySectionDTO]
     unnarrated: list[LibraryDeckDTO]
     truncated: bool
+
+
+class LibraryRootRequest(_Model):
+    #: The folder to list decks from, relative to the current one (``..`` is up).
+    path: str = Field(min_length=1)
 
 
 class DeckStatsDTO(_Model):

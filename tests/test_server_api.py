@@ -112,6 +112,72 @@ def test_errors_have_stable_codes(
     assert r.json()["error"]["message"]
 
 
+@pytest.fixture
+def course(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """``~/course/week02/{a1,a2}`` and ``~/course/week03/b1``, one deck per folder."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for week, stems in (("week02", ("a1", "a2")), ("week03", ("b1",))):
+        for stem in stems:
+            folder = tmp_path / "course" / week / stem
+            folder.mkdir(parents=True)
+            write_pdf(folder / f"{stem}.pdf", ["intro"])
+            (folder / f"{stem}.narration").write_text(
+                simple_narration("@intro\nHi.\n"), encoding="utf-8"
+            )
+    return tmp_path / "course"
+
+
+def _labels(lib: dict[str, Any]) -> dict[str, str]:
+    return {d["label"]: d["token"] for s in lib["sections"] for d in s["decks"]}
+
+
+def test_the_library_moves_up_to_the_course_and_steps_across_weeks(course: Path) -> None:
+    """Started inside one week, the author goes up and walks every week's decks."""
+    registry = DeckRegistry(course / "week02")
+    registry.rescan()
+    with TestClient(create_api_app(registry)) as c:
+        c.headers[SESSION_HEADER] = c.get("/api/v1/session").json()["token"]
+        lib = c.get("/api/v1/library").json()
+        assert (lib["root"], lib["parents"]) == ("week02", ["~", "course"])
+        a2 = _labels(lib)["a2/a2"]
+        _snapshot(c, a2)  # the deck open in the editor
+
+        lib = c.post("/api/v1/library/root", json={"path": ".."}).json()
+        assert (lib["root"], lib["parents"]) == ("course", ["~"])
+        tokens = _labels(lib)
+        assert list(tokens) == ["week02/a1/a1", "week02/a2/a2", "week03/b1/b1"]
+        assert tokens["week02/a2/a2"] == a2  # the open deck keeps its address
+        assert c.get("/api/v1/library").json() == lib  # the switcher sees the new folder
+        assert str(course) not in str(lib)  # still no absolute paths on the wire
+
+        assert _snapshot(c, a2)["neighbours"]["next"] == tokens["week03/b1/b1"]
+        assert _snapshot(c, tokens["week03/b1/b1"])["pages"]
+
+        lib = c.post("/api/v1/library/root", json={"path": "week03"}).json()
+        assert list(_labels(lib)) == ["b1/b1"]
+        assert _snapshot(c, a2)["pages"]  # out of the listing, but still open
+
+
+@pytest.mark.parametrize(
+    ("path", "status", "code", "says"),
+    [
+        ("nowhere", 404, "folder_not_found", "no folder"),
+        ("a1/a1.pdf", 422, "not_a_folder", "not a folder"),
+    ],
+)
+def test_the_library_refuses_a_folder_that_is_not_one(
+    course: Path, path: str, status: int, code: str, says: str
+) -> None:
+    registry = DeckRegistry(course / "week02")
+    registry.rescan()
+    with TestClient(create_api_app(registry)) as c:
+        c.headers[SESSION_HEADER] = c.get("/api/v1/session").json()["token"]
+        r = c.post("/api/v1/library/root", json={"path": path})
+        assert r.status_code == status and r.json()["error"]["code"] == code
+        assert says in r.json()["error"]["message"].lower()
+        assert c.get("/api/v1/library").json()["root"] == "week02"  # nothing moved
+
+
 # ---- writing ----------------------------------------------------------------------------
 def test_edit_saves_atomically_and_moves_the_incoming_boundary(
     client: TestClient, deck: Path

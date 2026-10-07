@@ -215,7 +215,8 @@ def _library_deck(entry: DeckEntry) -> LibraryDeckDTO:
 
 def library(registry: DeckRegistry) -> LibraryDTO:
     return LibraryDTO(
-        root=registry.root.name or str(registry.root),
+        root=registry.root.name or registry.root.anchor,
+        parents=registry.parents(),
         sections=[
             LibrarySectionDTO(title=title, decks=[_library_deck(e) for e in entries])
             for title, entries in registry.grouped()

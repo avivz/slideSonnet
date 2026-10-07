@@ -1051,6 +1051,13 @@
       "LibraryDTO": {
         "additionalProperties": false,
         "properties": {
+          "parents": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parents",
+            "type": "array"
+          },
           "root": {
             "title": "Root",
             "type": "string"
@@ -1076,6 +1083,7 @@
         },
         "required": [
           "root",
+          "parents",
           "sections",
           "unnarrated",
           "truncated"
@@ -1125,6 +1133,21 @@
           "url"
         ],
         "title": "LibraryDeckDTO",
+        "type": "object"
+      },
+      "LibraryRootRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "LibraryRootRequest",
         "type": "object"
       },
       "LibrarySectionDTO": {
@@ -3447,6 +3470,65 @@
           }
         },
         "summary": "Get Library"
+      }
+    },
+    "/api/v1/library/root": {
+      "post": {
+        "description": "List decks from another folder (``..`` is up), for the rest of this session.",
+        "operationId": "set_library_root_api_v1_library_root_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryRootRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryDTO"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Set Library Root"
       }
     },
     "/api/v1/meta": {

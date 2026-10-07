@@ -13,6 +13,8 @@ repo root is as often too wide (a monorepo) as too narrow. The walk is capped in
 directories visited, so launching from ``$HOME`` reports a truncated scan instead
 of hanging; folders deeper than ``max_depth`` are walked last, with whatever of
 that budget is left, so it goes to the shallow folders decks live in first.
+The library can then move to another folder mid-session (up to a course, or
+into one week): see :meth:`DeckRegistry.move_to`.
 
 Depth never cuts the scan short by itself. ``pool prune --root`` deletes the
 clips no *found* deck says, so a deck the scan skipped would lose its audio; a
@@ -225,12 +227,38 @@ class DeckRegistry:
         self._scanned: ScanResult = ScanResult()
         #: Explicitly opened decks (and sidecar overrides), which survive rescans.
         self._pinned: dict[str, DeckEntry] = {}
+        #: Decks listed under an earlier root: no longer listed, still openable.
+        self._retired: dict[str, DeckEntry] = {}
 
     # ---- population ----------------------------------------------------
     def rescan(self) -> ScanResult:
         """Re-walk the root. Pinned decks are kept; everything else is replaced."""
         self._scanned = discover_decks(self.root, limits=self.limits)
         return self._scanned
+
+    def move_to(self, root: Path) -> ScanResult:
+        """Make *root* the library's folder and scan it.
+
+        Decks found under the old root stay openable (a deck open in the editor
+        keeps working, at the same token) but leave the listing. Pinned decks
+        are renamed relative to the new root. Raises :class:`NotADirectoryError`
+        (or :class:`FileNotFoundError`) when *root* isn't a folder.
+        """
+        try:
+            root = Path(root).resolve()
+        except (OSError, ValueError) as exc:  # a symlink loop, a NUL byte: no such folder
+            raise FileNotFoundError(root) from exc
+        if not root.exists():
+            raise FileNotFoundError(root)
+        if not root.is_dir():
+            raise NotADirectoryError(root)
+        self._retired.update({e.token: e for e in self._scanned.decks})
+        self.root = root
+        self._pinned = {
+            token: DeckEntry.build(e.pdf_path, root=root, sidecar_path=e.sidecar_path)
+            for token, e in self._pinned.items()
+        }
+        return self.rescan()
 
     def register(self, pdf_path: Path, *, sidecar_path: Path | None = None) -> DeckEntry:
         """Pin an explicitly opened deck (with an optional sidecar override)."""
@@ -256,7 +284,24 @@ class DeckRegistry:
 
     def resolve(self, token: str) -> DeckEntry | None:
         """The deck for *token*, or ``None`` when it isn't one of ours."""
-        return next((e for e in self.entries() if e.token == token), None)
+        found = next((e for e in self.entries() if e.token == token), None)
+        return found if found is not None else self._retired.get(token)
+
+    def parents(self) -> list[str]:
+        """Names of the folders above the root, outermost first.
+
+        Starts at ``~`` when the root is inside the home folder (the folders
+        above it are rarely where decks live), else at the filesystem's root.
+        Item *i* is ``len(parents) - i`` folders up.
+        """
+        home = Path.home().resolve()
+        names: list[str] = []
+        for folder in self.root.parents:
+            if folder == home:
+                names.append("~")
+                break
+            names.append(folder.name or folder.anchor)
+        return names[::-1]
 
     def grouped(self) -> list[tuple[str, list[DeckEntry]]]:
         """Decks bucketed by :attr:`DeckEntry.section`, in library order.

@@ -19,6 +19,7 @@ export function deck(label: string, token = label): LibraryDeckDTO {
 export function library(): LibraryDTO {
   return {
     root: 'course',
+    parents: ['~', 'teaching'],
     sections: [
       { title: '', decks: [deck('overview')] },
       { title: 'week01', decks: [deck('week01/intro/intro', 'i')] },

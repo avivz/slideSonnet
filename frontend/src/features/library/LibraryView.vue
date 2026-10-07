@@ -24,6 +24,11 @@ watch(
   },
 )
 
+/** The relative path `levels` folders up: `..`, `../..`, … */
+function upPath(levels: number): string {
+  return Array.from({ length: levels }, () => '..').join('/')
+}
+
 function open(url: string): void {
   window.location.assign(url) // the editor is its own page for now
 }
@@ -67,9 +72,37 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
     <header class="header">
       <div class="brand">
         <AppWordmark />
-        <span v-if="store.library" class="root mono" :title="`Decks found under ${store.library.root}`">
-          {{ store.library.root }}
-        </span>
+        <nav v-if="store.library" class="path mono" data-testid="library-path" aria-label="Folder">
+          <button
+            class="icon-btn up"
+            type="button"
+            data-testid="library-up"
+            title="Up one folder"
+            aria-label="Up one folder"
+            :disabled="store.loading || store.library.parents.length === 0"
+            @click="store.moveTo('..')"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path fill="currentColor" d="M11 20V7.83l-5.59 5.59L4 12l8-8 8 8-1.41 1.41L13 7.83V20h-2Z" />
+            </svg>
+          </button>
+          <template v-for="(name, i) in store.library.parents" :key="i">
+            <button
+              class="crumb"
+              type="button"
+              :data-testid="`library-crumb-${i}`"
+              :title="`Show the decks in ${name}`"
+              :disabled="store.loading"
+              @click="store.moveTo(upPath(store.library.parents.length - i))"
+            >
+              {{ name }}
+            </button>
+            <span v-if="!/[\\/]$/.test(name)" class="sep" aria-hidden="true">/</span>
+          </template>
+          <span class="crumb here" aria-current="location" :title="`Decks found under ${store.library.root}`">
+            {{ store.library.root }}
+          </span>
+        </nav>
       </div>
       <label class="search">
         <span class="visually-hidden">Find a deck</span>
@@ -108,16 +141,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
     <main class="main">
       <AppNotice v-if="store.error" tone="err">{{ store.error }}</AppNotice>
       <AppNotice v-if="store.library?.truncated">
-        The scan stopped early — this tree is very large. Relaunch closer to your decks, or pass
-        <code>--root</code>, to see them all.
+        The scan stopped early — this folder holds too much to search. Open a folder closer to your
+        decks to see them all.
       </AppNotice>
 
       <section v-if="store.library && store.deckCount === 0" class="empty" data-testid="library-empty">
         <h1>No decks under this folder</h1>
         <p class="mono">{{ store.library.root }}</p>
         <p>
-          A deck is a PDF with a matching <code>.narration</code> file beside it. Relaunch from your
-          decks folder, or pass <code>--root</code>.
+          A deck is a PDF with a matching <code>.narration</code> file beside it. Go up a folder with
+          the arrow at the top, or relaunch from your decks folder.
         </p>
       </section>
 
@@ -132,7 +165,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
         :aria-label="group.title ?? 'Decks'"
       >
         <h2 v-if="group.title" class="heading mono">
-          {{ group.title }} <span class="n">{{ group.decks.length }}</span>
+          <button
+            class="folder"
+            type="button"
+            :data-testid="`library-open-${group.title}`"
+            :title="`Show only the decks in ${group.title}`"
+            :disabled="store.loading"
+            @click="store.moveTo(group.title)"
+          >
+            {{ group.title }} <span class="n">{{ group.decks.length }}</span>
+          </button>
         </h2>
         <div class="list">
           <DeckRow
@@ -187,17 +229,64 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
   gap: var(--space-3);
   min-width: 0;
 }
-.root {
+.path {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 40vw;
   font-size: var(--text-xs);
   color: var(--dim);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  padding: 2px 10px;
-  background: var(--raised);
-  white-space: nowrap;
+}
+.path .up {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+.crumb {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 28vw;
+  white-space: nowrap;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--radius-field);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.crumb:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+.crumb.here {
+  flex: none;
+  max-width: 20vw;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--raised);
+  color: var(--text);
+  cursor: default;
+}
+.sep {
+  flex: none;
+  color: var(--line);
+}
+.folder {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.folder:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration: underline;
 }
 .search {
   flex: 1 1 auto;

@@ -329,6 +329,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/root": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Library Root
+         * @description List decks from another folder (``..`` is up), for the rest of this session.
+         */
+        post: operations["set_library_root_api_v1_library_root_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/meta": {
         parameters: {
             query?: never;
@@ -741,6 +761,8 @@ export interface components {
         };
         /** LibraryDTO */
         LibraryDTO: {
+            /** Parents */
+            parents: string[];
             /** Root */
             root: string;
             /** Sections */
@@ -766,6 +788,11 @@ export interface components {
             token: string;
             /** Url */
             url: string;
+        };
+        /** LibraryRootRequest */
+        LibraryRootRequest: {
+            /** Path */
+            path: string;
         };
         /** LibrarySectionDTO */
         LibrarySectionDTO: {
@@ -2073,6 +2100,57 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryDTO"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    set_library_root_api_v1_library_root_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LibraryRootRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

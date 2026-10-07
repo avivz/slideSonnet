@@ -142,6 +142,11 @@ export class ApiClient {
     return this.get(options.rescan ? '/library?rescan=true' : '/library')
   }
 
+  /** List decks from another folder, relative to the current one (`..` is up). */
+  setLibraryRoot(path: string): Promise<LibraryDTO> {
+    return this.send('POST', '/library/root', { path })
+  }
+
   deckStats(token: string): Promise<DeckStatsDTO> {
     return this.get(`/decks/${encodeURIComponent(token)}/stats`)
   }

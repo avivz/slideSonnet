@@ -26,6 +26,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   wins for the video. `export --where` shows where both would go without
   rendering, `export` says where it put them, and the editor's export shows the
   video's full path.
+- **Move up from the folder the editor started in.** The library's folder path
+  is now a row of clickable folders, with an "Up one folder" arrow: started in
+  `week02`, go up to the course and every week's decks are listed, named from
+  there (`week03/...`). Click a week's heading to narrow back down. The folder you
+  choose holds until you close the editor, so the deck switcher (Ctrl+K) and
+  Previous/Next deck step across weeks too, and a deck already open stays open.
 
 ### Changed
 - **Starting a review conversation no longer greys out the other slides.** You

@@ -23,10 +23,19 @@ export const useLibraryStore = defineStore('library', () => {
   )
 
   async function load(options: { rescan?: boolean } = {}): Promise<void> {
+    await fill(() => client.value.library(options))
+  }
+
+  /** List decks from another folder (`..` is up); it stays the library's folder. */
+  async function moveTo(path: string): Promise<void> {
+    await fill(() => client.value.setLibraryRoot(path))
+  }
+
+  async function fill(fetchLibrary: () => Promise<LibraryDTO>): Promise<void> {
     loading.value = true
     error.value = null
     try {
-      library.value = await client.value.library(options)
+      library.value = await fetchLibrary()
       stats.value = {}
     } catch (e) {
       error.value = e instanceof ApiError ? e.message : 'The editor server could not be reached.'
@@ -54,5 +63,5 @@ export const useLibraryStore = defineStore('library', () => {
     await Promise.all(Array.from({ length: Math.min(STATS_CONCURRENCY, tokens.length) }, worker))
   }
 
-  return { client, library, stats, loading, error, query, groups, visible, deckCount, load, loadStats }
+  return { client, library, stats, loading, error, query, groups, visible, deckCount, load, moveTo, loadStats }
 })

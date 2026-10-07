@@ -64,6 +64,7 @@ from slidesonnet.server.schemas import (
     JobDTO,
     JobRequest,
     LibraryDTO,
+    LibraryRootRequest,
     MetaDTO,
     PagesDTO,
     PreviewJob,
@@ -119,6 +120,19 @@ def get_library(request: Request, rescan: bool = False) -> LibraryDTO:
     ctx = _ctx(request)
     if rescan:
         ctx.registry.rescan()
+    return snapshots.library(ctx.registry)
+
+
+@router.post("/library/root", response_model=LibraryDTO)
+def set_library_root(request: Request, body: LibraryRootRequest, _m: None = Mutation) -> LibraryDTO:
+    """List decks from another folder (``..`` is up), for the rest of this session."""
+    ctx = _ctx(request)
+    try:
+        ctx.registry.move_to(ctx.registry.root / body.path)
+    except FileNotFoundError as exc:
+        raise ApiError(404, "folder_not_found", f"There is no folder at “{body.path}”.") from exc
+    except NotADirectoryError as exc:
+        raise ApiError(422, "not_a_folder", f"“{body.path}” is a file, not a folder.") from exc
     return snapshots.library(ctx.registry)
 
 
