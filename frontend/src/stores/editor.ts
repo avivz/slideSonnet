@@ -98,6 +98,8 @@ export const useEditorStore = defineStore('editor', () => {
   const loadEpoch = ref(0)
   /** Revisions this tab's own saves produced (to tell them from outside edits). */
   const ownRevisions = new Set<string>()
+  /** Saves of ours answered so far (a snapshot asked for before one may predate it). */
+  let acks = 0
 
   let timer: ReturnType<typeof setTimeout> | null = null
   let saving: Promise<void> = Promise.resolve()
@@ -210,6 +212,7 @@ export const useEditorStore = defineStore('editor', () => {
         if (token.value === null) return
         const epoch = loadEpoch.value
         const asked = engine.value
+        const acked = acks
         let snap: DeckSnapshot
         try {
           snap = await client.value.snapshot(token.value, asked)
@@ -223,6 +226,10 @@ export const useEditorStore = defineStore('editor', () => {
           refreshAgain = true // the engine changed meanwhile: ask again, for the new one
           continue
         }
+        // a save of ours landed meanwhile, or is still on its way: this answer may not
+        // have it yet, and would read as an outside edit (rolling the slide back, or a
+        // conflict with itself) — the save's own refresh brings the file as saved
+        if (acks !== acked || inFlight.value > 0) continue
         reconcile(snap)
       } while (refreshAgain)
     })().finally(() => {
@@ -352,6 +359,7 @@ export const useEditorStore = defineStore('editor', () => {
       if (epoch !== loadEpoch.value) return // another deck is open now
       revision.value = result.revision
       ownRevisions.add(result.revision)
+      acks++
       draft.baseline = sent // acknowledges exactly what was sent; newer typing stays dirty
       draft.ackRevision = result.revision
       saveFailed.value = false

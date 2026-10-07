@@ -37,6 +37,8 @@ export class FakeServer {
   /** Hold every save until release() — to test typing during an in-flight save. */
   hold: (() => void)[] = []
   holding = false
+  /** Hold every save's answer (it is written already) until release(). */
+  holdingAnswers = false
   cached: Record<string, boolean[]> = {}
   /** Engine that bills: generation / preview / export refuse without allow_paid. */
   paid = false
@@ -105,7 +107,9 @@ export class FakeServer {
         transition_out: body.transition_out ?? { kind: 'cut', seconds: 0 },
       }))
       this.rev++
-      return { changed: true, revision: this.revision }
+      const revision = this.revision
+      if (this.holdingAnswers) await new Promise<void>((resolve) => this.hold.push(resolve))
+      return { changed: true, revision }
     }
     c.generation = async () => ({ ...this.status() })
     c.focus = async () => ({ count: 1 })
@@ -154,6 +158,7 @@ export class FakeServer {
 
   release(): void {
     this.holding = false
+    this.holdingAnswers = false
     for (const resolve of this.hold.splice(0)) resolve()
   }
 }

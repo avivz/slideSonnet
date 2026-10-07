@@ -190,6 +190,52 @@ describe('conflicts', () => {
   })
 })
 
+describe('a snapshot that crosses our own save', () => {
+  /** Each snapshot is taken when asked, but answered only when the test says so. */
+  function holdSnapshots(store: ReturnType<typeof useEditorStore>) {
+    const real = store.client.snapshot.bind(store.client)
+    const answers: (() => void)[] = []
+    store.client.snapshot = async (...args) => {
+      const snap = await real(...args)
+      await new Promise<void>((r) => answers.push(r))
+      return snap
+    }
+    return async () => {
+      answers.shift()?.()
+      await flushPromises()
+    }
+  }
+
+  it('never rolls the slide back to an earlier save', async () => {
+    const { store } = await setup()
+    const answer = holdSnapshots(store)
+    typeInto(store, 'a', 'One.')
+    await store.flush() // its refresh takes the file as of "One." …
+    typeInto(store, 'a', 'Two.')
+    await store.flush() // … and answers after this save landed
+    await answer()
+    expect(store.draftFor('a')?.middle[0]?.text).toBe('Two.')
+    await answer()
+    expect(store.draftFor('a')?.middle[0]?.text).toBe('Two.')
+    expect(store.hasUnsaved).toBe(false)
+  })
+
+  it('never calls our own in-flight save a conflict', async () => {
+    const { store, server } = await setup()
+    typeInto(store, 'a', 'One.')
+    server.holdingAnswers = true
+    const saving = store.flush()
+    await flushPromises()
+    await store.refresh() // the file has it, but the save's answer is still on the way
+    expect(store.conflict).toBeNull()
+    server.release()
+    await saving
+    await flushPromises()
+    expect(store.conflict).toBeNull()
+    expect(store.hasUnsaved).toBe(false)
+  })
+})
+
 describe('flush', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())

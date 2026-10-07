@@ -62,6 +62,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   course). Cleaning any deck in a folder removes the render files that belong to
   no PDF there any more and lists them; a deck's `deck.plain.pdf` build keeps its
   own. Audio is never touched. `slidesonnet pool status` points such leftovers out.
+- **Quick changes in a row no longer jump back or ask which version to keep.**
+  Setting a pause and then moving it (or any two quick changes on a slide) could
+  briefly show the slide as it was a moment before, closing an open Voice, pace
+  and note panel, or ask you to choose between two identical versions of your own
+  narration. The file was always right.
 
 ## [1.0.0a3] — 2026-09-29
 
