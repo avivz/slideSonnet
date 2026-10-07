@@ -70,9 +70,14 @@ class Transaction:
     def append(self, *records: Record) -> None:
         append_unlocked(self.path, *records)
 
-    def rewrite(self, records: list[Record]) -> None:
-        """Compact the log to *records*, keeping the id high-water mark."""
-        write_records_unlocked(self.path, records, last_id=self.state.max_id())
+    def rewrite(self, records: list[Record], *, sends: int | None = None) -> None:
+        """Rewrite the log as *records*, keeping the id high-water mark and send count."""
+        write_records_unlocked(
+            self.path,
+            records,
+            last_id=self.state.max_id(),
+            sends=self.state.sends if sends is None else sends,
+        )
 
     def ensure_file(self) -> None:
         if not self.path.exists():
@@ -303,10 +308,14 @@ def reopen(pdf_path: Path, conv_id: str, *, author: Author = "author") -> None:
         txn.append(Record("reopen", conv_id, now(), author))
 
 
-def send(pdf_path: Path, *, author: Author = "author") -> None:
-    """Release anyone blocked in :func:`wait` (``review wait``)."""
+def send(pdf_path: Path) -> None:
+    """Release anyone blocked in :func:`wait` (``review wait``): count one more Send.
+
+    The count lives in the log's header, so Sends don't pile up as records.
+    """
     with transaction(pdf_path) as txn:
-        txn.append(Record("send", None, now(), author))
+        records = [r for r in read_records(txn.path) if r.kind != "send"]
+        txn.rewrite(records, sends=txn.state.sends + 1)
 
 
 # ---- automatic filing ------------------------------------------------------------
@@ -452,12 +461,9 @@ def _clear(txn: Transaction, current: DeckVersion) -> ClearResult:
     records: list[Record] = []
     seen: set[str] = set()
     for rec in read_records(txn.path):
-        if rec.conv in drop:
-            continue
         conv = state.conversations.get(rec.conv) if rec.conv else None
-        if conv is None:
-            records.append(rec)
-            continue
+        if conv is None or conv.id in drop:
+            continue  # cleared, or no conversation's (an older log's send records)
         records.append(_pin_slides(rec, conv, conv.id not in seen))
         seen.add(conv.id)
     txn.rewrite(records)

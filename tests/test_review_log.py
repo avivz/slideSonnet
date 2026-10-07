@@ -48,13 +48,6 @@ def test_text_line_that_looks_like_a_field_stays_text() -> None:
     assert back.text == "first line\nslides: not a field"
 
 
-def test_send_record_has_no_conversation() -> None:
-    rec = _rec("send", conv=None)
-    assert serialize_record(rec).startswith("== send - ")
-    (back,), _ = parse_log(serialize_record(rec))
-    assert back.conv is None
-
-
 def test_truncated_final_record_is_ignored_with_warning() -> None:
     good = serialize_record(_rec("open", slides=("a",), text="hi"))
     partial = serialize_record(_rec("message", text="cut off here")).rstrip("\n")[:-4]
@@ -208,11 +201,16 @@ def test_append_after_a_torn_record_keeps_the_new_one(tmp_path: Path) -> None:
     assert [r.text for r in read_records(path)][-1] == "two"
 
 
-def test_compaction_keeps_the_id_high_water_mark(tmp_path: Path) -> None:
+def test_compaction_keeps_the_id_high_water_mark_and_the_send_count(tmp_path: Path) -> None:
     path = tmp_path / "deck.review"
-    write_records(path, [], last_id=7)
-    append(path, _rec("open", conv="c2", slides=("a",), text="x"))
-    assert read_state(path).next_id() == "c8"
+    write_records(path, [], last_id=7, sends=4)
+    assert (
+        path.read_text(encoding="utf-8") == "# slidesonnet-review: 1\n# last-id: c7\n# sends: 4\n\n"
+    )
+    # an older log's ``send`` record still counts on top of the header
+    append(path, _rec("open", conv="c2", slides=("a",), text="x"), _rec("send", conv=None))
+    state = read_state(path)
+    assert (state.next_id(), state.sends) == ("c8", 5)
 
 
 class TestFlockFallback:

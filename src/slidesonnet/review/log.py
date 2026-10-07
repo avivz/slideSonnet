@@ -1,10 +1,10 @@
-"""The ``<deck>.review`` log: an append-only record of review conversations.
+"""The ``<deck>.review`` log: review conversations as a log of appended records.
 
 The editor and the command line (usually an agent) both write this file while
-the other is running, so it is never rewritten in place during normal use:
-every action is one record *appended* under an exclusive lock, and the current
-state is a replay of the log. Only Clear compacts it (:func:`write_records`),
-under the same lock.
+the other is running, so every conversation action is one record *appended*
+under an exclusive lock, and the current state is a replay of the log. Clear
+compacts it and Send bumps a counter in its header (:func:`write_records`, an
+atomic replace under the same lock).
 
 The format is readable in the style of the ``.narration`` sidecar::
 
@@ -34,7 +34,11 @@ A conversation with no slides (``c2`` above) is about the whole deck; a message'
 ``add-slides:`` / ``remove-slides:`` narrow or widen it.
 
 Compaction drops cleared conversations, so it keeps their highest id in a
-``# last-id: cN`` comment below the format header: ids are never reused.
+``# last-id: cN`` comment below the format header: ids are never reused. The
+header's ``# sends: N`` counts every Send ever (the ``review wait`` cursor), so
+it survives Clear too; a review with everything cleared is just the header.
+Older logs recorded each Send as a ``== send`` record: they still count, and the
+next rewrite folds them into the header.
 """
 
 from __future__ import annotations
@@ -61,6 +65,7 @@ FORMAT_HEADER = "# slidesonnet-review: 1\n"
 #: deck …`` with no ``open``); it replays as an ordinary deck-wide conversation.
 LEGACY_DECK = "deck"
 
+#: ``send`` is only read (older logs): Sends are now counted in the header.
 RecordKind = Literal["open", "message", "accept", "reopen", "send"]
 Author = Literal["author", "agent", "system"]
 Origin = Literal["requested", "unrequested", "author-edits"]
@@ -74,6 +79,7 @@ _HEADER_RE = re.compile(r"^== (\S+) (\S+) (\S+) (\S+)\s*$")
 _FIELD_RE = re.compile(r"^  ([a-z-]+):(?: (.*))?$")
 _TEXT_INDENT = "    "
 _LAST_ID_RE = re.compile(r"^# last-id: c(\d+)\s*$", re.MULTILINE)
+_SENDS_RE = re.compile(r"^# sends: (\d+)\s*$", re.MULTILINE)
 _ID_RE = re.compile(r"c(\d+)")
 
 
@@ -244,7 +250,7 @@ class Conversation:
 @dataclass
 class ReviewState:
     conversations: dict[str, Conversation]
-    sends: int = 0  # how many ``send`` records — the ``review wait`` cursor
+    sends: int = 0  # how many Sends ever (header count + older ``send`` records): the cursor
     retired: set[str] = field(default_factory=set)  # emptied unrequested conversations
     last_id: int = 0  # highest id ever handed out, including compacted-away ones
 
@@ -385,10 +391,11 @@ def read_records(path: Path) -> list[Record]:
 
 
 def read_state(path: Path) -> ReviewState:
-    """Replay the log at *path*, including the id high-water mark compaction kept."""
+    """Replay the log at *path*, with the id high-water mark and send count of its header."""
     text = _read_text(path)
     state = replay(_parse_logged(path, text))
     state.last_id = max((int(n) for n in _LAST_ID_RE.findall(text)), default=0)
+    state.sends += max((int(n) for n in _SENDS_RE.findall(text)), default=0)
     return state
 
 
@@ -424,9 +431,12 @@ def ensure_file(path: Path, *, lock_path: Path | None = None) -> None:
             path.write_text(FORMAT_HEADER + "\n", encoding="utf-8")
 
 
-def write_records_unlocked(path: Path, records: list[Record], *, last_id: int = 0) -> None:
-    """Replace the whole log (compaction) atomically; the caller holds the lock."""
+def write_records_unlocked(
+    path: Path, records: list[Record], *, last_id: int = 0, sends: int = 0
+) -> None:
+    """Replace the whole log atomically; the caller holds the lock."""
     mark = f"# last-id: c{last_id}\n" if last_id else ""
+    mark += f"# sends: {sends}\n" if sends else ""
     payload = FORMAT_HEADER + mark + "\n" + "".join(serialize_record(r) for r in records)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
@@ -439,8 +449,13 @@ def write_records_unlocked(path: Path, records: list[Record], *, last_id: int = 
 
 
 def write_records(
-    path: Path, records: list[Record], *, lock_path: Path | None = None, last_id: int = 0
+    path: Path,
+    records: list[Record],
+    *,
+    lock_path: Path | None = None,
+    last_id: int = 0,
+    sends: int = 0,
 ) -> None:
-    """Replace the whole log (compaction) atomically, under the lock."""
+    """Replace the whole log atomically, under the lock."""
     with locked(lock_path or default_lock_path(path)):
-        write_records_unlocked(path, records, last_id=last_id)
+        write_records_unlocked(path, records, last_id=last_id, sends=sends)

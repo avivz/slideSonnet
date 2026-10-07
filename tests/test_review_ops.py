@@ -91,20 +91,54 @@ def test_an_old_deck_conversation_can_be_accepted_and_cleared(deck: Path) -> Non
     ops.review_path(deck).write_text(
         "# slidesonnet-review: 1\n# last-id: c1\n\n"
         "== message deck 2026-10-07T17:07:03 author\n  text: Fix the highlight.\n\n"
-        "== message deck 2026-10-07T17:12:09 agent\n  text: Done: see c1.\n\n",
+        "== send - 2026-10-07T17:07:03 author\n\n"
+        "== message deck 2026-10-07T17:12:09 agent\n  text: Done: see c1.\n\n"
+        "== send - 2026-10-07T17:20:00 author\n\n",
         encoding="utf-8",
     )
     cid = ops.comment(deck, ["a"], "x")
     ops.accept(deck, cid)
     ops.clear(deck)  # rewrites the log: the old conversation now opens like any other
-    assert "== open deck " in ops.review_path(deck).read_text(encoding="utf-8")
-    assert [m.text for m in ops.load(deck).conversations["deck"].messages] == [
+    text = ops.review_path(deck).read_text(encoding="utf-8")
+    assert "== open deck " in text and "== send" not in text
+    state = ops.load(deck)
+    assert state.sends == 2  # the old send records became the count
+    assert [m.text for m in state.conversations["deck"].messages] == [
         "Fix the highlight.",
         "Done: see c1.",
     ]
     ops.accept(deck, "deck")
     ops.clear(deck)
-    assert ops.load(deck).conversations == {}
+    assert ops.review_path(deck).read_text(encoding="utf-8") == (
+        "# slidesonnet-review: 1\n# last-id: c2\n# sends: 2\n\n"
+    )
+
+
+def test_clearing_everything_leaves_only_the_header_and_waits_go_on(deck: Path) -> None:
+    ops.status(deck)
+    mine = ops.comment(deck, ["a"], "shorten", author="author")
+    ops.send(deck)
+    assert "== send" not in ops.review_path(deck).read_text(
+        encoding="utf-8"
+    )  # a count, not a record
+    since = ops.load(deck).sends
+    _edit_page(deck, 1)
+    ops.open_unrequested(deck, ["b"])  # c2, retired once c1 takes @b
+    ops.reply(deck, mine, "Done; touched @b too.", add_slides=["b"])
+    ops.note_author_edit(deck, "c")  # c3, your own edits
+    ops.accept(deck, mine)
+    ops.clear(deck)
+    assert ops.review_path(deck).read_text(encoding="utf-8") == (
+        "# slidesonnet-review: 1\n# last-id: c3\n# sends: 1\n\n"
+    )
+
+    def later() -> None:
+        time.sleep(0.2)
+        ops.send(deck)
+
+    threading.Thread(target=later).start()  # a cursor from before the clear still hears it
+    result = ops.wait(deck, since=since, timeout=5, poll=0.05)
+    assert result is not None and result.cursor == since + 1
 
 
 def test_changes_and_unfiled(deck: Path) -> None:
@@ -382,6 +416,7 @@ _WRITES: dict[str, Callable[[Path], object]] = {
     "author edit": lambda d: ops.note_author_edit(d, "c"),
     "clear": lambda d: (ops.accept(d, "c1"), ops.clear(d)),
     "mark seen": lambda d: ops.mark_seen(d),
+    "send": lambda d: ops.send(d),
 }
 
 

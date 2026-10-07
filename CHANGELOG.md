@@ -52,6 +52,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   / `--remove-slides` narrows or widens any conversation. Your old whole-deck
   notes carry over as an open conversation named `deck`. Whole-deck
   conversations never hold up an export.
+- **A finished review leaves an empty review log.** Clearing accepted
+  conversations now removes every trace of them from `<deck>.review`, and
+  pressing Send no longer adds a line each time — the log just keeps a count.
+  Once everything is accepted and cleared, the file holds only its few header
+  lines, so it stops growing in git. An agent already waiting for your Send
+  still hears it after a clear. Older logs are tidied the next time you Send or
+  clear.
 - **Starting a review conversation no longer greys out the other slides.** You
   stay where you were; the new conversation is marked "new" in the Review tab's
   list, and clicking it opens it as before.
