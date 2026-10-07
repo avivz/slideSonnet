@@ -18,6 +18,8 @@
   --accent: #5db3f0;
   --accent-deep: #2f7fc4;
   --on-accent: #0c1117;
+  /* your own messages in a review conversation (the agent's take the accent) */
+  --mine: #f2b880;
 
   /* status, with fills for chips and notices */
   --ok: #7ee08a;

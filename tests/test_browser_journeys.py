@@ -251,6 +251,7 @@ def test_generate_a_clip_and_see_it_turn_fresh(page: Page, server: Server, tmp_p
     expect(gen).to_have_attribute("data-state", "missing")
     gen.click()
     expect(gen).to_have_attribute("data-state", "fresh", timeout=15_000)
+    tid(page, "console-tab-audio").click()
     expect(tid(page, "audio-status")).to_have_text("1 of 1 clips generated")
 
 
@@ -314,7 +315,8 @@ def test_a_review_round_with_the_agent(page: Page, server: Server, tmp_path: Pat
 
     pdf = _prep(tmp_path, "@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
     page.goto(server(pdf))
-    tid(page, "console-tab-review").click()
+    # the editor opens on the Review tab
+    expect(tid(page, "console-tab-review")).to_have_attribute("aria-selected", "true")
     expect(tid(page, "review-clear")).to_be_visible()
     doc = pymupdf.open(pdf)  # the author recompiles with slide 2 changed
     doc[1].insert_text((40, 200), "a new line on the slide", fontsize=16)
@@ -329,13 +331,22 @@ def test_a_review_round_with_the_agent(page: Page, server: Server, tmp_path: Pat
     note = tid(page, "new-note")
     note.fill("Why did this change?")
     note.press("Enter")
+
+    def asked() -> list[str]:
+        return [
+            c.id
+            for c in ops.open_slide_conversations(pdf)
+            if any(m.text == "Why did this change?" for m in c.messages)
+        ]
+
+    assert _eventually(lambda: bool(asked()))
+    conv = asked()[0]
+    # starting a conversation keeps the view: it's listed, and opens on a click
+    row = tid(page, f"conv-row-{conv}")
+    expect(row).to_be_visible()
+    row.click()
     shown = page.locator(".messages .text", has_text="Why did this change?")
-    expect(shown).to_be_visible()  # the new conversation, shown
-    conv = next(
-        c.id
-        for c in ops.open_slide_conversations(pdf)
-        if any(m.text == "Why did this change?" for m in c.messages)
-    )
+    expect(shown).to_be_visible()
     ops.reply(pdf, conv, "To show the next step.", author="agent", title="The next step")
     reply = page.locator(".messages .text", has_text="To show the next step.")
     expect(reply).to_be_visible(timeout=15_000)

@@ -35,7 +35,8 @@ const editor = useEditorStore()
 const generation = useGenerationStore()
 const player = usePlayerStore()
 const review = useReviewStore()
-const consoleTab = ref<'audio' | 'review'>('audio')
+// the editor opens on the Review tab
+const consoleTab = ref<'audio' | 'review'>('review')
 const switcherOpen = ref(false)
 const voicesOpen = ref(false)
 

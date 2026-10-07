@@ -37,6 +37,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **The slide on screen stands out in the slide strip**: a thick blue ring and a
   touch larger than the rest, instead of a thin outline.
 
+- **The editor opens on the Review tab**; the Audio tab is one click away.
+- **Your own messages in a review conversation have their own color** (a warm
+  orange), so they no longer look like headings; the agent's stay blue.
+
 ### Fixed
 - **One pause between two lines shows as one pause in the Script view.** Every
   line used to be followed by an extra `⏸ 0.0` of its own, so a single pause read

@@ -399,6 +399,9 @@ function time(at: string): string {
 .messages .agent .text {
   color: var(--accent);
 }
+.messages .author .text {
+  color: var(--mine);
+}
 .rows {
   display: grid;
   border: 1px solid var(--line);
