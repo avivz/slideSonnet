@@ -10,8 +10,15 @@ Discovery walks *down* from a root directory (``--root``, the directory passed
 to ``edit``, or the cwd) looking for a ``*.pdf`` with a sibling
 ``<stem>.narration``. No VCS assumption: a course tree needn't be a repo, and a
 repo root is as often too wide (a monorepo) as too narrow. The walk is capped in
-both depth and directories visited so launching from ``$HOME`` reports a
-truncated scan instead of hanging.
+directories visited, so launching from ``$HOME`` reports a truncated scan instead
+of hanging; folders deeper than ``max_depth`` are walked last, with whatever of
+that budget is left, so it goes to the shallow folders decks live in first.
+
+Depth never cuts the scan short by itself. ``pool prune --root`` deletes the
+clips no *found* deck says, so a deck the scan skipped would lose its audio; a
+course's deep build output (a site's ``dist/``) must neither block a prune nor
+hide a deck that really lives down there. Only the folder cap truncates, and the
+result says where it stopped so a caller can refuse and explain.
 
 Pure logic — no web framework imports, so it is testable without a server.
 """
@@ -43,8 +50,14 @@ _TOKEN_CHARS = 8
 class ScanLimits:
     """Bounds on a discovery walk, so a scan can never hang the editor."""
 
+    #: Folders deeper than this below the root are walked after all shallower ones.
     max_depth: int = 6
+    #: Folders visited before the walk stops (and the result is truncated).
     max_dirs: int = 5000
+
+
+#: The limits a scan uses when none are given.
+DEFAULT_LIMITS = ScanLimits()
 
 
 def deck_token(pdf_path: Path) -> str:
@@ -128,8 +141,17 @@ class ScanResult:
     decks: list[DeckEntry] = field(default_factory=list)
     #: PDFs with no sidecar — offered as "scaffold a narration here".
     unnarrated: list[DeckEntry] = field(default_factory=list)
-    #: True when a cap stopped the walk early, so the lists may be incomplete.
-    truncated: bool = False
+    #: Folders the walk looked into.
+    visited: int = 0
+    #: The first folder the folder cap kept the walk from (None: it saw everything).
+    stopped_at: Path | None = None
+    #: How many known folders went unvisited when the cap hit (``stopped_at`` included).
+    unvisited: int = 0
+
+    @property
+    def truncated(self) -> bool:
+        """True when the folder cap stopped the walk early: the lists may be incomplete."""
+        return self.stopped_at is not None
 
 
 def _prunable(name: str) -> bool:
@@ -142,24 +164,27 @@ def discover_decks(root: Path, *, limits: ScanLimits | None = None) -> ScanResul
     A deck is a ``*.pdf`` with a sibling ``<stem>.narration`` (its plain build
     ``<stem>.plain.pdf``, when present, is the same deck); a PDF without one
     lands in :attr:`ScanResult.unnarrated`. Results are naturally sorted by
-    label. Unreadable directories are skipped rather than raising — a library
-    listing must never be the thing that fails.
+    label. Folders below ``limits.max_depth`` are walked after every shallower
+    one; only ``limits.max_dirs`` truncates the walk (see the module docstring).
+    Unreadable directories are skipped rather than raising — a library listing
+    must never be the thing that fails.
     """
-    limits = limits or ScanLimits()
+    limits = limits or DEFAULT_LIMITS
     root = Path(root).resolve()
     result = ScanResult()
     if not root.is_dir():
         return result
 
-    pending: list[tuple[Path, int]] = [(root, 0)]
-    visited = 0
+    shallow: list[tuple[Path, int]] = [(root, 0)]
+    deep: list[Path] = []  # past max_depth: walked once the shallow folders are done
     seen: set[str] = set()
-    while pending:
-        directory, depth = pending.pop()
-        if visited >= limits.max_dirs:
-            result.truncated = True
+    while shallow or deep:
+        directory, depth = shallow.pop() if shallow else (deep.pop(), limits.max_depth + 1)
+        if result.visited >= limits.max_dirs:
+            result.stopped_at = directory
+            result.unvisited = 1 + len(shallow) + len(deep)
             break
-        visited += 1
+        result.visited += 1
         try:
             children = sorted(directory.iterdir())
         except OSError as exc:  # unreadable dir: skip it, keep the scan alive
@@ -170,9 +195,9 @@ def discover_decks(root: Path, *, limits: ScanLimits | None = None) -> ScanResul
                 if _prunable(child.name):
                     continue
                 if depth + 1 > limits.max_depth:
-                    result.truncated = True
-                    continue
-                pending.append((child, depth + 1))
+                    deep.append(child)
+                else:
+                    shallow.append((child, depth + 1))
             elif child.suffix.lower() == ".pdf":
                 entry = DeckEntry.build(child, root=root)
                 if entry.token in seen:

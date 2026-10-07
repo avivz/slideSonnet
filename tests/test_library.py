@@ -84,19 +84,26 @@ def test_deck_at_the_root_itself_is_found_in_the_empty_section(tmp_path: Path) -
     assert [g for g, _ in reg.grouped()] == [""]
 
 
-@pytest.mark.parametrize(
-    "limits",
-    [ScanLimits(max_depth=2, max_dirs=1000), ScanLimits(max_depth=6, max_dirs=5)],
-    ids=["depth", "visits"],
-)
-def test_scan_caps_stop_the_walk_and_report_truncation(tmp_path: Path, limits: ScanLimits) -> None:
-    """Launched somewhere huge, the scan bails out instead of hanging."""
-    for i in range(20):
-        (tmp_path / f"dir{i}").mkdir()
-    _deck(tmp_path / "dir19" / "b" / "c" / "d", "deep")
-    result = discover_decks(tmp_path, limits=limits)
-    assert result.decks == []
+def test_a_deep_branch_is_walked_last_not_cut_off(tmp_path: Path) -> None:
+    """Past ``max_depth`` the walk carries on after the shallow folders: a site's deep
+    ``dist/`` doesn't make the scan incomplete, and a deck down there is still found
+    (``pool prune`` would delete the clips of a deck it missed)."""
+    _deck(tmp_path / "a", "shallow")
+    _deck(tmp_path / "b" / "c" / "d" / "e", "deep")
+    result = discover_decks(tmp_path, limits=ScanLimits(max_depth=2, max_dirs=1000))
+    assert [e.label for e in result.decks] == ["a/shallow", "b/c/d/e/deep"]
+    assert not result.truncated
+
+
+def test_the_folder_cap_stops_the_walk_and_says_where(tmp_path: Path) -> None:
+    """Launched somewhere huge, the scan bails out instead of hanging — having spent
+    its budget on the shallow folders first — and reports where it stopped."""
+    _deck(tmp_path / "z", "shallow")
+    (tmp_path / "a" / "1" / "2" / "3").mkdir(parents=True)
+    result = discover_decks(tmp_path, limits=ScanLimits(max_depth=1, max_dirs=4))
+    assert [e.label for e in result.decks] == ["z/shallow"]
     assert result.truncated
+    assert (result.visited, result.stopped_at) == (4, (tmp_path / "a" / "1" / "2").resolve())
 
 
 def test_scan_and_sections_are_naturally_sorted(tmp_path: Path) -> None:

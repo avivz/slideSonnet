@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
+from slidesonnet.cache import AUDIO_DIR_ENV
+from slidesonnet.cli import main
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.hashing import audio_filename
 from slidesonnet.narration.format import serialize_sidecar
@@ -22,6 +25,7 @@ from slidesonnet.pool import (
     plan_prune,
     pool_status,
 )
+from slidesonnet.server.library import ScanLimits
 
 FIXTURES = Path(__file__).parent / "fixtures"
 MARKED = FIXTURES / "marked.pdf"
@@ -195,3 +199,46 @@ def test_status_counts_by_backend_and_trash(tmp_path: Path) -> None:
     assert st.trash == (1, 1)
     assert st.exists
     assert not pool_status(tmp_path / "nope").exists
+
+
+# ---- pool prune / migrate --root: the deck scan behind them ------------------------
+
+
+def test_prune_of_a_course_with_a_deep_build_folder_runs_and_spares_deep_decks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A course's site build nests far deeper than its decks; that must not stop a
+    prune — and a deck found down there still keeps its clips."""
+    pool = tmp_path / "pool"
+    monkeypatch.setenv(AUDIO_DIR_ENV, str(pool))
+    course = tmp_path / "course"
+    _deck(course / "week01" / "intro", "intro", [HELLO])
+    deep = course / "site" / "dist" / "check" / "week" / "4" / "lab" / "assets" / "proxy"
+    _deck(deep, "copy", [ONLY_B])  # 8 folders down, past the scan's depth limit
+    used = _put(pool, audio_filename(ONLY_B, "kokoro", "k"))
+    orphan = _put(pool, audio_filename("Gone.", "kokoro", "k"))
+    result = CliRunner().invoke(main, ["pool", "prune", "--root", str(course), "--apply"])
+    assert result.exit_code == 0, result.output
+    assert used.exists() and not orphan.exists()
+
+
+@pytest.mark.parametrize("command", ["prune", "migrate"])
+def test_a_scan_stopped_by_the_folder_cap_refuses_to_act(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """Prune deletes what no found deck says and migrate drops local caches, so
+    neither may work off a partial list of decks: both refuse, naming the limit
+    and where the scan stopped."""
+    monkeypatch.setattr("slidesonnet.server.library.DEFAULT_LIMITS", ScanLimits(max_dirs=3))
+    pool = tmp_path / "pool"
+    monkeypatch.setenv(AUDIO_DIR_ENV, str(pool))
+    course = tmp_path / "course"
+    for name in ("w1", "w2", "w3"):
+        _deck(course / name, name, [HELLO])
+    local = _put(course / "w1" / ".slidesonnet" / "audio", audio_filename(HELLO, "inworld", "k"))
+    orphan = _put(pool, audio_filename("Gone.", "kokoro", "k"))
+    result = CliRunner().invoke(main, ["pool", command, "--root", str(course), "--apply"])
+    assert result.exit_code != 0
+    assert "3 folders" in result.output
+    assert str((course / "w1").resolve()) in result.output
+    assert local.exists() and orphan.exists()

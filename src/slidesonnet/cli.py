@@ -725,6 +725,28 @@ def _mb(n: int) -> str:
     return f"{n / (1024 * 1024):.1f} MB"
 
 
+def _course_decks(roots: tuple[Path, ...], verb: str) -> list[Path]:
+    """Every deck under *roots* — or a refusal when a scan was cut short.
+
+    Both callers act on what the decks *don't* use (prune deletes it, migrate
+    drops local caches), so a deck the scan never reached would lose its audio.
+    """
+    from slidesonnet.server.library import discover_decks
+
+    found: list[Path] = []
+    for root in roots:
+        scan = discover_decks(root)
+        if scan.truncated:
+            raise click.ClickException(
+                f"the scan of {root} stopped at its limit of {scan.visited} folders, "
+                f"at {scan.stopped_at} ({scan.unvisited} folder(s) not looked into); "
+                f"refusing to {verb} with an incomplete list of decks. Pass a narrower "
+                "--root (one per course part, repeatable) or name the decks directly"
+            )
+        found.extend(e.pdf_path for e in scan.decks)
+    return found
+
+
 @main.group()
 def pool() -> None:
     """Inspect, fill, or prune a shared speech-clip pool.
@@ -827,13 +849,10 @@ def pool_migrate_cmd(decks: tuple[Path, ...], roots: tuple[Path, ...], apply: bo
     from slidesonnet.clean import retire_legacy_audio
     from slidesonnet.config import load_config
     from slidesonnet.hashing import parse_audio_filename
-    from slidesonnet.server.library import discover_decks
 
     if not decks and not roots:
         raise click.UsageError("name the decks to migrate: --root <course dir> and/or DECK.pdf ...")
-    found: list[Path] = list(decks)
-    for root in roots:
-        found.extend(e.pdf_path for e in discover_decks(root).decks)
+    found = [*decks, *_course_decks(roots, "migrate")]
 
     seen_local: set[Path] = set()  # decks in one folder share a local cache
     unpooled: list[Path] = []
@@ -930,21 +949,12 @@ def pool_prune_cmd(
     from slidesonnet.pool import (
         empty_trash as run_empty_trash,
     )
-    from slidesonnet.server.library import discover_decks
 
     if not decks and not roots:
         raise click.UsageError(
             "name the decks that use the pool: --root <course dir> (repeatable) and/or DECK.pdf ..."
         )
-    found: list[Path] = list(decks)
-    for root in roots:
-        scan = discover_decks(root)
-        found.extend(e.pdf_path for e in scan.decks)
-        if scan.truncated:
-            raise click.ClickException(
-                f"the scan of {root} was cut short (too deep or too many folders); "
-                "refusing to prune with an incomplete list of decks"
-            )
+    found = [*decks, *_course_decks(roots, "prune")]
     if not found and keep != "api":
         raise click.ClickException("no decks found under the given roots; nothing to keep by")
 

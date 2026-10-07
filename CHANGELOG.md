@@ -38,6 +38,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   as deleting it in the Slide view does. It used to linger as an empty box until
   the page was reloaded (most visibly during a review). The file was already
   right; a line you've just added still waits for your words.
+- **`slidesonnet pool prune --root <course>` works on a real course again.** A
+  folder nested deep inside the course — a website build, say — no longer makes it
+  refuse; the search simply looks there last, so a deck kept down there is still
+  found and keeps its audio. It (and now `pool migrate`, which used to carry on
+  regardless) still refuses when a folder is too big to search completely, and
+  says how far it got and where it stopped.
 
 ## [1.0.0a3] — 2026-09-29
 
