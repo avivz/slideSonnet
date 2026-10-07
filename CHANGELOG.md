@@ -122,6 +122,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   one-slide button used.
 
 ### Fixed
+- **Review now notices faint changes to a slide's picture.** Pale or light-grey
+  text, a translucent highlighter or veil, and a resized arrowhead used to be too
+  faint to count, so `review status` and the editor's review left such slides out
+  (or showed only their narration change) and you never saw their before and
+  after. They now show as changed. Recompiling with nothing visibly changed still
+  shows nothing. An ongoing review may now list a few slides you'd edited this
+  way earlier.
 - **One pause between two lines shows as one pause in the Script view.** Every
   line used to be followed by an extra `⏸ 0.0` of its own, so a single pause read
   as two, and a number typed into that extra box was quietly lost. To add a pause

@@ -8,7 +8,8 @@ visible (timestamps, PDF object ids) hashes the same. LaTeX also re-lays a
 frame out by a few hundredths of a point when its neighbours change (moving a
 frame is enough), which flips anti-aliased pixels; a capture given the base's
 images therefore keeps the base hash for a page that only differs that way
-(see :func:`same_picture`).
+(see :func:`same_picture`) — but not one with faint new ink (pale text, a
+translucent highlighter, a grown arrowhead), which a pure level tolerance misses.
 """
 
 from __future__ import annotations
@@ -35,6 +36,12 @@ DIFF_DPI = 150
 #: neighbourhood. Sub-pixel re-layout stays under ~40; the smallest real edit
 #: (a period, one subscript digit) scores ~225.
 _SAME_PICTURE_TOLERANCE = 80
+
+#: Faint edits — pale text, a translucent highlighter, a grown arrowhead — stay
+#: under that tolerance, so a render must also contain no 2×2 patch of
+#: :func:`_unexplained` pixels, which this many levels separate from rasterization
+#: phase effects.
+_FAINT_TOLERANCE = 16
 
 _MARKER_PREFIX = "SSID:"
 _BUILD_MARKERS = frozenset({"SSFINAL", "SSPLAIN"})
@@ -107,13 +114,37 @@ def _nearest_miss(a: NDArray[np.int16], b: NDArray[np.int16]) -> NDArray[np.int1
     return best
 
 
+def _unexplained(a: NDArray[np.int16], b: NDArray[np.int16]) -> NDArray[np.bool_]:
+    """Pixels of *a* that no sub-pixel shift of *b* can produce.
+
+    A shifted render blends neighbouring pixels, so each of its pixels stays
+    within (per channel) the range of the other render's 3×3 neighbourhood — at
+    most overshooting by that range where a thin stem or a seam changes phase.
+    A pixel outside the range by more than the range itself plus
+    :data:`_FAINT_TOLERANCE` is new ink where the other render had none nearby.
+    """
+    h, w, _ = a.shape
+    padded = np.pad(b, ((1, 1), (1, 1), (0, 0)), mode="edge")
+    shifts = [padded[dy : dy + h, dx : dx + w] for dy in (0, 1, 2) for dx in (0, 1, 2)]
+    lo, hi = np.minimum.reduce(shifts), np.maximum.reduce(shifts)
+    excess = np.maximum(np.maximum(a - hi, lo - a), 0) - (hi - lo)
+    return np.asarray(excess.max(axis=2) > _FAINT_TOLERANCE)
+
+
+def _has_patch(mask: NDArray[np.bool_]) -> bool:
+    """True when *mask* holds a full 2×2 block (not just a one-pixel-thin line)."""
+    return bool((mask[:-1, :-1] & mask[1:, :-1] & mask[:-1, 1:] & mask[1:, 1:]).any())
+
+
 def same_picture(a: pymupdf.Pixmap, b: pymupdf.Pixmap) -> bool:
     """True when *a* and *b* differ only by sub-pixel re-layout (see module doc)."""
     pa, pb = _pixels(a), _pixels(b)
     if pa.shape != pb.shape:
         return False
     worst = max(int(_nearest_miss(pa, pb).max()), int(_nearest_miss(pb, pa).max()))
-    return worst <= _SAME_PICTURE_TOLERANCE
+    if worst > _SAME_PICTURE_TOLERANCE:
+        return False
+    return not (_has_patch(_unexplained(pa, pb)) or _has_patch(_unexplained(pb, pa)))
 
 
 def _canonical_hash(pix: pymupdf.Pixmap, reference: Path | None) -> str:

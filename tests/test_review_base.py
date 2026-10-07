@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pymupdf
 import pytest
@@ -143,3 +144,57 @@ def test_a_one_character_edit_is_still_a_change(tmp_path: Path) -> None:
     _math_deck(pdf, extra=".")
     refs = base_mod.reference_images(pdf)
     assert capture(pdf, reference=refs).slides["m"].image_hash != base.slides["m"].image_hash
+
+
+_PALE = (0.72, 0.72, 0.78)  # a light-grey diagram arrow, as on many slides
+
+
+def _diagram_deck(
+    path: Path, *, dy: float = 0.0, head: float = 0.6, highlight: bool = False
+) -> Path:
+    """One slide: a line of text over a pale arrow whose head is scaled by *head*.
+
+    *dy* nudges everything down (LaTeX re-layout jitter); *highlight* lays a thin
+    translucent highlighter swash over the text.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=400, height=300)
+    page.insert_text((40, 100 + dy), "The model predicts the next token", fontsize=14)
+    y = 160 + dy
+    page.draw_line((60, y), (200, y), color=_PALE, width=1.2)
+    length, half = 10 * head, 5 * head
+    page.draw_polyline(
+        [(200 + length, y), (200, y - half), (200, y + half)],
+        color=None,
+        fill=_PALE,
+        closePath=True,
+    )
+    if highlight:
+        swash = ((38, 96 + dy), (180, 96 + dy))
+        page.draw_line(*swash, color=(1, 0.9, 0.2), width=4, stroke_opacity=0.15)
+    page.insert_text((20, 20), "SSID:d SSPLAIN", fontsize=4, render_mode=3)
+    doc.save(path)
+    doc.close()
+    return path
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [{"highlight": True}, {"head": 1.0}],
+    ids=["translucent-highlighter", "bigger-arrowhead"],
+)
+def test_a_faint_visual_edit_is_a_change(tmp_path: Path, edit: dict[str, Any]) -> None:
+    pdf = _diagram_deck(tmp_path / "deck.pdf")
+    base = base_mod.snapshot(pdf)
+    _diagram_deck(pdf, **edit)
+    refs = base_mod.reference_images(pdf)
+    assert capture(pdf, reference=refs).slides["d"].image_hash != base.slides["d"].image_hash
+
+
+@pytest.mark.parametrize("dy", [0.052, 0.13, 0.25])
+def test_relayout_jitter_of_faint_content_keeps_the_base_image(tmp_path: Path, dy: float) -> None:
+    pdf = _diagram_deck(tmp_path / "deck.pdf", highlight=True)
+    base = base_mod.snapshot(pdf)
+    _diagram_deck(pdf, dy=dy, highlight=True)
+    refs = base_mod.reference_images(pdf)
+    assert capture(pdf, reference=refs).slides["d"].image_hash == base.slides["d"].image_hash
