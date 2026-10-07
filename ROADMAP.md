@@ -1,17 +1,16 @@
 # Roadmap
 
-Current version: **1.0.0a3 — published to PyPI 2026-09-29.** It ships the Vue
-editor (NiceGUI is gone), the always-on agent review loop, the script view, slide-by-slide
-Play all, the shared clip pool, Inworld delivery controls and the quick export
-(`--fast`). `main` has nothing unreleased beyond it yet.
+Current version: **1.0.0a3 — published to PyPI 2026-09-29.** `main` is far ahead of it:
+the single Play button, click-to-jump, review log scrubbing and whole-deck conversations,
+one `review wait` for a whole course, `review summary`, library navigation above the
+start folder, separate video/subtitle folders, a much faster re-export, and
+discoverable shortcuts — all in CHANGELOG `[Unreleased]`. Now #2 ships them.
 
-*Last PM pass 2026-09-29 (second pass, same day).* The code + UX reviews
-landed: two independent reviews (ours: 6 code + 2 UX agents; Astra's) merged into
-**`dev/REVIEW-TODO.md`** — the detailed, tiered checklist (importance × ease).
-Now #1 and Next #7–#8 below point at its tiers; tick items off there.
+*Last PM pass 2026-10-07 (reconcile after a day of parallel agents).* Every original Now
+item and Next #1–#4 landed; the review's Tier 1–3 are closed (`dev/REVIEW-TODO.md`).
 
 **Demo status:** basel-problem HQ Inworld render shipped (YouTube). Showcase is
-still Kokoro-only (Next #5). The demo PDFs are final (`\ssfinal`) builds as of 1.0.0a3.
+still Kokoro-only (Next #2). The demo PDFs are final (`\ssfinal`) builds as of 1.0.0a3.
 
 Lane tags: **[agent]** = an agent can do it end-to-end · **[agent→human]** =
 agent does the work, human approves/verifies · **[human]** = needs the human
@@ -19,124 +18,24 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Now — this week
 
-1. [ ] **Fix the review's Tier 1–3 findings** (`dev/REVIEW-TODO.md`).
-   **Status 2026-09-29:** batches (a)–(f) below are **done and on `main`** (each with
-   regression tests; CHANGELOG "September 2026 review"), plus the Qwen3/golden
-   cache-key batch and the pipeline, server and docs cleanups from Next #8. The editor UX quick wins are
-   merged too, and so are the follow-up batches (Kokoro voices in every language,
-   `review --narration`, `-q`/`-v` anywhere, blank lines skipped in export, duplicate
-   `@id` agreement, orphan-action guards, the empty-new-line conflict). Heavy suites
-   green on 9579d6f (36 passed); on c1ec424 one test failed once
-   (not captured); the rerun on 41dd234 (Inworld merged) was **all green** (37 passed, 1
-   skipped: the Qwen3 real-prompt test), so it was intermittent — likely a browser-tier
-   flake under CPU load (cf. `test_keyboard_deck_switching`). Rerun once more before a3. Still open in Tier 3: paid work
-   pinned to approved content, frontend dead code and missing frontend tests. Original scope:
-   Two
-   reviews agree the new editor and pipeline have real data-loss and paid-audio
-   holes; a3 must not ship them. Work in parallel batches, each **repro test
-   first** at the lowest level that sees it (pytest / Vitest; browser tier only
-   for focus, timing, media):
-   (a) **audio loss & paid safety** — one clip GC over sibling decks (per-deck
-   `clean` and the on-save sweep delete other decks' clips, incl. paid),
-   `--narration` override in sweep + review, `clean` dry-run/trash like
-   `pool prune`, pool==legacy-dir `rmtree`, whole-deck `force` generate skipping
-   paid approval, `make clean` deleting committed Inworld audio;
-   (b) **narration round-trip** — ` #` truncates spoken text, newlines inject
-   pauses/voices/blocks, nan/inf/negative numbers;
-   (c) **frontend save soundness** — conflict map, load epochs, `flush()→bool`,
-   route guards, Script-view focus + save indicator, review note/picked leaks;
-   (d) **export correctness** — ~20 ms/slide A/V drift, atomic MP4 + render cache,
-   `concat_list.txt` in the output dir / apostrophe paths, `export` succeeding on
-   broken narration;
-   (e) **server robustness** — review-log transactions, queue-worker death, job
-   status/dedupe races, per-deck `.env`, media-route Host check, bare 500s;
-   (f) **first run** — README install (`--prerelease`), quick start with
-   `--draft`, v1 `init` header, pronunciation-in-toml docs, build skill's
-   Inworld guard, release verify step.
-   Also carried from the merge: the intermittent browser-journey flake ("not
-   stable" at `seg-up-2`) and the unreproduced "Clear accepted hangs during
-   playback" report. *Acceptance:* every Tier 1–2 box ticked with a regression
-   test; Tier 3 ticked or consciously deferred in the file. *Appetite:* three to
-   four days across parallel agents. **[agent]**
-2. [ ] **Inworld delivery controls — decide the open questions, then spot-check.**
-   **Built 2026-09-29** (CHANGELOG "Added"; `docs/authoring.md` "Delivery on Inworld"):
-   inline pronunciation fixes `[Mengoli](/menˈɡoːli/)` / `[Dijkstra](DYKE-struh)` (captions
-   and word marking show the display word; Inworld gets the spoken form; Kokoro/Qwen3 a
-   respelling or the word, never IPA); `direct:` notes sent to `inworld-tts-2` only with
-   `[tts.inworld] send_direction = true` (default off); stray `[`/`]` sent to tts-2 as
-   `(`/`)` plus a `check` note; new `[tts.inworld]` keys `temperature`, `delivery_mode`,
-   `language`, `text_normalization`, unset by default and added to the cache key only
-   when set. AICODE verified: 39 decks, 2191 Inworld and 2191 Kokoro clip names unchanged.
-   **Decided 2026-09-29 (to build):**
-   (1) `/…/` values in the pronunciation dictionary go to Inworld only; Kokoro/Qwen3 get the
-   plain word (as inline fixes do). Respellings still go to every engine. Inworld clip names
-   unchanged; Kokoro clips with dictionary IPA re-key (free). Fixes the basel Kokoro demo,
-   whose nine IPA names reach Kokoro verbatim today.
-   (2) `send_direction` defaults to **on** everywhere (`= false` opts out). Re-keys only lines
-   with a `direct:` note. AICODE's only note (week01 `01-10_welcome_to_ai_code`) was removed
-   by the maintainer, so no AICODE clip re-keys.
-   (3) The editor warns only on the likely typo `[word] (form)` (a space between `]` and
-   `(`); plain brackets like "[0, 1]" get no note in the editor or in `check`.
-   (4) Parked: nothing phoneme-level goes to Kokoro for now. A both-forms fix
-   `[Mengoli](/menˈɡoːli/ | men-GO-lee)` (IPA to Inworld, respelling to Kokoro) is the
-   cheap route if it is wanted later (Later backlog).
-   **Paid spot-checks (human-triggered, a few cents; never in tests):**
-   (i) `The work of Pietro [Mengoli](/menˈɡoːli/) began it.` on the default model and on
-   `inworld-tts-1.5-max`; (ii) `[Leonhard Euler](/ˈleɪɒnhɑːrt/ /ˈɔɪlər/) summed it.`;
-   (iii) `Drive at 50 km/h, and/or take 3/4 of it.`; (iv) `The interval [0, 1] is closed.`;
-   (v) `This is the whole trick.` with `direct: slowly, in a low voice`, with and without
-   `send_direction`; (vi) `delivery_mode` stable vs creative, two takes each; (vii)
-   optional `temperature = 0.6` vs unset on 1.5-max; (viii) `[Dijkstra](DYKE-struh)` vs
-   `[Dijkstra](dyke-struh)` on tts-2 (CAPS read as emphasis?). **[human]**
-## Next — this month
-
-1. [ ] **Bug: `pool prune --root <course>` refuses to run on a real course.**
-   `discover_decks` (`server/library.py`, `max_depth=6`, `max_dirs=5000`, tuned
-   for a GUI launch from `$HOME`) marks the *whole* scan truncated when any branch
-   is too deep — in AICODE, the site's `site/dist/…` — so `pool prune` aborts
-   (`cli.py:681`), while `pool migrate` has no such guard and silently works off a
-   partial list. Workaround in use: name all decks explicitly (`just prune-pool`).
-   *Acceptance examples:* (a) a course with decks at depth 2 and an unrelated
-   8-deep build folder prunes normally; (b) a scan that really hit `max_dirs`
-   still refuses, naming the limit and where it hit; (c) `pool migrate` refuses on
-   a truncated scan the same way. *Repro test first:* `tests/test_pool*.py` with a
-   tmp tree. *Appetite:* two hours. **[agent]**
-2. [ ] **Bug: a renamed deck's render scratch is never cleaned.** `render_dir`
-   is `<cache>/render/<pdf stem>/`, and `clean` removes only the current stem's
-   folder, so a renamed deck strands its old scratch (298 MB found in AICODE
-   2026-09-16). *Acceptance:* (a) `clean deck.pdf` also removes every
-   `render/*/` whose name matches no `*.pdf` beside the deck, and says so;
-   (b) `pool status deck.pdf` mentions stray render folders. *Repro test first:*
-   `tests/test_clean.py`. *Appetite:* an hour. **[agent]**
-3. [ ] **Choose where the video and the subtitles go, separately.** *Story:* As
-   a course author rendering in git worktrees, I want the `.mp4` to land in one
-   fixed place and the `.srt`/`.vtt` beside the deck (they are committed and
-   translated), so removing a worktree never loses a render. *Acceptance
-   examples:* (a) `[video] output_dir` (absolute, `~`, or toml-relative, like
-   `[cache] audio_dir`) / `--output-dir` makes `export` with no `-o` write
-   `<output_dir>/<stem>.mp4`; `-o` still wins; (b) `[video] subtitles_dir` /
-   `--subtitles-dir`; once `output_dir` is set, subtitles default to beside the
-   deck; with neither set nothing changes; (c) `pool status` (or `export --where`)
-   prints the resolved paths without rendering. *Appetite:* half a day. **[agent]**
-4. [ ] **Faster full export (follow-up to `--fast`).** The quick export shipped
-   (2026-09-29; basel warm-cache: full ~115 s, `--fast` ~15 s first run, ~2 s repeat). Its
-   profile found speed-ups that keep the full export's output **byte-identical**: (1) encode
-   the AAC in parallel with the video and copy it in (~12 s); (2) keep the assembled audio
-   track and page images between exports (~8 s); (3) cache each slide's encoded clip keyed on
-   image hash + frame count + encoder settings, so a re-export re-encodes only changed
-   slides (~90 s → seconds); (4) page lengths from WAV headers. Also: stills are rasterized
-   at 150 dpi and upscaled to 1080p — a higher dpi would sharpen text; and `--fast` needs
-   ffmpeg ≥ 5.1 (`-fps_mode vfr`) — add a `doctor` note. *Acceptance:* full-export
-   stream hashes unchanged before/after; warm re-export after a one-slide edit under 15 s.
-   *Appetite:* a day. **[agent]**
-5. [ ] **Showcase HQ render + refresh the release assets and YouTube.** Showcase
-   is Kokoro-only; basel is on YouTube but the `v0.0.0` release MP4s are still the
-   March Kokoro cuts. Human triggers the paid showcase render; agent commits the
-   paid audio, uploads with `gh release upload v0.0.0 … --clobber`, preps YouTube
-   titles/descriptions/chapters from the sidecars, refreshes README links.
-   *Depends on:* Now #2 (showcase will hit the same IPA-in-captions trap) and the
-   final-build recompile in Now #3. **[human→agent]**
-6. [ ] **Docs, README and skills after the UI change.** The editor, review loop,
+1. [x] **Bug: `review status` misses thin or translucent visual changes** (inbox 2026-10-07,
+   AICODE 02-20: highlighter veils on `@loop-done`, arrowhead scale on `@ntp-*`). Page-image
+   threshold too coarse; must stay quiet for unchanged decks with existing bases.
+   *Repro test:* a synthetic page pair (thin translucent stroke; scaled arrowhead) in the
+   review base tests. **Done 2026-10-07 (8f963a7):** a second, faint-ink rule (no 2×2 patch
+   of pixels outside the neighbour range by >16 levels); jitter scores ≤4 across 223 shifted
+   pages, faintest real edit 35. Found 16 genuinely edited AICODE slides in 6 decks that
+   were reported unchanged — they now show in those reviews. **[agent]**
+2. [ ] **Release 1.0.0a4.** Why now: `main` carries a review-log format change (Sends move to
+   a header counter; old code can't read new logs) and the AICODE sessions already run it
+   from the checkout — a release makes the installed tool match. *Acceptance:* heavy suites
+   green (`make test`, browser tier incl. the new shortcut and click-to-jump journeys;
+   `test_keyboard_deck_switching` is a known flake — rerun once), version bump in
+   `src/slidesonnet/__init__.py`, CHANGELOG `[Unreleased]` consolidated into `[1.0.0a4]` with
+   a **Breaking** list (review log header; `review wait --since` takes a token in multi-deck
+   mode; "Hear this slide" / "Watch as video" removed; `-o` optional), tag pushed, PyPI +
+   GitHub Release verified. *Appetite:* half a day. **[agent→human]** (the human pushes the tag)
+3. [ ] **Docs, README and skills after the UI change.** The editor, review loop,
    plain/final builds and pool all changed how the product is used. *Acceptance:*
    (a) README screenshots of the new editor (script view, Review tab) replace any
    old ones, and the editor section matches the Vue UI; (b) `docs/authoring.md`,
@@ -144,82 +43,90 @@ agent does the work, human approves/verifies · **[human]** = needs the human
    mention `\ssfinal`; (c) the committed skills (`beamer-writer`, `build`, `pm`,
    `ux-review`) know the review CLI, plain vs final builds and `--draft`, and
    `beamer-writer` emits a valid v2 preamble (checked against the demo sidecars);
-   (d) `docs/frontend-parity.md`/`frontend-migration.md` are marked historical.
+   (d) `docs/frontend-parity.md`/`frontend-migration.md` are marked historical;
+   (e) since 2026-10-07 also: one Play button + click-to-jump, Space/`?` shortcuts,
+   whole-deck conversations, `review wait --root`, `review summary`, `export --where` /
+   `[video] output_dir`. Before a4 (Now #2) so the release's README is true.
    *Appetite:* a day. **[agent]**
-7. [ ] **Review Tier 4 — structural refactors** (`dev/REVIEW-TODO.md`):
+4. [ ] **Watch for "Clear accepted" hanging during playback** (`dev/KNOWN_ISSUES.md`,
+   unreproduced in ~40 min on Kokoro). Likely needs Inworld (a paid-generation confirm
+   queued ahead of the Clear confirm) or a stalled save request. *First action:* a Vitest
+   repro in `frontend/tests/review.test.ts` with a confirm already queued and with a save
+   that never answers; if neither hangs, park it until it recurs (notes in the entry).
+   *Appetite:* two hours. **[agent]**
+
+## Next — this month
+
+1. [ ] **Small follow-ups from today's merges** (each a one-liner to a small PR, **[agent]**):
+   (a) a save that fails with a non-conflict error leaves a skipped server update un-fetched
+   until the next event (`stores/editor.ts` `refresh()`; Vitest in `editorStore.test.ts`);
+   (b) a week folder holding a single deck is listed in the untitled top group, without its
+   week (`stores/library.ts` grouping; Vitest in `LibraryView.test.ts`); (c) the deck scan
+   still skips `cache`, `node_modules`, `venv` and dot-folders by name, and unreadable folders
+   silently — `pool prune` could miss a deck there: report skipped/unreadable folders in
+   `pool prune`'s refusal check (`tests/test_pool.py`).
+2. [ ] **Showcase HQ render + refresh the release assets and YouTube.** Showcase
+   is Kokoro-only; basel is on YouTube but the `v0.0.0` release MP4s are still the
+   March Kokoro cuts. Human triggers the paid showcase render; agent commits the
+   paid audio, uploads with `gh release upload v0.0.0 … --clobber`, preps YouTube
+   titles/descriptions/chapters from the sidecars, refreshes README links.
+   Unblocked 2026-10-07: the Inworld delivery spot-checks are done and the demo PDFs
+   are final builds. **[human→agent]**
+3. [ ] **Review Tier 4 — structural refactors** (`dev/REVIEW-TODO.md`):
    load-once `DeckContext` passed into `api` (root of the paid/positional-target
    bugs), a single generation path through the per-(deck, engine) queue,
    `VoicePlan` + one `effective_engine()` (editor defaults to Inworld, CLI to
    Kokoro), module layering fixes, splitting `cli.py`/`routes.py`/`EditorView.vue`,
-   a frontend jobs store, typed job results, Play all that starts at once, and
-   plain-language progress. *Acceptance:* behaviour unchanged (existing suites
+   a frontend jobs store, typed job results, and plain-language progress (Play all is now slide by slide; its "starts at once"
+   item is moot). *Acceptance:* behaviour unchanged (existing suites
    green), import graph has no cycles, the paid-approval tests from Now #1 still
-   pass against the new path. *Appetite:* a week, after Now #1. **[agent]**
-8. [ ] **Review Tier 5 — cleanup sweep** *(dead code, test trims, docs/rules drift
+   pass against the new path (Tier 1–3 regression tests). *Appetite:* a week. **[agent]**
+4. [ ] **Review Tier 5 — cleanup sweep** *(dead code, test trims, docs/rules drift
    and CI hygiene done 2026-09-29; left: Ruff rules, Prettier, pre-commit hooks)* (`dev/REVIEW-TODO.md`): ~450 lines of
    dead source + ~45 tests with it, ~100 more tests trimmed/parametrized, a
    golden cache-key table (the one test that guards every paid clip), NiceGUI
    remnants, stale rules/CLAUDE.md, pyproject/CI hygiene, stricter Ruff rules
-   (`I`, `B`, `UP`) and Prettier for the frontend, both enforced in CI, plus fast pre-commit hooks. Folds into Next #6's
+   (`I`, `B`, `UP`) and Prettier for the frontend, both enforced in CI, plus fast pre-commit hooks. Folds into Now #3's
    docs pass. *Acceptance:* unit tier count and time drop; coverage stays ≥ 94%;
    `make lint typecheck test-unit test-frontend` green. *Appetite:* a day.
    **[agent]**
-9. [ ] **A zero "before" pause looks like a double pause** (inbox 2026-09-29, AICODE
-   02-20). The Script view shows a line's trailing `‖ 0.3`, then the next line's leading
-   `‖ 0.0` on its own row; the sidecar has one `pause: 0.3`, so it reads as a bug.
-   *Story:* As an author, I want the gap between two lines to look like one gap, so I
-   only see a double pause when there really is one. *Acceptance examples:* (a) lines
-   separated by a single `pause: 0.3` show one pause control; the zero leading pause is
-   hidden until hover (or merged into one gap control — pick while building); (b) a real
-   double pause (two `pause:` lines in a row, e.g. AICODE 03-60 `@brain-artificial`) still
-   shows both; (c) `slidesonnet check` warns on two consecutive `pause:` lines, naming the
-   slide id and line. *Tests:* Vitest on the script-view component; a parser/check test
-   in `tests/test_narration_format.py`. *Appetite:* half a day. **[agent]**
+5. [ ] **Pause edits re-encode later slides on export.** A pause change shifts later slides'
+   frame boundaries by ±1 frame (cumulative rounding), so a 0.4 s edit re-encoded 11 of 22
+   basel clips (68–82 s vs ~10 s). *Story:* As an author tweaking a pause, I want a re-export
+   to redo only the slides around it. *Open question before build:* can frame boundaries be
+   made per-slide without changing the full export's bytes (the byte-identical guarantee) —
+   needs examples before build. *Appetite:* half a day to investigate. **[agent]**
 
 ## Later — before 1.0 final
 
-1. **Review: the deck-wide conversation becomes an ordinary conversation** (inbox
-   2026-09-29; agreed). Today one permanent `deck` conversation (`review/log.py` `DECK`)
-   never closes, can't be cleared, and has its own field in the Review tab. *Story:* As
-   an author, I want deck-wide notes to be conversations like any other, so I can have
-   several, accept them and clear them. *Acceptance examples:* (a) `review comment
-   deck.pdf "Tighten every intro"` with no slides opens a new deck-wide conversation
-   (the "needs at least one slide" error in `ops.comment` goes); (b) in the Review tab,
-   "New conversation" pre-fills the current slide as a chip; removing every chip makes it
-   deck-wide, and there is no separate deck field; (c) the agent narrows one with
-   `review reply … --add-slides @x` (and maybe `--remove-slides`); (d) an existing log
-   with the old `deck` conversation (AICODE, demos) loads it as an open, slide-less
-   conversation that can be accepted and cleared. *Open question before build:* where
-   standing deck-wide instructions ("always British spelling") live — an unaccepted
-   deck-wide conversation, or a file the agent reads. *Appetite:* a day. **[agent]**
-2. **Review loop follow-ups** (spec `dev/DESIGN-review.md`): highlight the
+1. **Review loop follow-ups** (spec `dev/DESIGN-review.md`): highlight the
    pixels that changed in before/after; play the old narration next to its word
    diff (the base clip is already kept); quote selected narration text into a
    note; an optional Claude Code hook running `slidesonnet review status` after a
    LaTeX compile; plain-build support for themes beyond metropolis. *(Comment on
    several slides shipped — Ctrl-click in the filmstrip.)*
-3. **Line-as-unit editing** (inbox 2026-06): insert a line between lines, and move
+2. **Line-as-unit editing** (inbox 2026-06): insert a line between lines, and move
    a line together with the pause before it (new lines default to a 0.3 s leading
    pause). Re-check against the script view and Slide view before designing —
    the original note described the NiceGUI card editor.
-4. **A trailing pause becomes the End silence field** (inbox 2026-08-23): adding
+3. **A trailing pause becomes the End silence field** (inbox 2026-08-23): adding
    a pause after the last line makes it the block's end silence, so the added
    pause visibly disappears in the card editor. Re-check in the Vue Slide view
    (a pause is now a thin rule) before deciding whether it's still a problem.
-5. **Find a slide by its text** — search the PDF text layer (the review base
+4. **Find a slide by its text** — search the PDF text layer (the review base
    already extracts it) from Ctrl+K.
-6. **Cache inventory** — count + size of cached clips before clearing, and the
+5. **Cache inventory** — count + size of cached clips before clearing, and the
    before→after delta after; pairs with `clean --dry-run`. Now that clips live in
    a pool, `pool status` is the likely home.
-7. **Config audit** — inventory every `slidesonnet.toml` key, drop the vestigial
+6. **Config audit** — inventory every `slidesonnet.toml` key, drop the vestigial
    ones (`[tts] backend` is now only the editor's starting engine).
-8. **Narration schema validation** — EBNF of the sidecar in docs, `narration
+7. **Narration schema validation** — EBNF of the sidecar in docs, `narration
    export --json` + JSON Schema. Don't YAML-ify the format.
-9. **Multi-take TTS** — re-roll and compare takes; needs a take index in the cache
+8. **Multi-take TTS** — re-roll and compare takes; needs a take index in the cache
     key or a side `takes/` store.
-10. **`check --fix`**, **`clean --dry-run`**, **`init` scaffold with PDF-outline
+9. **`check --fix`**, **`init` scaffold with PDF-outline
     titles**, an **export dialog** with timing/subtitle options.
-11. **Per-segment voice switching mid-utterance.**
+10. **Per-segment voice switching mid-utterance.**
 
 ## Later — backlog
 
@@ -243,6 +150,24 @@ agent does the work, human approves/verifies · **[human]** = needs the human
 
 ## Done (v1 rewrite)
 
+- [x] **2026-10-07 agent day** (all on `main`, CHANGELOG `[Unreleased]`):
+  Script-view cleared line goes away (56245dc); one pause shows as one, `check` warns on
+  double pauses (fc67901, 476241d); review focus no longer locks on a new conversation, any
+  other slide leaves it, the shown slide stands out (603393a, f3dd687); Review tab default
+  and your messages in their own color (840c73f); a snapshot crossing your own save no
+  longer rolls the slide back (d672ccc) and the filmstrip test fixed (2baad7f); `pool prune
+  --root` works on a real course (73ad2c3); stray render folders cleaned (0077315);
+  separate video/subtitle folders + `export --where` (8da091f); library moves above the
+  start folder (b93dc7c); one `review wait` for a whole course (7afee79); whole-deck notes
+  are ordinary conversations and clearing scrubs the log (579742d, 8279e43); one Play
+  button (ea7095d); re-export encodes only changed slides, byte-identical (dbd6f5f); click
+  a line while playing to jump there (43ccf41); `review summary` reads only the log
+  (38c7600); tooltips with keys, Space/`?` shortcuts (e393d78).
+- [x] **Review Tier 1–3 closed; heavy suites rerun** (2026-10-07; was Now #1). 36 passed,
+  2 failed → both fixed (d672ccc, 2baad7f). "Clear accepted hangs" unreproduced → Now #4.
+- [x] **Inworld delivery controls spot-checked** (2026-10-07; was Now #2). (i)–(v) fine;
+  `delivery_mode` and temperature 0.6 not worth defaults; a capitalized respelling
+  (`DYKE-struh`) is read as letters — decided: do nothing. AICODE's `nice GOO-ee` left.
 - [x] **Published 1.0.0a3** (2026-09-29; tag `v1.0.0a3` at `abafafe`; PyPI, TestPyPI and
   GitHub Release). Heavy suites green (38 passed), demo PDFs recompiled as final builds,
   consolidated release notes with a Breaking list. The first publish run failed at the
