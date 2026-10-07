@@ -254,7 +254,9 @@ slidesonnet sty    [-o PATH]                       write the LaTeX macro
 slidesonnet init   deck.pdf [--merge|--force]      scaffold a blank sidecar
 slidesonnet check  deck.pdf                         reconcile ids (exit≠0 on errors)
 slidesonnet tts    deck.pdf [--engine ...] [--id ID ...] [--yes]   synthesize into the cache
-slidesonnet export deck.pdf -o OUT.mp4
+slidesonnet export deck.pdf [-o OUT.mp4]      # default: deck.mp4 beside the deck
+        [--output-dir DIR] [--subtitles-dir DIR]   # or [video] output_dir / subtitles_dir
+        [--where]                      # print where the files would go; render nothing
         [--draft]                      # not final yet: writes OUT.draft.mp4
         [--fast]                       # quick look: 720p, cuts; writes OUT.fast.mp4
         [--engine kokoro]              [--silent]

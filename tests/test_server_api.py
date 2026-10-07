@@ -574,9 +574,11 @@ def test_export_explains_blockers_and_runs_a_draft(
     (tmp_path / "d" / "d.narration").write_text(simple_narration("@intro\nHi.\n"), "utf-8")
     seen: dict[str, Any] = {}
 
-    def fake_export(pdf_path: Path, output: Path, **kw: Any) -> api_mod.ExportResult:
-        seen.update(kw)
-        return api_mod.ExportResult(video=output.with_suffix(".draft.mp4"), duration=3.0)
+    video = tmp_path / "videos" / "d.draft.mp4"
+
+    def fake_export(pdf_path: Path, output: Path | None, **kw: Any) -> api_mod.ExportResult:
+        seen.update(kw, output=output)
+        return api_mod.ExportResult(video=video, duration=3.0)
 
     monkeypatch.setattr("slidesonnet.api.export", fake_export)
     monkeypatch.setattr("slidesonnet.server.routes._uncached", lambda *a, **k: set())
@@ -591,7 +593,9 @@ def test_export_explains_blockers_and_runs_a_draft(
         draft = c.post(f"/api/v1/decks/{token}/jobs", json={"kind": "export", "draft": True})
         job = _wait(c, draft.json()["id"])
     assert job["status"] == "succeeded"
-    assert job["result"] == {"video": "d.draft.mp4", "duration": 3.0, "draft": True, "fast": False}
+    # where the video goes is the api's call, as for the CLI; the editor shows the full path
+    assert job["result"] == {"video": str(video), "duration": 3.0, "draft": True, "fast": False}
+    assert seen["output"] is None
     assert seen["draft"] is True and seen["keep_scratch"] is True and seen["fast"] is False
 
 
@@ -602,9 +606,9 @@ def test_an_export_with_another_engine_is_not_merged_into_the_running_one(
 
     gate = threading.Event()
 
-    def slow_export(pdf_path: Path, output: Path, **kw: Any) -> api_mod.ExportResult:
+    def slow_export(pdf_path: Path, output: Path | None, **kw: Any) -> api_mod.ExportResult:
         gate.wait(5)
-        return api_mod.ExportResult(video=output, duration=1.0)
+        return api_mod.ExportResult(video=pdf_path.with_suffix(".mp4"), duration=1.0)
 
     monkeypatch.setattr("slidesonnet.api.export", slow_export)
     monkeypatch.setattr("slidesonnet.server.routes._uncached", lambda *a, **k: set())

@@ -449,7 +449,29 @@ def tts(
 @main.command()
 @_PDF_ARG
 @click.option(
-    "-o", "--output", required=True, type=click.Path(path_type=Path), help="Output video (.mp4)"
+    "-o",
+    "--output",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output video (.mp4); wins over --output-dir. Default: <deck>.mp4 (see below)",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output folder for the video when there is no -o (overrides [video] output_dir; "
+    "default: beside the deck). Subtitles then stay beside the deck.",
+)
+@click.option(
+    "--subtitles-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Folder for the subtitle files (overrides [video] subtitles_dir)",
+)
+@click.option(
+    "--where",
+    is_flag=True,
+    help="Print where the video and subtitles would go, and stop (nothing is rendered)",
 )
 @NARRATION_OPT
 @_ENGINE_OPT
@@ -461,7 +483,7 @@ def tts(
     type=click.Choice(["srt", "vtt", "both", "none"]),
     default="srt",
     show_default=True,
-    help="Subtitle files beside the video",
+    help="Subtitle files to write",
 )
 @click.option(
     "--sub-granularity",
@@ -500,7 +522,10 @@ def tts(
 def export(
     ctx: click.Context,
     pdf: Path,
-    output: Path,
+    output: Path | None,
+    output_dir: Path | None,
+    subtitles_dir: Path | None,
+    where: bool,
     narration: Path | None,
     engine: str | None,
     silent: bool,
@@ -519,22 +544,44 @@ def export(
     narration yet, and a plain build; --draft exports it anyway as
     <name>.draft.mp4. With a paid engine (Inworld), asks before generating new
     clips; --yes skips the question.
-    """
-    from slidesonnet.api import export as run_export
-    from slidesonnet.api import export_phases
 
-    if output.suffix.lower() != ".mp4":
+    \b
+    Where the files go (--where prints it without rendering):
+      video      -o, else <deck>.mp4 in --output-dir, [video] output_dir,
+                 or beside the deck
+      subtitles  --subtitles-dir, [video] subtitles_dir, else beside the
+                 video -- or beside the deck when the video went to an
+                 output folder
+    """
+    from slidesonnet import api
+
+    if output is not None and output.suffix.lower() != ".mp4":
         raise click.UsageError(
             f"{output.name}: only MP4 video can be exported — name the output with .mp4 "
             f"(e.g. -o {output.with_suffix('.mp4').name})"
         )
+    if where:
+        with _cli_errors():
+            paths = api.export_paths(
+                pdf,
+                output,
+                output_dir=output_dir,
+                subtitles_dir=subtitles_dir,
+                draft=draft,
+                fast=fast,
+                subtitles=subtitles,  # type: ignore[arg-type]
+            )
+        _echo_export_paths(paths.video, paths.subtitles)
+        return
     _check_timing(timing, wpm)
     _attach_deck_logging(ctx, pdf)
     with _cli_errors():
-        progress = _run_progress(export_phases(silent=silent, timing=timing, wpm=wpm))
-        result = run_export(
+        progress = _run_progress(api.export_phases(silent=silent, timing=timing, wpm=wpm))
+        result = api.export(
             pdf,
             output,
+            output_dir=output_dir,
+            subtitles_dir=subtitles_dir,
             sidecar_path=narration,
             engine=engine,  # type: ignore[arg-type]
             silent=silent,
@@ -552,6 +599,14 @@ def export(
     kind = "silent " if result.silent else ""
     extras = f" + {', '.join(p.name for p in result.subtitles)}" if result.subtitles else ""
     click.echo(f"Built {result.video.name} ({kind}{result.duration:.1f}s){extras}")
+    _echo_export_paths(result.video, result.subtitles)
+
+
+def _echo_export_paths(video: Path, subtitles: list[Path]) -> None:
+    click.echo(f"Video:     {video}")
+    click.echo(f"Subtitles: {subtitles[0] if subtitles else 'none'}")
+    for path in subtitles[1:]:
+        click.echo(f"           {path}")
 
 
 @main.command()

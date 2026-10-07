@@ -190,7 +190,7 @@ describe('console', () => {
     expect(confirm.mock.calls[0]?.[0].lines[0]).toContain('plain build')
     expect(server.jobs[0]?.body).toMatchObject({ kind: 'export', draft: true })
     const result = await vi.waitFor(() => w.get('[data-testid="export-result"]'))
-    expect(result.text()).toContain('Draft video saved next to the PDF: deck.draft.mp4 · 3 s long')
+    expect(result.text()).toContain('Draft video saved to /course/videos/deck.draft.mp4 · 3 s long')
     await result.get('[data-testid="export-result-dismiss"]').trigger('click')
     expect(w.find('[data-testid="export-result"]').exists()).toBe(false) // stays until dismissed
   })

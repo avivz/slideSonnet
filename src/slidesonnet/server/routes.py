@@ -20,7 +20,6 @@ from fastapi.responses import StreamingResponse
 
 from slidesonnet import api
 from slidesonnet.audio.synth import clip_keys, ref_cache_status
-from slidesonnet.builds import deck_pdf
 from slidesonnet.cache import resolve_audio_dir
 from slidesonnet.config import load_config
 from slidesonnet.deck import resolve_voice_files
@@ -358,11 +357,10 @@ def export_work(
 ) -> Any:
     def work(ctx: JobContext) -> dict[str, Any]:
         service = _service(entry)
-        output = deck_pdf(entry.pdf_path).with_suffix(".mp4")  # lec.mp4, from either build
         with service.render_lock, engine_lock(engine):
             result = api.export(
                 entry.pdf_path,
-                output,
+                None,  # where the CLI would put it: [video] output_dir, else beside the deck
                 sidecar_path=entry.sidecar_path,
                 engine=engine,
                 keep_scratch=True,  # an open preview may be streaming the page audio
@@ -372,7 +370,7 @@ def export_work(
                 approved_clips=approved,
             )
         return {
-            "video": result.video.name,
+            "video": str(result.video),
             "duration": result.duration,
             "draft": draft,
             "fast": fast,

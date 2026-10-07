@@ -227,27 +227,10 @@ def _timeline_for(pdf: Path) -> tuple[object, object]:
     return deck, build_timeline(deck, parse_timing("estimate"), video=VideoConfig())
 
 
-def test_write_subtitle_files_none(tmp_path: Path) -> None:
+def test_write_subtitle_files_writes_each_path_in_its_format(tmp_path: Path) -> None:
     deck, timeline = _timeline_for(_narrated_deck(tmp_path))
-    paths = api._write_subtitle_files(deck, timeline, tmp_path / "v.mp4", "none", "segment")  # type: ignore[arg-type]
-    assert paths == []
-    assert not (tmp_path / "v.srt").exists()
-    assert not (tmp_path / "v.vtt").exists()
-
-
-def test_write_subtitle_files_both(tmp_path: Path) -> None:
-    deck, timeline = _timeline_for(_narrated_deck(tmp_path))
-    paths = api._write_subtitle_files(deck, timeline, tmp_path / "v.mp4", "both", "segment")  # type: ignore[arg-type]
-    assert [p.name for p in paths] == ["v.srt", "v.vtt"]
-    assert all(p.exists() for p in paths)
-    assert paths[1].read_text(encoding="utf-8").startswith("WEBVTT")
-    assert "Hello world from the deck." in paths[0].read_text(encoding="utf-8")
-
-
-def test_write_subtitle_files_single_format(tmp_path: Path) -> None:
-    deck, timeline = _timeline_for(_narrated_deck(tmp_path))
-    srt = api._write_subtitle_files(deck, timeline, tmp_path / "v.mp4", "srt", "slide")  # type: ignore[arg-type]
-    assert [p.suffix for p in srt] == [".srt"]
-    vtt = api._write_subtitle_files(deck, timeline, tmp_path / "w.mp4", "vtt", "segment")  # type: ignore[arg-type]
-    assert [p.suffix for p in vtt] == [".vtt"]
-    assert not (tmp_path / "w.srt").exists()
+    srt, vtt = tmp_path / "a" / "v.srt", tmp_path / "b" / "v.vtt"  # folders made as needed
+    api._write_subtitle_files(deck, timeline, [srt, vtt], "segment")
+    assert "Hello world from the deck." in srt.read_text(encoding="utf-8")
+    assert vtt.read_text(encoding="utf-8").startswith("WEBVTT")
+    assert "-->" in vtt.read_text(encoding="utf-8")

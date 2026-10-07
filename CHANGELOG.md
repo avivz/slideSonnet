@@ -17,6 +17,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   slide and the lines in the narration file: two silences back to back are just
   one longer silence, and usually a slip. The editor shows the warning on that
   slide too.
+- **Choose where the video and the subtitles go, separately.** `export` no longer
+  needs `-o`: by default it writes `deck.mp4` and `deck.srt` beside the deck, as
+  the editor does. Set `[video] output_dir` in `slidesonnet.toml` (or pass
+  `--output-dir`) to send videos to one fixed folder — the subtitles then stay
+  beside the deck, ready to commit and translate — and `[video] subtitles_dir`
+  (or `--subtitles-dir`) to give subtitles a folder of their own. `-o` still
+  wins for the video. `export --where` shows where both would go without
+  rendering, `export` says where it put them, and the editor's export shows the
+  video's full path.
 
 ### Changed
 - **Starting a review conversation no longer greys out the other slides.** You

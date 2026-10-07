@@ -133,7 +133,7 @@ export class FakeServer {
     }
     c.job = async (id) => ({ id, kind: 'export', deck: 'tok', status: 'succeeded', inputs: {},
       progress: { phase: '', done: 0, total: 0, label: '' },
-      result: { video: 'deck.draft.mp4', duration: 3, draft: true }, error: null,
+      result: { video: '/course/videos/deck.draft.mp4', duration: 3, draft: true }, error: null,
       created_at: 0, started_at: 0, finished_at: 0 }) as never
     c.command = async (_t, body) => {
       if (body.expected_revision !== this.revision) {

@@ -220,7 +220,7 @@ async function cancelExport(): Promise<void> {
       </div>
       <div v-if="exported" class="result" role="status" data-testid="export-result">
         <p>
-          {{ exportedLabel }} saved next to the PDF:
+          {{ exportedLabel }} saved to
           <span class="mono">{{ exported.video }}</span> · {{ formatLength(exported.duration) }} long
         </p>
         <button

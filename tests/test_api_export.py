@@ -276,3 +276,81 @@ def test_export_phases_follow_the_audio_mode() -> None:
     assert api.export_phases() == ("tts", "assemble", "video", "concat", "mux")
     assert api.export_phases(silent=True) == ("video", "concat")
     assert api.export_phases(timing="fixed:3") == ("video", "concat")
+
+
+# Where an export's files go: (toml [video] keys, export_paths kwargs, the video,
+# the subtitles) — paths relative to the deck's folder, which is also where we run.
+_WHERE = [
+    pytest.param("", {}, "marked.mp4", ["marked.srt"], id="nothing-set-beside-the-deck"),
+    pytest.param(
+        'output_dir = "out"', {}, "out/marked.mp4", ["marked.srt"], id="output-dir-subs-stay"
+    ),
+    pytest.param(
+        'output_dir = "out"',
+        {"draft": True, "fast": True, "subtitles": "both"},
+        "out/marked.draft.fast.mp4",
+        ["marked.draft.fast.srt", "marked.draft.fast.vtt"],
+        id="draft-fast-naming",
+    ),
+    pytest.param(
+        'output_dir = "out"',
+        {"output": Path("o/x.mp4")},
+        "o/x.mp4",
+        ["o/x.srt"],
+        id="o-wins-subs-follow-it",
+    ),
+    pytest.param(
+        'output_dir = "out"\nsubtitles_dir = "subs"',
+        {"output_dir": Path("flag"), "subtitles_dir": Path("~/flagsubs")},
+        "flag/marked.mp4",
+        ["flagsubs/marked.srt"],
+        id="flags-beat-toml",
+    ),
+    pytest.param(
+        'subtitles_dir = "subs"',
+        {"output": Path("o/x.mp4")},
+        "o/x.mp4",
+        ["subs/x.srt"],
+        id="subtitles-dir-wins",
+    ),
+    pytest.param(
+        'subtitles_dir = "subs"', {"subtitles": "none"}, "marked.mp4", [], id="no-subtitles"
+    ),
+]
+
+
+@pytest.mark.parametrize(("toml", "kwargs", "video", "subs"), _WHERE)
+def test_export_paths_resolve_video_and_subtitles_separately(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    toml: str,
+    kwargs: dict[str, Any],
+    video: str,
+    subs: list[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)  # -o and the flags are relative to where you run
+    monkeypatch.setenv("HOME", str(tmp_path))  # ... and ~ expands
+    (tmp_path / "slidesonnet.toml").write_text(f"[video]\n{toml}\n", encoding="utf-8")
+    where = api.export_paths(tmp_path / "marked.pdf", **kwargs)
+    assert where.video == tmp_path / video
+    assert where.subtitles == [tmp_path / s for s in subs]
+
+
+def test_a_plain_build_exports_under_the_deck_name(tmp_path: Path) -> None:
+    where = api.export_paths(tmp_path / "marked.plain.pdf", draft=True)
+    assert where.video == tmp_path / "marked.draft.mp4"
+
+
+def test_export_writes_where_the_paths_resolve_creating_folders(
+    tmp_path: Path, pipeline: dict[str, Any]
+) -> None:
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n")
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[video]\noutput_dir = "renders/videos"\nsubtitles_dir = "captions"\n', encoding="utf-8"
+    )
+    result = api.export(pdf)
+    assert result.video == tmp_path / "renders" / "videos" / "marked.mp4"
+    assert result.video.exists()
+    assert result.subtitles == [tmp_path / "captions" / "marked.srt"]
+    assert result.subtitles[0].exists()
+    assert api.export_paths(pdf) == api.ExportPaths(result.video, result.subtitles)

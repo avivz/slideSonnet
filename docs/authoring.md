@@ -154,6 +154,7 @@ transitions:
 slidesonnet export deck.pdf -o deck.mp4 --draft             # writes deck.draft.mp4
 slidesonnet export deck.pdf -o deck.mp4 --silent --draft    # fast silent cut
 slidesonnet export deck.pdf -o deck.mp4 --fast              # quick look: writes deck.fast.mp4
+slidesonnet export deck.pdf --where                         # where the files would go
 slidesonnet edit  deck.pdf                                  # GUI editor + preview
 slidesonnet edit  ~/courses/aicode                          # ...on a whole folder of decks
 ```
@@ -176,6 +177,28 @@ With a paid engine (`--engine inworld`), `tts` and `export` say how many new
 clips they would generate and ask first; `--yes` answers for you, and without a
 terminal (a script, CI) they refuse unless `--yes` is given. Clips already in
 the cache are reused for free.
+
+### Where the video and subtitles go
+
+Without `-o`, `export` writes `<deck>.mp4` and `<deck>.srt` beside the deck (the
+editor's Export does the same). To keep videos somewhere else — say one fixed
+folder, so removing a git worktree never takes a render with it — set
+`[video] output_dir` (or pass `--output-dir`): the video goes there, and the
+subtitles stay beside the deck, where they can be committed and translated.
+`[video] subtitles_dir` (or `--subtitles-dir`) puts the subtitles in a folder of
+their own. In full, first match wins:
+
+- **video:** `-o FILE`; else `<deck>.mp4` in `--output-dir`, `[video]
+  output_dir`, or the deck's folder;
+- **subtitles:** `--subtitles-dir`; `[video] subtitles_dir`; beside the deck when
+  the video went to an output folder; else beside the video (so `-o` keeps its
+  subtitles next to it).
+
+Both folders are made if missing; in the toml, `~` expands and a relative path
+is relative to the toml (like `[cache] audio_dir`); on the command line it is
+relative to where you run. The subtitles share the video's name
+(`deck.draft.srt` for a draft). `slidesonnet export deck.pdf --where` (with any
+other export options) prints both paths and stops, without rendering.
 
 ## Config (`slidesonnet.toml`, optional)
 
@@ -222,6 +245,9 @@ pre_silence = 0.3            # seconds before a slide's first word
 tail_seconds = 0.5           # seconds held after its last word
 keep_scratch = false         # true: keep render intermediates after export (debugging);
                              # same as `export --keep-scratch` for one run
+output_dir = "~/videos/aicode"   # example: export with no -o writes the .mp4 here
+subtitles_dir = "subtitles"  # example: the .srt/.vtt go here (default: beside the
+                             # deck once output_dir is set; see "Where the video ...")
 
 [logging]
 file = ".slidesonnet/slidesonnet.log"   # or false for no run log

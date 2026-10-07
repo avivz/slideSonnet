@@ -303,6 +303,48 @@ def test_export_passes_options_and_reports(tmp_path: Path, monkeypatch: pytest.M
     assert seen["silent"] is False
 
 
+def test_export_where_prints_the_resolved_paths_without_rendering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("slidesonnet.api.export", lambda *a, **k: pytest.fail("rendered"))
+    pdf = _copy_pdf(tmp_path)
+    (tmp_path / "slidesonnet.toml").write_text('[video]\noutput_dir = "videos"\n', "utf-8")
+    result = CliRunner().invoke(
+        main, ["export", str(pdf), "--where", "--draft", "--subtitles", "both"]
+    )
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == [
+        f"Video:     {tmp_path / 'videos' / 'marked.draft.mp4'}",
+        f"Subtitles: {tmp_path / 'marked.draft.srt'}",
+        f"           {tmp_path / 'marked.draft.vtt'}",
+    ]
+    assert not (tmp_path / "videos").exists()  # nothing is made
+
+
+def test_export_without_o_hands_the_folder_flags_to_the_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake_export(pdf: Path, output: Path | None, **kwargs: Any) -> ExportResult:
+        seen.update(kwargs, output=output)
+        return ExportResult(video=tmp_path / "v" / "marked.mp4", duration=1.0)
+
+    monkeypatch.setattr("slidesonnet.api.export", fake_export)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(
+        main,
+        ["export", str(_copy_pdf(tmp_path)), "--output-dir", "v", "--subtitles-dir", "s"],
+    )
+    assert result.exit_code == 0, result.output
+    assert (seen["output"], seen["output_dir"], seen["subtitles_dir"]) == (
+        None,
+        Path("v"),
+        Path("s"),
+    )
+    assert f"Video:     {tmp_path / 'v' / 'marked.mp4'}" in result.output
+
+
 def test_export_silent_reports_silent_no_subs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

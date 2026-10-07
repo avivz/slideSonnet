@@ -19,6 +19,9 @@ Example ``slidesonnet.toml``::
     resolution = "1920x1080"
     fps = 24
     keep_scratch = false   # true: keep render intermediates after export (debugging)
+    output_dir = "~/videos/aicode"   # export with no -o writes <output_dir>/<deck>.mp4
+    subtitles_dir = "subs"           # .srt/.vtt go here (default: beside the video, or
+                                     # beside the deck once output_dir is set)
 
     [voices.narrator]
     kokoro = "af_heart"
@@ -70,6 +73,12 @@ class Config:
     #: checkout) pointed at it. ``None`` keeps clips under the deck's own
     #: ``.slidesonnet/audio/``. The env var ``SLIDESONNET_AUDIO_DIR`` overrides it.
     audio_dir: Path | None = None
+    #: ``[video] output_dir`` — where an export with no ``-o`` writes its video.
+    #: ``None`` keeps it beside the deck. See :func:`slidesonnet.api.export_paths`.
+    output_dir: Path | None = None
+    #: ``[video] subtitles_dir`` — where an export writes its ``.srt``/``.vtt``.
+    #: ``None``: beside the video, or beside the deck once ``output_dir`` is set.
+    subtitles_dir: Path | None = None
 
     def apply_pronunciation(self, text: str) -> str:
         """Apply the merged pronunciation dictionary to *text*."""
@@ -117,13 +126,16 @@ def load_config(deck_path: Path, *, config_path: Path | None = None) -> Config:
         raise ConfigError(f"Invalid TOML in {path}: {e}") from e
 
     cfg_dir = path.resolve().parent
+    video = raw.get("video", {})
     config = Config(
         tts=_parse_tts(raw.get("tts", {})),
-        video=_parse_video(raw.get("video", {})),
+        video=_parse_video(video),
         voices=_parse_voices(raw.get("voices", {})),
         logging=_parse_logging(raw.get("logging", {}), cfg_dir),
         pronunciation_files=[cfg_dir / p for p in raw.get("pronunciation", [])],
-        audio_dir=_parse_cache(raw.get("cache", {}), cfg_dir),
+        audio_dir=_toml_dir("cache", "audio_dir", raw.get("cache", {}), cfg_dir),
+        output_dir=_toml_dir("video", "output_dir", video, cfg_dir),
+        subtitles_dir=_toml_dir("video", "subtitles_dir", video, cfg_dir),
     )
     # The Qwen3 voice prompt is a file path; resolve it relative to the config
     # so a deck stays portable (paths in the toml are relative to the toml).
@@ -249,13 +261,13 @@ def _parse_video(raw: dict[str, Any]) -> VideoConfig:
         raise ConfigError(f"slidesonnet.toml [video]: {e}") from e
 
 
-def _parse_cache(raw: dict[str, Any], cfg_dir: Path) -> Path | None:
-    """``[cache] audio_dir``: ``~`` expands; a relative path is relative to the toml."""
-    value = raw.get("audio_dir")
+def _toml_dir(section: str, key: str, raw: dict[str, Any], cfg_dir: Path) -> Path | None:
+    """A folder setting: ``~`` expands; a relative path is relative to the toml."""
+    value = raw.get(key)
     if value is None:
         return None
     if not isinstance(value, str) or not value.strip():
-        raise ConfigError("slidesonnet.toml [cache]: audio_dir must be a non-empty path string")
+        raise ConfigError(f"slidesonnet.toml [{section}]: {key} must be a non-empty path string")
     path = Path(value).expanduser()
     return (path if path.is_absolute() else cfg_dir / path).resolve()
 

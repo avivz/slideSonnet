@@ -65,7 +65,7 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
 - **audio/track.py** — `make_silence`, `build_page_audio`, `assemble_track`, `cue_sheet`.
 - **subtitles.py** — `format_srt`, `format_vtt`, `split_text`, `SubtitleEntry`.
 - **config.py** — optional `slidesonnet.toml`: `Config` (tts/video/voices/logging/
-  pronunciation/`[cache] audio_dir`).
+  pronunciation/`[cache] audio_dir`/`[video] output_dir` + `subtitles_dir`).
 - **cache.py** — `<deck-dir>/.slidesonnet/` layout: `render/<deck-stem>/` is per-deck
   (positional names, so sharing would interleave two decks' files). Audio is
   content-addressed and lives in a *speech-clip pool*, resolved by
@@ -125,6 +125,8 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   preview player (`features/playback/`).
 - **api.py** — typed entry points mirroring the CLI: `sty_text`/`write_sty`,
   `init_sidecar`, `check_deck`, `synthesize_deck`, `export`, `write_subs`, `build_preview`.
+  `export_paths` is the one place an export's video/subtitle paths are decided
+  (CLI `export --where`, and the editor's export job, which passes no `-o`).
 - **cli.py** — Click commands: `sty`, `init`, `check`, `tts`, `export`, `subs`, `edit`,
   `clean`, `pool` (`status`/`migrate`/`prune`), `review` (from `review/cli.py`),
   `doctor`; global `--audio-dir` picks the pool.

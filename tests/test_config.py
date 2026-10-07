@@ -280,3 +280,23 @@ def test_cache_audio_dir_expands_tilde(tmp_path: Path, monkeypatch: pytest.Monke
 def test_no_cache_table_means_no_pool(tmp_path: Path) -> None:
     (tmp_path / "slidesonnet.toml").write_text("[video]\nfps = 30\n", encoding="utf-8")
     assert load_config(tmp_path / "deck.pdf").audio_dir is None
+
+
+def test_video_output_and_subtitles_dirs_resolve_like_audio_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "slidesonnet.toml").write_text(
+        '[video]\noutput_dir = "~/videos"\nsubtitles_dir = "../subs"\n', encoding="utf-8"
+    )
+    cfg = load_config(tmp_path / "deck.pdf")
+    assert cfg.output_dir == tmp_path / "home" / "videos"
+    assert cfg.subtitles_dir == (tmp_path / ".." / "subs").resolve()
+    assert load_config(tmp_path / "elsewhere" / "deck.pdf").output_dir is None  # no toml there
+
+
+@pytest.mark.parametrize("key", ["output_dir", "subtitles_dir"])
+def test_video_dir_must_be_a_path(tmp_path: Path, key: str) -> None:
+    (tmp_path / "slidesonnet.toml").write_text(f'[video]\n{key} = ""\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match=rf"\[video\]: {key}"):
+        load_config(tmp_path / "deck.pdf")

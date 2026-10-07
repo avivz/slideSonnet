@@ -43,12 +43,14 @@ logger = logging.getLogger(__name__)
 Engine = Backend
 
 __all__ = [
+    "ExportPaths",
     "ExportResult",
     "Preview",
     "SynthesisPlan",
     "build_preview",
     "check_deck",
     "export",
+    "export_paths",
     "init_sidecar",
     "scaffold_text",
     "sty_text",
@@ -428,6 +430,23 @@ def synthesize_deck(
     return sum(1 for r in results.values() if not r.from_cache)
 
 
+SubtitleChoice = Literal["srt", "vtt", "both", "none"]
+_SUBTITLE_SUFFIXES: dict[str, tuple[str, ...]] = {
+    "srt": (".srt",),
+    "vtt": (".vtt",),
+    "both": (".srt", ".vtt"),
+    "none": (),
+}
+
+
+@dataclass(frozen=True)
+class ExportPaths:
+    """Where an export writes its video and its subtitle files."""
+
+    video: Path
+    subtitles: list[Path] = field(default_factory=list)
+
+
 @dataclass
 class ExportResult:
     """Outputs of an export run."""
@@ -473,6 +492,79 @@ def fast_output(output: Path) -> Path:
     return output.with_name(f"{output.stem}.fast{output.suffix}")
 
 
+def export_paths(
+    pdf_path: Path,
+    output: Path | None = None,
+    *,
+    config_path: Path | None = None,
+    output_dir: Path | None = None,
+    subtitles_dir: Path | None = None,
+    draft: bool = False,
+    fast: bool = False,
+    subtitles: SubtitleChoice = "srt",
+) -> ExportPaths:
+    """Where :func:`export` with these options would write, without rendering anything.
+
+    The video: *output* if given; else ``<folder>/<deck>.mp4``, the folder being
+    *output_dir*, else ``[video] output_dir`` from the config, else the deck's
+    own. ``<deck>`` is the deck's name for either build (``lec.plain.pdf`` →
+    ``lec.mp4``). A *draft* and a *fast* export then rename it
+    (``lec.draft.fast.mp4``). The subtitles share the video's name; their
+    folder is *subtitles_dir*, else ``[video] subtitles_dir``, else the deck's
+    own when the video went to an output folder (rather than an explicit
+    *output*), else the video's. Relative *output*, *output_dir* and
+    *subtitles_dir* are relative to the current directory; ``~`` expands.
+    """
+    from slidesonnet.config import load_config
+
+    config = load_config(pdf_path, config_path=config_path)
+    return _export_paths(
+        pdf_path,
+        output,
+        config,
+        output_dir=output_dir,
+        subtitles_dir=subtitles_dir,
+        draft=draft,
+        fast=fast,
+        subtitles=subtitles,
+    )
+
+
+def _export_paths(
+    pdf_path: Path,
+    output: Path | None,
+    config: Config,
+    *,
+    output_dir: Path | None,
+    subtitles_dir: Path | None,
+    draft: bool,
+    fast: bool,
+    subtitles: str,
+) -> ExportPaths:
+    from slidesonnet.builds import deck_pdf
+
+    def absolute(p: Path) -> Path:
+        return p.expanduser().resolve()
+
+    deck = deck_pdf(absolute(pdf_path))
+    folder = absolute(output_dir) if output_dir is not None else config.output_dir
+    video = absolute(output) if output is not None else (folder or deck.parent) / f"{deck.stem}.mp4"
+    if draft:
+        video = draft_output(video)
+    if fast:
+        video = fast_output(video)  # deck.draft.fast.mp4 for both
+    if subtitles_dir is not None:
+        subs_dir = absolute(subtitles_dir)
+    elif config.subtitles_dir is not None:
+        subs_dir = config.subtitles_dir
+    elif output is None and folder is not None:
+        subs_dir = deck.parent  # the video went away; the subtitles stay with the deck
+    else:
+        subs_dir = video.parent
+    subs = [subs_dir / video.with_suffix(s).name for s in _SUBTITLE_SUFFIXES[subtitles]]
+    return ExportPaths(video=video, subtitles=subs)
+
+
 def export_blockers(pdf_path: Path) -> list[str]:
     """Why *pdf_path* isn't ready for a final video; empty when it is.
 
@@ -499,7 +591,7 @@ def export_blockers(pdf_path: Path) -> list[str]:
 
 def export(
     pdf_path: Path,
-    output: Path,
+    output: Path | None = None,
     *,
     sidecar_path: Path | None = None,
     config_path: Path | None = None,
@@ -507,7 +599,7 @@ def export(
     silent: bool = False,
     timing: str = "tts",
     wpm: float = 150.0,
-    subtitles: Literal["srt", "vtt", "both", "none"] = "srt",
+    subtitles: SubtitleChoice = "srt",
     sub_granularity: str = "segment",
     keep_scratch: bool | None = None,
     progress: ProgressFn | None = None,
@@ -515,14 +607,20 @@ def export(
     approve: ApproveFn | None = None,
     approved_clips: Collection[str] | None = None,
     fast: bool = False,
+    output_dir: Path | None = None,
+    subtitles_dir: Path | None = None,
 ) -> ExportResult:
     """Render the deck to a narrated (or silent) MP4 with optional subtitles.
+
+    The files go where :func:`export_paths` says for the same *output*,
+    *output_dir*, *subtitles_dir*, *draft*, *fast* and *subtitles* (by default
+    ``<deck>.mp4`` and ``<deck>.srt`` beside the deck); missing folders are made.
 
     Refuses (:class:`ExportRefused`) when :func:`export_blockers` finds the deck
     unready for a final video — a plain build, or open review conversations —
     or when the deck has errors ``check`` would report, or (for a narrated
     video) no slide has narration yet. A *draft* skips those checks and writes
-    ``<name>.draft.mp4`` instead of *output*. *approve* is consulted before any
+    ``<name>.draft.mp4``. *approve* is consulted before any
     synthesis, and *approved_clips* pins it, as in :func:`synthesize_deck`.
 
     *fast* trades picture quality for speed (720p, cuts for every transition,
@@ -552,15 +650,21 @@ def export(
     )
     from slidesonnet.timing import TimingMode, parse_timing
 
-    if draft:
-        output = draft_output(output)
-    else:
+    if not draft:
         reasons = export_blockers(pdf_path)
         if reasons:
             raise ExportRefused(reasons)
-    if fast:
-        output = fast_output(output)  # deck.draft.fast.mp4 for both
     deck, config, load_diags = _load(pdf_path, sidecar_path, config_path, engine)
+    where = _export_paths(
+        pdf_path,
+        output,
+        config,
+        output_dir=output_dir,
+        subtitles_dir=subtitles_dir,
+        draft=draft,
+        fast=fast,
+        subtitles=subtitles,
+    )
     mode = parse_timing(timing, wpm=wpm)
 
     audible = export_phases(silent=silent, timing=timing, wpm=wpm) == EXPORT_PHASES
@@ -596,11 +700,12 @@ def export(
         boundary_transition(deck.page_narration(pages[i]), deck.page_narration(pages[i + 1]))
         for i in range(len(pages) - 1)
     ]
+    where.video.parent.mkdir(parents=True, exist_ok=True)
     compose_video(
         timeline,
         # a quick export reuses an unchanged PDF's page images; the full one re-renders
         _images(pdf_path, rdir, reuse=fast),
-        output,
+        where.video,
         config=config,
         page_audios=page_audios,
         render_dir=rdir,
@@ -610,13 +715,16 @@ def export(
         fast=fast,
     )
 
-    subs_paths = _write_subtitle_files(deck, timeline, output, subtitles, sub_granularity)
+    _write_subtitle_files(deck, timeline, where.subtitles, sub_granularity)
     keep = keep_scratch if keep_scratch is not None else (fast or config.video.keep_scratch)
     if not keep:
         freed = prune_render_scratch(rdir)
         logger.debug("pruned %.1f MB of render scratch under %s", freed / 1e6, rdir)
     return ExportResult(
-        video=output, subtitles=subs_paths, duration=timeline.total_duration, silent=not audible
+        video=where.video,
+        subtitles=where.subtitles,
+        duration=timeline.total_duration,
+        silent=not audible,
     )
 
 
@@ -701,28 +809,18 @@ def _estimated_timing_message(cached: CachedDurations, backend: str, wpm: float)
 
 
 def _write_subtitle_files(
-    deck: Deck,
-    timeline: DeckTimeline,
-    video_output: Path,
-    which: str,
-    granularity: str,
-) -> list[Path]:
+    deck: Deck, timeline: DeckTimeline, paths: list[Path], granularity: str
+) -> None:
+    """Write each of *paths* (``.srt`` or ``.vtt``), making its folder if needed."""
     from slidesonnet.render import subtitle_entries
     from slidesonnet.subtitles import format_srt, format_vtt
 
-    if which == "none":
-        return []
+    if not paths:
+        return
     entries = subtitle_entries(deck, timeline, granularity=granularity)
-    out: list[Path] = []
-    if which in {"srt", "both"}:
-        p = video_output.with_suffix(".srt")
-        _write_if_changed(p, format_srt(entries))
-        out.append(p)
-    if which in {"vtt", "both"}:
-        p = video_output.with_suffix(".vtt")
-        _write_if_changed(p, format_vtt(entries))
-        out.append(p)
-    return out
+    for p in paths:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        _write_if_changed(p, format_srt(entries) if p.suffix == ".srt" else format_vtt(entries))
 
 
 def _write_if_changed(path: Path, text: str) -> bool:
