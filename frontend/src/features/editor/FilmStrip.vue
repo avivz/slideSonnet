@@ -157,11 +157,12 @@ watch(
 .strip {
   height: 100%;
   overflow-y: auto;
-  padding: var(--space-2) var(--space-3) var(--space-4);
+  /* room for the shown slide's ring and lift, so the edge never clips it */
+  padding: var(--space-3) var(--space-3) var(--space-4);
 }
 .list {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -178,16 +179,24 @@ watch(
   border: 1px solid var(--line);
   border-radius: 8px;
   cursor: pointer;
+  scroll-margin: var(--space-3); /* scrolled into view with its ring */
   transition:
     border-color var(--fast),
+    box-shadow var(--fast),
+    transform var(--fast),
     opacity var(--fast);
 }
 .thumb:hover {
   border-color: var(--accent-deep);
 }
+/* the slide being shown: a thick ring a little apart from it, and a touch larger */
 .thumb.active {
+  z-index: 1;
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 5px var(--accent);
+  transform: scale(1.04);
 }
 .thumb.picked {
   outline: 2px dashed var(--warn);
@@ -196,6 +205,9 @@ watch(
 .thumb.dimmed {
   opacity: 0.25;
   filter: grayscale(1);
+}
+.thumb.active.dimmed {
+  opacity: 0.6; /* outside the chosen conversation, but still clearly the one shown */
 }
 .thumb.removed {
   opacity: 0.55;

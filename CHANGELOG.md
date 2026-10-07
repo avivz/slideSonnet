@@ -25,6 +25,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **Going to a slide outside the conversation you're reading shows every slide
   again** — from the Script view (clicking anywhere in that slide, or into its
   words) and the Slide view's narration, not only from the slide strip.
+- **The slide on screen stands out in the slide strip**: a thick blue ring and a
+  touch larger than the rest, instead of a thin outline.
 
 ### Fixed
 - **One pause between two lines shows as one pause in the Script view.** Every
