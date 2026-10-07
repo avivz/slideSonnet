@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/client'
+import { newSpeech } from '@/features/editor/narration'
 import SaveIndicator from '@/features/editor/SaveIndicator.vue'
 import ScriptView from '@/features/editor/ScriptView.vue'
 import { AUTOSAVE_MS, useEditorStore } from '@/stores/editor'
@@ -100,6 +101,28 @@ describe('script view', () => {
     await flushPromises()
     // everything said so far in the line, up to and including the word
     expect(w.get('[data-testid="script-slide-a"] mark').text()).toBe('Now change')
+  })
+
+  it('a click in a line asks playback to go on from the word clicked — not a selection, a pause, or an empty line', async () => {
+    const server = new FakeServer()
+    server.narration.a = {
+      ...server.narration.a!,
+      segments: [speech('One.'), { kind: 'pause', seconds: 0.7 }, speech('Two words.')],
+    }
+    const { editor } = await setup(server)
+    editor.draftFor('a')?.middle.push(newSpeech())
+    const from = vi.spyOn(usePlayerStore(), 'playFrom').mockResolvedValue()
+    const w = mount(ScriptView, { attachTo: document.body })
+    const line = w.get('[data-testid="script-text-a-2"]')
+    const box = line.element as HTMLTextAreaElement
+    box.setSelectionRange(4, 4)
+    await line.trigger('click')
+    expect(from).toHaveBeenCalledWith('a', 1, 4) // the second spoken line, at 'words'
+    box.setSelectionRange(0, 3)
+    await line.trigger('click') // selecting words to change them
+    await w.get('[data-testid="script-pause-a-1"]').trigger('click')
+    await w.get('[data-testid="script-text-a-3"]').trigger('click') // nothing written yet
+    expect(from).toHaveBeenCalledOnce()
   })
 
   it('shows pauses inline, editable, between the lines', async () => {

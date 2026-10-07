@@ -97,7 +97,7 @@ async function generate(speechIndex: number | undefined, force: boolean): Promis
   await generation.enqueue([{ slide_id: slideId.value, speech_index: speechIndex }], { force })
 }
 
-const { onFocusIn, onFocusOut } = useEditingFocus(root, (el) => {
+const { onFocusIn, onFocusOut, onClick } = useEditingFocus(root, (el) => {
   const card = el.closest<HTMLElement>('[data-speech]')
   return card ? { slideId: slideId.value, index: Number(card.dataset.speech) } : null
 })
@@ -123,7 +123,7 @@ function onKey(event: KeyboardEvent): void {
     @focusout="onFocusOut"
     @keydown="onKey"
     @focusin.capture="leaveFilter"
-    @click="leaveFilter"
+    @click="leaveFilter(); onClick($event)"
   >
     <header class="head">
       <h2 class="id mono" data-testid="slide-id">{{ slideId || '(no slide id)' }}</h2>

@@ -30,7 +30,8 @@ function spokenParts(slideId: string, seg: EditSeg): [string, string, string] | 
 }
 const root = ref<HTMLElement | null>(null)
 // typing in a line holds playback's cursor and auto-generate off it, as in the slide view
-const { onFocusIn, onFocusOut } = useEditingFocus(root, (el) => {
+// a click in a line's words while playing plays on from there
+const { onFocusIn, onFocusOut, onClick } = useEditingFocus(root, (el) => {
   if (el.tagName !== 'TEXTAREA') return null
   const key = el.closest<HTMLElement>('[data-speech]')?.dataset.speech
   const at = key?.lastIndexOf('#') ?? -1
@@ -158,7 +159,7 @@ function retry(slideId: string, seg: EditSeg): void {
 </script>
 
 <template>
-  <section ref="root" class="script" data-testid="script-view" @focusin="onFocusIn" @focusout="onFocusOut">
+  <section ref="root" class="script" data-testid="script-view" @focusin="onFocusIn" @focusout="onFocusOut" @click="onClick">
     <article
       v-for="(page, i) in editor.pages"
       :key="`${i}-${page.slide_id}`"

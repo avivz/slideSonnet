@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { spanAt, voicedFraction, wordAt } from '@/features/playback/words'
+import { fractionAt, spanAt, timeAt, voicedFraction, wordAt } from '@/features/playback/words'
 
 describe('the spoken word, estimated', () => {
   const text = 'Now change one behaviour.'
@@ -49,5 +49,18 @@ describe('the spoken word, estimated', () => {
     expect(voicedFraction(span, 1.5)).toBeCloseTo(0.5) // holds through the breath
     expect(voicedFraction(span, 2.5)).toBeCloseTo(0.75)
     expect(voicedFraction(span, 3.2)).toBe(1) // the words are done when the voice is
+  })
+
+  it('finds when a clicked word is said: where it starts among the words, in voiced time', () => {
+    // shares: 'Now' 4, 'change' 7, 'one' 4, 'behaviour.' 11 (of 26)
+    expect(fractionAt(text, 0)).toBe(0)
+    expect(fractionAt(text, 3)).toBe(0) // just after a word: that word
+    expect(fractionAt(text, 6)).toBeCloseTo(4 / 26) // inside 'change'
+    expect(fractionAt(text, 25)).toBeCloseTo(15 / 26) // the end of the line: its last word
+    // voiced 0-1, a breath 1-2, voiced 2-3, a silent tail 3-4
+    const span = { slide_id: 'a', index: 0, start: 0, end: 4, silences: [[1, 2], [3, 4]] as [number, number][] }
+    expect(timeAt(span, 0.25)).toBeCloseTo(0.5)
+    expect(timeAt(span, 0.5)).toBeCloseTo(2) // a word after the breath starts after it
+    expect(timeAt(span, 0.75)).toBeCloseTo(2.5)
   })
 })

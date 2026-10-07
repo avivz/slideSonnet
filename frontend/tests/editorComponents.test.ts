@@ -16,6 +16,7 @@ import VoicesDialog from '@/features/editor/VoicesDialog.vue'
 import { useConfirm } from '@/stores/confirm'
 import { AUTOSAVE_MS, useEditorStore } from '@/stores/editor'
 import { AUTO_BUILD_MS, useGenerationStore } from '@/stores/generation'
+import { usePlayerStore } from '@/stores/player'
 
 import { FakeServer, speech } from './fakeServer'
 
@@ -84,6 +85,20 @@ describe('narration editor', () => {
     expect(document.activeElement).toBe(w.get('[data-testid="pause-secs-2"]').element)
     expect(server.narration.a?.segments.map((s) => s.kind === 'speech' ? s.text : s.seconds))
       .toEqual([0.3, 'Hello.', 1, 0.6]) // the pause, without an empty line
+  })
+
+  it('a click in a line’s words asks playback to go on from the word clicked', async () => {
+    const server = new FakeServer()
+    server.narration.a = { ...server.narration.a!, segments: [speech('One.'), { kind: 'pause', seconds: 1 }, speech('Two words.')] }
+    await setup(server)
+    const from = vi.spyOn(usePlayerStore(), 'playFrom').mockResolvedValue()
+    const w = mount(NarrationEditor, { attachTo: document.body })
+    const line = w.get('[data-testid="utext-2"]')
+    ;(line.element as HTMLTextAreaElement).setSelectionRange(4, 4)
+    await line.trigger('click')
+    expect(from).toHaveBeenCalledWith('a', 1, 4) // the slide's second spoken line, at 'words'
+    await w.get('[data-testid="usettings-2"]').trigger('click') // its settings aren't its words
+    expect(from).toHaveBeenCalledOnce()
   })
 
   it('folds a line’s voice, pace and note away, naming only what differs from the defaults', async () => {

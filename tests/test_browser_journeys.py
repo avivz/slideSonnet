@@ -289,6 +289,32 @@ def test_preview_transport_and_deck_follow(page: Page, server: Server, tmp_path:
     expect(tid(page, "time")).to_have_text("")
 
 
+@pytest.mark.timeout(120)
+def test_click_a_line_while_playing_plays_on_from_it(
+    page: Page, server: Server, tmp_path: Path
+) -> None:
+    """Real <audio>, in the script: clicking a later slide's second line while playing
+    plays that slide from the line (not from its start), the cursor in the line."""
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n\n@euler-setup\nWorld. [pause 0.3] Second line.\n")
+    page.goto(server(pdf, stub_seconds=5.0))
+    tid(page, "view-script").click()
+    play = tid(page, "play")
+    play.click()
+    expect(play).to_have_attribute("data-state", "playing", timeout=30_000)
+    expect(tid(page, "play-progress")).to_contain_text("slide 1 of")
+    line = tid(page, "script-text-euler-setup-2")
+    line.click(position={"x": 2, "y": 4})  # at its first word
+    expect(tid(page, "play-progress")).to_contain_text("slide 2 of")
+    expect(line).to_be_focused()  # there to edit, too
+    # the second line starts past the first (5 s) and the pause: played from the start,
+    # the track couldn't be there yet
+    assert _eventually(
+        lambda: page.evaluate("() => document.querySelector('audio')?.currentTime ?? 0") > 5.0,
+        timeout=3.0,
+    )
+    expect(play).to_have_attribute("data-state", "playing")
+
+
 def test_keyboard_deck_switching(page: Page, server: Server, tmp_path: Path) -> None:
     decks = []
     for week, stem in (("week01", "intro"), ("week02", "advanced")):

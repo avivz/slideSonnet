@@ -49,3 +49,32 @@ export function wordAt(text: string, fraction: number): [number, number] | null 
   const last = words[words.length - 1]
   return last ? [last.index, last.index + last[0].length] : null
 }
+
+/**
+ * How far through `text`'s words the word at character `offset` begins (0..1):
+ * wordAt's inverse. The word the caret is in or just after, else the next one,
+ * else the last.
+ */
+export function fractionAt(text: string, offset: number): number {
+  const words = [...text.matchAll(WORD)]
+  const share = (w: string): number => w.replace(FIX, '$1').length + 1
+  const total = words.reduce((n, w) => n + share(w[0]), 0)
+  const at = words.findIndex((w) => offset <= w.index + w[0].length)
+  const before = words.slice(0, at < 0 ? words.length - 1 : at).reduce((n, w) => n + share(w[0]), 0)
+  return total > 0 ? before / total : 0
+}
+
+/** When, in `span`, `fraction` of its words have been said: voicedFraction's inverse. */
+export function timeAt(span: SpeechSpan, fraction: number): number {
+  const silences = span.silences ?? []
+  const voiced = silences.reduce((v, [a, b]) => v - (b - a), span.end - span.start)
+  if (voiced <= 0) return span.start // nothing voiced: the line's start
+  let left = Math.min(Math.max(fraction, 0), 1) * voiced
+  let t = span.start
+  for (const [a, b] of silences) {
+    if (left < a - t) break // said before this silence
+    left -= Math.max(0, a - t)
+    t = Math.max(t, b) // a word right after a breath starts after it
+  }
+  return Math.min(t + left, span.end)
+}

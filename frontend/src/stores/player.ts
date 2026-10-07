@@ -15,7 +15,7 @@ import type { PreviewManifest } from '@/features/playback/manifest'
 import { nextAfter, playable, progress, startAt } from '@/features/playback/playlist'
 import { Transport } from '@/features/playback/transport'
 import { OutputWaker } from '@/features/playback/wake'
-import { lineAt, spanAt, voicedFraction, wordAt } from '@/features/playback/words'
+import { fractionAt, lineAt, spanAt, timeAt, voicedFraction, wordAt } from '@/features/playback/words'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { useReviewStore } from '@/stores/review'
@@ -26,10 +26,11 @@ const EMPTY_FRAME: Frame = {
   loaded: false, playing: false, time: 0, duration: 0, slideId: null, imageUrl: null,
 }
 
-/** Where to go on from in a rebuilt track: a line's start, else the same time. */
+/** Where to go on from in a track: a line's start (or the word at `offset` in it), else the time. */
 interface Place {
   line: number | null
   time: number
+  offset?: number
 }
 
 /** A slide's track, prepared ahead; `cancel` drops its job and settles `manifest` with null. */
@@ -78,17 +79,32 @@ export const usePlayerStore = defineStore('player', () => {
   let ahead: Prepared | null = null
   /** The track playback is waiting for now (cancelled when superseded or stopped). */
   let active: Prepared | null = null
+  /** Where that track starts (a line clicked while it was being prepared moves it). */
+  let startFrom: Place | null = null
   const allProgress = computed(() =>
     allAt.value === null ? null : progress(editor.pages, review.scope, allAt.value),
   )
+
+  /** A slide's spoken line, by its place among the slide's spoken lines, as it reads now. */
+  function lineText(slideId: string, index: number): string | undefined {
+    return editor.draftFor(slideId)?.middle.filter((seg) => seg.kind === 'speech' && written(seg))[index]?.text
+  }
+
+  /** Where `place` is in `manifest`'s track. */
+  function timeOf(manifest: PreviewManifest, place: Place): number {
+    const span = manifest.speech.find((s) => s.index === place.line)
+    if (!span) return place.time
+    const text = place.offset ? lineText(manifest.slide_id, span.index) : undefined
+    return text === undefined ? span.start : timeAt(span, fractionAt(text, place.offset ?? 0))
+  }
 
   function updateSpoken(f: Frame): void {
     const spans = controller?.manifest?.speech ?? []
     let next: typeof spoken.value = null
     const span = f.loaded ? spanAt(spans, f.time) : null
     if (span) {
-      const line = editor.draftFor(span.slide_id)?.middle.filter((seg) => seg.kind === 'speech' && written(seg))[span.index]
-      const range = line ? wordAt(line.text, voicedFraction(span, f.time)) : null
+      const text = lineText(span.slide_id, span.index)
+      const range = text === undefined ? null : wordAt(text, voicedFraction(span, f.time))
       if (range) next = { slideId: span.slide_id, index: span.index, start: range[0], end: range[1] }
     }
     const now = spoken.value
@@ -187,10 +203,7 @@ export const usePlayerStore = defineStore('player', () => {
     audio.src = manifest.media_url
     const track = controller.load(manifest)
     transport.loaded(manifest.narration_revision)
-    if (place !== null) {
-      const line = manifest.speech.find((s) => s.index === place.line)
-      controller.seek(line ? line.start : place.time)
-    }
+    if (place !== null) controller.seek(timeOf(manifest, place))
     await awake
     controller.play(track) // unless stopped or replaced meanwhile
   }
@@ -250,6 +263,7 @@ export const usePlayerStore = defineStore('player', () => {
   ): Promise<void> {
     controller?.pause()
     const ticket = transport.begin()
+    startFrom = place
     building.value = true
     allAt.value = slideId
     showSlide(slideId)
@@ -272,9 +286,40 @@ export const usePlayerStore = defineStore('player', () => {
       void playNext() // no audio for it (generation declined, or it failed): go on
       return
     }
-    await begin(manifest, awake, place)
+    await begin(manifest, awake, startFrom)
     const next = nextAfter(editor.pages, review.scope, slideId)
     if (next !== null) prepare(next)
+  }
+
+  /**
+   * A click in a spoken line: playback goes on from there, at the word clicked
+   * (roughly). Playing, it moves within the slide's track, or plays the slide
+   * clicked from that line and on slide by slide; edited since, the slide is
+   * rebuilt first. Paused, it moves where Play resumes on the paused slide.
+   * Stopped, a click only puts the cursor in.
+   */
+  async function playFrom(slideId: string, line: number, offset = 0): Promise<void> {
+    if (allAt.value === null) return
+    const op = ++operation
+    const saved = await editor.ensureSaved() // the words heard are the ones on screen
+    if (op !== operation || !saved || allAt.value === null) return
+    if (!playable(editor.pages, review.scope).includes(slideId)) return
+    const manifest = controller?.manifest
+    // a line the track doesn't have: it stays where it is
+    const place: Place = { line, time: manifest?.slide_id === slideId ? frame.value.time : 0, offset }
+    const paused = transport.hasTrack && !transport.playing && !transport.pending
+    const current = !transport.pending && (paused || transport.loadedRevision === editor.revision)
+    if (manifest?.slide_id === slideId && current) {
+      // paused after an edit too: Play rebuilds it, on from this line
+      controller?.seek(timeOf(manifest, place))
+      return
+    }
+    if (paused) return // another slide: going there while paused stops playback, as ever
+    if (transport.pending && allAt.value === slideId) {
+      startFrom = place // still being got ready: it starts here
+      return
+    }
+    await playSlide(slideId, Promise.resolve(), place)
   }
 
   /** The current slide ended: on to the next one, or the end. */
@@ -376,7 +421,8 @@ export const usePlayerStore = defineStore('player', () => {
   watch(
     () => editor.currentId,
     (slideId) => {
-      if (following || transport.navAction() === 'none') return
+      // (the slide playback is on already: it plays on)
+      if (following || transport.navAction() === 'none' || slideId === allAt.value) return
       const paused = transport.hasTrack && !transport.playing
       if (paused || !playable(editor.pages, review.scope).includes(slideId)) stop()
       else void playSlide(slideId)
@@ -386,6 +432,6 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     transport, frame, speed, building, editing, spoken, allAt, allProgress,
-    attach, onFrame, press, stop, cycleSpeed, seekFraction, setEditing,
+    attach, onFrame, press, playFrom, stop, cycleSpeed, seekFraction, setEditing,
   }
 })

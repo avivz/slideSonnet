@@ -11,7 +11,7 @@ import { useConfirm } from '@/stores/confirm'
 import { useEditorStore } from '@/stores/editor'
 import { usePlayerStore } from '@/stores/player'
 
-import { FakeServer } from './fakeServer'
+import { FakeServer, speech } from './fakeServer'
 
 const pages = [{ slide_id: 'a' }, { slide_id: '' }, { slide_id: 'b' }, { slide_id: 'c' }, { slide_id: 'd' }]
 
@@ -164,7 +164,7 @@ describe('Play all', () => {
   })
 
   it('while you type, plays on and shows the playing slide over the one you type in', async () => {
-    const { editor, player, audio } = await playing()
+    const { editor, player, audio, previews } = await playing()
     await player.press()
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     player.setEditing(true)
@@ -172,6 +172,8 @@ describe('Play all', () => {
     await vi.waitFor(() => expect(audio.src).toBe('/media/b.wav'))
     expect(editor.currentId).toBe('a') // the editor waits for you
     expect(player.frame.imageUrl).toBe('/img/p/b.png') // the stage shows b, as it looks now
+    editor.go(1) // going to the slide playing: it plays on, not over
+    expect(previews().filter((s) => s === 'b')).toHaveLength(1)
     player.setEditing(false)
     expect(editor.currentId).toBe('b')
   })
@@ -236,6 +238,67 @@ describe('Play all', () => {
     await vi.waitFor(() => expect(audio.paused).toBe(false))
     expect(asked).toHaveBeenCalledOnce()
     expect(server.jobs.filter((j) => j.kind === 'preview').at(-2)?.body).toMatchObject({ slide_id: 'a', allow_paid: true })
+  })
+})
+
+describe('clicking a line while playing', () => {
+  /** Every slide says two lines (each slide's track plays them at 0.3-1 s and 1-1.8 s). */
+  function twoLines(): FakeServer {
+    const server = new FakeServer({ a: '', b: '', c: '' })
+    for (const block of Object.values(server.narration)) block.segments = [speech('One.'), speech('Two more words.')]
+    return server
+  }
+
+  it('plays on from the line clicked on the playing slide, or from the word clicked in it', async () => {
+    const { player, audio, previews } = await playing(twoLines())
+    await player.press()
+    await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
+    await player.playFrom('a', 1)
+    expect(audio.currentTime).toBe(1) // the second line's start
+    expect(audio.paused).toBe(false)
+    await player.playFrom('a', 1, 'Two more words.'.indexOf('words'))
+    expect(audio.currentTime).toBeCloseTo(1 + (0.8 * 9) / 16) // 'Two ' and 'more ' said: 9 of 16
+    expect(previews()).toEqual(['a', 'b']) // on the track it had
+  })
+
+  it('on another slide: plays it from the line clicked, then on slide by slide', async () => {
+    const { editor, player, audio } = await playing(twoLines())
+    await player.press()
+    await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
+    editor.go(1) // clicking into b's words shows b
+    await player.playFrom('b', 1)
+    await vi.waitFor(() => expect(audio.src).toBe('/media/b.wav'))
+    await vi.waitFor(() => expect(audio.currentTime).toBe(1))
+    expect(audio.paused).toBe(false)
+    audio.end()
+    await vi.waitFor(() => expect(audio.src).toBe('/media/c.wav'))
+  })
+
+  it('stopped, does nothing; paused, moves where Play resumes', async () => {
+    const { player, audio, previews } = await playing(twoLines())
+    await player.playFrom('a', 1)
+    expect([audio.src, previews()]).toEqual(['', []])
+    await player.press()
+    await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
+    await player.press() // pause
+    await player.playFrom('a', 1)
+    expect([audio.currentTime, audio.paused]).toEqual([1, true])
+    await player.press() // resume
+    expect([audio.currentTime, audio.paused]).toEqual([1, false])
+    expect(previews()).toEqual(['a', 'b'])
+  })
+
+  it('after typing in a line, plays the slide rebuilt with the new words, from the line clicked', async () => {
+    const { editor, player, audio, previews } = await playing(twoLines())
+    await player.press()
+    await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
+    const line = editor.draftFor('a')?.middle[0]
+    if (line?.kind === 'speech') line.text = 'One, reworded.'
+    editor.touch('a')
+    await player.playFrom('a', 1)
+    await vi.waitFor(() => expect(previews().filter((s) => s === 'a')).toHaveLength(2))
+    await vi.waitFor(() => expect(audio.paused).toBe(false))
+    expect(audio.currentTime).toBe(1)
   })
 })
 

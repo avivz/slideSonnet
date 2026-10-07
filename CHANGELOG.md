@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **Click the script to jump there while it plays.** While your deck is playing,
+  click a line — in the script, or a line's words on the slide view — and playback
+  goes on from the word you clicked, then on slide by slide as before. A line on
+  another slide plays that slide from there (getting it ready first, as Play
+  does). The cursor lands in the line too, so you can fix it right away. While
+  paused, a click on the paused slide moves where Play picks up; when nothing is
+  playing, a click only puts the cursor in. Clicking a pause, an empty line, or
+  selecting words doesn't move playback.
 - **A deck's plain and final builds can live side by side.** Name the plain
   (working) build `deck.plain.pdf` and keep `deck.pdf` for the final one you hand
   out and export. Both are one deck — same `deck.narration`, `deck.review` and
