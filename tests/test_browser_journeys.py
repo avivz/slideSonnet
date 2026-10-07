@@ -161,14 +161,18 @@ def test_a_recompile_keeps_the_filmstrip_up_until_the_new_pictures_land(
     )
     page.wait_for_function(all_loaded, timeout=20_000)
     old = [thumbs.nth(i).get_attribute("src") for i in range(6)]
+    # A tile blanks when its <img> gives way to the label, or breaks when a load fails.
+    # (Not naturalWidth: it reads 0 while a swapped-in src loads, though the browser
+    # keeps painting the old picture meanwhile.)
     page.evaluate(
         """() => {
           window.__fewest = 6
           const strip = document.querySelector('nav.strip')
           new MutationObserver(() => {
-            const shown = [...strip.querySelectorAll('.thumb img')].filter((i) => i.naturalWidth > 0)
-            window.__fewest = Math.min(window.__fewest, shown.length)
-          }).observe(strip, { subtree: true, childList: true, attributes: true })
+            const shown = strip.querySelectorAll('.thumb img').length
+            window.__fewest = Math.min(window.__fewest, shown)
+          }).observe(strip, { subtree: true, childList: true })
+          strip.addEventListener('error', () => { window.__fewest = 0 }, true)
         }"""
     )
     doc = pymupdf.open(pdf)  # the author recompiles
