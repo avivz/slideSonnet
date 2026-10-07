@@ -188,4 +188,28 @@ describe('script view', () => {
     const diff = w.get('[data-testid="script-slide-b"] [data-testid="script-diff-b"]')
     expect([diff.get('del').text(), diff.get('ins').text()]).toEqual(['today.', 'again.'])
   })
+
+  it('inside a chosen conversation, going to a slide outside it shows every slide again', async () => {
+    const { editor } = await setup()
+    const review = useReviewStore()
+    review.data = {
+      active: true, final_build: false, changes: [], unfiled: [], pending: {}, badges: {},
+      base_order: ['a', 'b', 'c'], base_images: {}, diffs: {},
+      conversations: [
+        { id: 'c1', title: '', slides: ['a'], origin: 'requested', status: 'open', turn: 'agent', is_deck: false, messages: [] },
+      ],
+    }
+    review.filter = 'c1'
+    const w = mount(ScriptView, { attachTo: document.body })
+    await flushPromises()
+    expect(w.get('[data-testid="script-slide-b"]').classes()).toContain('dimmed')
+    await w.get('[data-testid="script-text-a-0"]').trigger('focus') // a slide of the conversation: still chosen
+    await w.get('[data-testid="script-slide-a"]').trigger('click')
+    expect(review.filter).toBe('c1')
+    await w.get('[data-testid="script-slide-b"]').trigger('click') // anywhere in another slide
+    expect([review.filter, editor.currentId]).toEqual([null, 'b'])
+    review.filter = 'c1'
+    await w.get('[data-testid="script-text-b-0"]').trigger('focus') // or into its words
+    expect(review.filter).toBeNull()
+  })
 })

@@ -18,6 +18,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   one longer silence, and usually a slip. The editor shows the warning on that
   slide too.
 
+### Changed
+- **Starting a review conversation no longer greys out the other slides.** You
+  stay where you were; the new conversation is marked "new" in the Review tab's
+  list, and clicking it opens it as before.
+- **Going to a slide outside the conversation you're reading shows every slide
+  again** — from the Script view (clicking anywhere in that slide, or into its
+  words) and the Slide view's narration, not only from the slide strip.
+
 ### Fixed
 - **One pause between two lines shows as one pause in the Script view.** Every
   line used to be followed by an extra `⏸ 0.0` of its own, so a single pause read

@@ -4,7 +4,7 @@
 // row), the chosen conversation (messages, reply, rename, accept/reopen), and a
 // box that opens a new conversation about the slides tagged for it (the one on
 // screen, or several Ctrl-clicked in the strip). Every note goes to the agent at once.
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 import type { ConversationDTO } from '@/api/client'
 import { useConfirm } from '@/stores/confirm'
@@ -39,6 +39,17 @@ const listed = computed(() => [
   ...review.slideConversations.filter((c) => c.status === 'open' || review.showClosed),
 ])
 const chosen = computed(() => review.chosen)
+const rowsEl = ref<HTMLElement | null>(null)
+// a conversation just started isn't opened by itself: bring its row into view
+watch(
+  () => review.justStarted,
+  async (id) => {
+    if (id === null) return
+    await nextTick()
+    const rows = rowsEl.value?.querySelectorAll<HTMLElement>('[data-row]') ?? []
+    ;[...rows].find((el) => el.dataset.row === id)?.scrollIntoView?.({ block: 'nearest' }) // absent in jsdom
+  },
+)
 const pendingHere = computed(() => Object.keys(review.data?.pending ?? {}))
 
 // unsent replies stay with their conversation; one draft for a new conversation
@@ -144,7 +155,7 @@ function time(at: string): string {
             show accepted ({{ review.closedCount }})
           </label>
         </div>
-        <div class="rows">
+        <div ref="rowsEl" class="rows">
           <button
             class="conv-row all"
             :class="{ active: review.filter === null }"
@@ -159,7 +170,8 @@ function time(at: string): string {
             v-for="c in listed"
             :key="c.id"
             class="conv-row"
-            :class="{ active: c.id === review.filter, closed: c.status === 'closed' }"
+            :class="{ active: c.id === review.filter, closed: c.status === 'closed', fresh: c.id === review.justStarted }"
+            :data-row="c.id"
           >
             <button
               class="pick"
@@ -167,10 +179,12 @@ function time(at: string): string {
               :aria-pressed="c.id === review.filter"
               :title="c.id === review.filter ? 'Click again to see all slides' : 'Read this conversation; grey out the other slides'"
               :data-testid="`conv-row-${c.id}`"
+              :data-new="c.id === review.justStarted || undefined"
               @click="review.toggle(c.id)"
             >
               <span class="conv-name" dir="auto">
                 <span v-if="!c.is_deck" class="conv-id mono">{{ c.id }}</span> {{ nameOf(c) }}
+                <span v-if="c.id === review.justStarted" class="new-tag">new</span>
               </span>
               <span class="conv-state" :class="c.status === 'closed' ? 'closed' : c.turn">
                 {{ turnLabel(c) }}{{ originLabel(c) }}
@@ -406,6 +420,18 @@ function time(at: string): string {
 .conv-row.active {
   background: var(--raised);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+.conv-row.fresh {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.new-tag {
+  margin-left: var(--space-1);
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
 }
 .conv-row.closed .conv-name {
   color: var(--dim);

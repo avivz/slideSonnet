@@ -102,6 +102,10 @@ const { onFocusIn, onFocusOut } = useEditingFocus(root, (el) => {
   const card = el.closest<HTMLElement>('[data-speech]')
   return card ? { slideId: slideId.value, index: Number(card.dataset.speech) } : null
 })
+/** Working on a slide outside the chosen conversation shows every slide again. */
+function leaveFilter(): void {
+  review.leaveFilterFor(slideId.value)
+}
 function onKey(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault()
@@ -119,6 +123,8 @@ function onKey(event: KeyboardEvent): void {
     @focusin="onFocusIn"
     @focusout="onFocusOut"
     @keydown="onKey"
+    @focusin.capture="leaveFilter"
+    @click="leaveFilter"
   >
     <header class="head">
       <h2 class="id mono" data-testid="slide-id">{{ slideId || '(no slide id)' }}</h2>

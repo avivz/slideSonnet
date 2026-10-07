@@ -68,7 +68,9 @@ export const useReviewStore = defineStore('review', () => {
     picked.value = []
     pickedByHand.value = false
   }
-  /** Open a conversation about the tagged slides, and show it. */
+  /** The conversation just started here: marked in the list until it's opened. */
+  const justStarted = ref<string | null>(null)
+  /** Open a conversation about the tagged slides (the view stays as it was). */
   async function startConversation(text: string): Promise<boolean> {
     const slides = newSlides.value
     if (!slides.length) return false
@@ -168,6 +170,7 @@ export const useReviewStore = defineStore('review', () => {
       beforeOnly.value = false
       comparing.value = false
       bannerDismissed.value = false
+      justStarted.value = null
       resetPicked()
     },
     { flush: 'sync' },
@@ -205,7 +208,7 @@ export const useReviewStore = defineStore('review', () => {
       if (epoch !== editor.loadEpoch) return false
       if (outcome.message) editor.flash(outcome.message, body.type === 'file_unrequested' ? 'warn' : 'ok')
       if (outcome.focus && outcome.conversation) filter.value = outcome.conversation
-      if (body.type === 'comment' && outcome.conversation) filter.value = outcome.conversation // show it
+      if (body.type === 'comment' && outcome.conversation) justStarted.value = outcome.conversation
       await refresh()
       return true
     } catch (e) {
@@ -267,6 +270,7 @@ export const useReviewStore = defineStore('review', () => {
   /** Focus on a conversation and show one of its slides (staying put when already on one). */
   function select(conversation: string): void {
     filter.value = conversation
+    if (justStarted.value === conversation) justStarted.value = null
     const slides = conversations.value.find((c) => c.id === conversation)?.slides ?? []
     if (slides.includes(subject.value)) return
     const live = slides.find((s) => editor.pages.some((p) => p.slide_id === s))
@@ -306,7 +310,7 @@ export const useReviewStore = defineStore('review', () => {
     strip,
     conversationsFor, authorOnly, badge, diffFor, refresh, command, fileUnrequested, viewRemoved, leaveRemoved,
     leaveFilterFor, step, select, toggle, nextYourTurn,
-    chosen, picked, pickedByHand, newSlides, pick, unpick, resetPicked, startConversation,
+    chosen, picked, pickedByHand, newSlides, pick, unpick, resetPicked, startConversation, justStarted,
     panelRequests, showInPanel,
   }
 })

@@ -37,7 +37,9 @@ const { onFocusIn, onFocusOut } = useEditingFocus(root, (el) => {
   return key && at > 0 ? { slideId: key.slice(0, at), index: Number(key.slice(at + 1)) } : null
 })
 
+/** Show slide `index` above; a slide outside the chosen conversation shows every slide again. */
 function enter(index: number): void {
+  review.leaveFilterFor(editor.pages[index]?.slide_id ?? '')
   if (index !== editor.index) {
     review.leaveRemoved()
     editor.go(index)
@@ -164,6 +166,7 @@ function retry(slideId: string, seg: EditSeg): void {
       :class="{ current: i === editor.index && !review.viewingRemoved, dimmed: dimmed(page.slide_id) }"
       :data-index="i"
       :data-testid="`script-slide-${page.slide_id || i}`"
+      @click="enter(i)"
     >
       <button class="head" type="button" :title="`Show slide ${i + 1}`" @click="enter(i)">
         <span class="num mono">{{ i + 1 }}</span>

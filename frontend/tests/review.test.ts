@@ -2,7 +2,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { describe, expect, it, vi } from 'vitest'
 
-import { ApiError, type ReviewDTO } from '@/api/client'
+import { ApiError, type ConversationDTO, type ReviewDTO } from '@/api/client'
+import NarrationEditor from '@/features/editor/NarrationEditor.vue'
 import ReviewPanel from '@/features/review/ReviewPanel.vue'
 import SlideLinks from '@/features/review/SlideLinks.vue'
 import WaitingBanner from '@/features/review/WaitingBanner.vue'
@@ -254,6 +255,41 @@ describe('review panel', () => {
     await flushPromises()
     await w.get('[data-testid="new-reset"]').trigger('click') // Back to this slide
     expect(review.newSlides).toEqual(['c'])
+  })
+
+  it('starting a conversation keeps the view as it was; the new one is marked in the list until read', async () => {
+    const { editor, review } = await setup()
+    const c3: ConversationDTO = {
+      id: 'c3', title: '', slides: ['a'], origin: 'requested', status: 'open', turn: 'agent', is_deck: false,
+      messages: [{ author: 'author', at: '2026-10-07T09:00:00', text: 'Shorter?' }],
+    }
+    editor.client.reviewCommand = async () => ({ message: 'Note sent', conversation: 'c3', count: 0, focus: false })
+    editor.client.review = async () => ({ ...REVIEW, conversations: [...REVIEW.conversations, c3] })
+    const w = mount(ReviewPanel, { attachTo: document.body })
+    await flushPromises()
+    expect(await review.startConversation('Shorter?')).toBe(true)
+    await flushPromises()
+    expect([review.filter, review.scope]).toEqual([null, null]) // nothing greys out
+    const row = () => w.get('[data-testid="conv-row-c3"]')
+    expect(row().attributes('data-new')).toBeDefined()
+    await row().trigger('click') // read it
+    expect(review.filter).toBe('c3')
+    expect(row().attributes('data-new')).toBeUndefined()
+    review.toggle('c1')
+    await review.startConversation('And this?') // inside a conversation already: it stays chosen
+    expect(review.filter).toBe('c1')
+  })
+
+  it('working on a slide outside the chosen conversation, in the slide view, shows every slide again', async () => {
+    const { editor, review } = await setup()
+    review.select('c1') // on b, one of its slides
+    const w = mount(NarrationEditor, { attachTo: document.body })
+    await w.trigger('focusin')
+    expect(review.filter).toBe('c1')
+    editor.goToSlide('a') // e.g. the Next button: a is outside c1
+    await flushPromises()
+    await w.trigger('click')
+    expect(review.filter).toBeNull()
   })
 
   it('renames the chosen conversation', async () => {
