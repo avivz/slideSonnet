@@ -106,7 +106,16 @@ file at the same time).
    prints the approved narration block, page text, and page image; take the
    `.tex` from git.
 
-Never `accept`, `reopen`, or `clear` — approving is the author's call. To wait
-for the next batch: `slidesonnet review wait deck.pdf --since <cursor> --json`
-(blocks until the author presses Send; prints the new cursor).
+Never `accept`, `reopen`, or `clear` — approving is the author's call.
+
+**Waiting for the next batch.** Run one listener for the whole course, not one
+per deck: `slidesonnet review wait --json` from the course folder (or
+`--root DIR`) blocks until the author presses Send in *any* deck under it, then
+prints each deck with news (`decks[].pdf`, its `awaiting_agent` conversations)
+and a `cursor`. Pass that back — `slidesonnet review wait --since <cursor> --json`
+— so the next wait hears only what comes after (the first wait, with no cursor,
+returns at once for a deck with a Send you haven't answered). It picks up new
+decks by itself; `review wait a.pdf b.pdf --since <cursor>` watches just those.
+For a single deck: `slidesonnet review wait deck.pdf --since <N> --json` (its
+cursor is a number). Exit code 3 means `--timeout` ran out.
 

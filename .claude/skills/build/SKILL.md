@@ -110,7 +110,8 @@ slidesonnet review status  deck.pdf                   # changed slides, unfiled 
 slidesonnet review comment deck.pdf @x @y -m "…" [--title "…"]
 slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z]
 slidesonnet review list    deck.pdf --mine --json     # what awaits the agent
-slidesonnet review wait    deck.pdf --since N --json  # block until the author presses Send
+slidesonnet review wait    --since CURSOR --json      # block until Send in any deck here (--root DIR)
+slidesonnet review wait    deck.pdf --since N --json  # one deck only (its cursor is a number)
 ```
 
 Also `title`, `accept`, `reopen`, `send`, `clear`, `show`, `snapshot`. `status`,

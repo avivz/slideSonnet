@@ -205,13 +205,18 @@ Conversation history lives in `<deck>.review` beside the deck.
 The agent's side is `slidesonnet review …`:
 
 ```bash
-slidesonnet review wait    deck.pdf --since N --json   # block until you press Send
+slidesonnet review wait    --since CURSOR --json       # block until you press Send in any deck here
+slidesonnet review wait    deck.pdf --since N --json   # ...or in this one deck
 slidesonnet review list    deck.pdf --mine --json      # conversations awaiting the agent
 slidesonnet review comment deck.pdf @x @y -m "…" [--title "…"]   # open a conversation
 slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z] [--title "…"]
 slidesonnet review title   deck.pdf c3 "Shorter Euler proof"      # rename, no message
 slidesonnet review status  deck.pdf                   # changed slides, unfiled changes
 ```
+
+One `review wait` with no PDF listens to every deck under the current folder (or
+`--root DIR`), so an agent working through a course needs a single listener: it
+names each deck you pressed Send in and prints a cursor to pass back as `--since`.
 
 A conversation's id (`c3`) never changes. Its title is only a display name,
 set by the latest `--title` or `review title` (or ✎ in the editor).

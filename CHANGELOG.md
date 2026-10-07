@@ -32,6 +32,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   there (`week03/...`). Click a week's heading to narrow back down. The folder you
   choose holds until you close the editor, so the deck switcher (Ctrl+K) and
   Previous/Next deck step across weeks too, and a deck already open stays open.
+- **One `review wait` hears Send in every deck of a course.** Run with no PDF,
+  `slidesonnet review wait` listens to every deck under the current folder (or
+  `--root DIR`, including decks added while it waits) and returns as soon as you
+  press Send in any of them, naming each deck and the conversations waiting for
+  the agent. An agent working through a course needs one listener instead of one
+  per deck; it passes back the cursor it was given so it hears only what comes
+  next. `review wait a.pdf b.pdf` listens to just those decks, and
+  `review wait deck.pdf` works as before.
 
 ### Changed
 - **Starting a review conversation no longer greys out the other slides.** You

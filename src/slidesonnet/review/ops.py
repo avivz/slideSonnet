@@ -17,8 +17,10 @@ opened with an explicit ``--narration`` file (default: ``<deck>.narration``).
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import re
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -460,6 +462,19 @@ class WaitResult:
     awaiting_agent: list[Conversation]
 
 
+def _nap(deadline: float | None, poll: float) -> bool:
+    """Sleep until the next poll, never past *deadline*; False once it has passed."""
+    left = None if deadline is None else deadline - time.monotonic()
+    if left is not None and left <= 0:
+        return False
+    time.sleep(poll if left is None else min(poll, left))
+    return True
+
+
+def _awaiting_agent(state: ReviewState) -> list[Conversation]:
+    return [c for c in state.conversations.values() if c.status == "open" and c.turn == "agent"]
+
+
 def wait(
     pdf_path: Path, *, since: int, timeout: float | None = None, poll: float = 1.0
 ) -> WaitResult | None:
@@ -468,10 +483,125 @@ def wait(
     while True:
         state = load(pdf_path)
         if state.sends > since:
-            awaiting = [
-                c for c in state.conversations.values() if c.status == "open" and c.turn == "agent"
-            ]
-            return WaitResult(cursor=state.sends, awaiting_agent=awaiting)
-        if deadline is not None and time.monotonic() >= deadline:
+            return WaitResult(cursor=state.sends, awaiting_agent=_awaiting_agent(state))
+        if not _nap(deadline, poll):
             return None
-        time.sleep(poll)
+
+
+# ---- wait on many decks ------------------------------------------------------------
+#
+# One listener for a whole course. The cursor is a token, ``d:<key>=<sends>,…``:
+# per deck (keyed by a short hash of its ``.review`` path, so it doesn't depend on
+# the current directory or on how the decks were named) the send count already
+# handled. The rules, chosen so a Send is never missed and a wait never loops:
+#
+# * a deck missing from the cursor (a new deck, or a review begun later) is at 0;
+# * a deck whose count is *below* its cursor entry had its review log started over,
+#   so all its sends are new;
+# * with no cursor at all (a first wait), a deck counts as news only when it has
+#   sends *and* a conversation waiting for the agent: sends the agent already
+#   answered aren't replayed every time a fresh listener starts;
+# * the returned cursor covers every watched deck (and keeps the given entries for
+#   decks it no longer sees), so passing it back hears only what comes next.
+
+CURSOR_PREFIX = "d:"
+_CURSOR_ENTRY_RE = re.compile(r"([0-9a-f]{8})=(\d+)")
+
+
+@dataclass
+class DeckNews:
+    pdf: Path  # as the deck finder gave it
+    awaiting_agent: list[Conversation]
+
+
+@dataclass
+class MultiWaitResult:
+    cursor: str  # pass back (through :func:`parse_cursor`) as ``since`` next time
+    decks: list[DeckNews]
+
+
+def deck_key(pdf_path: Path) -> str:
+    """A deck's key in a multi-deck cursor: one per deck, whichever build names it."""
+    return hashlib.sha1(str(review_path(pdf_path)).encode("utf-8")).hexdigest()[:8]
+
+
+def parse_cursor(text: str) -> dict[str, int] | None:
+    """A multi-deck cursor; None for ``0``/empty (a first wait). Raises ReviewError."""
+    if text.strip() in ("", "0"):
+        return None
+    body = text.strip().removeprefix(CURSOR_PREFIX)
+    entries = [_CURSOR_ENTRY_RE.fullmatch(e) for e in body.split(",") if e]
+    if not text.strip().startswith(CURSOR_PREFIX) or not all(entries):
+        raise ReviewError(
+            f"'{text}' isn't a cursor from a wait on several decks (it looks like d:…)"
+        )
+    return {m.group(1): int(m.group(2)) for m in entries if m}
+
+
+def format_cursor(counts: dict[str, int]) -> str:
+    return CURSOR_PREFIX + ",".join(f"{k}={n}" for k, n in sorted(counts.items()) if n)
+
+
+class _ReviewStates:
+    """Review logs read only when they changed, so polling a course costs a stat per deck."""
+
+    def __init__(self) -> None:
+        self._seen: dict[Path, tuple[tuple[int, int, int], ReviewState]] = {}
+
+    def read(self, pdf_path: Path) -> ReviewState | None:
+        path = review_path(pdf_path)
+        try:
+            st = path.stat()
+        except OSError:
+            return None  # no review for this deck (yet)
+        signature = (st.st_ino, st.st_mtime_ns, st.st_size)
+        cached = self._seen.get(path)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        state = load(pdf_path)
+        self._seen[path] = (signature, state)
+        return state
+
+
+def wait_many(
+    find_decks: Callable[[], list[Path]],
+    *,
+    since: dict[str, int] | None,
+    timeout: float | None = None,
+    poll: float = 1.0,
+    rescan: float = 30.0,
+) -> MultiWaitResult | None:
+    """Block until a ``send`` in any deck *find_decks* returns, beyond the *since* cursor.
+
+    *find_decks* is called again every *rescan* seconds, to pick up new decks.
+    None if *timeout* runs out first. The cursor rules are in the comment above.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    states = _ReviewStates()
+    handled = dict(since or {})
+    first_wait = since is None
+    decks: dict[str, Path] = {}
+    next_scan = 0.0
+    while True:
+        if time.monotonic() >= next_scan:
+            decks = {deck_key(pdf): pdf for pdf in find_decks()}
+            next_scan = time.monotonic() + rescan
+        counts: dict[str, int] = {}
+        news: list[DeckNews] = []
+        for key, pdf in decks.items():
+            state = states.read(pdf)
+            if state is None:
+                continue
+            counts[key] = state.sends
+            awaiting = _awaiting_agent(state)
+            if first_wait and not awaiting:
+                handled.setdefault(key, state.sends)  # answered before this listener began
+            if state.sends < handled.get(key, 0):
+                handled[key] = 0  # the review log started over: all its sends are new
+            if state.sends > handled.get(key, 0):
+                news.append(DeckNews(pdf=pdf, awaiting_agent=awaiting))
+        first_wait = False
+        if news:
+            return MultiWaitResult(cursor=format_cursor({**(since or {}), **counts}), decks=news)
+        if not _nap(deadline, poll):
+            return None

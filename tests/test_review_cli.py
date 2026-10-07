@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pymupdf
 import pytest
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 
 from slidesonnet.cli import main
 from slidesonnet.review import ops
@@ -167,3 +167,80 @@ def test_declaring_an_uncompiled_slide_notes_it(deck: Path) -> None:
     assert "Not in the PDF yet" in status and "@proof-2" in status
     data = json.loads(_run("status", str(deck), "--json"))
     assert data["pending"] == {"proof-2": ["c1"]}
+
+
+# ---- one listener for a whole course ----------------------------------------------
+
+
+def _course(root: Path, *names: str) -> dict[str, Path]:
+    """One deck per folder (``root/a/a.pdf`` …), the way a course lays them out."""
+    decks = {}
+    for name in names:
+        (root / name).mkdir()
+        decks[name] = write_pdf(root / name / f"{name}.pdf", ["s1"])
+        (root / name / f"{name}.narration").write_text(simple_narration("@s1\nHi.\n"))
+    return decks
+
+
+def _author_sends(pdf: Path) -> None:
+    ops.comment(pdf, ["s1"], "Have a look.", author="author")
+    ops.send(pdf)
+
+
+def _wait(*args: str) -> Result:
+    return CliRunner().invoke(main, ["--no-log-file", "review", "wait", *args])
+
+
+def test_wait_under_a_root_hears_a_send_in_any_deck(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    decks = _course(tmp_path, "a", "b")
+    _author_sends(decks["b"])
+    data = json.loads(_run("wait", "--root", str(tmp_path), "--json", "--timeout", "1"))
+    assert [Path(d["pdf"]).name for d in data["decks"]] == ["b.pdf"]
+    assert [c["id"] for c in data["decks"][0]["awaiting_agent"]] == ["c1"]
+    cursor = data["cursor"]
+    assert _wait("--root", str(tmp_path), "--since", cursor, "--timeout", "0.1").exit_code == 3
+    _author_sends(decks["a"])
+    monkeypatch.chdir(tmp_path)  # --root defaults to the current directory
+    out = _run("wait", "--since", cursor, "--timeout", "1").splitlines()
+    assert out[:2] == ["a/a.pdf", "  c1  @s1"]
+    assert out[-1].startswith("cursor ") and out[-1] != f"cursor {cursor}"
+    assert len(out) == 3  # deck b had nothing new
+
+
+def test_wait_on_several_pdfs_watches_exactly_those(tmp_path: Path) -> None:
+    decks = _course(tmp_path, "a", "b", "c")
+    _author_sends(decks["c"])
+    watched = [str(decks["a"]), str(decks["b"])]
+    assert _wait(*watched, "--timeout", "0.1").exit_code == 3
+    _author_sends(decks["b"])
+    data = json.loads(_run("wait", *watched, "--json", "--timeout", "1"))
+    assert [Path(d["pdf"]).name for d in data["decks"]] == ["b.pdf"]
+
+
+def test_wait_keeps_the_two_kinds_of_cursor_apart(deck: Path, tmp_path: Path) -> None:
+    for args in (
+        [str(deck), "--since", "d:0123abcd=1"],  # a course cursor for one deck
+        ["--root", str(tmp_path), "--since", "3"],  # a one-deck cursor for a course
+        ["--root", str(tmp_path), "--since", "nonsense"],
+        [str(deck), "--root", str(tmp_path)],
+    ):
+        result = _wait(*args, "--timeout", "0.1")
+        assert result.exit_code == 2, (args, result.output)
+
+
+def test_wait_says_when_the_scan_was_cut_short(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from slidesonnet.server import library
+
+    monkeypatch.setattr(library, "DEFAULT_LIMITS", library.ScanLimits(max_dirs=1))
+    write_pdf(tmp_path / "top.pdf", ["s1"])
+    (tmp_path / "top.narration").write_text(simple_narration("@s1\nHi.\n"))
+    _course(tmp_path, "deeper")
+    _author_sends(tmp_path / "top.pdf")
+    result = _wait("--root", str(tmp_path), "--json", "--timeout", "1")
+    assert result.exit_code == 0, result.output
+    assert "stopped" in result.stderr  # …but still watches the decks it found
+    assert [Path(d["pdf"]).name for d in json.loads(result.stdout)["decks"]] == ["top.pdf"]

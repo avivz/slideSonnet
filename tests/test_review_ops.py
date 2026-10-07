@@ -209,6 +209,56 @@ def test_wait_times_out(deck: Path) -> None:
     assert ops.wait(deck, since=0, timeout=0.2, poll=0.05) is None
 
 
+def _course_deck(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.with_suffix(".narration").write_text(simple_narration("@a\nHi.\n"), encoding="utf-8")
+    return write_pdf(path, ["a"])
+
+
+def test_a_fresh_course_wait_reports_unanswered_sends_not_answered_ones(tmp_path: Path) -> None:
+    answered, unanswered = _course_deck(tmp_path / "a.pdf"), _course_deck(tmp_path / "b.pdf")
+    for pdf in (answered, unanswered):
+        ops.comment(pdf, ["a"], "look", author="author")
+        ops.send(pdf)
+    ops.reply(answered, "c1", "done", author="agent")
+    result = ops.wait_many(lambda: [answered, unanswered], since=None, timeout=1, poll=0.05)
+    assert result is not None
+    assert [news.pdf for news in result.decks] == [unanswered]
+    # the cursor covers both decks: re-waiting with it hears neither old send
+    again = ops.parse_cursor(result.cursor)
+    assert (
+        ops.wait_many(lambda: [answered, unanswered], since=again, timeout=0.2, poll=0.05) is None
+    )
+
+
+def test_a_course_wait_finds_a_deck_that_appears_while_it_waits(tmp_path: Path) -> None:
+    decks = [_course_deck(tmp_path / "a.pdf")]
+    newcomer = tmp_path / "b.pdf"
+
+    def later() -> None:
+        time.sleep(0.2)
+        decks.append(_course_deck(newcomer))
+        ops.send(newcomer)
+
+    threading.Thread(target=later).start()
+    result = ops.wait_many(lambda: list(decks), since={}, timeout=5, poll=0.05, rescan=0.1)
+    assert result is not None and [news.pdf for news in result.decks] == [newcomer]
+
+
+def test_a_course_wait_hears_a_review_that_started_over(tmp_path: Path) -> None:
+    pdf = _course_deck(tmp_path / "a.pdf")
+    for _ in range(3):
+        ops.send(pdf)
+    first = ops.wait_many(lambda: [pdf], since={}, timeout=1)
+    assert first is not None
+    ops.review_path(pdf).unlink()  # the review log was deleted and begun again
+    ops.send(pdf)  # one send, fewer than the cursor's three — still news
+    result = ops.wait_many(lambda: [pdf], since=ops.parse_cursor(first.cursor), timeout=1)
+    assert result is not None and [news.pdf for news in result.decks] == [pdf]
+    again = ops.parse_cursor(result.cursor)
+    assert ops.wait_many(lambda: [pdf], since=again, timeout=0.2, poll=0.05) is None
+
+
 def test_status_on_final_build_pauses_comparison(tmp_path: Path) -> None:
     pdf = write_pdf(tmp_path / "deck.pdf", ["a"])
     ops.status(pdf)

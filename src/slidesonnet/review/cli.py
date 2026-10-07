@@ -75,7 +75,7 @@ def review() -> None:
 
     \b
     Agent loop:
-      slidesonnet review wait deck.pdf --since N --json   # block until "send"
+      slidesonnet review wait --since CURSOR --json       # block until "send" in any deck here
       slidesonnet review list deck.pdf --mine --json      # what needs you
       slidesonnet review reply deck.pdf c3 --add-slides @x "Split into two."
       slidesonnet review status deck.pdf                  # no unfiled changes
@@ -394,13 +394,52 @@ def send_cmd(pdf: Path) -> None:
         ops.send(pdf)
 
 
+#: How often a wait on a whole folder looks for new decks, in seconds.
+WAIT_RESCAN_SECONDS = 30.0
+
+
+def _conv_line(conv: Conversation) -> str:
+    return f"  {conv.id}  {' '.join('@' + s for s in conv.slides) or '(whole deck)'}"
+
+
+def _shown(pdf: Path) -> str:
+    """*pdf* relative to the current directory when it's under it (what you'd type)."""
+    try:
+        return pdf.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        return str(pdf)
+
+
 @review.command("wait")
-@_PDF
-@click.option("--since", type=int, default=0, show_default=True, help="Cursor from the last wait")
+@click.argument("pdfs", nargs=-1, type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="With no PDF: watch every deck under this folder (default: the current one)",
+)
+@click.option(
+    "--since",
+    default="0",
+    show_default=True,
+    help="Cursor from the last wait (a number for one deck, a d:… token for several)",
+)
 @click.option("--timeout", type=float, help="Give up after this many seconds (exit code 3)")
 @_JSON
-def wait_cmd(pdf: Path, since: int, timeout: float | None, as_json: bool) -> None:
+def wait_cmd(
+    pdfs: tuple[Path, ...], root: Path | None, since: str, timeout: float | None, as_json: bool
+) -> None:
     """Block until the author presses Send; print what awaits the agent.
+
+    \b
+    One deck:      review wait deck.pdf --since N
+    A whole course (every deck under the current folder, or --root):
+                   review wait --since CURSOR
+    Several decks: review wait a.pdf b.pdf --since CURSOR
+
+    With more than one deck it prints each deck that has news, with its
+    conversations waiting for you, then the cursor to pass back. With no
+    cursor (a first wait) it returns at once for any deck whose author
+    already sent something you haven't answered.
 
     \b
     Exit codes:
@@ -409,10 +448,27 @@ def wait_cmd(pdf: Path, since: int, timeout: float | None, as_json: bool) -> Non
       2  a usage error (a bad option)
       3  --timeout ran out first
     """
+    from slidesonnet.builds import working_pdf
+
+    if pdfs and root is not None:
+        raise click.UsageError("give PDFs or --root, not both")
+    if len(pdfs) == 1:
+        _wait_one(working_pdf(pdfs[0]), since, timeout, as_json)
+        return
+    _wait_many(pdfs, root or Path.cwd(), since, timeout, as_json)
+
+
+def _wait_one(pdf: Path, since: str, timeout: float | None, as_json: bool) -> None:
     from slidesonnet.review import ops
 
     try:
-        result = ops.wait(pdf, since=since, timeout=timeout)
+        cursor = int(since)
+    except ValueError:
+        raise click.BadParameter(
+            "with one deck the cursor is the number the last wait printed", param_hint="--since"
+        ) from None
+    try:
+        result = ops.wait(pdf, since=cursor, timeout=timeout)
     except SlideSonnetError as exc:
         raise click.ClickException(str(exc)) from exc
     if result is None:
@@ -427,4 +483,58 @@ def wait_cmd(pdf: Path, since: int, timeout: float | None, as_json: bool) -> Non
         return
     click.echo(f"cursor {result.cursor}")
     for conv in result.awaiting_agent:
-        click.echo(f"  {conv.id}  {' '.join('@' + s for s in conv.slides) or '(whole deck)'}")
+        click.echo(_conv_line(conv))
+
+
+def _wait_many(
+    pdfs: tuple[Path, ...], root: Path, since: str, timeout: float | None, as_json: bool
+) -> None:
+    from slidesonnet.builds import working_pdf
+    from slidesonnet.review import ops
+    from slidesonnet.server.library import discover_decks
+
+    try:
+        cursor = ops.parse_cursor(since)
+    except SlideSonnetError as exc:
+        raise click.BadParameter(str(exc), param_hint="--since") from exc
+
+    explicit = [working_pdf(p.resolve()) for p in pdfs]
+    noted = False
+
+    def find_decks() -> list[Path]:
+        nonlocal noted
+        if explicit:
+            return explicit
+        scan = discover_decks(root)
+        if scan.truncated and not noted:
+            click.echo(
+                f"note: the deck scan stopped after {scan.visited} folders (at "
+                f"{scan.stopped_at}); watching the {len(scan.decks)} decks found — "
+                "pass a narrower --root to watch them all",
+                err=True,
+            )
+        noted = True
+        return [entry.pdf_path for entry in scan.decks]
+
+    result = ops.wait_many(find_decks, since=cursor, timeout=timeout, rescan=WAIT_RESCAN_SECONDS)
+    if result is None:
+        click.echo("timed out", err=True)
+        sys.exit(WAIT_TIMED_OUT)
+    if as_json:
+        data = {
+            "cursor": result.cursor,
+            "decks": [
+                {
+                    "pdf": _shown(news.pdf),
+                    "awaiting_agent": [_conv_json(c) for c in news.awaiting_agent],
+                }
+                for news in result.decks
+            ],
+        }
+        click.echo(json.dumps(data, indent=1, ensure_ascii=False))
+        return
+    for news in result.decks:
+        click.echo(_shown(news.pdf))
+        for conv in news.awaiting_agent:
+            click.echo(_conv_line(conv))
+    click.echo(f"cursor {result.cursor}")
