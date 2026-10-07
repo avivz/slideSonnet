@@ -42,6 +42,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   `review wait deck.pdf` works as before.
 
 ### Changed
+- **Notes about the whole deck are conversations like any other.** There's no
+  longer one permanent "Whole deck" conversation: in the Review tab a new
+  conversation starts about the slide on screen, and removing its tag makes it
+  about the whole deck. You can have several, and accept and clear them like the
+  rest; one left open is a good home for standing instructions ("British
+  spelling everywhere"). From the command line, `slidesonnet review comment
+  deck.pdf -m "…"` with no slides starts one, and `review reply … --add-slides`
+  / `--remove-slides` narrows or widens any conversation. Your old whole-deck
+  notes carry over as an open conversation named `deck`. Whole-deck
+  conversations never hold up an export.
 - **Starting a review conversation no longer greys out the other slides.** You
   stay where you were; the new conversation is marked "new" in the Review tab's
   list, and clicking it opens it as before.

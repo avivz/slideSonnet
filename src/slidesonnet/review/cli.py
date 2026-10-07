@@ -69,9 +69,9 @@ def review() -> None:
 
     \b
     The base is the last-cleared version of every slide (taken automatically
-    on first use). A conversation covers one or more slides; "deck" is the
-    permanent deck-wide conversation. Accept closes a conversation; "clear"
-    drops closed ones and moves their slides' base forward.
+    on first use). A conversation covers one or more slides, or none: then it
+    is about the whole deck. Accept closes a conversation; "clear" drops closed
+    ones and moves their slides' base forward.
 
     \b
     Agent loop:
@@ -165,7 +165,7 @@ def status_cmd(pdf: Path, as_json: bool, narration: Path | None) -> None:
             "Not in the PDF yet (declared — compile, or fix the id): "
             + " ".join(f"@{sid} ({', '.join(cids)})" for sid, cids in st.pending.items())
         )
-    convs = [c for c in st.state.conversations.values() if c.messages or not c.is_deck]
+    convs = list(st.state.conversations.values())
     if convs:
         click.echo("Conversations:")
         for conv in convs:
@@ -209,8 +209,6 @@ def list_cmd(pdf: Path, as_json: bool, mine: bool, show_all: bool, narration: Pa
         click.echo(json.dumps({"conversations": out}, indent=1, ensure_ascii=False))
         return
     for conv in convs:
-        if conv.is_deck and not conv.messages:
-            continue
         scope = " ".join(f"@{s}" for s in conv.slides) or "(whole deck)"
         name = f"  {conv.title}" if conv.title else ""
         click.echo(f"── {conv.id}{name}  {_turn_label(conv)}  {scope}")
@@ -229,26 +227,28 @@ def _note_uncompiled(slide_ids: list[str]) -> None:
 
 @review.command("comment")
 @_PDF
-@click.argument("slides", nargs=-1, required=True)
-@click.option("-m", "--text", required=True, help="The message")
+@click.argument("slides", nargs=-1)
+@click.option("-m", "--text", help="The message (or give it last, after the slides)")
 @click.option("--title", default="", help="A short name for the conversation")
 @_AS
 def comment_cmd(
-    pdf: Path, slides: tuple[str, ...], text: str, title: str, author: str | None
+    pdf: Path, slides: tuple[str, ...], text: str | None, title: str, author: str | None
 ) -> None:
-    """Open a conversation about SLIDES (e.g. @euler-trick @euler-result)."""
+    """Open a conversation about SLIDES (e.g. @euler-trick @euler-result).
+
+    With no slides it is about the whole deck — standing instructions ("British
+    spelling everywhere") can stay in one left open.
+    """
     from slidesonnet.review import ops
 
-    if any(s.lstrip("@") == "deck" for s in slides):
-        raise click.UsageError(
-            "the deck conversation always exists — write to it with "
-            '`slidesonnet review reply <pdf> deck -m "…"`'
-        )
+    ids = list(slides)
+    if text is None and ids and not ids[-1].startswith("@"):
+        text = ids.pop()  # the message, given last
+    if not text:
+        raise click.UsageError("give the message with -m (or last, after the slides)")
     with _errors():
-        cid = ops.comment(
-            pdf, list(slides), text, author=cast(Author, author or "agent"), title=title
-        )
-        _note_uncompiled(ops.not_in_deck(pdf, list(slides)))
+        cid = ops.comment(pdf, ids, text, author=cast(Author, author or "agent"), title=title)
+        _note_uncompiled(ops.not_in_deck(pdf, ids))
     click.echo(cid)
 
 
@@ -262,6 +262,11 @@ def comment_cmd(
     multiple=True,
     help="Widen the conversation to this slide (repeatable, or space-separated)",
 )
+@click.option(
+    "--remove-slides",
+    multiple=True,
+    help="Take this slide out of the conversation (repeatable, or space-separated)",
+)
 @click.option("--title", default="", help="Rename the conversation (a short name)")
 @_AS
 def reply_cmd(
@@ -270,16 +275,18 @@ def reply_cmd(
     text: str | None,
     text_opt: str | None,
     add_slides: tuple[str, ...],
+    remove_slides: tuple[str, ...],
     title: str,
     author: str | None,
 ) -> None:
-    """Add a message to CONVERSATION ("deck" = the deck-wide conversation)."""
+    """Add a message to CONVERSATION (an id like c3)."""
     from slidesonnet.review import ops
 
     message = text_opt if text_opt is not None else text
     if not message:
         raise click.UsageError("give the message as TEXT or with -m")
     slides = [s for group in add_slides for s in group.split()]
+    removed = [s for group in remove_slides for s in group.split()]
     with _errors():
         _note_uncompiled(ops.not_in_deck(pdf, slides))
         ops.reply(
@@ -288,6 +295,7 @@ def reply_cmd(
             message,
             author=cast(Author, author or "agent"),
             add_slides=slides,
+            remove_slides=removed,
             title=title,
         )
 

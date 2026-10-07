@@ -569,8 +569,8 @@ def export_blockers(pdf_path: Path) -> list[str]:
     """Why *pdf_path* isn't ready for a final video; empty when it is.
 
     A plain build hides page numbers and progress bars; open review
-    conversations about slides mean changes still await a verdict (the deck
-    conversation never counts). A PDF from an older ``slidesonnet.sty`` carries
+    conversations about slides mean changes still await a verdict (deck-wide
+    ones never count: they may hold standing instructions). A PDF from an older ``slidesonnet.sty`` carries
     no build marker and isn't held back.
     """
     from slidesonnet.pdf.reader import is_plain_build

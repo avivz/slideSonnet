@@ -465,7 +465,6 @@ class ConversationDTO(_Model):
     origin: str
     status: Literal["open", "closed"]
     turn: Literal["author", "agent"]
-    is_deck: bool
     messages: list[MessageDTO]
 
 

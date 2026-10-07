@@ -53,7 +53,6 @@ def _conversation(conv: Any) -> dict[str, Any]:
         "origin": conv.origin,
         "status": conv.status,
         "turn": conv.turn,
-        "is_deck": bool(conv.is_deck),
         "messages": [{"author": m.author, "at": m.at, "text": m.text} for m in conv.messages],
     }
 

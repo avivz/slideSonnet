@@ -194,9 +194,11 @@ a deck, you review its work in the editor's **Review** tab. The first time the
 editor opens a deck it records a *base*, and every slide that has changed since
 shows its old version beside the new one, with a word-by-word diff of its narration.
 
-Work is organised into **conversations**: each covers one or more slides, and
-`deck` is the permanent deck-wide one. Choosing a conversation greys out the
-other slides and shows its messages. From there you reply, ✓ accept, or reopen
+Work is organised into **conversations**: each covers one or more slides, or
+the whole deck — a new conversation starts about the slide on screen; remove
+that slide's tag to make it about the whole deck. Standing instructions
+("British spelling everywhere") can live in a whole-deck conversation you leave
+open. Choosing a conversation greys out the other slides and shows its messages. From there you reply, ✓ accept, or reopen
 it, and ✎ renames it. **Send** wakes an agent waiting for your notes. **Clear
 accepted** makes accepted changes the new base. A slide that changes
 with no conversation is filed and flagged, so nothing slips through unnoticed.
@@ -209,7 +211,8 @@ slidesonnet review wait    --since CURSOR --json       # block until you press S
 slidesonnet review wait    deck.pdf --since N --json   # ...or in this one deck
 slidesonnet review list    deck.pdf --mine --json      # conversations awaiting the agent
 slidesonnet review comment deck.pdf @x @y -m "…" [--title "…"]   # open a conversation
-slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z] [--title "…"]
+slidesonnet review comment deck.pdf -m "…"                        # … about the whole deck
+slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z] [--remove-slides @w] [--title "…"]
 slidesonnet review title   deck.pdf c3 "Shorter Euler proof"      # rename, no message
 slidesonnet review status  deck.pdf                   # changed slides, unfiled changes
 ```

@@ -17,12 +17,15 @@ const REVIEW: ReviewDTO = {
   active: true,
   final_build: false,
   conversations: [
-    { id: 'deck', title: '', slides: [], origin: 'requested', status: 'open', turn: 'author', is_deck: true, messages: [] },
     {
-      id: 'c1', title: '', slides: ['b', 'gone'], origin: 'requested', status: 'open', turn: 'author', is_deck: false,
+      id: 'c4', title: '', slides: [], origin: 'requested', status: 'open', turn: 'agent',
+      messages: [{ author: 'author', at: '2026-09-28T10:00:00', text: 'British spelling everywhere.' }],
+    },
+    {
+      id: 'c1', title: '', slides: ['b', 'gone'], origin: 'requested', status: 'open', turn: 'author',
       messages: [{ author: 'agent', at: '2026-09-28T10:15:00', text: 'I reworded b.' }],
     },
-    { id: 'c2', title: 'Shorter c', slides: ['c'], origin: 'requested', status: 'closed', turn: 'agent', is_deck: false, messages: [] },
+    { id: 'c2', title: 'Shorter c', slides: ['c'], origin: 'requested', status: 'closed', turn: 'agent', messages: [] },
   ],
   changes: [
     { slide_id: 'b', kinds: ['edited'], image: true, narration: true, moved: false, base_index: 1, current_index: 1 },
@@ -104,7 +107,7 @@ describe('review store', () => {
       ...REVIEW,
       conversations: [
         ...REVIEW.conversations,
-        { id: 'c3', title: '', slides: ['gone'], origin: 'requested', status: 'closed', turn: 'agent', is_deck: false, messages: [] },
+        { id: 'c3', title: '', slides: ['gone'], origin: 'requested', status: 'closed', turn: 'agent', messages: [] },
       ],
     }
     review.select('c3') // its only slide was deleted: show it from the base
@@ -125,7 +128,7 @@ describe('review store', () => {
       ...REVIEW,
       conversations: [
         ...REVIEW.conversations,
-        { id: 'c9', title: '', slides: ['a', 'c'], origin: 'author-edits', status: 'closed', turn: 'agent', is_deck: false, messages: [] },
+        { id: 'c9', title: '', slides: ['a', 'c'], origin: 'author-edits', status: 'closed', turn: 'agent', messages: [] },
       ],
       changes: [
         ...REVIEW.changes,
@@ -155,7 +158,7 @@ describe('review store', () => {
   it('counts what waits for you across the whole deck, and a banner leads to it', async () => {
     const { editor, review } = await setup()
     expect(editor.currentId).toBe('a') // c1 waits on b, not here
-    expect(review.waitingCount).toBe(1) // the whole-deck one has nothing from the agent: not waiting
+    expect(review.waitingCount).toBe(1) // the whole-deck one waits for the agent
     const w = mount(WaitingBanner)
     await flushPromises()
     expect(w.text()).toContain('The agent is waiting for you on 2 slides')
@@ -205,17 +208,23 @@ describe('review panel', () => {
     expect((note.element as HTMLTextAreaElement).value).toBe('Shorter, please.') // not lost
   })
 
-  it('the whole-deck conversation sits in the list, and choosing it greys nothing out', async () => {
+  it('a whole-deck conversation is listed like any other, and choosing it greys nothing out', async () => {
     const { review, sent } = await setup()
     const w = mount(ReviewPanel, { attachTo: document.body })
     await flushPromises()
-    expect(w.get('[data-testid="conv-row-deck"]').text()).not.toContain('your turn') // nothing waits in it
-    await w.get('[data-testid="conv-row-deck"]').trigger('click')
+    expect(w.get('[data-testid="conv-row-c4"]').text()).toContain('whole deck')
+    await w.get('[data-testid="conv-row-c4"]').trigger('click')
     expect(review.scope).toBeNull()
-    const note = w.get('[data-testid="reply-deck"]')
-    await note.setValue('Publish these.')
+    const note = w.get('[data-testid="reply-c4"]')
+    await note.setValue('And Oxford commas.')
     await note.trigger('keydown', { key: 'Enter' })
-    await vi.waitFor(() => expect(sent).toEqual([{ type: 'reply', conversation: 'deck', text: 'Publish these.' }]))
+    await w.get('[data-testid="accept-c4"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(sent).toEqual([
+        { type: 'reply', conversation: 'c4', text: 'And Oxford commas.' },
+        { type: 'accept', conversation: 'c4' },
+      ]),
+    )
   })
 
   it('opens a new conversation about this slide, or the slides Ctrl-clicked in the strip', async () => {
@@ -240,27 +249,30 @@ describe('review panel', () => {
     expect(review.newSlides).toEqual(['a']) // sent: back to the slide on screen
   })
 
-  it('always keeps a slide tagged: untagging the last goes back to the slide on screen', async () => {
-    const { editor, review } = await setup()
+  it('untagging every slide makes the new conversation about the whole deck', async () => {
+    const { editor, review, sent } = await setup()
     const w = mount(ReviewPanel, { attachTo: document.body })
     await flushPromises()
-    expect(w.find('[data-testid="new-slide-remove-a"]').exists()).toBe(false) // the only tag: no ×
-    review.pick('b')
-    review.pick('b') // Ctrl-click b again: untagged
-    expect(review.newSlides).toEqual(['a'])
-    review.pick('a') // and a: nothing tagged by hand is left
+    await w.get('[data-testid="new-slide-remove-a"]').trigger('click') // the slide on screen
+    expect(review.newSlides).toEqual([])
+    expect(w.find('[data-testid="new-whole-deck"]').exists()).toBe(true)
     editor.goToSlide('c')
-    expect(review.newSlides).toEqual(['c']) // follows the slide on screen again
-    review.pick('a')
+    expect(review.newSlides).toEqual([]) // stays whole-deck as you move around
+    review.pick('b')
+    review.pick('b') // Ctrl-click the last tag away: the whole deck again
+    expect(review.newSlides).toEqual([])
+    const note = w.get('[data-testid="new-note"]')
+    await note.setValue('Tighten every intro.')
+    await note.trigger('keydown', { key: 'Enter' })
+    await vi.waitFor(() => expect(sent).toEqual([{ type: 'comment', slides: [], text: 'Tighten every intro.' }]))
     await flushPromises()
-    await w.get('[data-testid="new-reset"]').trigger('click') // Back to this slide
-    expect(review.newSlides).toEqual(['c'])
+    expect(review.newSlides).toEqual(['c']) // sent: back to the slide on screen
   })
 
   it('starting a conversation keeps the view as it was; the new one is marked in the list until read', async () => {
     const { editor, review } = await setup()
     const c3: ConversationDTO = {
-      id: 'c3', title: '', slides: ['a'], origin: 'requested', status: 'open', turn: 'agent', is_deck: false,
+      id: 'c3', title: '', slides: ['a'], origin: 'requested', status: 'open', turn: 'agent',
       messages: [{ author: 'author', at: '2026-10-07T09:00:00', text: 'Shorter?' }],
     }
     editor.client.reviewCommand = async () => ({ message: 'Note sent', conversation: 'c3', count: 0, focus: false })

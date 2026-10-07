@@ -196,7 +196,7 @@ describe('script view', () => {
       active: true, final_build: false, changes: [], unfiled: [], pending: {}, badges: {},
       base_order: ['a', 'b', 'c'], base_images: {}, diffs: {},
       conversations: [
-        { id: 'c1', title: '', slides: ['a'], origin: 'requested', status: 'open', turn: 'agent', is_deck: false, messages: [] },
+        { id: 'c1', title: '', slides: ['a'], origin: 'requested', status: 'open', turn: 'agent', messages: [] },
       ],
     }
     review.filter = 'c1'

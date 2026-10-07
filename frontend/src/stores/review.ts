@@ -27,42 +27,44 @@ export const useReviewStore = defineStore('review', () => {
 
   const active = computed(() => data.value?.active ?? false)
   const conversations = computed(() => data.value?.conversations ?? [])
-  const deckConversation = computed(() => conversations.value.find((c) => c.is_deck) ?? null)
-  const slideConversations = computed(() => conversations.value.filter((c) => !c.is_deck))
+  /** Conversations about particular slides (the whole-deck ones have none). */
+  const slideConversations = computed(() => conversations.value.filter((c) => c.slides.length))
   const changes = computed(() => new Map((data.value?.changes ?? []).map((c) => [c.slide_id, c])))
   const removed = computed(() => (data.value?.changes ?? []).filter((c) => c.current_index === null).map((c) => c.slide_id))
   /** The slide the review tools are about: a removed one being looked at, else the open one. */
   const subject = computed(() => viewingRemoved.value ?? editor.currentId)
   const scope = computed(() => {
     const conv = conversations.value.find((c) => c.id === filter.value)
-    return conv && !conv.is_deck ? new Set(conv.slides) : null // the deck one greys nothing
+    return conv?.slides.length ? new Set(conv.slides) : null // a whole-deck one greys nothing
   })
   /** The conversation whose messages the panel shows (the chosen one). */
   const chosen = computed(() => conversations.value.find((c) => c.id === filter.value) ?? null)
 
   // ---- a new conversation's slides ----------------------------------------------
   /**
-   * Slides tagged by hand (Ctrl-click in the strip) — they stay as you move
-   * around; with none tagged by hand, the slide on screen. Never empty.
+   * Slides tagged by hand (Ctrl-click in the strip, or a chip's ×) — they stay
+   * as you move around; none left means the whole deck. Until then, the slide
+   * on screen.
    */
   const picked = ref<string[]>([])
   const pickedByHand = ref(false)
   const newSlides = computed(() => (pickedByHand.value ? picked.value : subject.value ? [subject.value] : []))
+  function takeOverTags(): void {
+    if (pickedByHand.value) return
+    picked.value = subject.value ? [subject.value] : []
+    pickedByHand.value = true
+  }
   /** Ctrl-click: tag or untag a slide for the next new conversation. */
   function pick(slideId: string): void {
-    if (!pickedByHand.value) {
-      picked.value = subject.value && subject.value !== slideId ? [subject.value] : []
-      pickedByHand.value = true
-    }
+    takeOverTags()
     picked.value = picked.value.includes(slideId)
       ? picked.value.filter((s) => s !== slideId)
       : [...picked.value, slideId]
-    if (!picked.value.length) resetPicked() // the last one untagged: back to the slide on screen
   }
+  /** A chip's ×: untagging the last one makes the new conversation about the whole deck. */
   function unpick(slideId: string): void {
-    if (!pickedByHand.value) return // the slide on screen is the only tag: it stays
+    takeOverTags()
     picked.value = picked.value.filter((s) => s !== slideId)
-    if (!picked.value.length) resetPicked()
   }
   function resetPicked(): void {
     picked.value = []
@@ -70,11 +72,9 @@ export const useReviewStore = defineStore('review', () => {
   }
   /** The conversation just started here: marked in the list until it's opened. */
   const justStarted = ref<string | null>(null)
-  /** Open a conversation about the tagged slides (the view stays as it was). */
+  /** Open a conversation about the tagged slides, or the whole deck (the view stays as it was). */
   async function startConversation(text: string): Promise<boolean> {
-    const slides = newSlides.value
-    if (!slides.length) return false
-    const outcome = await command({ type: 'comment', slides, text })
+    const outcome = await command({ type: 'comment', slides: newSlides.value, text })
     if (outcome) resetPicked()
     return outcome
   }
@@ -121,7 +121,7 @@ export const useReviewStore = defineStore('review', () => {
   /** Every conversation waiting for the author, anywhere in the deck; slide ones first. */
   const waiting = computed(() => [
     ...slideConversations.value.filter(waitsForYou),
-    ...(deckConversation.value && waitsForYou(deckConversation.value) ? [deckConversation.value] : []),
+    ...conversations.value.filter((c) => !c.slides.length && waitsForYou(c)),
   ])
   const waitingCount = computed(() => waiting.value.length)
   /** The slides those conversations are about. */
@@ -134,7 +134,7 @@ export const useReviewStore = defineStore('review', () => {
     const first = waiting.value[0]
     if (first) showInPanel(first.id)
   }
-  const closedCount = computed(() => slideConversations.value.filter((c) => c.status === 'closed').length)
+  const closedCount = computed(() => conversations.value.filter((c) => c.status === 'closed').length)
 
   /** One filmstrip in the current order; a removed slide sits after its old predecessor. */
   const strip = computed<StripItem[]>(() => {
@@ -305,7 +305,7 @@ export const useReviewStore = defineStore('review', () => {
 
   return {
     data, comparing, clearing, filter, showClosed, beforeOnly, viewingRemoved, active, conversations,
-    deckConversation, slideConversations, changes, removed, subject, scope, closedCount,
+    slideConversations, changes, removed, subject, scope, closedCount,
     waitsForYou, waiting, waitingCount, waitingSlides, bannerDismissed, showWaiting,
     strip,
     conversationsFor, authorOnly, badge, diffFor, refresh, command, fileUnrequested, viewRemoved, leaveRemoved,

@@ -107,8 +107,8 @@ you type), per-slide TTS, whole-deck preview, diagnostics, and the Review tab.
 
 ```bash
 slidesonnet review status  deck.pdf                   # changed slides, unfiled changes
-slidesonnet review comment deck.pdf @x @y -m "…" [--title "…"]
-slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z]
+slidesonnet review comment deck.pdf @x @y -m "…" [--title "…"]  # no slides: the whole deck
+slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z] [--remove-slides @w]
 slidesonnet review list    deck.pdf --mine --json     # what awaits the agent
 slidesonnet review wait    --since CURSOR --json      # block until Send in any deck here (--root DIR)
 slidesonnet review wait    deck.pdf --since N --json  # one deck only (its cursor is a number)

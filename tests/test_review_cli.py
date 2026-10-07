@@ -87,11 +87,13 @@ def test_list_filters(deck: Path) -> None:
     assert "c2" in [c["id"] for c in every["conversations"]]
 
 
-def test_deck_conversation(deck: Path) -> None:
-    _run("reply", str(deck), "deck", "Publish these.", "--as", "author")
-    _run("reply", str(deck), "deck", "Done.")
+def test_a_comment_without_slides_is_about_the_whole_deck(deck: Path) -> None:
+    assert _run("comment", str(deck), "Tighten every intro", "--as", "author").strip() == "c1"
+    _run("reply", str(deck), "c1", "Done.")
     out = _run("list", str(deck))
-    assert "Publish these." in out and "Done." in out
+    assert "(whole deck)" in out and "Tighten every intro" in out and "Done." in out
+    _run("reply", str(deck), "c1", "Only the intro, really.", "--add-slides", "@intro")
+    assert ops.load(deck).conversations["c1"].slides == ["intro"]
 
 
 def test_accept_reopen_clear(deck: Path) -> None:
@@ -144,19 +146,14 @@ def test_errors_are_clean(deck: Path) -> None:
 
 def test_reply_accepts_dash_m_like_comment(deck: Path) -> None:
     _run("snapshot", str(deck))
-    _run("reply", str(deck), "deck", "-m", "Publish these.", "--as", "author")
-    assert ops.load(deck).conversations["deck"].messages[-1].text == "Publish these."
+    _run("comment", str(deck), "@intro", "-m", "Shorter?")
+    _run("reply", str(deck), "c1", "-m", "Publish these.", "--as", "author")
+    assert ops.load(deck).conversations["c1"].messages[-1].text == "Publish these."
 
 
 def test_reply_needs_text(deck: Path) -> None:
     _run("snapshot", str(deck))
-    assert "text" in _fail("reply", str(deck), "deck").lower()
-
-
-def test_comment_on_deck_points_to_reply(deck: Path) -> None:
-    _run("snapshot", str(deck))
-    out = _fail("comment", str(deck), "deck", "-m", "Publish these.")
-    assert "review reply" in out
+    assert "text" in _fail("reply", str(deck), "c1").lower()
 
 
 def test_declaring_an_uncompiled_slide_notes_it(deck: Path) -> None:

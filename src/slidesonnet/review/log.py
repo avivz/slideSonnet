@@ -20,6 +20,9 @@ The format is readable in the style of the ``.narration`` sidecar::
       title: Split the Euler trick
       text: Split into two slides.
 
+    == open c2 2026-09-27T14:12:00 author
+      text: British spelling everywhere, please.
+
     == accept c1 2026-09-27T14:20:00 author
 
 A record is a header line (``== <kind> <conversation|-> <time> <author>``) and
@@ -27,6 +30,8 @@ indented fields; ``text:`` continues over lines indented four spaces. Every
 record ends with a blank line, so a record cut short by a crash mid-write is
 recognizable and skipped. An ``open`` or ``message`` may carry a ``title:``; the
 latest one names the conversation (a message with a title and no text renames it).
+A conversation with no slides (``c2`` above) is about the whole deck; a message's
+``add-slides:`` / ``remove-slides:`` narrow or widen it.
 
 Compaction drops cleared conversations, so it keeps their highest id in a
 ``# last-id: cN`` comment below the format header: ids are never reused.
@@ -52,8 +57,9 @@ logger = logging.getLogger(__name__)
 
 FORMAT_HEADER = "# slidesonnet-review: 1\n"
 
-#: The permanent deck-wide conversation (no slide scope, never closes).
-DECK = "deck"
+#: The id of the permanent deck-wide conversation older logs have (``== message
+#: deck …`` with no ``open``); it replays as an ordinary deck-wide conversation.
+LEGACY_DECK = "deck"
 
 RecordKind = Literal["open", "message", "accept", "reopen", "send"]
 Author = Literal["author", "agent", "system"]
@@ -85,6 +91,7 @@ class Record:
     at: str
     author: Author
     slides: tuple[str, ...] = ()  # open: the scope; message: slides added to it
+    removed: tuple[str, ...] = ()  # message: slides taken out of the scope
     origin: Origin = "requested"  # open only
     text: str = ""
     title: str = ""  # open/message: names the conversation from here on
@@ -98,6 +105,8 @@ def serialize_record(rec: Record) -> str:
     if rec.slides:
         name = "slides" if rec.kind == "open" else "add-slides"
         lines.append(f"  {name}: " + " ".join(f"@{s}" for s in rec.slides))
+    if rec.removed:
+        lines.append("  remove-slides: " + " ".join(f"@{s}" for s in rec.removed))
     if rec.kind == "open" and rec.origin != "requested":
         lines.append(f"  origin: {rec.origin}")
     if rec.title:
@@ -143,6 +152,7 @@ def _parse_chunk(chunk: list[str]) -> Record | None:
     if kind not in _KINDS or author not in _AUTHORS:
         return None
     slides: tuple[str, ...] = ()
+    removed: tuple[str, ...] = ()
     origin = "requested"
     title = ""
     # Text continuation lines are indented four spaces, so they never match the
@@ -154,6 +164,8 @@ def _parse_chunk(chunk: list[str]) -> Record | None:
         name, value = field_match.group(1), field_match.group(2) or ""
         if name in ("slides", "add-slides"):
             slides = tuple(tok.removeprefix("@") for tok in value.split())
+        elif name == "remove-slides":
+            removed = tuple(tok.removeprefix("@") for tok in value.split())
         elif name == "origin" and value in _ORIGINS:
             origin = value
         elif name == "title":
@@ -165,6 +177,7 @@ def _parse_chunk(chunk: list[str]) -> Record | None:
         at=at,
         author=cast(Author, author),
         slides=slides,
+        removed=removed,
         origin=cast(Origin, origin),
         text=text,
         title=title,
@@ -223,8 +236,9 @@ class Conversation:
         return "author"
 
     @property
-    def is_deck(self) -> bool:
-        return self.id == DECK
+    def deck_wide(self) -> bool:
+        """About the whole deck rather than particular slides."""
+        return not self.slides
 
 
 @dataclass
@@ -243,7 +257,8 @@ class ReviewState:
         return f"c{self.max_id() + 1}"
 
     def slide_conversations(self) -> list[Conversation]:
-        return [c for c in self.conversations.values() if not c.is_deck]
+        """Conversations about particular slides (deck-wide ones left out)."""
+        return [c for c in self.conversations.values() if not c.deck_wide]
 
 
 def _untouched_unrequested(conv: Conversation) -> bool:
@@ -272,7 +287,7 @@ def _claim(state: ReviewState, claimer: Conversation, slide_id: str) -> None:
 
 
 def replay(records: list[Record]) -> ReviewState:
-    state = ReviewState(conversations={DECK: Conversation(id=DECK)})
+    state = ReviewState(conversations={})
     for rec in records:
         if rec.kind == "send":
             state.sends += 1
@@ -280,7 +295,7 @@ def replay(records: list[Record]) -> ReviewState:
         if rec.conv is None:
             continue
         conv = state.conversations.get(rec.conv)
-        if rec.kind == "open":
+        if rec.kind == "open" or (conv is None and rec.conv == LEGACY_DECK):
             if conv is None:
                 conv = Conversation(id=rec.conv, origin=rec.origin)
                 state.conversations[rec.conv] = conv
@@ -288,15 +303,16 @@ def replay(records: list[Record]) -> ReviewState:
             logger.warning("review log: %s for unknown conversation %s", rec.kind, rec.conv)
             continue
         for sid in rec.slides:
-            if sid not in conv.slides and not conv.is_deck:
+            if sid not in conv.slides:
                 conv.slides.append(sid)
-            if conv.origin != "unrequested" and not conv.is_deck:
+            if conv.origin != "unrequested":
                 _claim(state, conv, sid)
+        conv.slides = [sid for sid in conv.slides if sid not in rec.removed]
         if rec.title:
             conv.title = rec.title
         if rec.text:
             conv.messages.append(Message(author=rec.author, at=rec.at, text=rec.text))
-        if rec.kind == "accept" and not conv.is_deck:
+        if rec.kind == "accept":
             conv.status = "closed"
         elif rec.kind == "reopen":
             conv.status = "open"

@@ -15,7 +15,6 @@ import pytest
 from slidesonnet.exceptions import ReviewError
 from slidesonnet.review import ops
 from slidesonnet.review.base import load_base
-from slidesonnet.review.log import DECK
 from tests.conftest import simple_narration, write_pdf
 
 
@@ -42,7 +41,7 @@ def test_status_takes_the_base_on_first_use(deck: Path) -> None:
     status = ops.status(deck)
     assert load_base(deck) is not None
     assert status.changes == [] and status.unfiled == []
-    assert list(status.state.conversations) == [DECK]
+    assert status.state.conversations == {}
 
 
 def test_comment_reply_accept_reopen_flow(deck: Path) -> None:
@@ -63,23 +62,49 @@ def test_reply_validation(deck: Path) -> None:
     ops.status(deck)
     with pytest.raises(ReviewError, match="no conversation"):
         ops.reply(deck, "c9", "hi")
+    with pytest.raises(ReviewError, match="no slides"):  # the old permanent one is gone
+        ops.reply(deck, "deck", "hi")
     cid = ops.comment(deck, ["a"], "x")
-    with pytest.raises(ReviewError, match="deck conversation"):
-        ops.reply(deck, DECK, "hi", add_slides=["a"])
     ops.accept(deck, cid)
     with pytest.raises(ReviewError, match="closed"):
         ops.reply(deck, cid, "more")
-    with pytest.raises(ReviewError, match="deck conversation"):
-        ops.accept(deck, DECK)
-    with pytest.raises(ReviewError, match="at least one slide"):
-        ops.comment(deck, [], "no scope")
 
 
-def test_deck_conversation_takes_messages_from_both_sides(deck: Path) -> None:
-    ops.reply(deck, DECK, "These are ready — publish them.", author="author")
-    assert ops.load(deck).conversations[DECK].turn == "agent"
-    ops.reply(deck, DECK, "Done — exported deck.mp4.")
-    assert ops.load(deck).conversations[DECK].turn == "author"
+def test_a_deck_wide_conversation_is_an_ordinary_one(deck: Path) -> None:
+    ops.status(deck)
+    _edit_page(deck, 0)
+    cid = ops.comment(deck, [], "Tighten every intro.", author="author")
+    assert ops.load(deck).conversations[cid].deck_wide
+    ops.reply(deck, cid, "Narrowing to @b.", add_slides=["b"])
+    ops.reply(deck, cid, "Not @b after all.", remove_slides=["@b"])
+    assert ops.load(deck).conversations[cid].slides == []
+    ops.reply(deck, cid, "Done.")
+    ops.accept(deck, cid)
+    result = ops.clear(deck)
+    assert (result.cleared, result.advanced) == ([cid], [])  # no slides: no base moves
+    assert ops.load(deck).conversations == {}
+    assert ops.status(deck).unfiled == ["a"]  # a's change was never part of it
+
+
+def test_an_old_deck_conversation_can_be_accepted_and_cleared(deck: Path) -> None:
+    ops.status(deck)
+    ops.review_path(deck).write_text(
+        "# slidesonnet-review: 1\n# last-id: c1\n\n"
+        "== message deck 2026-10-07T17:07:03 author\n  text: Fix the highlight.\n\n"
+        "== message deck 2026-10-07T17:12:09 agent\n  text: Done: see c1.\n\n",
+        encoding="utf-8",
+    )
+    cid = ops.comment(deck, ["a"], "x")
+    ops.accept(deck, cid)
+    ops.clear(deck)  # rewrites the log: the old conversation now opens like any other
+    assert "== open deck " in ops.review_path(deck).read_text(encoding="utf-8")
+    assert [m.text for m in ops.load(deck).conversations["deck"].messages] == [
+        "Fix the highlight.",
+        "Done: see c1.",
+    ]
+    ops.accept(deck, "deck")
+    ops.clear(deck)
+    assert ops.load(deck).conversations == {}
 
 
 def test_changes_and_unfiled(deck: Path) -> None:
@@ -172,18 +197,8 @@ def test_clear_compares_pages_once(deck: Path, monkeypatch: pytest.MonkeyPatch) 
     assert comparisons == 1  # advancing the base must reuse the comparison
 
 
-def test_clear_keeps_deck_conversation_and_send_cursor(deck: Path) -> None:
-    ops.reply(deck, DECK, "publish", author="author")
-    ops.send(deck)
-    ca = ops.comment(deck, ["a"], "x")
-    ops.accept(deck, ca)
-    ops.clear(deck)
-    state = ops.load(deck)
-    assert state.conversations[DECK].messages and state.sends == 1
-
-
-def test_open_slide_conversations_ignores_deck_and_closed(deck: Path) -> None:
-    ops.reply(deck, DECK, "publish", author="author")
+def test_open_slide_conversations_ignores_deck_wide_and_closed(deck: Path) -> None:
+    ops.comment(deck, [], "publish", author="author")
     ca = ops.comment(deck, ["a"], "x")
     cb = ops.comment(deck, ["b"], "y")
     ops.accept(deck, cb)
@@ -359,7 +374,7 @@ def _lock_held(pdf: Path) -> bool:
 
 _WRITES: dict[str, Callable[[Path], object]] = {
     "comment": lambda d: ops.comment(d, ["a"], "x"),
-    "reply": lambda d: ops.reply(d, DECK, "x"),
+    "reply": lambda d: ops.reply(d, "c1", "x"),
     "accept": lambda d: ops.accept(d, "c1"),
     "reopen": lambda d: (ops.accept(d, "c1"), ops.reopen(d, "c1")),
     "retitle": lambda d: ops.retitle(d, "c1", "T"),

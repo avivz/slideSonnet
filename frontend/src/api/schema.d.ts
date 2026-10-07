@@ -461,8 +461,6 @@ export interface components {
         ConversationDTO: {
             /** Id */
             id: string;
-            /** Is Deck */
-            is_deck: boolean;
             /** Messages */
             messages: components["schemas"]["MessageDTO"][];
             /** Origin */

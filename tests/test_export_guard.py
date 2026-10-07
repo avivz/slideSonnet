@@ -41,9 +41,9 @@ def test_open_conversation_is_refused(tmp_path: Path, stub_load: None) -> None:
         api.export(pdf, tmp_path / "deck.mp4")
 
 
-def test_deck_conversation_and_closed_ones_dont_block(tmp_path: Path, stub_load: None) -> None:
+def test_whole_deck_and_closed_conversations_dont_block(tmp_path: Path, stub_load: None) -> None:
     pdf = write_pdf(tmp_path / "deck.pdf", ["a"], final=True)
-    ops.reply(pdf, "deck", "publish", author="author")
+    ops.comment(pdf, [], "publish", author="author")
     cid = ops.comment(pdf, ["a"], "x", author="author")
     ops.accept(pdf, cid)
     with pytest.raises(_Reached):

@@ -98,8 +98,8 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   page text, narration block); `diff.py` compares two by id (new/deleted/edited/
   moved via LCS); `base.py` stores the base under `.slidesonnet/review/<stem>/`
   (advances only on Clear; refuses final builds); `log.py` is the append-only
-  `<deck>.review` (format, flock-locked appends, replay into `Conversation`s,
-  permanent `deck` conversation); `ops.py` is the API (comment/reply/accept/
+  `<deck>.review` (format, flock-locked appends, replay into `Conversation`s;
+  one with no slides is deck-wide); `ops.py` is the API (comment/reply/accept/
   reopen/send/clear/status/wait, automatic filing, author-edit notes); `cli.py`
   is the `slidesonnet review` group. slideSonnet never edits `.tex`/`.narration`
   during review.

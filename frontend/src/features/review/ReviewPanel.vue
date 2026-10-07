@@ -3,7 +3,8 @@
 // one to grey out the other slides and read it below; Accept right on its
 // row), the chosen conversation (messages, reply, rename, accept/reopen), and a
 // box that opens a new conversation about the slides tagged for it (the one on
-// screen, or several Ctrl-clicked in the strip). Every note goes to the agent at once.
+// screen, or several Ctrl-clicked in the strip; none: the whole deck). Every
+// note goes to the agent at once.
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 import type { ConversationDTO } from '@/api/client'
@@ -18,7 +19,6 @@ const AUTHOR: Record<string, string> = { author: 'You', agent: 'Agent', system: 
 
 function turnLabel(c: ConversationDTO): string {
   if (c.status === 'closed') return 'accepted'
-  if (c.is_deck && !review.waitsForYou(c)) return '' // standing instructions: nothing waits in it yet
   return c.turn === 'author' ? 'your turn' : "agent's turn"
 }
 function originLabel(c: ConversationDTO): string {
@@ -26,18 +26,18 @@ function originLabel(c: ConversationDTO): string {
 }
 /** A conversation's name: its title, else its first words. */
 function nameOf(c: ConversationDTO): string {
-  if (c.is_deck) return 'Whole deck'
   if (c.title) return c.title
   const first = c.messages.find((m) => m.author !== 'system')?.text ?? ''
   const words = first.split(/\s+/).filter(Boolean)
   return words.length ? words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '') : 'untitled'
 }
 
-/** The list: the whole-deck conversation first, then the rest (accepted ones when shown). */
-const listed = computed(() => [
-  ...(review.deckConversation ? [review.deckConversation] : []),
-  ...review.slideConversations.filter((c) => c.status === 'open' || review.showClosed),
-])
+/** The list: open conversations (accepted ones too when shown). */
+const listed = computed(() => review.conversations.filter((c) => c.status === 'open' || review.showClosed))
+/** What a conversation is about: its slides, or the whole deck. */
+function scopeOf(c: ConversationDTO): string {
+  return c.slides.length ? c.slides.map((s) => `@${s}`).join(' ') : 'whole deck'
+}
 const chosen = computed(() => review.chosen)
 const rowsEl = ref<HTMLElement | null>(null)
 // a conversation just started isn't opened by itself: bring its row into view
@@ -183,16 +183,16 @@ function time(at: string): string {
               @click="review.toggle(c.id)"
             >
               <span class="conv-name" dir="auto">
-                <span v-if="!c.is_deck" class="conv-id mono">{{ c.id }}</span> {{ nameOf(c) }}
+                <span class="conv-id mono">{{ c.id }}</span> {{ nameOf(c) }}
                 <span v-if="c.id === review.justStarted" class="new-tag">new</span>
               </span>
               <span class="conv-state" :class="c.status === 'closed' ? 'closed' : c.turn">
                 {{ turnLabel(c) }}{{ originLabel(c) }}
               </span>
-              <span v-if="c.slides.length" class="conv-slides mono">{{ c.slides.map((s) => `@${s}`).join(' ') }}</span>
+              <span class="conv-slides mono">{{ scopeOf(c) }}</span>
             </button>
             <button
-              v-if="!c.is_deck && c.status === 'open'"
+              v-if="c.status === 'open'"
               class="accept"
               type="button"
               title="Accept: close this conversation, its changes are fine"
@@ -221,9 +221,8 @@ function time(at: string): string {
             @blur="finishRename(chosen, true)"
           />
           <h3 v-else class="box-title" dir="auto">
-            <span v-if="!chosen.is_deck" class="mono">{{ chosen.id }} · </span>{{ nameOf(chosen) }}
+            <span class="mono">{{ chosen.id }} · </span>{{ nameOf(chosen) }}
             <button
-              v-if="!chosen.is_deck"
               class="rename"
               type="button"
               title="Rename"
@@ -235,10 +234,10 @@ function time(at: string): string {
           </h3>
           <span class="spacer"></span>
           <span class="conv-state small" :class="chosen.status === 'closed' ? 'closed' : chosen.turn">
-            {{ chosen.is_deck ? 'instructions for the whole deck' : turnLabel(chosen) }}
+            {{ turnLabel(chosen) }}
           </span>
         </div>
-        <p v-if="chosen.slides.length" class="conv-slides mono">{{ chosen.slides.map((s) => `@${s}`).join(' ') }}</p>
+        <p class="conv-slides mono">{{ scopeOf(chosen) }}</p>
         <ul v-if="chosen.messages.length" class="messages">
           <li v-for="(m, i) in chosen.messages" :key="i" :class="m.author">
             <span class="meta">{{ AUTHOR[m.author] }} · {{ time(m.at) }}</span>
@@ -249,7 +248,7 @@ function time(at: string): string {
           <NoteBox
             :model-value="replies.get(chosen.id) ?? ''"
             :test-id="`reply-${chosen.id}`"
-            :placeholder="chosen.is_deck ? 'Instructions for the agent about the whole deck…' : 'Reply…'"
+            placeholder="Reply…"
             :send="(text) => review.command({ type: 'reply', conversation: chosen!.id, text })"
             @update:model-value="(v) => replies.set(chosen!.id, v)"
           />
@@ -273,7 +272,6 @@ function time(at: string): string {
           <span v-for="s in review.newSlides" :key="s" class="chip mono" :data-testid="`new-slide-${s}`">
             @{{ s }}
             <button
-              v-if="review.pickedByHand"
               type="button"
               :aria-label="`Untag @${s}`"
               :data-testid="`new-slide-remove-${s}`"
@@ -282,19 +280,22 @@ function time(at: string): string {
               ×
             </button>
           </span>
+          <span v-if="!review.newSlides.length" class="chip whole" data-testid="new-whole-deck">the whole deck</span>
         </div>
         <p v-if="review.pickedByHand" class="hint small">
-          Tagged slides stay as you move around. Ctrl-click in the strip to add or remove ·
+          {{ review.newSlides.length ? 'Tagged slides stay as you move around.' : 'No slides tagged: about the whole deck.' }}
+          Ctrl-click in the strip to add or remove ·
           <button class="linkish" type="button" data-testid="new-reset" @click="review.resetPicked()">
             back to this slide
           </button>
         </p>
-        <p v-else class="hint small">About the slide on screen. Ctrl-click slides in the strip to tag several.</p>
+        <p v-else class="hint small">
+          About the slide on screen. Ctrl-click slides in the strip to tag several; remove every tag for the whole deck.
+        </p>
         <NoteBox
-          v-if="review.newSlides.length"
           v-model="draft"
           test-id="new-note"
-          placeholder="What should change…"
+          :placeholder="review.newSlides.length ? 'What should change…' : 'What should change across the deck…'"
           :send="(text) => review.startConversation(text)"
         />
       </section>
@@ -503,6 +504,9 @@ function time(at: string): string {
   border: 1px solid var(--line);
   border-radius: 999px;
   font-size: var(--text-xs);
+}
+.chip.whole {
+  padding-right: 6px;
 }
 .chip button {
   padding: 0 4px;

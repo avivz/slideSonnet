@@ -10,7 +10,6 @@ import pytest
 
 from slidesonnet.review import log as log_mod
 from slidesonnet.review.log import (
-    DECK,
     Record,
     append,
     locked,
@@ -95,11 +94,35 @@ def test_turn_follows_last_author_or_agent_message_not_system() -> None:
     assert state.conversations["c1"].turn == "agent"
 
 
-def test_deck_conversation_always_exists_and_takes_messages() -> None:
-    assert DECK in replay([]).conversations
-    state = replay([_rec("message", conv=DECK, text="publish these")])
-    deck = state.conversations[DECK]
-    assert deck.slides == [] and deck.turn == "agent" and deck.status == "open"
+def test_an_old_deck_conversation_loads_as_an_ordinary_deck_wide_one() -> None:
+    """Logs from before deck-wide conversations were ordinary ones have ``message
+    deck`` records with no ``open``: they replay as an open conversation with no
+    slides, which can be narrowed, accepted, and cleared like any other."""
+    assert replay([]).conversations == {}
+    state = replay(
+        [
+            _rec("message", conv="deck", text="publish these"),
+            Record("message", "deck", "t", "agent", text="done"),
+        ]
+    )
+    deck = state.conversations["deck"]
+    assert (deck.slides, deck.deck_wide, deck.turn, deck.status) == ([], True, "author", "open")
+    assert state.slide_conversations() == []
+    state = replay([_rec("message", conv="deck", text="x"), _rec("accept", conv="deck")])
+    assert state.conversations["deck"].status == "closed"
+
+
+def test_slides_can_be_added_and_removed() -> None:
+    state = replay(
+        [
+            _rec("open", text="Tighten every intro"),
+            Record("message", "c1", "t", "agent", slides=("a", "b"), text="a and b"),
+            Record("message", "c1", "t", "agent", removed=("a",), text="only b"),
+        ]
+    )
+    assert state.conversations["c1"].slides == ["b"]
+    (back,), _ = parse_log(serialize_record(_rec("message", removed=("a", "b"), text="x")))
+    assert back.removed == ("a", "b")
 
 
 def test_reopen_and_send_cursor() -> None:

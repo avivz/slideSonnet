@@ -265,10 +265,13 @@ file at the same time).
 1. **Commit first** (`git commit`), so any revert can come from git.
 2. **Find the work:** `slidesonnet review list deck.pdf --mine --json` —
    conversations where it's your turn, with each slide's old and new page text.
-   The `deck` conversation holds deck-wide instructions ("publish these").
+   A conversation with no slides is about the whole deck ("publish these",
+   "British spelling everywhere" — standing instructions stay in one left open).
 3. **Declare before you change.** Before editing and recompiling, put every
    slide you're about to touch into a conversation:
    - answering one: `slidesonnet review reply deck.pdf c3 --add-slides @x -m "…"`
+     (a whole-deck conversation narrows to the slides you add; `--remove-slides`
+     takes a slide back out)
    - a request from chat, or your own initiative: open one —
      `slidesonnet review comment deck.pdf @x @y -m "What I'm changing and why"`
    Slides that change without a conversation are filed as *unrequested* and
@@ -284,8 +287,8 @@ file at the same time).
    changed, or a question if you need one. Give an untitled conversation a short
    name as you answer (`--title "Shorter Euler proof"`, also on `review comment`);
    the author picks conversations by it. To rename one without a message:
-   `slidesonnet review title deck.pdf c3 "Shorter Euler proof"`. Reply "done"
-   in `deck` for deck-wide tasks.
+   `slidesonnet review title deck.pdf c3 "Shorter Euler proof"`. Answer a
+   whole-deck conversation the same way ("Done — exported deck.mp4").
 6. **Check:** `slidesonnet review status deck.pdf` must list no unfiled
    changes.
 7. **Reverting** ("put it back"): `slidesonnet review show deck.pdf @x --base`

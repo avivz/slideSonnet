@@ -32,6 +32,7 @@ from slidesonnet.review import base as base_mod
 from slidesonnet.review.diff import SlideChange, diff_versions
 from slidesonnet.review.log import (
     FORMAT_HEADER,
+    LEGACY_DECK,
     Author,
     Conversation,
     Record,
@@ -183,7 +184,7 @@ def status(
 
 
 def open_slide_conversations(pdf_path: Path) -> list[Conversation]:
-    """Open conversations about slides (the deck conversation never counts)."""
+    """Open conversations about slides (deck-wide ones never count)."""
     return [c for c in load(pdf_path).slide_conversations() if c.status == "open"]
 
 
@@ -216,6 +217,11 @@ def _check_slides(slide_ids: list[str]) -> None:
 
 def _conversation(state: ReviewState, conv_id: str) -> Conversation:
     conv = state.conversations.get(conv_id)
+    if conv is None and conv_id == LEGACY_DECK:
+        raise ReviewError(
+            "no conversation 'deck' — for the whole deck, start a conversation with no "
+            'slides: slidesonnet review comment <pdf> -m "…"'
+        )
     if conv is None:
         raise ReviewError(f"no conversation '{conv_id}'")
     return conv
@@ -224,13 +230,8 @@ def _conversation(state: ReviewState, conv_id: str) -> Conversation:
 def comment(
     pdf_path: Path, slide_ids: list[str], text: str, *, author: Author = "author", title: str = ""
 ) -> str:
-    """Open a new conversation about *slide_ids*; return its id."""
+    """Open a new conversation about *slide_ids* (none: the whole deck); return its id."""
     slide_ids = [s.removeprefix("@") for s in slide_ids]
-    if not slide_ids:
-        raise ReviewError(
-            "a conversation needs at least one slide — for the whole deck, "
-            "write in the deck conversation instead"
-        )
     _check_slides(slide_ids)
     ensure_base(pdf_path)
     with transaction(pdf_path) as txn:
@@ -248,23 +249,31 @@ def reply(
     *,
     author: Author = "agent",
     add_slides: list[str] | None = None,
+    remove_slides: list[str] | None = None,
     title: str = "",
 ) -> None:
-    """Add a message to a conversation, optionally widening its slide scope or renaming it."""
+    """Add a message to a conversation, optionally changing its slides or renaming it.
+
+    Taking out every slide leaves it about the whole deck.
+    """
     added = [s.removeprefix("@") for s in add_slides or []]
+    removed = [s.removeprefix("@") for s in remove_slides or []]
     with transaction(pdf_path) as txn:
         conv = _conversation(txn.state, conv_id)
-        if added and conv.is_deck:
-            raise ReviewError(
-                "the deck conversation has no slides — open a slide conversation "
-                "for slide changes (`slidesonnet review comment`)"
-            )
         if conv.status == "closed":
             raise ReviewError(f"conversation {conv_id} is closed — reopen it first")
-        if added:
-            _check_slides(added)
+        _check_slides(added + removed)
         txn.append(
-            Record("message", conv_id, now(), author, slides=tuple(added), text=text, title=title)
+            Record(
+                "message",
+                conv_id,
+                now(),
+                author,
+                slides=tuple(added),
+                removed=tuple(removed),
+                text=text,
+                title=title,
+            )
         )
 
 
@@ -281,8 +290,6 @@ def retitle(pdf_path: Path, conv_id: str, title: str, *, author: Author = "autho
 def accept(pdf_path: Path, conv_id: str, *, author: Author = "author") -> None:
     with transaction(pdf_path) as txn:
         conv = _conversation(txn.state, conv_id)
-        if conv.is_deck:
-            raise ReviewError("the deck conversation never closes")
         if conv.status == "closed":
             raise ReviewError(f"conversation {conv_id} is already closed")
         txn.append(Record("accept", conv_id, now(), author))
@@ -390,19 +397,17 @@ class ClearResult:
     skipped: list[str] = field(default_factory=list)  # held back by an open conversation
 
 
-def _pin_slides(rec: Record, state: ReviewState) -> Record:
-    """Make a kept record carry its conversation's current slides (on ``open`` only).
+def _pin_slides(rec: Record, conv: Conversation, first: bool) -> Record:
+    """Make a kept record carry its conversation's current slides (on the first only).
 
     Slides can leave a conversation through another one's records (see
     ``log._claim``); once those are compacted away, the conversation must still
-    replay to the same slides.
+    replay to the same slides. The first record becomes the ``open`` (an older
+    log's deck conversation has none).
     """
-    conv = state.conversations.get(rec.conv) if rec.conv else None
-    if conv is None or conv.is_deck:
-        return rec
-    if rec.kind == "open":
-        return replace(rec, slides=tuple(conv.slides))
-    return replace(rec, slides=()) if rec.slides else rec
+    if first:
+        return replace(rec, kind="open", origin=conv.origin, slides=tuple(conv.slides), removed=())
+    return replace(rec, slides=(), removed=()) if rec.slides or rec.removed else rec
 
 
 def clear(
@@ -429,7 +434,7 @@ def clear(
 
 def _clear(txn: Transaction, current: DeckVersion) -> ClearResult:
     pdf_path, state = txn.pdf_path, txn.state
-    closed = [c for c in state.slide_conversations() if c.status == "closed"]
+    closed = [c for c in state.conversations.values() if c.status == "closed"]
     if not closed:
         return ClearResult()
     base = base_mod.load_base(pdf_path)
@@ -444,11 +449,17 @@ def _clear(txn: Transaction, current: DeckVersion) -> ClearResult:
     adopt = not (moved & open_slides)
     base_mod.advance(pdf_path, set(advance), adopt_order=adopt, current=current)
     drop = {c.id for c in closed} | state.retired
-    records = [
-        _pin_slides(r, state)
-        for r in read_records(txn.path)
-        if r.conv is None or r.conv not in drop
-    ]
+    records: list[Record] = []
+    seen: set[str] = set()
+    for rec in read_records(txn.path):
+        if rec.conv in drop:
+            continue
+        conv = state.conversations.get(rec.conv) if rec.conv else None
+        if conv is None:
+            records.append(rec)
+            continue
+        records.append(_pin_slides(rec, conv, conv.id not in seen))
+        seen.add(conv.id)
     txn.rewrite(records)
     return ClearResult(cleared=[c.id for c in closed], advanced=advance, skipped=skipped)
 
