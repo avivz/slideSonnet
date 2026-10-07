@@ -14,6 +14,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   `deck.pdf`. Each build keeps its own page renders. Export still refuses a plain
   build; the editor names its videos `deck.mp4`.
 
+### Fixed
+- **A line you empty in the Script view goes away once you click away from it**,
+  as deleting it in the Slide view does. It used to linger as an empty box until
+  the page was reloaded (most visibly during a review). The file was already
+  right; a line you've just added still waits for your words.
+
 ## [1.0.0a3] — 2026-09-29
 
 ### Breaking

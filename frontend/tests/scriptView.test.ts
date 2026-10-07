@@ -52,6 +52,9 @@ describe('script view', () => {
     expect(document.activeElement).toBe(w.get('[data-testid="script-text-c-0"]').element)
     expect(editor.currentId).toBe('c') // the slide shows above
     expect(server.saves).toHaveLength(0) // nothing said yet: nothing written
+    server.externalEdit('c', 'Written elsewhere.') // and a change from outside doesn't take it away
+    await editor.refresh()
+    expect(document.activeElement).toBe(w.get('[data-testid="script-text-c-1"]').element)
   })
 
   it('while a line is typed in, playback and auto-generate leave it alone', async () => {
@@ -114,6 +117,36 @@ describe('script view', () => {
     await pause.trigger('change')
     expect(editor.draftFor('a')?.middle[1]).toMatchObject({ kind: 'pause', seconds: 1.2 })
     await editor.flush()
+  })
+
+  // under review the server notes the edit right after saving it: an outside change
+  it.each([false, true])('a line emptied and left goes away (another change after the save: %s)', async (noted) => {
+    const server = new FakeServer()
+    server.narration.a = { ...server.narration.a!, segments: [speech('One.'), speech('Two.')] }
+    const { editor } = await setup(server)
+    if (noted) {
+      const save = editor.client.saveSlide
+      editor.client.saveSlide = async (...args) => {
+        const result = await save(...args)
+        server.rev++
+        return result
+      }
+    }
+    const w = mount(ScriptView, { attachTo: document.body })
+    const line = w.get('[data-testid="script-text-a-1"]')
+    ;(line.element as HTMLTextAreaElement).focus()
+    await line.setValue('')
+    await editor.flush()
+    await flushPromises()
+    expect(server.narration.a?.segments.filter((s) => s.kind === 'speech').map((s) => s.text)).toEqual(['One.'])
+    expect(w.find('[data-testid="script-line-a-1"]').exists()).toBe(true) // still in it: it stays
+    line.element.dispatchEvent(new FocusEvent('blur')) // another window took focus: the cursor stays here
+    await flushPromises()
+    expect(w.find('[data-testid="script-line-a-1"]').exists()).toBe(true)
+    ;(line.element as HTMLTextAreaElement).blur()
+    await flushPromises()
+    expect(w.find('[data-testid="script-line-a-1"]').exists()).toBe(false)
+    expect(editor.isDirty('a')).toBe(false) // nothing more to save
   })
 
   it('under review, shows how each changed slide\'s narration changed', async () => {

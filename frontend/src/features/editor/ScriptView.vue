@@ -12,7 +12,7 @@ import { useReviewStore } from '@/stores/review'
 
 import LineFailure from './LineFailure.vue'
 import NarrationDiff from './NarrationDiff.vue'
-import { newSpeech, speechIndexes, type EditSeg } from './narration'
+import { newSpeech, speechIndexes, written, type EditSeg } from './narration'
 import { useEditingFocus } from './useEditingFocus'
 
 const editor = useEditorStore()
@@ -57,6 +57,17 @@ async function addLine(index: number, slideId: string): Promise<void> {
 function onText(slideId: string, seg: EditSeg, event: Event): void {
   seg.text = (event.target as HTMLTextAreaElement).value
   editor.touch(slideId)
+}
+/**
+ * Leaving a line with no words takes it away, as deleting it in the slide view
+ * would (it was never written, so nothing more is saved). Not when the whole
+ * window lost focus: the cursor is still in the line, to come back to.
+ */
+function onLeave(slideId: string, seg: EditSeg, event: FocusEvent): void {
+  if (written(seg) || document.activeElement === event.target) return
+  const middle = editor.draftFor(slideId)?.middle ?? []
+  const j = middle.indexOf(seg)
+  if (j >= 0) middle.splice(j, 1)
 }
 function onPause(slideId: string, seg: EditSeg, event: Event): void {
   seg.seconds = Math.max(0, Number((event.target as HTMLInputElement).value) || 0)
@@ -191,6 +202,7 @@ function retry(slideId: string, seg: EditSeg): void {
               :data-testid="`script-text-${page.slide_id}-${row.j}`"
               @focus="enter(i)"
               @input="onText(page.slide_id, row.seg, $event)"
+              @blur="onLeave(page.slide_id, row.seg, $event)"
             ></textarea>
           </div>
           <LineFailure
