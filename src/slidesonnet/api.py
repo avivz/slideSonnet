@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from slidesonnet.atomic import atomic_write_text
-from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, unique_real_ids
+from slidesonnet.builds import default_sidecar_path
+from slidesonnet.deck import dedupe_page_ids, unique_real_ids
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.exceptions import (
     ExportRefused,

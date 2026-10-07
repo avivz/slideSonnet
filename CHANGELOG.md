@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **`slidesonnet review summary`: every deck's conversations at a glance, fast.**
+  It lists each conversation's id, title, slides (or "whole deck"), whether it's
+  open or accepted, and whose turn it is — for the decks you name, or every deck
+  under a folder (`--root`) — reading only the review log, so a whole course takes
+  under a second and nothing about the review changes. A deck with no review says
+  so. `--json` gives scripts (a publish gate, say) a stable shape, described in
+  `review summary --help`. `review list` and `review status` read every page, so
+  they stay the ones for looking at changes.
 - **Click the script to jump there while it plays.** While your deck is playing,
   click a line — in the script, or a line's words on the slide view — and playback
   goes on from the word you clicked, then on slide by slide as before. A line on

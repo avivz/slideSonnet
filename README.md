@@ -214,7 +214,14 @@ slidesonnet review comment deck.pdf -m "…"                        # … about 
 slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z] [--remove-slides @w] [--title "…"]
 slidesonnet review title   deck.pdf c3 "Shorter Euler proof"      # rename, no message
 slidesonnet review status  deck.pdf                   # changed slides, unfiled changes
+slidesonnet review summary [deck.pdf ...] [--root DIR] --json   # every deck's conversations, fast
 ```
+
+`status` and `list` read every page of the PDF (seconds per deck). For scripts —
+say a publish gate over a whole course — `review summary` reads only the review
+log: each conversation's id, title, slides, status and whose turn it is, for every
+deck under the current folder (or `--root DIR`, or the PDFs you name), in well
+under a second, without changing anything. A deck with no review says "no review".
 
 One `review wait` with no PDF listens to every deck under the current folder (or
 `--root DIR`), so an agent working through a course needs a single listener: it
@@ -274,7 +281,7 @@ slidesonnet export deck.pdf [-o OUT.mp4]      # default: deck.mp4 beside the dec
 slidesonnet subs   deck.pdf -o OUT.srt|OUT.vtt [--engine ...] [--format srt|vtt]
         [--timing ...] [--allow-estimates]    # export already writes these
 slidesonnet edit   [deck.pdf|FOLDER] [--root DIR]   launch the editor
-slidesonnet review comment|reply|title|list|status|wait|...   review conversations
+slidesonnet review comment|reply|title|list|status|summary|wait|...   review conversations
 slidesonnet clean  deck.pdf [--keep nothing|api|current|exact] [--dry-run]   # paid clips → trash
 slidesonnet pool   status  [deck.pdf]               which clip pool a deck uses, and why
 slidesonnet pool   migrate --root DIR [--apply]     move old local caches into the pool

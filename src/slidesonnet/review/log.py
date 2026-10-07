@@ -57,6 +57,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast, get_args
 
+from slidesonnet.builds import deck_pdf
+
 logger = logging.getLogger(__name__)
 
 FORMAT_HEADER = "# slidesonnet-review: 1\n"
@@ -81,6 +83,12 @@ _TEXT_INDENT = "    "
 _LAST_ID_RE = re.compile(r"^# last-id: c(\d+)\s*$", re.MULTILINE)
 _SENDS_RE = re.compile(r"^# sends: (\d+)\s*$", re.MULTILINE)
 _ID_RE = re.compile(r"c(\d+)")
+
+
+def review_path(pdf_path: Path) -> Path:
+    """``<deck>.review`` next to the PDF (like the ``.narration`` sidecar); a plain
+    build ``X.plain.pdf`` shares its deck's ``X.review``."""
+    return deck_pdf(pdf_path.resolve()).with_suffix(".review")
 
 
 def now() -> str:

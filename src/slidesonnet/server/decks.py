@@ -23,15 +23,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from slidesonnet.atomic import atomic_write_text
+from slidesonnet.builds import default_sidecar_path
 from slidesonnet.clean import SWEEP_GRACE_S, prune_local_orphans
 from slidesonnet.config import Config, default_config_path, load_config
-from slidesonnet.deck import dedupe_page_ids, default_sidecar_path, load_deck, sidecar_text
+from slidesonnet.deck import dedupe_page_ids, load_deck, sidecar_text
 from slidesonnet.diagnostics import Diagnostic
 from slidesonnet.exceptions import SlideSonnetError
 from slidesonnet.narration.format import SidecarError, parse_sidecar, serialize_block
 from slidesonnet.narration.model import Deck
 from slidesonnet.pdf.reader import read_page_ids
 from slidesonnet.review import ops as review_ops
+from slidesonnet.review.log import review_path
 from slidesonnet.server.revisions import SourceRevisions, content_revision, text_revision
 
 logger = logging.getLogger(__name__)
@@ -93,7 +95,7 @@ class DeckService:
             narration=content_revision(self.sidecar_path),
             pdf=content_revision(self.pdf_path),
             config=content_revision(self.config_path),
-            review=content_revision(review_ops.review_path(self.pdf_path)),
+            review=content_revision(review_path(self.pdf_path)),
         )
 
     # ---- reading --------------------------------------------------------

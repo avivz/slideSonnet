@@ -23,7 +23,7 @@ from slidesonnet.pdf.reader import is_final_build
 from slidesonnet.review import base as base_mod
 from slidesonnet.review import ops
 from slidesonnet.review.diff import SlideChange, diff_versions
-from slidesonnet.review.log import Conversation, ReviewState
+from slidesonnet.review.log import Conversation, ReviewState, review_path
 from slidesonnet.review.versions import DeckVersion, PageCapture, capture_pages, combine
 
 Badge = Literal["your-turn", "agent-turn", "closed", "unfiled"]
@@ -86,7 +86,7 @@ class ReviewModel:
 
     @property
     def review_path(self) -> Path:
-        return ops.review_path(self.pdf_path)
+        return review_path(self.pdf_path)
 
     def log_stamp(self) -> tuple[float, int]:
         """Change signature of the log — the editor polls it to relight the panel."""

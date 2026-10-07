@@ -241,3 +241,74 @@ def test_wait_says_when_the_scan_was_cut_short(
     assert result.exit_code == 0, result.output
     assert "stopped" in result.stderr  # …but still watches the decks it found
     assert [Path(d["pdf"]).name for d in json.loads(result.stdout)["decks"]] == ["top.pdf"]
+
+
+# ---- a quick read of the conversations, from the review log alone ------------------
+
+
+def _log_conversations(pdf: Path) -> None:
+    """Two open conversations (one about the whole deck) and one accepted, written to
+    the log directly — as a session leaves them, but without ever taking a base."""
+    from slidesonnet.review.log import Record, append_unlocked
+
+    at = "2026-10-07T10:00:00"
+    append_unlocked(
+        ops.review_path(pdf),
+        Record("open", "c1", at, "author", slides=("s1",), text="Tighten.", title="Tighter"),
+        Record("open", "c2", at, "author", text="British spelling."),
+        Record("message", "c2", at, "agent", text="Done."),
+        Record("open", "c3", at, "agent", slides=("s1", "s2"), text="Split it."),
+        Record("accept", "c3", at, "author"),
+    )
+
+
+def test_summary_reads_only_the_log(tmp_path: Path) -> None:
+    import os
+    import subprocess
+    import sys
+
+    import slidesonnet
+
+    decks = _course(tmp_path, "a", "b")
+    decks["a"].write_bytes(b"not a pdf")  # any read of the PDF would fail
+    _log_conversations(decks["a"])
+    probe = (
+        "import sys\nfrom slidesonnet.cli import main\n"
+        "try:\n    main(sys.argv[1:], standalone_mode=False)\n"
+        "finally:\n    print('pymupdf' in sys.modules, file=sys.stderr)\n"
+    )
+    run = subprocess.run(
+        [sys.executable, "-c", probe, "--no-log-file", "review", "summary", "--json"],
+        cwd=tmp_path,  # no PDF and no --root: every deck under the current folder
+        env={**os.environ, "PYTHONPATH": str(Path(slidesonnet.__file__).parents[1])},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert run.stderr.strip().splitlines()[-1] == "False"  # PyMuPDF never even imported
+    convs = [
+        {"id": "c1", "title": "Tighter", "slides": ["s1"], "status": "open", "turn": "agent"},
+        {"id": "c2", "title": "", "slides": [], "status": "open", "turn": "author"},
+        {"id": "c3", "title": "", "slides": ["s1", "s2"], "status": "closed", "turn": "author"},
+    ]
+    assert json.loads(run.stdout) == {
+        "decks": [
+            {"pdf": "a/a.pdf", "review": True, "conversations": convs},
+            {"pdf": "b/b.pdf", "review": False, "conversations": []},
+        ]
+    }
+    assert not list(tmp_path.rglob(".slidesonnet"))  # no base taken, nothing created
+    assert not (tmp_path / "b" / "b.review").exists()
+
+
+def test_summary_text_for_the_decks_given(tmp_path: Path) -> None:
+    decks = _course(tmp_path, "a", "b", "c")
+    _log_conversations(decks["a"])
+    out = _run("summary", str(decks["a"]), str(decks["b"]))
+    assert out.splitlines() == [
+        str(decks["a"]),
+        "  c1  agent's turn  @s1  Tighter",
+        "  c2  your turn     (whole deck)",
+        "  c3  closed        @s1 @s2",
+        f"{decks['b']}  no review",
+    ]

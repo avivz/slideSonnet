@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Literal
 
 from slidesonnet.audio.synth import engine_for_pace
+from slidesonnet.builds import default_sidecar_path
 from slidesonnet.cache import (
     adopt_legacy_audio,
     cache_root,
@@ -46,7 +47,7 @@ from slidesonnet.cache import (
     resolve_audio_dir,
 )
 from slidesonnet.config import Config, load_config
-from slidesonnet.deck import default_sidecar_path, load_deck
+from slidesonnet.deck import load_deck
 from slidesonnet.hashing import audio_filename, parse_audio_filename, text_hash
 from slidesonnet.models import VoiceConfig, resolve_voice
 from slidesonnet.narration.format import parse_sidecar

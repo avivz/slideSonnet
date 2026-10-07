@@ -7,19 +7,13 @@ from dataclasses import replace
 from pathlib import Path
 
 from slidesonnet.atomic import atomic_write_text
-from slidesonnet.builds import deck_pdf
+from slidesonnet.builds import default_sidecar_path
 from slidesonnet.diagnostics import Diagnostic, bracket_diagnostics, diagnose, sort_diagnostics
 from slidesonnet.models import VoiceConfig
 from slidesonnet.narration.format import parse_document, serialize_sidecar
 from slidesonnet.narration.model import Deck, PageNarration
 from slidesonnet.pdf.reader import read_page_ids
 from slidesonnet.tts import FILE_VOICE_BACKENDS
-
-
-def default_sidecar_path(pdf_path: Path) -> Path:
-    """The sidecar path for *pdf_path*: ``<deck-stem>.narration`` beside it (a plain
-    build ``X.plain.pdf`` shares its deck's ``X.narration``)."""
-    return deck_pdf(pdf_path).with_suffix(".narration")
 
 
 def resolve_voice_files(voices: dict[str, VoiceConfig], base_dir: Path) -> dict[str, VoiceConfig]:

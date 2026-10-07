@@ -79,6 +79,10 @@ def review() -> None:
       slidesonnet review list deck.pdf --mine --json      # what needs you
       slidesonnet review reply deck.pdf c3 --add-slides @x "Split into two."
       slidesonnet review status deck.pdf                  # no unfiled changes
+
+    \b
+    Scripts that only need conversation states (fast, never reads the PDF):
+      slidesonnet review summary --root COURSE --json
     """
 
 
@@ -103,7 +107,12 @@ def snapshot_cmd(pdf: Path, narration: Path | None) -> None:
 @_JSON
 @EXISTING_NARRATION_OPT
 def status_cmd(pdf: Path, as_json: bool, narration: Path | None) -> None:
-    """Changed slides, conversations and whose turn it is, unfiled changes."""
+    """Changed slides, conversations and whose turn it is, unfiled changes.
+
+    Slow (seconds per deck): it reads every page of the PDF to compare it with
+    the base, and takes the base on first use. For a quick, read-only look at
+    the conversations (scripts, publish gates) use "review summary".
+    """
     from slidesonnet.review import ops
 
     with _errors():
@@ -180,7 +189,12 @@ def status_cmd(pdf: Path, as_json: bool, narration: Path | None) -> None:
 @click.option("--all", "show_all", is_flag=True, help="Include closed (accepted) conversations")
 @EXISTING_NARRATION_OPT
 def list_cmd(pdf: Path, as_json: bool, mine: bool, show_all: bool, narration: Path | None) -> None:
-    """Open conversations with their messages (JSON adds each slide's page text)."""
+    """Open conversations with their messages (JSON adds each slide's page text).
+
+    Slow (seconds per deck): it reads every page of the PDF, and takes the base
+    on first use. For just each conversation's id, status, turn and slides,
+    across many decks at once, use "review summary" (reads only the review log).
+    """
     from slidesonnet.review import ops
 
     with _errors():
@@ -214,6 +228,87 @@ def list_cmd(pdf: Path, as_json: bool, mine: bool, show_all: bool, narration: Pa
         click.echo(f"── {conv.id}{name}  {_turn_label(conv)}  {scope}")
         for msg in conv.messages:
             click.echo(f"   {msg.author} {msg.at[11:16]}: {msg.text}")
+
+
+@review.command("summary")
+@click.argument("pdfs", nargs=-1, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="With no PDF: every deck under this folder (default: the current one)",
+)
+@_JSON
+def summary_cmd(pdfs: tuple[Path, ...], root: Path | None, as_json: bool) -> None:
+    """Each deck's conversations — id, status, whose turn, slides, title — fast.
+
+    \b
+    Reads only the review log (<deck>.review): never the PDF or the base, and it
+    changes nothing, so it takes well under a second for a whole course. For
+    scripts and publish gates; "list" and "status" read every page (seconds per
+    deck) to show page text and changed slides.
+
+    \b
+    One or more decks: review summary a.pdf b.pdf
+    A whole course:    review summary [--root DIR]   (every deck under it)
+
+    A deck without a review log is reported as "no review" (not an error).
+
+    \b
+    --json prints {"decks": [{"pdf", "review", "conversations": [...]}, ...]}:
+      pdf            the deck, as you'd type it from here
+      review         false when the deck has no review log
+      conversations  each {"id", "title", "slides", "status", "turn"}:
+                     slides [] = about the whole deck; status "open" | "closed";
+                     turn "author" | "agent" (who acts next, if it's open)
+    """
+    from slidesonnet.builds import deck_pdf
+    from slidesonnet.review.log import read_state, review_path
+
+    if pdfs and root is not None:
+        raise click.UsageError("give PDFs or --root, not both")
+    if pdfs:
+        decks = [deck_pdf(p.resolve()) for p in pdfs]
+    else:
+        from slidesonnet.server.library import discover_decks
+
+        decks = [deck_pdf(entry.pdf_path) for entry in discover_decks(root or Path.cwd()).decks]
+    out = []
+    for pdf in dict.fromkeys(decks):  # a deck named by both of its builds: once
+        log = review_path(pdf)
+        with _errors():
+            convs = list(read_state(log).conversations.values()) if log.exists() else []
+        out.append((pdf, log.exists(), convs))
+    if as_json:
+        data = {
+            "decks": [
+                {
+                    "pdf": _shown(pdf),
+                    "review": has_log,
+                    "conversations": [
+                        {
+                            "id": c.id,
+                            "title": c.title,
+                            "slides": list(c.slides),
+                            "status": c.status,
+                            "turn": c.turn,
+                        }
+                        for c in convs
+                    ],
+                }
+                for pdf, has_log, convs in out
+            ]
+        }
+        click.echo(json.dumps(data, indent=1, ensure_ascii=False))
+        return
+    for pdf, has_log, convs in out:
+        if not convs:
+            click.echo(f"{_shown(pdf)}  {'no conversations' if has_log else 'no review'}")
+            continue
+        click.echo(_shown(pdf))
+        for conv in convs:
+            scope = " ".join(f"@{s}" for s in conv.slides) or "(whole deck)"
+            name = f"  {conv.title}" if conv.title else ""
+            click.echo(f"  {conv.id:<3} {_turn_label(conv):<13} {scope}{name}")
 
 
 def _note_uncompiled(slide_ids: list[str]) -> None:

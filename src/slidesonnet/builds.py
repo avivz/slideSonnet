@@ -41,3 +41,9 @@ def working_pdf(pdf_path: Path) -> Path:
     """The build the editor and review work on: the plain one if it exists, else the deck's."""
     plain = plain_pdf(pdf_path)
     return plain if plain.is_file() else deck_pdf(pdf_path)
+
+
+def default_sidecar_path(pdf_path: Path) -> Path:
+    """The sidecar path for *pdf_path*: ``<deck-stem>.narration`` beside it (a plain
+    build ``X.plain.pdf`` shares its deck's ``X.narration``)."""
+    return deck_pdf(pdf_path).with_suffix(".narration")

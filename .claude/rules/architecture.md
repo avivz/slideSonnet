@@ -53,7 +53,7 @@ deck.narration ──► narration/format.parse_sidecar ──► [PageNarration
   Duplicate ids (page *and* sidecar) are auto-disambiguated in `deck.py`, not here.
 - **deck.py** — `load_deck`, `save_deck` (skips empty placeholder blocks),
   `dedupe_page_ids`, `dedupe_block_ids` (repeated `@id` → `id-2`, keeps text),
-  default sidecar path.
+  `default_sidecar_path` (defined in `builds.py`, path logic only).
 - **timing.py** — `TimingMode` (tts/estimate/fixed), `compute_page_timing` → `PageTiming`.
 - **render.py** — `build_timeline` (`DeckTimeline`), `subtitle_entries`,
   `render_audio_track`, `compose_video` (transitions are visual overlays centred on

@@ -33,9 +33,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from slidesonnet.builds import deck_pdf, working_pdf
+from slidesonnet.builds import deck_pdf, default_sidecar_path, working_pdf
 from slidesonnet.cache import CACHE_DIRNAME
-from slidesonnet.deck import default_sidecar_path
 
 logger = logging.getLogger(__name__)
 

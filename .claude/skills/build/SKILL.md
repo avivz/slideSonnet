@@ -112,7 +112,13 @@ slidesonnet review reply   deck.pdf c3 -m "…" [--add-slides @z] [--remove-slid
 slidesonnet review list    deck.pdf --mine --json     # what awaits the agent
 slidesonnet review wait    --since CURSOR --json      # block until Send in any deck here (--root DIR)
 slidesonnet review wait    deck.pdf --since N --json  # one deck only (its cursor is a number)
+slidesonnet review summary [deck.pdf ...] [--root DIR] --json  # conversation states only: fast, read-only
 ```
+
+`status` and `list` read every page (seconds per deck) and take the base on first
+use; for a script or gate that only needs each conversation's id, title, slides,
+status and turn, use `summary` (reads only `<deck>.review`; "no review" for a deck
+without one).
 
 Also `title`, `accept`, `reopen`, `send`, `clear`, `show`, `snapshot`. `status`,
 `list`, `snapshot` and `clear` take `--narration PATH` for a deck edited with
