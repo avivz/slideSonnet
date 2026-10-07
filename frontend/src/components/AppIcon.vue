@@ -6,7 +6,6 @@ const PATHS = {
   play: 'M8 5v14l11-7z',
   pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
   stop: 'M6 6h12v12H6z',
-  deck: 'M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18A3 3 0 1 0 19 17V8h3V6h-5z',
   prev: 'M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z',
   next: 'M8.59 16.59 10 18l6-6-6-6-1.41 1.41L13.17 12z',
   down: 'M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z',

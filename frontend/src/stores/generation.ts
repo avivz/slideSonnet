@@ -24,7 +24,6 @@ export const useGenerationStore = defineStore('generation', () => {
   /** This tab, as the owner of the clips it asks for. */
   const owner = `tab-${Math.random().toString(36).slice(2, 10)}`
   const autoBuild = ref(false) // opt-in every session
-  const singleSlideTransitions = ref(false)
   /** The utterance being typed in right now (auto-generate skips it). */
   const focusedSpeech = ref<{ slideId: string; index: number } | null>(null)
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -216,9 +215,9 @@ export const useGenerationStore = defineStore('generation', () => {
   })
 
   return {
-    status, owner, autoBuild, singleSlideTransitions, focusedSpeech, paid, realtime, inflight,
+    status, owner, autoBuild, focusedSpeech, paid, realtime, inflight,
     busy, autoBuildAllowed,
     failures, noteFailure, failureFor,
-    confirmPaid, refresh, enqueue, cancelAll, leave, focus, uncached, setAutoBuild, sweep,
+    refresh, enqueue, cancelAll, leave, focus, uncached, setAutoBuild, sweep,
   }
 })

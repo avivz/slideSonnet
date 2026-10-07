@@ -93,8 +93,7 @@ function move(index: number, delta: number): void {
 async function generate(speechIndex: number | undefined, force: boolean): Promise<void> {
   if (speechIndex === undefined) return // a line with no words yet has nothing to generate
   // the clip being replaced mustn't keep playing
-  const loaded = player.transport.loadedKey
-  if (loaded === 'video' || loaded === slideId.value || player.allAt === slideId.value) player.stop()
+  if (player.allAt === slideId.value) player.stop()
   await generation.enqueue([{ slide_id: slideId.value, speech_index: speechIndex }], { force })
 }
 

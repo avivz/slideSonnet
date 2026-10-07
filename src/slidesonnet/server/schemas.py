@@ -328,13 +328,10 @@ class GenerateJob(_Model):
 
 class PreviewJob(_Model):
     kind: Literal["preview"] = "preview"
-    #: One slide, or ``None`` for the whole deck.
-    slide_id: str | None = None
+    #: The slide to play (the editor plays the deck slide by slide).
+    slide_id: str
     engine: Backend | None = None
     allow_paid: bool = False
-    #: Deck preview only: start playback at this slide's cue.
-    start_slide: str | None = None
-    single_slide_transitions: bool = False
 
 
 class ExportJob(_Model):

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// The slide, large, with the player attached right under it. During a deck
-// preview the browser player draws the *playing* slide (and its transitions)
-// over the stage, on the audio clock — the editor below may be on another
-// slide while you type.
+// The slide, large, with the player attached right under it. While playing,
+// the browser player draws the *playing* slide over the stage when the editor
+// below is on another slide (it waits while you type).
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { StageOverlay } from '@/features/playback/dom'
@@ -129,7 +128,7 @@ onBeforeUnmount(() => {
 .stage-wrap > .links {
   width: min(100%, calc(var(--stage-h, 50vh) * var(--deck-ar-n, 1.7778)));
 }
-.stage :deep(.ss-morph) {
+.stage :deep(.ss-overlay) {
   position: absolute;
   inset: 0;
   z-index: 5;
@@ -138,15 +137,14 @@ onBeforeUnmount(() => {
   pointer-events: none;
   background: var(--raised);
 }
-.stage :deep(.ss-morph.ss-on) {
+.stage :deep(.ss-overlay.ss-on) {
   display: block;
 }
-.stage :deep(.ss-morph img) {
+.stage :deep(.ss-overlay img) {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  will-change: opacity, transform, clip-path;
 }
 </style>

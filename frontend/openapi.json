@@ -1364,34 +1364,14 @@
             "title": "Kind",
             "type": "string"
           },
-          "single_slide_transitions": {
-            "default": false,
-            "title": "Single Slide Transitions",
-            "type": "boolean"
-          },
           "slide_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Slide Id"
-          },
-          "start_slide": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Start Slide"
+            "title": "Slide Id",
+            "type": "string"
           }
         },
+        "required": [
+          "slide_id"
+        ],
         "title": "PreviewJob",
         "type": "object"
       },

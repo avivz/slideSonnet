@@ -6,7 +6,7 @@ import { computed, ref } from 'vue'
 import { ApiError, type Backend, type JobDTO } from '@/api/client'
 import { waitForJob } from '@/api/jobs'
 import AppIcon from '@/components/AppIcon.vue'
-import { formatLength } from '@/features/playback/cues'
+import { formatLength } from '@/features/playback/clock'
 import { useConfirm } from '@/stores/confirm'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
@@ -176,10 +176,6 @@ async function cancelExport(): Promise<void> {
           @change="generation.setAutoBuild(($event.target as HTMLInputElement).checked)"
         />
         Auto-generate as I edit
-      </label>
-      <label class="check" title="When on, playing one slide animates its in/out transitions">
-        <input v-model="generation.singleSlideTransitions" type="checkbox" data-testid="single-slide-transitions" />
-        Play transitions in single-slide preview
       </label>
       <button
         class="btn"

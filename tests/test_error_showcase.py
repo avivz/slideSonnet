@@ -90,7 +90,7 @@ def test_unattached_text_folds_into_a_healthy_slide(client: TestClient, tmp_path
     assert "@ghost-slide" not in sidecar and "no longer exists in the PDF" in sidecar
 
 
-def _preview(client: TestClient, token: str, slide: str | None) -> dict[str, Any]:
+def _preview(client: TestClient, token: str, slide: str) -> dict[str, Any]:
     r = client.post(
         f"/api/v1/decks/{token}/jobs",
         json={"kind": "preview", "slide_id": slide, "engine": "kokoro"},
@@ -105,10 +105,9 @@ def _preview(client: TestClient, token: str, slide: str | None) -> dict[str, Any
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("slide", ["twin", None])  # an ambiguous id; the whole broken deck
-def test_previews_survive_every_error(client: TestClient, slide: str | None) -> None:
+def test_previews_survive_every_error(client: TestClient) -> None:
     """Empty pages, twins, and orphans never stop hearing the narration (real Kokoro)."""
     token, _ = _snapshot(client)
-    job = _preview(client, token, slide)
+    job = _preview(client, token, "twin")  # an ambiguous id
     assert job["status"] == "succeeded", job
     assert job["result"]["duration"] > 0

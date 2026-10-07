@@ -181,10 +181,9 @@ grammar, and the optional `slidesonnet.toml` config — is in
 with Kokoro nothing leaves your machine, while the paid Inworld engine sends the
 narration text to Inworld): page through the deck, edit narration beside each
 slide, set voice/pace, generate per-slide TTS, and play it back. Typing is saved
-as you go. **Play all** plays slide by slide from where you are, starting at
-once (the next slide is prepared while this one plays). **Watch as video**
-plays one pre-rendered track with the pauses and transitions baked in, changing
-the slide on the audio's own clock, so it matches the exported video exactly.
+as you go. **Play** plays from the slide you're on, slide by slide with the
+pauses in place, starting at once (the next slide is prepared while this one
+plays); press it again to pause. Transitions show in the exported video.
 A diagnostics panel flags duplicate, missing, orphan, or `auto-…` ids.
 
 ### Reviewing an agent's changes

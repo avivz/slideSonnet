@@ -458,7 +458,10 @@ def test_previews_are_immutable_per_build_and_served_with_ranges(
     body = client.get(first["media_url"])
     assert body.content.startswith(b"RIFF-audio-for-intro")  # still the first slide's audio
     assert "immutable" in body.headers["cache-control"]
-    assert first["cues"] == [{"start": 0.0, "slide_id": "intro"}]
+    assert first["slide_id"] == "intro"
+    # previews play one slide at a time
+    whole = client.post(f"/api/v1/decks/{token}/jobs", json={"kind": "preview"})
+    assert whole.status_code == 422
 
     part = client.get(first["media_url"], headers={"Range": "bytes=0-3"})
     assert part.status_code == 206 and part.content == b"RIFF"

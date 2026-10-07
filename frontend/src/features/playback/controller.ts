@@ -1,15 +1,11 @@
 // The browser-owned preview player. One <audio> element is the clock; the
-// slide shown, the transition overlay, the scrubber, and the time label are
-// all *derived* from its currentTime on each animation frame. Nothing ticks to
-// the server: the only thing reported outward is a change of playing slide
-// (once per slide, not per frame), so an editor can follow along.
+// scrubber, the time label, and the word being spoken are all *derived* from
+// its currentTime on each animation frame. Nothing ticks to the server.
 //
 // Because every frame is recomputed from currentTime, "resync" after a seek,
 // pause, resume, rate change, or a hidden tab coming back is simply "render a
 // frame now".
-import { cueAt, cueStart } from './cues'
 import type { PreviewManifest } from './manifest'
-import { activeStep, morphFrame, type MorphFrame } from './morph'
 
 /** The slice of HTMLMediaElement the controller drives (tests pass a fake). */
 export interface MediaLike {
@@ -41,15 +37,13 @@ export interface Frame {
   playing: boolean
   time: number
   duration: number
-  /** The slide the audio is on (deck previews move through many). */
+  /** The slide the audio is on. */
   slideId: string | null
   /**
-   * The page image to hold on the stage between transitions — deck previews
-   * only (a single-slide preview's stage already shows its slide).
+   * The playing slide's picture, to hold over the stage while the editor is on
+   * another slide; null when the stage shows it already.
    */
   imageUrl: string | null
-  /** The transition drawing right now, if any. */
-  morph: MorphFrame | null
 }
 
 export interface ControllerOptions {
@@ -57,8 +51,6 @@ export interface ControllerOptions {
   visibility?: VisibilitySource
   /** Every derived frame (render it). */
   onFrame?: (frame: Frame) => void
-  /** The playing slide changed. Fired once per change, never per frame. */
-  onSlide?: (slideId: string) => void
   /** The loaded track played to its end. */
   onEnded?: () => void
 }
@@ -72,7 +64,6 @@ const EMPTY: Frame = {
   duration: 0,
   slideId: null,
   imageUrl: null,
-  morph: null,
 }
 
 const browserScheduler: Scheduler = {
@@ -82,9 +73,7 @@ const browserScheduler: Scheduler = {
 
 export class PlaybackController {
   private manifestValue: PreviewManifest | null = null
-  private images = new Map<string, string | null>()
   private raf: number | null = null
-  private lastSlide: string | null = null
   private generationValue = 0
   private rate = 1
   private readonly scheduler: Scheduler
@@ -119,15 +108,12 @@ export class PlaybackController {
 
   /**
    * Take over a freshly loaded track described by `manifest` (the caller has
-   * pointed the media element at `manifest.media_url`). Seeks to `start_at`.
+   * pointed the media element at `manifest.media_url`).
    */
   load(manifest: PreviewManifest): number {
     this.generationValue++
     this.manifestValue = manifest
-    this.images = new Map(manifest.pages.map((p) => [p.slide_id, p.image_url]))
-    this.lastSlide = null
     this.applyRate()
-    if (manifest.start_at > 0) this.media.currentTime = manifest.start_at
     this.sync()
     return this.generationValue
   }
@@ -150,8 +136,6 @@ export class PlaybackController {
     this.generationValue++
     this.media.pause()
     this.manifestValue = null
-    this.images.clear()
-    this.lastSlide = null
     this.cancelLoop()
     this.options.onFrame?.(EMPTY)
   }
@@ -164,14 +148,6 @@ export class PlaybackController {
 
   seekFraction(fraction: number): void {
     this.seek(fraction * this.duration())
-  }
-
-  /** Jump the deck track to `slideId`'s cue; false when it isn't in this track. */
-  seekToSlide(slideId: string): boolean {
-    const start = this.manifestValue ? cueStart(this.manifestValue.cues, slideId) : null
-    if (start === null) return false
-    this.seek(start)
-    return true
   }
 
   /** Preview-only rate (never re-synthesizes); kept across loads, pitch preserved. */
@@ -232,24 +208,13 @@ export class PlaybackController {
       this.options.onFrame?.(EMPTY)
       return
     }
-    const time = this.media.currentTime
-    const index = cueAt(manifest.cues, time)
-    const slideId = index >= 0 ? (manifest.cues[index]?.slide_id ?? null) : manifest.slide_id
-    const active = activeStep(manifest.transitions, time)
-    if (slideId !== null && slideId !== this.lastSlide) {
-      const first = this.lastSlide === null
-      this.lastSlide = slideId
-      if (!first) this.options.onSlide?.(slideId)
-    }
     this.options.onFrame?.({
       loaded: true,
       playing: !this.media.paused,
-      time,
+      time: this.media.currentTime,
       duration: this.duration(),
-      slideId,
-      imageUrl:
-        manifest.slide_id === null && slideId !== null ? (this.images.get(slideId) ?? null) : null,
-      morph: active ? morphFrame(active.step, active.progress) : null,
+      slideId: manifest.slide_id,
+      imageUrl: null,
     })
   }
 }

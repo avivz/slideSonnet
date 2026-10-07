@@ -1,81 +1,15 @@
-import { flushPromises } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { PlaybackController, type Frame, type MediaLike, type Scheduler } from '@/features/playback/controller'
-import { cueAt, cueStart, formatClock, formatLength, nextInScope } from '@/features/playback/cues'
+import { formatClock, formatLength } from '@/features/playback/clock'
 import { StageOverlay } from '@/features/playback/dom'
 import type { PreviewManifest } from '@/features/playback/manifest'
-import { activeStep, effect, morphFrame } from '@/features/playback/morph'
 import { OutputWaker } from '@/features/playback/wake'
 
-const CUES = [
-  { start: 0, slide_id: 'a' },
-  { start: 4, slide_id: 'b' },
-  { start: 7, slide_id: 'c' },
-]
-
-describe('playing the deck inside a chosen conversation', () => {
-  const cues = [
-    { start: 0, slide_id: 'a' }, { start: 3, slide_id: 'b' }, { start: 6, slide_id: 'c' }, { start: 9, slide_id: 'd' },
-  ]
-  const scope = new Set(['a', 'c'])
-  it('jumps over a slide outside it to the next one inside, and ends after the last', () => {
-    expect(nextInScope(cues, 'b', scope)).toBe(6) // b is out: on to c
-    expect(nextInScope(cues, 'd', scope)).toBeNull() // nothing in scope after d: stop
-  })
-})
-
-describe('cues', () => {
-  it.each([
-    [-1, 0], // before the first cue: the first slide
-    [0, 0],
-    [3.99, 0],
-    [4, 1], // a frame exactly on a boundary belongs to the next slide
-    [6.5, 1],
-    [7, 2],
-    [99, 2],
-  ])('t=%d → cue %d', (t, index) => {
-    expect(cueAt(CUES, t)).toBe(index)
-  })
-
-  it('handles no cues, cue lookup, and the clock', () => {
-    expect(cueAt([], 3)).toBe(-1)
-    expect(cueStart(CUES, 'b')).toBe(4)
-    expect(cueStart(CUES, 'zz')).toBeNull()
+describe('the clock', () => {
+  it('reads a position as m:ss and a length in words', () => {
     expect([0, 9.9, 65, 600].map(formatClock)).toEqual(['0:00', '0:09', '1:05', '10:00'])
     expect([3, 393.2, 3720].map(formatLength)).toEqual(['3 s', '6 min 33 s', '1 h 2 min'])
-  })
-})
-
-describe('morph', () => {
-  const step = { at: 4, dur: 1, kind: 'wipeleft', from: 'a.png', to: 'b.png' }
-
-  it('is active from dur before the boundary until the boundary', () => {
-    expect(activeStep([step], 2.9)).toBeNull()
-    expect(activeStep([step], 3.5)?.progress).toBeCloseTo(0.5)
-    expect(activeStep([step], 4)?.progress).toBe(1)
-    expect(activeStep([step], 4.01)).toBeNull() // the overlay holds the incoming frame until the next is painted
-  })
-
-  it.each([
-    ['crossfade', { t: 'fade' }],
-    ['slideup', { t: 'slide', d: 'up' }],
-    ['revealright', { t: 'reveal', d: 'right' }],
-    ['fadeblack', { t: 'fadecolor', color: '#000' }],
-    ['circleclose', { t: 'circle', d: 'close' }],
-    ['something-new', { t: 'fade' }], // unknown kinds degrade to a fade
-  ])('%s', (kind, expected) => {
-    expect(effect(kind)).toEqual(expected)
-  })
-
-  it('computes layer styles per family', () => {
-    expect(morphFrame(step, 0.25).b.clipPath).toBe('inset(0 0 0 75%)')
-    const fade = morphFrame({ ...step, kind: 'fade' }, 0.4)
-    expect([fade.a.opacity, fade.b.opacity]).toEqual([1, 0.4])
-    const black = morphFrame({ ...step, kind: 'fadeblack' }, 0.75)
-    expect([black.background, black.a.opacity, black.b.opacity]).toEqual(['#000', 0, 0.5])
-    const reveal = morphFrame({ ...step, kind: 'revealleft' }, 0.5)
-    expect([reveal.a.zIndex, reveal.b.zIndex, reveal.a.transform]).toEqual([2, 1, 'translateX(-50%)'])
   })
 })
 
@@ -131,11 +65,8 @@ class ManualScheduler implements Scheduler {
 
 function manifest(overrides: Partial<PreviewManifest> = {}): PreviewManifest {
   return {
-    artifact_id: 'x', slide_id: null, narration_revision: 'r', pdf_revision: 'p', engine: 'kokoro',
-    media_url: '/t.wav', duration: 10, start_at: 0, cues: CUES,
-    pages: CUES.map((c) => ({ slide_id: c.slide_id, image_url: `/${c.slide_id}.png` })),
-    transitions: [{ at: 4, dur: 0.5, kind: 'fade', from: '/a.png', to: '/b.png' }],
-    speech: [],
+    artifact_id: 'x', slide_id: 'a', narration_revision: 'r', pdf_revision: 'p', engine: 'kokoro',
+    media_url: '/t.wav', duration: 10, speech: [],
     ...overrides,
   }
 }
@@ -144,48 +75,30 @@ function setup() {
   const media = new FakeMedia()
   const scheduler = new ManualScheduler()
   const frames: Frame[] = []
-  const slides: string[] = []
   const visibility = new EventTarget() as EventTarget & { hidden: boolean }
   visibility.hidden = false
   const controller = new PlaybackController(media, {
     scheduler,
     visibility: visibility as never,
     onFrame: (f) => frames.push(f),
-    onSlide: (s) => slides.push(s),
   })
-  return { media, scheduler, frames, slides, controller, visibility, last: () => frames.at(-1) as Frame }
+  return { media, scheduler, frames, controller, visibility, last: () => frames.at(-1) as Frame }
 }
 
 describe('PlaybackController', () => {
-  it('derives slide, image and transitions from the audio clock, reporting each slide once', async () => {
-    const { media, scheduler, slides, controller, last } = setup()
+  it('derives each frame from the audio clock, and seeks both ways', async () => {
+    const { media, scheduler, controller, last } = setup()
     controller.load(manifest())
     controller.play()
     await Promise.resolve()
-    for (const t of [1, 2, 3.6, 3.8, 4.1, 5, 6]) scheduler.frame(media, t)
-    expect(slides).toEqual(['b']) // not the opening slide, not once per frame
-    expect(last()).toMatchObject({ loaded: true, playing: true, slideId: 'b', imageUrl: '/b.png', morph: null })
-    controller.load(manifest({ slide_id: 'b', cues: [{ start: 0, slide_id: 'b' }] }))
-    expect(last().imageUrl).toBeNull() // a single-slide stage already shows its slide
-    controller.load(manifest())
-    scheduler.frame(media, 3.75)
-    expect(last().morph?.b.opacity).toBeCloseTo(0.5) // mid-fade
-    scheduler.frame(media, 8)
-    expect(slides).toEqual(['b', 'a', 'c'])
-  })
-
-  it('seeks both ways, to a slide, and starts where the manifest says', () => {
-    const { media, controller, slides, last } = setup()
-    controller.load(manifest({ start_at: 4 }))
-    expect(media.currentTime).toBe(4)
-    expect(last().slideId).toBe('b')
-    controller.seekToSlide('c')
-    expect(media.currentTime).toBe(7)
+    scheduler.frame(media, 3)
+    expect(last()).toMatchObject({ loaded: true, playing: true, time: 3, duration: 10, slideId: 'a', imageUrl: null })
     controller.seek(1)
+    expect(media.currentTime).toBe(1)
     controller.seekFraction(0.5)
     expect(media.currentTime).toBe(5)
-    expect(slides).toEqual(['c', 'a', 'b'])
-    expect(controller.seekToSlide('nope')).toBe(false)
+    controller.seek(99)
+    expect(media.currentTime).toBe(10) // never past the end
   })
 
   it('pins the rate across loads, pitch preserved', () => {
@@ -227,72 +140,22 @@ describe('PlaybackController', () => {
 
 describe('DOM views', () => {
   const frame = (over: Partial<Frame>): Frame => ({
-    loaded: true, playing: true, time: 30, duration: 100, slideId: 'a', imageUrl: '/a.png', morph: null,
-    ...over,
+    loaded: true, playing: true, time: 30, duration: 100, slideId: 'a', imageUrl: '/a.png', ...over,
   })
 
-  it('the overlay holds the playing slide, marks transitions, and hides when unloaded', () => {
+  it('the overlay holds the playing slide over the stage, and hides when there is none', () => {
     const stage = document.createElement('div')
     const overlay = new StageOverlay(stage)
     overlay.render(frame({}))
     expect(overlay.root.classList.contains('ss-on')).toBe(true)
-    expect(overlay.root.hasAttribute('data-morph')).toBe(false)
     expect(stage.querySelector('img')?.getAttribute('src')).toBe('/a.png')
-    const step = { at: 1, dur: 1, kind: 'fade', from: '/a.png', to: '/b.png' }
-    overlay.render(frame({ morph: morphFrame(step, 0.5) }))
-    expect(overlay.root.hasAttribute('data-morph')).toBe(true)
-    overlay.render(frame({ imageUrl: null })) // a single-slide preview between transitions
+    overlay.render(frame({ imageUrl: null })) // the stage shows the playing slide itself
     expect(overlay.root.classList.contains('ss-on')).toBe(false)
+    overlay.render(frame({}))
     overlay.render(frame({ loaded: false }))
     expect(overlay.root.classList.contains('ss-on')).toBe(false)
-  })
-
-  describe('handing off after a transition', () => {
-    // the browser decodes a picture on its own time: each img.decode() waits for the test
-    const decoded = new Map<string, () => void>()
-    const paint = async (src: string): Promise<void> => {
-      decoded.get(new URL(src, location.href).href)?.()
-      await flushPromises()
-    }
-    beforeEach(() => {
-      decoded.clear()
-      HTMLImageElement.prototype.decode = function (this: HTMLImageElement) {
-        return new Promise<void>((resolve) => decoded.set(this.src, resolve))
-      }
-    })
-    afterEach(() => {
-      delete (HTMLImageElement.prototype as Partial<HTMLImageElement>).decode
-    })
-    const fade = { at: 1, dur: 1, kind: 'fade', from: '/a.png', to: '/b.png' }
-    const layers = (stage: HTMLElement) =>
-      [...stage.querySelectorAll<HTMLImageElement>('.ss-morph img')].map((img) => [img.getAttribute('src'), img.style.opacity])
-
-    it('keeps the incoming slide up until the still picture is painted (Watch as video)', async () => {
-      const stage = document.createElement('div')
-      const overlay = new StageOverlay(stage)
-      overlay.render(frame({ morph: morphFrame(fade, 1) })) // the fade has landed on b
-      // the stage holds b in its live picture — another URL, not loaded yet
-      overlay.render(frame({ slideId: 'b', imageUrl: '/b-live.png' }))
-      expect(layers(stage)).toEqual([['/b-live.png', '1'], ['/b.png', '1']]) // b stays up over it
-      await paint('/b-live.png')
-      expect(layers(stage)).toEqual([['/b-live.png', '1'], ['/b-live.png', '0']]) // painted: handed off
-      overlay.render(frame({ slideId: 'c', imageUrl: '/c.png' })) // a plain cut: nothing to hold
-      expect(layers(stage)[1]).toEqual(['/c.png', '0'])
-    })
-
-    it('lifts off a single-slide preview only once the stage shows the slide', async () => {
-      const stage = document.createElement('div')
-      const under = document.createElement('img')
-      under.src = '/b-stage.png'
-      stage.append(under)
-      const overlay = new StageOverlay(stage)
-      overlay.render(frame({ imageUrl: null, morph: morphFrame(fade, 1) }))
-      overlay.render(frame({ imageUrl: null })) // the transition is over
-      expect(overlay.root.classList.contains('ss-on')).toBe(true) // the stage isn't painted yet
-      expect(layers(stage)[1]).toEqual(['/b.png', '1'])
-      await paint('/b-stage.png')
-      expect(overlay.root.classList.contains('ss-on')).toBe(false)
-    })
+    expect(new StageOverlay(stage).root).not.toBe(overlay.root) // a new one replaces the old
+    expect(stage.children).toHaveLength(1)
   })
 })
 

@@ -11,7 +11,7 @@ sidecar keyed to those ids. The tool synthesizes speech (Kokoro local / Inworld
 cloud / Qwen3 local, into a content-addressed clip pool), composites video with FFmpeg, writes SRT/VTT
 subtitles, and ships a browser editor (`slidesonnet edit`: Vue 3 frontend in
 `frontend/`, FastAPI backend in `src/slidesonnet/server/`) with a silence-aware
-preview player (Play all goes slide by slide; "Watch as video" builds the whole deck). The CLI/`slidesonnet.api` make the whole pipeline scriptable.
+preview player (one Play button: from the current slide on, slide by slide; no whole-deck build). The CLI/`slidesonnet.api` make the whole pipeline scriptable.
 
 > The pre-1.0 source→video pipeline (MARP/Beamer parsers, doit build graph,
 > playlists, inline `\say`/`<!-- say -->`) was **removed** in the v1 rewrite.

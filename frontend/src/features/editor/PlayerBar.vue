@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
-import { formatClock } from '@/features/playback/cues'
+import { formatClock } from '@/features/playback/clock'
 import { useEditorStore } from '@/stores/editor'
 import { usePlayerStore } from '@/stores/player'
 
@@ -21,12 +21,7 @@ onBeforeUnmount(() => {
 })
 
 const f = computed(() => player.frame)
-const slidePlaying = computed(
-  () => f.value.playing && player.transport.loadedKey === editor.currentId && editor.currentId !== '',
-)
-const allPlaying = computed(() => f.value.playing && player.transport.loadedKey === 'deck')
-const videoPlaying = computed(() => f.value.playing && player.transport.loadedKey === 'video')
-const canPlaySlide = computed(() => (editor.page?.audio.speech ?? 0) > 0)
+const playing = computed(() => f.value.playing)
 const position = computed(() =>
   scrub.value !== null ? scrub.value : f.value.duration > 0 ? f.value.time / f.value.duration : 0,
 )
@@ -61,43 +56,16 @@ function onScrubChange(event: Event): void {
     <span class="sep" aria-hidden="true"></span>
     <button
       class="icon-btn"
-      :class="{ on: slidePlaying, busy: player.building === editor.currentId }"
+      :class="{ on: playing }"
       type="button"
-      :title="slidePlaying ? 'Pause' : 'Hear this slide'"
-      :aria-label="slidePlaying ? 'Pause' : 'Hear this slide'"
-      :disabled="!canPlaySlide"
-      data-testid="play-slide"
-      :data-state="player.building === editor.currentId ? 'building' : slidePlaying ? 'playing' : 'idle'"
-      @click="player.press(editor.currentId)"
+      :title="playing ? 'Pause' : 'Play from this slide on'"
+      :aria-label="playing ? 'Pause' : 'Play'"
+      data-testid="play"
+      :data-state="player.building ? 'building' : playing ? 'playing' : 'idle'"
+      @click="player.press()"
     >
-      <span v-if="player.building === editor.currentId" class="spinner" aria-hidden="true"></span>
-      <AppIcon v-else :name="slidePlaying ? 'pause' : 'play'" />
-    </button>
-    <button
-      class="icon-btn"
-      :class="{ on: allPlaying }"
-      type="button"
-      :title="allPlaying ? 'Pause' : 'Play all from here, slide by slide'"
-      :aria-label="allPlaying ? 'Pause' : 'Play all from here'"
-      data-testid="play-deck"
-      :data-state="player.building === 'deck' ? 'building' : allPlaying ? 'playing' : 'idle'"
-      @click="player.press('deck')"
-    >
-      <span v-if="player.building === 'deck'" class="spinner" aria-hidden="true"></span>
-      <AppIcon v-else :name="allPlaying ? 'pause' : 'deck'" />
-    </button>
-    <button
-      class="icon-btn"
-      :class="{ on: videoPlaying }"
-      type="button"
-      :title="videoPlaying ? 'Pause' : 'Watch as video: the whole deck from here, with its transitions (takes a while to prepare)'"
-      :aria-label="videoPlaying ? 'Pause' : 'Watch as video'"
-      data-testid="play-video"
-      :data-state="player.building === 'video' ? 'building' : videoPlaying ? 'playing' : 'idle'"
-      @click="player.press('video')"
-    >
-      <span v-if="player.building === 'video'" class="spinner" aria-hidden="true"></span>
-      <AppIcon v-else :name="videoPlaying ? 'pause' : 'movie'" />
+      <span v-if="player.building" class="spinner" aria-hidden="true"></span>
+      <AppIcon v-else :name="playing ? 'pause' : 'play'" />
     </button>
     <button class="icon-btn" type="button" title="Stop" aria-label="Stop" data-testid="stop" @click="player.stop()">
       <AppIcon name="stop" />

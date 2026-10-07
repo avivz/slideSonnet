@@ -875,15 +875,8 @@ export interface components {
              * @enum {string}
              */
             kind: "preview";
-            /**
-             * Single Slide Transitions
-             * @default false
-             */
-            single_slide_transitions: boolean;
             /** Slide Id */
-            slide_id?: string | null;
-            /** Start Slide */
-            start_slide?: string | null;
+            slide_id: string;
         };
         /** ProgressDTO */
         ProgressDTO: {

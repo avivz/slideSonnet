@@ -1,9 +1,10 @@
 // Play all: the deck slide by slide, inside the chosen conversation.
-import { flushPromises } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/client'
+import PlayerBar from '@/features/editor/PlayerBar.vue'
 import type { PreviewManifest } from '@/features/playback/manifest'
 import { nextAfter, playable, progress, startAt } from '@/features/playback/playlist'
 import { useConfirm } from '@/stores/confirm'
@@ -78,8 +79,7 @@ class FakeAudio {
 function slideTrack(slideId: string): PreviewManifest {
   return {
     artifact_id: slideId, slide_id: slideId, narration_revision: 'r1', pdf_revision: 'p', engine: 'kokoro',
-    media_url: `/media/${slideId}.wav`, duration: 2, start_at: 0,
-    cues: [{ start: 0, slide_id: slideId }], pages: [], transitions: [],
+    media_url: `/media/${slideId}.wav`, duration: 2,
     speech: [
       { slide_id: slideId, index: 0, start: 0.3, end: 1, silences: [] },
       { slide_id: slideId, index: 1, start: 1, end: 1.8, silences: [] },
@@ -87,11 +87,11 @@ function slideTrack(slideId: string): PreviewManifest {
   }
 }
 
-async function playing(server = new FakeServer()) {
+/** The deck open, every preview job succeeding at once with its slide's track. */
+async function opened(server: FakeServer) {
   setActivePinia(createPinia())
   const editor = useEditorStore()
   const client = server.client()
-  // every preview job succeeds at once with its slide's track
   client.job = async (id) => {
     const body = server.jobs[Number(id.split('-')[1]) - 1]?.body ?? {}
     return { id, kind: 'preview', status: 'succeeded', result: slideTrack(String(body.slide_id)) } as never
@@ -99,17 +99,57 @@ async function playing(server = new FakeServer()) {
   client.cancelJob = async () => ({}) as never
   editor.client = client
   await editor.open('tok')
+  const previews = (): string[] => server.jobs.filter((j) => j.kind === 'preview').map((j) => String(j.body.slide_id))
+  return { editor, previews }
+}
+
+async function playing(server = new FakeServer()) {
+  const { editor, previews } = await opened(server)
   const player = usePlayerStore()
   const audio = new FakeAudio()
   player.attach(audio as unknown as HTMLAudioElement)
-  const previews = (): string[] => server.jobs.filter((j) => j.kind === 'preview').map((j) => String(j.body.slide_id))
   return { editor, player, audio, server, previews }
 }
+
+describe('the player bar', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('has one Play button, besides Stop: it plays on from this slide, pauses, and resumes', async () => {
+    // jsdom plays no media: its <audio> only reports play and pause
+    let paused = true
+    vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(() => paused)
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(async function (this: HTMLMediaElement) {
+      paused = false
+      this.dispatchEvent(new Event('play'))
+    })
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (this: HTMLMediaElement) {
+      paused = true
+      this.dispatchEvent(new Event('pause'))
+    })
+    const { editor, previews } = await opened(new FakeServer({ a: 'One.', b: 'Two.', c: 'Three.' }))
+    editor.go(1)
+    const w = mount(PlayerBar, { attachTo: document.body })
+    expect(w.findAll('button').map((b) => b.attributes('data-testid'))).toEqual(['prev', 'next', 'play', 'stop', 'speed'])
+    const play = w.get('[data-testid="play"]')
+    expect(play.attributes('aria-label')).toBe('Play')
+    await play.trigger('click')
+    await vi.waitFor(() => expect(play.attributes('data-state')).toBe('playing'))
+    expect(play.attributes('aria-label')).toBe('Pause')
+    expect(previews()).toEqual(['b', 'c']) // this slide, and the next one getting ready
+    await play.trigger('click')
+    await vi.waitFor(() => expect(play.attributes('data-state')).toBe('idle'))
+    expect(play.attributes('aria-label')).toBe('Play')
+    await play.trigger('click')
+    await vi.waitFor(() => expect(play.attributes('data-state')).toBe('playing'))
+    expect(previews()).toEqual(['b', 'c']) // resumed, not rebuilt
+    w.unmount()
+  })
+})
 
 describe('Play all', () => {
   it('plays slide by slide, preparing the next while one plays, and stops after the last', async () => {
     const { editor, player, audio, previews } = await playing(new FakeServer({ a: 'One.', c: 'Three.' }))
-    await player.press('deck')
+    await player.press()
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     expect(player.allProgress).toEqual({ at: 1, of: 3 })
     await vi.waitFor(() => expect(previews()).toEqual(['a', 'b'])) // b is ready before a ends
@@ -125,7 +165,7 @@ describe('Play all', () => {
 
   it('while you type, plays on and shows the playing slide over the one you type in', async () => {
     const { editor, player, audio } = await playing()
-    await player.press('deck')
+    await player.press()
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     player.setEditing(true)
     audio.end()
@@ -141,7 +181,7 @@ describe('Play all', () => {
     server.paid = true
     const { player, audio, previews } = await playing(server)
     const asked = vi.spyOn(useConfirm(), 'ask').mockResolvedValue(true)
-    await player.press('deck')
+    await player.press()
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     expect(asked).toHaveBeenCalledOnce()
     expect(server.generated[0]).toMatchObject({ allow_paid: true, targets: [
@@ -153,7 +193,7 @@ describe('Play all', () => {
 
   it('jumping to another slide plays on from there', async () => {
     const { editor, player, audio } = await playing()
-    await player.press('deck')
+    await player.press()
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     editor.go(2)
     await vi.waitFor(() => expect(audio.src).toBe('/media/c.wav'))
@@ -163,15 +203,15 @@ describe('Play all', () => {
   it('paused to edit, resumes with the new words, from the line it was on', async () => {
     const server = new FakeServer({ a: 'One. Two.', b: 'World.' })
     const { editor, player, audio, previews } = await playing(server)
-    await player.press('deck')
+    await player.press()
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     audio.currentTime = 1.5 // on the second line
-    await player.press('deck') // pause
+    await player.press() // pause
     expect(audio.paused).toBe(true)
     const line = editor.draftFor('a')?.middle[0]
     if (line?.kind === 'speech') line.text = 'One. Two, reworded.'
     editor.touch('a')
-    await player.press('deck') // resume: a is rebuilt with the new words
+    await player.press() // resume: a is rebuilt with the new words
     await vi.waitFor(() => expect(previews().filter((s) => s === 'a')).toHaveLength(2))
     await vi.waitFor(() => expect(audio.paused).toBe(false))
     expect(audio.currentTime).toBe(1) // back to the start of the line it paused in
@@ -184,15 +224,15 @@ describe('Play all', () => {
     const { editor, player, audio } = await playing(server)
     editor.engine = 'inworld' // a paid engine (the fake server never calls it)
     const asked = vi.spyOn(useConfirm(), 'ask').mockResolvedValue(true)
-    await player.press('deck')
+    await player.press()
     await vi.waitFor(() => expect(audio.src).toBe('/media/a.wav'))
     expect(asked).not.toHaveBeenCalled()
-    await player.press('deck') // pause
+    await player.press() // pause
     const line = editor.draftFor('a')?.middle[0]
     if (line?.kind === 'speech') line.text = 'One, reworded.'
     editor.touch('a')
     server.cached = { a: [false], b: [true] } // the new words have no audio yet
-    await player.press('deck') // resume
+    await player.press() // resume
     await vi.waitFor(() => expect(audio.paused).toBe(false))
     expect(asked).toHaveBeenCalledOnce()
     expect(server.jobs.filter((j) => j.kind === 'preview').at(-2)?.body).toMatchObject({ slide_id: 'a', allow_paid: true })
@@ -208,20 +248,18 @@ describe('Stop wins', () => {
 
   it('over a play press still saving the line being typed, or one that can’t be saved', async () => {
     const { editor, player, server, previews } = await playing()
-    for (const key of ['a', 'deck']) {
-      server.holding = true
-      type(editor, `Typed just before playing ${key}.`)
-      const pressed = player.press(key)
-      await flushPromises()
-      player.stop()
-      server.release()
-      await pressed
-    }
+    server.holding = true
+    type(editor, 'Typed just before playing.')
+    const pressed = player.press()
+    await flushPromises()
+    player.stop()
+    server.release()
+    await pressed
     editor.client.saveSlide = async () => {
       throw new ApiError(500, 'io', 'Disk full.')
     }
     type(editor, 'Typed, never saved.')
-    await player.press('a')
+    await player.press()
     await flushPromises()
     expect(previews()).toEqual([])
   })
@@ -234,7 +272,7 @@ describe('Stop wins', () => {
       cancelled.push(id)
       return {} as never
     }
-    void player.press('deck')
+    void player.press()
     await vi.waitFor(() => expect(server.jobs.map((j) => j.body.slide_id)).toContain('a'))
     editor.go(2) // on to c while a is still being built
     await vi.waitFor(() => expect(server.jobs.map((j) => j.body.slide_id)).toContain('c'))

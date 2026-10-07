@@ -1,18 +1,18 @@
-"""Preview artifacts: immutable, content-addressed preview tracks, plus their manifest.
+"""Preview artifacts: immutable, content-addressed per-slide preview tracks, plus their manifest.
 
-Every preview used to render to one fixed ``track.wav`` that was rewritten in
-place and fetched with a one-shot ``?t=`` token (B4): two previews in flight, or
-a browser holding the old URL, could play the wrong slide's audio. Now each
-built track is copied to ``previews/<content-hash>.wav`` — a file that is never
+The editor plays the deck slide by slide, one preview track per slide. Every
+preview used to render to one fixed ``track.wav`` that was rewritten in place
+and fetched with a one-shot ``?t=`` token (B4): two previews in flight, or a
+browser holding the old URL, could play the wrong slide's audio. Now each built
+track is copied to ``previews/<content-hash>.wav`` — a file that is never
 rewritten, so its URL can be cached forever and always means the same audio.
 
 Builds for one deck are serialized (they share the render directory), and a
-single-slide preview assembles in its own sub-directory so it never evicts the
-whole-deck page audio that export also reuses.
+slide's preview assembles in its own sub-directory so it never evicts the
+whole-deck page audio that export reuses.
 
 The manifest is what a browser-side player needs to play a preview on its own
-clock: the track URL, duration, cue sheet, page images, and the transition
-schedule (the same absorb-into-hold timing the export uses).
+clock: the track URL, its duration, and where each spoken line plays in it.
 """
 
 from __future__ import annotations
@@ -21,19 +21,16 @@ import contextlib
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from slidesonnet import api
 from slidesonnet.api import SpeechSpan
-from slidesonnet.audio.track import Cue
 from slidesonnet.cache import render_dir
 from slidesonnet.config import load_config
-from slidesonnet.diagnostics import boundary_transition
 from slidesonnet.models import Backend, ProgressFn
-from slidesonnet.narration.model import Deck, PageNarration, Transition
 from slidesonnet.server.decks import DeckService
 from slidesonnet.server.engines import engine_lock
 from slidesonnet.server.revisions import file_sha256
@@ -46,13 +43,12 @@ KEEP_PREVIEWS = 8
 
 @dataclass(frozen=True)
 class PreviewArtifact:
-    """One built preview: an immutable track and the inputs it was built from."""
+    """One slide's built preview: an immutable track and the inputs it was built from."""
 
     id: str
     path: Path
     duration: float
-    cues: list[Cue]
-    slide_id: str | None  # None = whole deck
+    slide_id: str
     narration_revision: str
     pdf_revision: str
     engine: str | None
@@ -127,12 +123,12 @@ def prune_previews(
 def build_preview_artifact(
     service: DeckService,
     *,
-    slide_id: str | None,
+    slide_id: str,
     engine: Backend | None,
     progress: ProgressFn | None = None,
     approved_clips: Collection[str] | None = None,
 ) -> PreviewArtifact:
-    """Build (or reuse) the preview for one slide or the whole deck. Blocking.
+    """Build (or reuse) one slide's preview. Blocking.
 
     Takes the deck's render lock, then the engine's synthesis lock — the one
     order every caller uses, so preview and export can't deadlock.
@@ -146,7 +142,7 @@ def build_preview_artifact(
     backend = engine or load_config(pdf).tts.backend
     # Lock order is always render, then engine (export takes them the same way).
     with service.render_lock, engine_lock(backend):
-        rdir = render_dir(pdf) / SLIDE_PREVIEW_DIRNAME if slide_id else render_dir(pdf)
+        rdir = render_dir(pdf) / SLIDE_PREVIEW_DIRNAME
         preview = api.build_preview(
             pdf,
             sidecar_path=service.sidecar_path,
@@ -162,7 +158,6 @@ def build_preview_artifact(
         id=artifact_id,
         path=path,
         duration=preview.total_duration,
-        cues=list(preview.cues),
         slide_id=slide_id,
         narration_revision=revisions.narration,
         pdf_revision=revisions.pdf,
@@ -172,104 +167,17 @@ def build_preview_artifact(
     )
 
 
-# ---- the transition schedule a browser player follows --------------------------
-def morph_schedule(
-    cues: Sequence[Cue],
-    deck: Deck,
-    images: Sequence[Path | None],
-    media_url: Callable[[Path], str],
-) -> list[dict[str, Any]]:
-    """Per-boundary morph steps for a whole-deck preview.
-
-    Mirrors the export's absorb-into-hold model: each animated boundary's morph
-    *completes* at the next slide's cue start (``at``), running ``dur`` seconds
-    of the outgoing slide's trailing hold — so the preview's transition lands at
-    the same instant the cue flips, just as the rendered wipe does. Plain cuts
-    emit nothing.
-    """
-    steps: list[dict[str, Any]] = []
-    index = {sid: i for i, sid in enumerate(deck.pages)}
-    for i in range(len(cues) - 1):
-        a_start, a_sid = cues[i]
-        b_start, b_sid = cues[i + 1]
-        tr = boundary_transition(deck.page_narration(a_sid), deck.page_narration(b_sid))
-        if not tr.is_animated:
-            continue
-        ia, ib = index.get(a_sid), index.get(b_sid)
-        a_img = images[ia] if ia is not None and ia < len(images) else None
-        b_img = images[ib] if ib is not None and ib < len(images) else None
-        if a_img is None or b_img is None:
-            continue  # page not rasterized (no pdftoppm) — fall back to a flip
-        span = b_start - a_start
-        steps.append(
-            {
-                "at": b_start,
-                "dur": max(0.05, min(tr.seconds, span)),
-                "kind": tr.kind,
-                "from": media_url(a_img),
-                "to": media_url(b_img),
-            }
-        )
-    return steps
-
-
-def single_slide_morph(
-    block: PageNarration,
-    incoming: Transition,
-    index: int,
-    images: Sequence[Path | None],
-    total: float,
-    media_url: Callable[[Path], str],
-    *,
-    enabled: bool = True,
-) -> list[dict[str, Any]]:
-    """Morph steps for a *single-slide* preview: its in- and out-transition.
-
-    *incoming* is the effective transition entering this slide (its boundary with
-    the previous slide); ``block.transition_out`` is the boundary with the next.
-    A missing neighbour (the deck's first/last slide) morphs against a black
-    frame (``from``/``to`` is ``None``). Each is clamped to half the slide so the
-    two never overlap. *enabled* is the "Play transitions in single-slide
-    preview" toggle (off by default): when False a single-slide play is a cut.
-    """
-    if not enabled:
-        return []
-
-    def url(j: int) -> str | None:
-        image = images[j] if 0 <= j < len(images) else None
-        return media_url(image) if image is not None else None
-
-    here = url(index)
-    if here is None:  # no rasterized image — nothing to morph
-        return []
-    steps: list[dict[str, Any]] = []
-    if incoming.is_animated:
-        d = max(0.05, min(incoming.seconds, total / 2))
-        steps.append({"at": d, "dur": d, "kind": incoming.kind, "from": url(index - 1), "to": here})
-    t_out = block.transition_out
-    if t_out.is_animated:
-        d = max(0.05, min(t_out.seconds, total / 2))
-        steps.append(
-            {"at": total, "dur": d, "kind": t_out.kind, "from": here, "to": url(index + 1)}
-        )
-    return steps
-
-
 @dataclass(frozen=True)
 class PreviewManifest:
     """Everything a browser-side player needs to play one preview on its own clock."""
 
     artifact_id: str
-    slide_id: str | None
+    slide_id: str
     narration_revision: str
     pdf_revision: str
     engine: str | None
     media_url: str
     duration: float
-    start_at: float
-    cues: list[dict[str, Any]] = field(default_factory=list)
-    pages: list[dict[str, Any]] = field(default_factory=list)
-    transitions: list[dict[str, Any]] = field(default_factory=list)
     speech: list[dict[str, Any]] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
@@ -281,59 +189,12 @@ class PreviewManifest:
             "engine": self.engine,
             "media_url": self.media_url,
             "duration": self.duration,
-            "start_at": self.start_at,
-            "cues": self.cues,
-            "pages": self.pages,
-            "transitions": self.transitions,
             "speech": self.speech,
         }
 
 
-def preview_manifest(
-    artifact: PreviewArtifact,
-    deck: Deck,
-    images: Sequence[Path | None],
-    *,
-    media_url: Callable[[Path], str],
-    track_url: str,
-    start_slide: str | None = None,
-    single_slide_transitions: bool = False,
-) -> PreviewManifest:
-    """The manifest for *artifact*: cues, page images, and the transition schedule.
-
-    *images* is indexed like ``deck.pages``, with ``None`` for a page not
-    rendered yet. A deck preview starts at *start_slide*'s cue (the slide the
-    user is on), so playing the deck from slide 7 doesn't rewind to slide 1.
-    """
-    by_id = {sid: i for i, sid in enumerate(deck.pages)}
-
-    def image_for(sid: str) -> str | None:
-        i = by_id.get(sid)
-        image = images[i] if i is not None and i < len(images) else None
-        return media_url(image) if image is not None else None
-
-    if artifact.slide_id is None:
-        cues = artifact.cues
-        steps = morph_schedule(cues, deck, images, media_url)
-        start_at = next((start for start, sid in cues if sid == start_slide), 0.0)
-        page_ids = [sid for _, sid in cues]
-    else:
-        sid = artifact.slide_id
-        cues = [Cue(0.0, sid)]
-        index = by_id.get(sid, 0)
-        from slidesonnet.server.editing import incoming_transition
-
-        steps = single_slide_morph(
-            deck.page_narration(sid),
-            incoming_transition(deck, sid) if sid in by_id else Transition(),
-            index,
-            images,
-            artifact.duration,
-            media_url,
-            enabled=single_slide_transitions,
-        )
-        start_at = 0.0
-        page_ids = [sid]
+def preview_manifest(artifact: PreviewArtifact, *, track_url: str) -> PreviewManifest:
+    """The manifest for *artifact*: its track at *track_url*, and where each line plays."""
     return PreviewManifest(
         artifact_id=artifact.id,
         slide_id=artifact.slide_id,
@@ -342,10 +203,6 @@ def preview_manifest(
         engine=artifact.engine,
         media_url=track_url,
         duration=artifact.duration,
-        start_at=start_at,
-        cues=[{"start": start, "slide_id": sid} for start, sid in cues],
-        pages=[{"slide_id": sid, "image_url": image_for(sid)} for sid in dict.fromkeys(page_ids)],
-        transitions=steps,
         speech=[
             {
                 "slide_id": sp.slide_id,

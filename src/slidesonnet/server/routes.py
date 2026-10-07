@@ -345,17 +345,7 @@ def preview_work(
             progress=ctx.progress,
             approved_clips=approved,
         )
-        loaded = service.load()
-        images = snapshots.ensure_page_images(entry.pdf_path, len(loaded.deck.pages))
-        manifest = preview_manifest(
-            artifact,
-            loaded.deck,
-            images,
-            media_url=lambda p: media_url(entry.pdf_path, p, stamp=True),
-            track_url=media_url(entry.pdf_path, artifact.path),
-            start_slide=req.start_slide,
-            single_slide_transitions=req.single_slide_transitions,
-        )
+        manifest = preview_manifest(artifact, track_url=media_url(entry.pdf_path, artifact.path))
         return manifest.to_json()
 
     return work
@@ -459,10 +449,7 @@ def post_job(request: Request, token: str, body: JobRequest, _m: None = Mutation
             token,
             inputs,
             preview_work(entry, body, engine, approved),
-            dedupe_key=(
-                f"preview:{token}:{engine}:{narration_rev}:{body.slide_id}:"
-                f"{body.start_slide}:{body.single_slide_transitions}"
-            ),
+            dedupe_key=f"preview:{token}:{engine}:{narration_rev}:{body.slide_id}",
         )
     elif isinstance(body, ExportJob):
         engine = _resolve_engine(entry, body.engine)

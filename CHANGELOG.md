@@ -71,6 +71,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - **The editor opens on the Review tab**; the Audio tab is one click away.
 - **Your own messages in a review conversation have their own color** (a warm
   orange), so they no longer look like headings; the agent's stay blue.
+- **One Play button.** The player under the slide has a single ▶ Play: it plays
+  from the slide you're on, then the next, slide by slide (only a chosen review
+  conversation's slides). Press it again to pause, and again to go on; ■ Stop
+  ends it.
+
+### Removed
+- **"Hear this slide" and "Watch as video"** are gone from the player — Play does
+  both jobs. To hear just one slide, press Play and then Stop; to see the
+  transitions, export the video.
+- **The "Play transitions in single-slide preview" checkbox**, which only that
+  one-slide button used.
 
 ### Fixed
 - **One pause between two lines shows as one pause in the Script view.** Every

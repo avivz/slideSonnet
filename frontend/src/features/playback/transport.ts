@@ -1,31 +1,29 @@
-// What the play/stop buttons and slide navigation do to the preview player —
+// What the Play and Stop buttons and slide navigation do to the preview player —
 // the defined behaviors, independent of any audio element. (Ported from the
 // NiceGUI editor's PlaybackController.)
 //
-// - A play button toggles: pressed for the loaded track it pauses or resumes;
-//   resuming a track the narration has changed since is a 'refresh' (rebuild it,
-//   go on from where it was); pressed for anything else it builds that track.
+// - Play toggles: with a track loaded it pauses or resumes; resuming a track the
+//   narration has changed since is a 'refresh' (rebuild it, go on from where it
+//   was); with nothing loaded it starts playing.
 // - A new request supersedes whatever is rolling; the superseded build never starts.
 // - Stop cancels a request still being built, and unloads the player.
-// - A single-slide track belongs to its slide: navigating away clears it. The
-//   whole-deck track ('video') spans every slide: navigating seeks it, playing or
-//   paused. Play all ('deck') plays slide by slide: navigating jumps it there.
-
-/** A slide's id, 'deck' (Play all, slide by slide), or 'video' (the whole deck as one track). */
-export type TrackKey = 'deck' | 'video' | string
+// - Playback goes slide by slide: navigating while it plays (or gets ready)
+//   jumps it to the slide chosen.
 
 export class Transport {
   private generation = 0
   playing = false
-  loadedKey: TrackKey | null = null
+  /** A track is in the player, playing or paused. */
+  hasTrack = false
   /** The narration revision the loaded track was built from. */
   loadedRevision: string | null = null
-  pendingKey: TrackKey | null = null
+  /** A track is being prepared. */
+  pending = false
 
   /** Register a new play request; returns its token. */
-  begin(key: TrackKey): number {
+  begin(): number {
     this.generation++
-    this.pendingKey = key
+    this.pending = true
     return this.generation
   }
 
@@ -34,17 +32,17 @@ export class Transport {
     return token === this.generation
   }
 
-  loaded(key: TrackKey, revision: string): void {
-    this.loadedKey = key
+  loaded(revision: string): void {
+    this.hasTrack = true
     this.loadedRevision = revision
-    this.pendingKey = null
+    this.pending = false
   }
 
   unload(): void {
-    this.loadedKey = null
+    this.hasTrack = false
     this.loadedRevision = null
     this.playing = false
-    this.pendingKey = null
+    this.pending = false
   }
 
   stop(): void {
@@ -52,20 +50,16 @@ export class Transport {
     this.unload()
   }
 
-  /** What a play press for `key` should do, given the deck's current revision. */
-  pressAction(key: TrackKey, revision: string): 'build' | 'pause' | 'resume' | 'refresh' | 'wait' {
-    if (this.pendingKey === key) return 'wait' // a double-click doesn't cancel its own build
-    if (this.loadedKey !== key) return 'build'
+  /** What a Play press should do, given the deck's current revision. */
+  pressAction(revision: string): 'build' | 'pause' | 'resume' | 'refresh' | 'wait' {
+    if (this.pending) return 'wait' // a double-click doesn't cancel its own build
+    if (!this.hasTrack) return 'build'
     if (this.playing) return 'pause' // pausing never needs the new words
-    if (this.loadedRevision === revision) return 'resume'
-    return key === 'video' ? 'build' : 'refresh' // the whole deck restarts from this slide
+    return this.loadedRevision === revision ? 'resume' : 'refresh'
   }
 
   /** What moving to another slide should do to the player right now. */
-  navAction(): 'seek' | 'jump' | 'clear' | 'none' {
-    if (this.loadedKey === 'video' || this.pendingKey === 'video') return 'seek'
-    if (this.loadedKey === 'deck' || this.pendingKey === 'deck') return 'jump'
-    if (this.loadedKey !== null || this.pendingKey !== null) return 'clear'
-    return 'none'
+  navAction(): 'jump' | 'none' {
+    return this.hasTrack || this.pending ? 'jump' : 'none'
   }
 }

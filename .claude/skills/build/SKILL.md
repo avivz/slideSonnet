@@ -101,7 +101,7 @@ slidesonnet edit [deck.pdf|FOLDER] [--root DIR] [--narration PATH] [--host H] [-
 ```
 
 Local browser editor: a library of decks, page nav, narration editing (saved as
-you type), per-slide TTS, whole-deck preview, diagnostics, and the Review tab.
+you type), per-slide TTS, slide-by-slide playback, diagnostics, and the Review tab.
 
 ### `slidesonnet review` — conversations about an agent's changes
 
