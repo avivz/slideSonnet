@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { shortcut, type Action, type KeyPress } from '@/features/editor/keymap'
+import { SHORTCUTS, comboKeys } from '@/features/editor/shortcuts'
 
 document.body.innerHTML = `
   <main id="page">
@@ -33,10 +34,33 @@ const cases: [string, KeyPress, Action | null, { dialogOpen?: boolean; reviewAct
   ['N goes to the next your-turn', press('n', at('button')), { kind: 'next-turn' }, { reviewActive: true }],
   ['letters are typed, not shortcuts', press('n', at('text')), null, { reviewActive: true }],
   ['D does nothing outside review', press('d', at('page')), null],
+  ['Space plays / pauses from the page', press(' ', at('page')), { kind: 'play' }],
+  ['not in a text field', press(' ', at('text')), null],
+  ['nor on a focused button: it presses itself', press(' ', at('thumb')), null],
+  ['nor on a tab', press(' ', at('tab')), null],
+  ['holding Space down toggles once', press(' ', at('page'), { repeat: true }), null],
+  ['? shows the shortcuts', press('?', at('button'), { shiftKey: true }), { kind: 'help' }],
+  ['but is typed in a text field', press('?', at('text'), { shiftKey: true }), null],
 ]
 
 describe('editor shortcuts', () => {
   it.each(cases)('%s', (_name, event, action, ctx) => {
     expect(shortcut(event, { dialogOpen: false, reviewActive: false, ...ctx })).toEqual(action)
+  })
+})
+
+// One table names every shortcut for the list and the tooltips (its type makes it
+// cover every action): its keys must be the ones the keymap really handles.
+describe('the shortcuts table', () => {
+  it('shows each action with keys that do it', () => {
+    for (const [kind, entry] of Object.entries(SHORTCUTS)) {
+      for (const c of entry.combos) {
+        const event = press(c.key, at('page'), { ctrlKey: !!c.ctrl, altKey: !!c.alt, shiftKey: c.key === '?' })
+        const action = shortcut(event, { dialogOpen: false, reviewActive: !!entry.review })
+        expect(action?.kind, comboKeys(c).join('+')).toBe(kind)
+      }
+    }
+    expect(SHORTCUTS.deck.combos.map(comboKeys)).toEqual([['Alt', '←'], ['Alt', '→']])
+    expect(SHORTCUTS.play.combos.map(comboKeys)).toEqual([['Space']])
   })
 })

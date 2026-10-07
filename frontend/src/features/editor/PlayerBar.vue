@@ -1,15 +1,26 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
+import { vTip } from '@/components/tip'
 import { formatClock } from '@/features/playback/clock'
 import { useEditorStore } from '@/stores/editor'
 import { usePlayerStore } from '@/stores/player'
+
+import { SHORTCUT_HINT } from './shortcutHint'
+import { shortcutTip } from './shortcuts'
 
 const editor = useEditorStore()
 const player = usePlayerStore()
 const audio = ref<HTMLAudioElement | null>(null)
 const scrub = ref<number | null>(null) // position while the thumb is being dragged
+const hint = inject(SHORTCUT_HINT, null) // "Press ? for shortcuts", the first few times
+
+const PREV_TIP = shortcutTip('slide', 'Previous slide', 0)
+const NEXT_TIP = shortcutTip('slide', 'Next slide', 1)
+const JUMP_NOTE = 'Click any line to jump there while playing'
+const PLAY_TIP = shortcutTip('play', 'Play from this slide on', undefined, JUMP_NOTE)
+const PAUSE_TIP = shortcutTip('play', 'Pause', undefined, JUMP_NOTE)
 
 let detach: (() => void) | null = null
 onMounted(() => {
@@ -41,24 +52,24 @@ function onScrubChange(event: Event): void {
 <template>
   <div class="bar" data-testid="player-bar" data-slide-keys>
     <button
-      class="icon-btn" type="button" title="Previous slide (←)" aria-label="Previous slide"
+      v-tip="PREV_TIP" class="icon-btn" type="button" aria-label="Previous slide"
       :disabled="editor.index === 0" data-testid="prev" @click="editor.go(editor.index - 1)"
     >
       <AppIcon name="prev" />
     </button>
     <span class="counter mono" data-testid="counter">Slide {{ editor.index + 1 }} / {{ editor.pages.length }}</span>
     <button
-      class="icon-btn" type="button" title="Next slide (→)" aria-label="Next slide"
+      v-tip="NEXT_TIP" class="icon-btn" type="button" aria-label="Next slide"
       :disabled="editor.index >= editor.pages.length - 1" data-testid="next" @click="editor.go(editor.index + 1)"
     >
       <AppIcon name="next" />
     </button>
     <span class="sep" aria-hidden="true"></span>
     <button
+      v-tip="playing ? PAUSE_TIP : PLAY_TIP"
       class="icon-btn"
       :class="{ on: playing }"
       type="button"
-      :title="playing ? 'Pause' : 'Play from this slide on'"
       :aria-label="playing ? 'Pause' : 'Play'"
       data-testid="play"
       :data-state="player.building ? 'building' : playing ? 'playing' : 'idle'"
@@ -67,11 +78,11 @@ function onScrubChange(event: Event): void {
       <span v-if="player.building" class="spinner" aria-hidden="true"></span>
       <AppIcon v-else :name="playing ? 'pause' : 'play'" />
     </button>
-    <button class="icon-btn" type="button" title="Stop" aria-label="Stop" data-testid="stop" @click="player.stop()">
+    <button v-tip="'Stop'" class="icon-btn" type="button" aria-label="Stop" data-testid="stop" @click="player.stop()">
       <AppIcon name="stop" />
     </button>
     <button
-      class="btn quiet speed mono" type="button" title="Playback speed (preview only — no re-generation)"
+      v-tip="'Playback speed (preview only — no re-generation)'" class="btn quiet speed mono" type="button"
       data-testid="speed" @click="player.cycleSpeed()"
     >
       {{ player.speed }}×
@@ -92,6 +103,12 @@ function onScrubChange(event: Event): void {
       slide {{ player.allProgress.at }} of {{ player.allProgress.of }} ·
     </span>
     <span class="time mono" data-testid="time">{{ clock }}</span>
+    <span v-if="hint?.shown.value" class="first-hint" data-testid="shortcut-hint">
+      Press <kbd>?</kbd> for shortcuts
+      <button type="button" class="dismiss" aria-label="Hide this tip" data-testid="shortcut-hint-dismiss" @click="hint.done()">
+        <AppIcon name="close" :size="12" />
+      </button>
+    </span>
     <audio ref="audio" preload="auto" data-testid="preview-audio"></audio>
   </div>
 </template>
@@ -150,6 +167,31 @@ function onScrubChange(event: Event): void {
 }
 audio {
   display: none;
+}
+.first-hint {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.dismiss {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-field);
+  color: var(--dim);
+  cursor: pointer;
+}
+.dismiss:hover {
+  color: var(--text);
 }
 .spinner {
   width: 14px;

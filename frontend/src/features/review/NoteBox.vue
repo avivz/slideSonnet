@@ -4,6 +4,8 @@
 // It is cleared only once the note went through; a failed send keeps it.
 import { ref } from 'vue'
 
+import { vTip } from '@/components/tip'
+
 const props = defineProps<{
   placeholder: string
   testId: string
@@ -47,9 +49,9 @@ function onKey(event: KeyboardEvent): void {
     <div class="actions">
       <span class="hint">Enter sends · Shift+Enter for a new line</span>
       <button
+        v-tip="{ text: 'Send to the agent', keys: [['Enter']] }"
         class="btn quiet"
         type="button"
-        title="Send to the agent (Enter)"
         :disabled="!text.trim() || sending"
         :data-testid="`${testId}-add`"
         @click="submit"

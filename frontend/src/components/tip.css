@@ -1,0 +1,42 @@
+/* the one tooltip (see tip.ts); it fades with --fast, which is 0 under reduced motion */
+.app-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  max-width: min(300px, calc(100vw - 8px));
+  padding: 5px 8px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 50%);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--fast),
+    visibility var(--fast);
+}
+.app-tip.on {
+  opacity: 1;
+  visibility: visible;
+}
+.app-tip .line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.app-tip .keys {
+  white-space: nowrap;
+  color: var(--dim);
+}
+.app-tip .note {
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: var(--text-xs);
+}

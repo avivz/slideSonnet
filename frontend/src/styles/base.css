@@ -41,6 +41,22 @@ input {
   font-family: var(--font-mono);
 }
 
+/* a key cap: in tooltips, the shortcuts list, and tips */
+kbd {
+  display: inline-block;
+  min-width: 1.7em;
+  padding: 0 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

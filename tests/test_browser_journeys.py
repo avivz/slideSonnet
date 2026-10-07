@@ -315,6 +315,28 @@ def test_click_a_line_while_playing_plays_on_from_it(
     expect(play).to_have_attribute("data-state", "playing")
 
 
+def test_shortcuts_are_discoverable(page: Page, server: Server, tmp_path: Path) -> None:
+    """A real hover shows Play's tooltip with its key; ? opens the shortcuts list (and
+    retires the first-run hint); Space plays and pauses."""
+    pdf = _prep(tmp_path, "@intro-title\nHello.\n\n@euler-setup\nWorld.\n")
+    page.goto(server(pdf, stub_seconds=3.0))
+    expect(tid(page, "shortcut-hint")).to_be_visible()
+    play = tid(page, "play")
+    play.hover()
+    tip = page.get_by_role("tooltip")
+    expect(tip).to_be_visible()
+    expect(tip.locator("kbd")).to_have_text("Space")
+    page.mouse.move(5, 300)  # away: it goes
+    expect(tip).to_be_hidden()
+    page.keyboard.press("?")
+    expect(tid(page, "shortcuts-list")).to_be_visible()
+    expect(tid(page, "shortcut-hint")).to_be_hidden()
+    page.keyboard.press("Space")
+    expect(play).to_have_attribute("data-state", "playing", timeout=30_000)
+    page.keyboard.press("Space")
+    expect(play).to_have_attribute("data-state", "idle")
+
+
 def test_keyboard_deck_switching(page: Page, server: Server, tmp_path: Path) -> None:
     decks = []
     for week, stem in (("week01", "intro"), ("week02", "advanced")):

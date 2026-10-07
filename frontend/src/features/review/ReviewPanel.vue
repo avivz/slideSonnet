@@ -8,6 +8,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 import type { ConversationDTO } from '@/api/client'
+import { vTip } from '@/components/tip'
 import { useConfirm } from '@/stores/confirm'
 import { useReviewStore } from '@/stores/review'
 
@@ -118,20 +119,20 @@ function time(at: string): string {
         <span v-if="review.comparing" class="dim-text small">comparing…</span>
         <span class="spacer"></span>
         <button
+          v-tip="'Compare from the deck as it is now (e.g. after a recompile changed every slide). Conversations stay as they are.'"
           class="btn quiet small"
           type="button"
           :disabled="!review.changes.size"
-          title="Compare from the deck as it is now (e.g. after a recompile changed every slide). Conversations stay as they are."
           data-testid="review-reset"
           @click="resetComparison"
         >
           Reset comparison
         </button>
         <button
+          v-tip="'Make accepted changes the new starting point'"
           class="btn quiet small"
           type="button"
           :disabled="review.closedCount === 0 || review.clearing"
-          title="Make accepted changes the new starting point"
           data-testid="review-clear"
           @click="clearAccepted"
         >
@@ -193,9 +194,9 @@ function time(at: string): string {
             </button>
             <button
               v-if="c.status === 'open'"
+              v-tip="'Accept: close this conversation, its changes are fine'"
               class="accept"
               type="button"
-              title="Accept: close this conversation, its changes are fine"
               :aria-label="`Accept ${c.id}`"
               :data-testid="`accept-${c.id}`"
               @click="review.command({ type: 'accept', conversation: c.id })"
@@ -223,9 +224,10 @@ function time(at: string): string {
           <h3 v-else class="box-title" dir="auto">
             <span class="mono">{{ chosen.id }} · </span>{{ nameOf(chosen) }}
             <button
+              v-tip="'Rename'"
               class="rename"
               type="button"
-              title="Rename"
+              aria-label="Rename"
               data-testid="conv-rename"
               @click="startRename(chosen)"
             >
@@ -284,13 +286,14 @@ function time(at: string): string {
         </div>
         <p v-if="review.pickedByHand" class="hint small">
           {{ review.newSlides.length ? 'Tagged slides stay as you move around.' : 'No slides tagged: about the whole deck.' }}
-          Ctrl-click in the strip to add or remove ·
+          <kbd>Ctrl</kbd>-click in the strip to add or remove ·
           <button class="linkish" type="button" data-testid="new-reset" @click="review.resetPicked()">
             back to this slide
           </button>
         </p>
         <p v-else class="hint small">
-          About the slide on screen. Ctrl-click slides in the strip to tag several; remove every tag for the whole deck.
+          About the slide on screen. <kbd>Ctrl</kbd>-click slides in the strip to add them; remove every tag for
+          the whole deck.
         </p>
         <NoteBox
           v-model="draft"

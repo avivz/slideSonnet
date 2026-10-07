@@ -183,7 +183,8 @@ narration text to Inworld): page through the deck, edit narration beside each
 slide, set voice/pace, generate per-slide TTS, and play it back. Typing is saved
 as you go. **Play** plays from the slide you're on, slide by slide with the
 pauses in place, starting at once (the next slide is prepared while this one
-plays); press it again to pause. Transitions show in the exported video.
+plays); press it again (or **Space**) to pause. Press **?** for the keyboard
+shortcuts; a button's tooltip names its key too. Transitions show in the exported video.
 A diagnostics panel flags duplicate, missing, orphan, or `auto-…` ids.
 
 ### Reviewing an agent's changes

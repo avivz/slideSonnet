@@ -2,13 +2,14 @@
 // The deck editor page (/d/:token). Layout: filmstrip | stage + narration |
 // console, each side pane resizable and collapsible; below 900 px the side
 // panes fold away and open as overlays.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import type { LibraryDeckDTO } from '@/api/client'
 import { EventStream } from '@/api/events'
 import AppIcon from '@/components/AppIcon.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { vTip } from '@/components/tip'
 import { useEditorStore } from '@/stores/editor'
 import { useGenerationStore } from '@/stores/generation'
 import { usePlayerStore } from '@/stores/player'
@@ -26,6 +27,7 @@ import { useLeaveGuard } from './leave'
 import NarrationEditor from './NarrationEditor.vue'
 import SaveIndicator from './SaveIndicator.vue'
 import ScriptView from './ScriptView.vue'
+import { SHORTCUT_HINT, createShortcutHint } from './shortcutHint'
 import SlideStage from './SlideStage.vue'
 import VoicesDialog from './VoicesDialog.vue'
 
@@ -39,6 +41,13 @@ const review = useReviewStore()
 const consoleTab = ref<'audio' | 'review'>('review')
 const switcherOpen = ref(false)
 const voicesOpen = ref(false)
+const shortcutsOpen = ref(false)
+// "Press ? for shortcuts" by the player, the first few times
+const hint = createShortcutHint()
+provide(SHORTCUT_HINT, hint)
+watch(shortcutsOpen, (open) => {
+  if (open) hint.done()
+})
 
 const token = computed(() => String(route.params.token ?? ''))
 const snap = computed(() => editor.snapshot)
@@ -302,6 +311,14 @@ function onKey(event: KeyboardEvent): void {
   if (action === null) return
   if (action.kind !== 'compare' && action.kind !== 'next-turn') event.preventDefault()
   switch (action.kind) {
+    case 'play':
+      void player.press()
+      break
+    case 'help':
+      shortcutsOpen.value = !shortcutsOpen.value
+      // the list hangs from the slides column's ? button: bring the column out to show it
+      if (shortcutsOpen.value && !narrow.value && !stripOpen.value) stripOpen.value = true
+      break
     case 'deck':
       stepDeck(action.delta)
       break
@@ -352,6 +369,7 @@ onMounted(() => {
   window.addEventListener('resize', onResize)
   window.addEventListener('keydown', onKey)
   window.addEventListener('beforeunload', onBeforeUnload)
+  hint.opened()
   events.open()
   void openDeck(token.value)
 })
@@ -392,19 +410,19 @@ function pick(deck: LibraryDeckDTO): void {
          deck's name need a bar. Wide windows give the full height to the work. -->
     <header v-if="narrow" class="header">
       <button
-        class="icon-btn" :class="{ on: overlay === 'strip' }" type="button"
-        title="Show or hide the slides" aria-label="Show or hide the slides" data-testid="toggle-strip"
+        v-tip="'Show or hide the slides'" class="icon-btn" :class="{ on: overlay === 'strip' }" type="button"
+        aria-label="Show or hide the slides" data-testid="toggle-strip"
         @click="toggle('strip')"
       >
         <AppIcon name="panelLeft" />
       </button>
       <DeckHead
-        class="bar-head" inline :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
+        v-model:help="shortcutsOpen" class="bar-head" inline :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
         @switch="switcherOpen = true" @step="stepDeck" @checks="reveal('deck-checks-section')"
       />
       <button
-        class="icon-btn console-toggle" :class="{ on: overlay === 'console' }" type="button"
-        title="Show or hide audio & export" aria-label="Audio & export" :aria-expanded="overlay === 'console'"
+        v-tip="'Show or hide audio & export'" class="icon-btn console-toggle" :class="{ on: overlay === 'console' }"
+        type="button" aria-label="Audio & export" :aria-expanded="overlay === 'console'"
         data-testid="toggle-console" @click="toggle('console')"
       >
         <span class="toggle-label">Audio &amp; export</span>
@@ -421,7 +439,7 @@ function pick(deck: LibraryDeckDTO): void {
     <div v-else-if="snap" class="body" :style="gridStyle">
       <div class="pane strip" :class="{ overlay: narrow && overlay === 'strip', hidden: narrow ? overlay !== 'strip' : !stripOpen }">
         <DeckHead
-          v-if="!narrow" :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
+          v-if="!narrow" v-model:help="shortcutsOpen" :label="deckLabel" :has-prev="!!snap?.neighbours.prev" :has-next="!!snap?.neighbours.next"
           @switch="switcherOpen = true" @step="stepDeck" @checks="reveal('deck-checks-section')"
         />
         <FilmStrip />
@@ -431,7 +449,7 @@ function pick(deck: LibraryDeckDTO): void {
         @pointerdown="startResize('strip', $event)"
       >
         <button
-          class="fold left" type="button" :title="stripOpen ? 'Hide the slides' : 'Show the slides'"
+          v-tip="stripOpen ? 'Hide the slides' : 'Show the slides'" class="fold left" type="button"
           :aria-label="stripOpen ? 'Hide the slides' : 'Show the slides'" data-testid="fold-strip"
           @pointerdown.stop @click="toggle('strip')"
         >
@@ -477,7 +495,7 @@ function pick(deck: LibraryDeckDTO): void {
         @pointerdown="startResize('console', $event)"
       >
         <button
-          class="fold right" type="button" :title="consoleOpen ? 'Hide the console' : 'Show the console'"
+          v-tip="consoleOpen ? 'Hide the console' : 'Show the console'" class="fold right" type="button"
           :aria-label="consoleOpen ? 'Hide the console' : 'Show the console'" data-testid="fold-console"
           @pointerdown.stop @click="toggle('console')"
         >

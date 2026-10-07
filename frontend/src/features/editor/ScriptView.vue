@@ -399,12 +399,13 @@ function retry(slideId: string, seg: EditSeg): void {
   color: var(--dim);
   font-size: var(--text-xs);
 }
-/* a pause to add stays out of the way until the line is pointed at */
+/* a pause to add stays out of the way until the line is pointed at, or typed in
+   (then Tab reaches it) */
 .add-pause {
   opacity: 0;
 }
 .line-wrap:hover .add-pause,
-.add-pause:focus-within {
+.line-wrap:focus-within .add-pause {
   opacity: 1;
 }
 .secs {

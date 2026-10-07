@@ -2,7 +2,9 @@
 // when it belongs to whatever has focus. Text fields keep their keys; buttons
 // and composite widgets (tabs, the pane divider, lists) keep their arrows,
 // except inside a region marked `data-slide-keys` (the filmstrip, the player)
-// where the arrows are about slides.
+// where the arrows are about slides. Space plays and pauses unless a focused
+// control presses itself with it; `?` shows the list of shortcuts.
+// What each action is called and which keys show for it: ./shortcuts.ts.
 
 export type Action =
   | { kind: 'slide'; delta: 1 | -1 }
@@ -11,6 +13,8 @@ export type Action =
   | { kind: 'save' }
   | { kind: 'compare' }
   | { kind: 'next-turn' }
+  | { kind: 'play' }
+  | { kind: 'help' }
 
 export interface KeyPress {
   key: string
@@ -18,6 +22,8 @@ export interface KeyPress {
   ctrlKey: boolean
   metaKey: boolean
   shiftKey: boolean
+  /** The key is held down (auto-repeat). */
+  repeat?: boolean
   target: EventTarget | null
 }
 
@@ -32,6 +38,11 @@ const OWNS_ARROWS =
   'button, a[href], summary, audio, video, [role="tab"], [role="tablist"], [role="separator"], ' +
   '[role="slider"], [role="listbox"], [role="option"], [role="menu"], [role="menuitem"], ' +
   '[role="radiogroup"], [role="radio"], [role="spinbutton"], [role="grid"], [role="tree"]'
+
+/** Elements that do something of their own on Space (a button presses itself). */
+const OWNS_SPACE =
+  'button, summary, audio, video, [role="button"], [role="tab"], [role="checkbox"], [role="switch"], ' +
+  '[role="radio"], [role="option"], [role="menuitem"], [role="slider"], [role="separator"]'
 
 function asElement(target: EventTarget | null): Element | null {
   return target instanceof Element ? target : null
@@ -66,7 +77,12 @@ export function shortcut(e: KeyPress, ctx: KeyContext): Action | null {
   if (e.altKey && !command && !e.shiftKey && (key === 'ArrowLeft' || key === 'ArrowRight')) {
     return { kind: 'deck', delta: key === 'ArrowRight' ? 1 : -1 }
   }
+  if (key === '?' && !command && !e.altKey) return { kind: 'help' } // Shift+/ on most layouts
   if (command || e.shiftKey || e.altKey) return null
+  if (key === ' ') {
+    if (e.repeat || asElement(e.target)?.closest(OWNS_SPACE)) return null
+    return { kind: 'play' }
+  }
   if (ctx.reviewActive && key.toLowerCase() === 'd') return { kind: 'compare' }
   if (ctx.reviewActive && key.toLowerCase() === 'n') return { kind: 'next-turn' }
   const delta = arrow(key)

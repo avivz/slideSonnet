@@ -14,6 +14,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   so. `--json` gives scripts (a publish gate, say) a stable shape, described in
   `review summary --help`. `review list` and `review status` read every page, so
   they stay the ones for looking at changes.
+- **The editor tells you its shortcuts.** Rest the pointer on a button (or tab to
+  it) and a tooltip says what it does and which key does the same — Play shows
+  **Space**, the slide arrows **←**/**→**, the deck arrows **Alt+←/→**. **Space**
+  now plays and pauses (unless you're typing, or a button you tabbed to is
+  waiting for it), and **?** opens or closes the list of every shortcut, which
+  now floats over the work instead of squeezing into the slides column. The first
+  few times the editor opens, a small "Press ? for shortcuts" sits by the player
+  until you use it or put it away. The Play tooltip also mentions that clicking a
+  line while playing jumps there. In the script, "add a pause" after a line now
+  also shows while you type in that line, so Tab reaches a control you can see.
 - **Click the script to jump there while it plays.** While your deck is playing,
   click a line — in the script, or a line's words on the slide view — and playback
   goes on from the word you clicked, then on slide by slide as before. A line on
