@@ -13,6 +13,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   `slidesonnet review` work on the plain build when it's there, even when given
   `deck.pdf`. Each build keeps its own page renders. Export still refuses a plain
   build; the editor names its videos `deck.mp4`.
+- **`slidesonnet check` warns about two pauses in a row** on a slide, naming the
+  slide and the lines in the narration file: two silences back to back are just
+  one longer silence, and usually a slip. The editor shows the warning on that
+  slide too.
 
 ### Fixed
 - **One pause between two lines shows as one pause in the Script view.** Every

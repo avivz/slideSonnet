@@ -207,6 +207,20 @@ def test_check_reports_a_duplicate_block_with_both_lines(tmp_path: Path) -> None
     assert "more than one" in result.output and "lines 1 and 5" in result.output
 
 
+def test_check_warns_on_two_pauses_in_a_row(tmp_path: Path) -> None:
+    pdf = prep_marked_deck(tmp_path)
+    _sidecar(
+        tmp_path,
+        "@intro-title\n  utterance:\n    text: One.\n  pause: 0.3  # breathe\n"
+        "  # a comment between them is still two in a row\n  pause: 0.5\n"
+        "  utterance:\n    text: Two.\n  pause: 0.4\n  utterance:\n    text: Three.\n",
+    )
+    result = _run("check", str(pdf))
+    assert result.exit_code == 0, result.output  # a warning: the deck itself is fine
+    assert result.output.count("pauses in a row") == 1
+    assert "intro-title" in result.output and "lines 4 and 6" in result.output
+
+
 def test_sidecar_syntax_error_names_the_file(tmp_path: Path) -> None:
     pdf = prep_marked_deck(tmp_path)
     _sidecar(tmp_path, "@intro-title\n  bogus line here\n")

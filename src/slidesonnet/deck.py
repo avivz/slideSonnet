@@ -189,6 +189,45 @@ def duplicate_block_diagnostics(
     return diags
 
 
+_PAUSE_LINE_RE = re.compile(r"^\s*pause\s*:")
+
+
+def double_pause_diagnostics(text: str, sidecar_name: str) -> list[Diagnostic]:
+    """A warning per run of ``pause:`` lines with nothing said between them, naming
+    the slide and the lines: two silences in a row are one longer silence, and
+    usually a slip. Comment and blank lines between them don't break the run."""
+    diags: list[Diagnostic] = []
+    slide: str | None = None
+    run: list[int] = []
+
+    def flush() -> None:
+        if slide is not None and len(run) > 1:
+            at = ", ".join(str(n) for n in run[:-1]) + f" and {run[-1]}"
+            diags.append(
+                Diagnostic(
+                    "warning",
+                    "double-pause",
+                    f"slide '{slide}' has {len(run)} pauses in a row (lines {at} of "
+                    f"{sidecar_name}) — they make one longer silence; merge them into one pause",
+                    slide,
+                )
+            )
+        run.clear()
+
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if _PAUSE_LINE_RE.match(line):
+            run.append(lineno)
+            continue
+        flush()
+        if header := _HEADER_LINE_RE.match(raw):
+            slide = header.group("id")
+    flush()
+    return diags
+
+
 def load_deck(
     pdf_path: Path,
     *,
@@ -220,6 +259,7 @@ def load_deck(
         doc = parse_document(text)
         blocks, renamed = dedupe_block_ids(doc.blocks)
         block_diags = duplicate_block_diagnostics(text, set(renamed.values()), sidecar.name)
+        block_diags += double_pause_diagnostics(text, sidecar.name)
         voices = resolve_voice_files(doc.voices, sidecar.resolve().parent)
         default_voice, preamble_source = doc.default_voice, doc.preamble_source
 
