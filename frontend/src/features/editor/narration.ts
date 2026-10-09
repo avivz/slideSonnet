@@ -151,6 +151,33 @@ export function newPause(): EditSeg {
   return { key: newKey(), kind: 'pause', text: '', voice: null, pace: null, direction: '', seconds: 1 }
 }
 
+/**
+ * Split line `j` of `block` at `at`: the words after it become a new line right
+ * after (in the same voice), and whatever followed the line follows them.
+ */
+export function splitLine(block: EditBlock, j: number, at: number): EditSeg | null {
+  const seg = block.middle[j]
+  if (seg?.kind !== 'speech') return null
+  const tail: EditSeg = { ...seg, key: newKey(), text: seg.text.slice(at).trimStart() }
+  seg.text = seg.text.slice(0, at).trimEnd()
+  block.middle.splice(j + 1, 0, tail)
+  return tail
+}
+
+/**
+ * Join line `j + 1` onto line `j` (a space between their words); where the
+ * cursor goes — the join — or null when the two aren't adjacent lines.
+ */
+export function joinLines(block: EditBlock, j: number): number | null {
+  const [head, tail] = [block.middle[j], block.middle[j + 1]]
+  if (head?.kind !== 'speech' || tail?.kind !== 'speech') return null
+  const left = head.text.trimEnd()
+  const right = tail.text.trimStart()
+  head.text = left && right ? `${left} ${right}` : left + right
+  block.middle.splice(j + 1, 1)
+  return left.length
+}
+
 export function moveSeg(block: EditBlock, index: number, delta: number): boolean {
   const j = index + delta
   if (index < 0 || j < 0 || index >= block.middle.length || j >= block.middle.length) return false

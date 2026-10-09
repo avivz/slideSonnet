@@ -12,7 +12,7 @@ import { useReviewStore } from '@/stores/review'
 
 import LineFailure from './LineFailure.vue'
 import NarrationDiff from './NarrationDiff.vue'
-import { newPause, newSpeech, speechIndexes, written, type EditSeg } from './narration'
+import { joinLines, newPause, newSpeech, speechIndexes, splitLine, written, type EditSeg } from './narration'
 import { useEditingFocus } from './useEditingFocus'
 
 const editor = useEditorStore()
@@ -46,16 +46,66 @@ function enter(index: number): void {
     editor.go(index)
   }
 }
-/** A slide with nothing to say: a first line, with the cursor in it (it's written once it has words). */
-async function addLine(index: number, slideId: string): Promise<void> {
+/** Once drawn, put the cursor in `seg`'s line (at `at`) or in its pause's length. */
+async function focusSeg(seg: EditSeg, at = 0): Promise<void> {
+  await nextTick()
+  const el = [...(root.value?.querySelectorAll<HTMLElement>('[data-seg]') ?? [])].find((e) => e.dataset.seg === seg.key)
+  el?.focus()
+  if (el instanceof HTMLTextAreaElement) el.setSelectionRange(at, at)
+  else if (el instanceof HTMLInputElement) el.select()
+}
+/** A new, empty line at `j` of the slide, with the cursor in it (it's written once it has words). */
+function addLine(index: number, slideId: string, j?: number): void {
   const middle = editor.draftFor(slideId)?.middle
   if (!middle) return
   enter(index)
-  middle.push(newSpeech())
-  const j = middle.length - 1
-  await nextTick()
-  const want = `script-text-${slideId}-${j}`
-  ;[...(root.value?.querySelectorAll<HTMLElement>('textarea') ?? [])].find((el) => el.dataset.testid === want)?.focus()
+  const seg = newSpeech()
+  middle.splice(j ?? middle.length, 0, seg)
+  void focusSeg(seg)
+}
+/** Where the words of line `j` and its pauses end: what's added "after" it goes here. */
+function afterLine(slideId: string, j: number): number {
+  const middle = editor.draftFor(slideId)?.middle ?? []
+  let k = j + 1
+  while (middle[k]?.kind === 'pause') k++
+  return k
+}
+/**
+ * Typing across a line's edges, as in a document: Enter splits the line at the
+ * cursor (Shift+Enter is a line break within it); Backspace at its start takes
+ * the pause before it, or joins it onto the line before; Delete at its end
+ * does the same with what follows.
+ */
+function onKey(slideId: string, seg: EditSeg, event: KeyboardEvent): void {
+  const box = event.target as HTMLTextAreaElement
+  const block = editor.draftFor(slideId)
+  const j = block?.middle.indexOf(seg) ?? -1
+  if (!block || j < 0 || event.isComposing || box.selectionStart !== box.selectionEnd) return
+  const at = box.selectionStart
+  if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault()
+    seg.text = box.value
+    const tail = splitLine(block, j, at)
+    if (tail) void focusSeg(tail)
+  } else if (event.key === 'Backspace' && at === 0 && j > 0) {
+    event.preventDefault()
+    const before = block.middle[j - 1] as EditSeg
+    if (before.kind === 'pause') block.middle.splice(j - 1, 1)
+    else {
+      seg.text = box.value
+      const join = joinLines(block, j - 1)
+      if (join !== null) void focusSeg(before, join)
+    }
+  } else if (event.key === 'Delete' && at === box.value.length && j < block.middle.length - 1) {
+    event.preventDefault()
+    if (block.middle[j + 1]?.kind === 'pause') block.middle.splice(j + 1, 1)
+    else {
+      seg.text = box.value
+      const join = joinLines(block, j)
+      if (join !== null) void focusSeg(seg, join)
+    }
+  } else return
+  editor.touch(slideId, { immediate: true })
 }
 function onText(slideId: string, seg: EditSeg, event: Event): void {
   seg.text = (event.target as HTMLTextAreaElement).value
@@ -72,35 +122,36 @@ function onLeave(slideId: string, seg: EditSeg, event: FocusEvent): void {
   const j = middle.indexOf(seg)
   if (j >= 0) middle.splice(j, 1)
 }
+/** A pause's new length; cleared or set to nothing, the pause goes away. */
 function onPause(slideId: string, seg: EditSeg, event: Event): void {
   seg.seconds = Math.max(0, Number((event.target as HTMLInputElement).value) || 0)
+  const middle = editor.draftFor(slideId)?.middle ?? []
+  if (seg.seconds === 0 && middle.includes(seg)) middle.splice(middle.indexOf(seg), 1)
   editor.touch(slideId, { immediate: true })
 }
-/** A pause typed between two lines that had none goes in after the first. */
-function addPause(slideId: string, j: number, event: Event): void {
-  const input = event.target as HTMLInputElement
-  const seconds = Math.max(0, Number(input.value) || 0)
-  input.value = '0.0'
+/** A pause after line `j` (after any it has already), with the cursor in its length. */
+function addPause(index: number, slideId: string, j: number): void {
   const middle = editor.draftFor(slideId)?.middle
-  if (!middle || seconds === 0) return
-  middle.splice(j + 1, 0, { ...newPause(), seconds })
+  if (!middle) return
+  enter(index)
+  const seg = newPause()
+  middle.splice(afterLine(slideId, j), 0, seg)
   editor.touch(slideId, { immediate: true })
+  void focusSeg(seg)
 }
 /**
  * A slide's lines, each carrying the pauses that follow it (drawn right after
  * its last word, not on a row of their own); a pause before any line stands alone.
  */
 type Row =
-  | { kind: 'line'; seg: EditSeg; j: number; pauses: { seg: EditSeg; j: number }[]; between: boolean }
+  | { kind: 'line'; seg: EditSeg; j: number; pauses: { seg: EditSeg; j: number }[] }
   | { kind: 'pause'; seg: EditSeg; j: number }
 function rows(slideId: string): Row[] {
   const out: Row[] = []
   const middle = editor.draftFor(slideId)?.middle ?? []
   middle.forEach((seg, j) => {
     const last = out[out.length - 1]
-    // `between`: the next line follows straight on, so a pause may be added here
-    const between = middle[j + 1]?.kind === 'speech'
-    if (seg.kind === 'speech') out.push({ kind: 'line', seg, j, pauses: [], between })
+    if (seg.kind === 'speech') out.push({ kind: 'line', seg, j, pauses: [] })
     else if (last?.kind === 'line') last.pauses.push({ seg, j })
     else out.push({ kind: 'pause', seg, j })
   })
@@ -192,23 +243,8 @@ function retry(slideId: string, seg: EditSeg): void {
               <span v-else aria-hidden="true">{{ row.seg.text }}</span>
               <!-- a trailing newline still takes its row -->
               <span aria-hidden="true">{{ '\u200b' }}</span>
-              <span v-if="row.pauses.length || row.between" class="tail">
-                <!-- two lines with no pause between them: one to add, shown on hover -->
-                <label v-if="row.between" class="pause add-pause" title="Add a pause, in seconds">
-                  <span aria-hidden="true">⏸</span>
-                  <input
-                    class="secs"
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value="0.0"
-                    :aria-label="`Slide ${i + 1}, add a pause after this line, in seconds`"
-                    :data-testid="`script-add-pause-${page.slide_id}-${row.j}`"
-                    @focus="enter(i)"
-                    @change="addPause(page.slide_id, row.j, $event)"
-                  />
-                </label>
-                <label v-for="p in row.pauses" :key="p.seg.key" class="pause" title="Pause, in seconds">
+              <span class="tail">
+                <label v-for="p in row.pauses" :key="p.seg.key" class="pause" title="Pause, in seconds — clear it to remove it">
                   <span aria-hidden="true">⏸</span>
                   <input
                     class="secs"
@@ -217,11 +253,29 @@ function retry(slideId: string, seg: EditSeg): void {
                     step="0.1"
                     :aria-label="`Slide ${i + 1}, pause in seconds`"
                     :value="p.seg.seconds.toFixed(1)"
+                    :data-seg="p.seg.key"
                     :data-testid="`script-pause-${page.slide_id}-${p.j}`"
                     @focus="enter(i)"
                     @change="onPause(page.slide_id, p.seg, $event)"
                   />
                 </label>
+                <!-- more after this line: out of the way until it's pointed at or typed in -->
+                <button
+                  class="more" type="button" title="Add a pause after this line"
+                  :aria-label="`Slide ${i + 1}, add a pause after this line`"
+                  :data-testid="`script-add-pause-${page.slide_id}-${row.j}`"
+                  @click.stop="addPause(i, page.slide_id, row.j)"
+                >
+                  + pause
+                </button>
+                <button
+                  class="more" type="button" title="Add a line after this one (or press Enter at its end)"
+                  :aria-label="`Slide ${i + 1}, add a line after this one`"
+                  :data-testid="`script-add-line-${page.slide_id}-${row.j}`"
+                  @click.stop="addLine(i, page.slide_id, afterLine(page.slide_id, row.j))"
+                >
+                  + line
+                </button>
               </span>
             </div>
             <textarea
@@ -231,13 +285,15 @@ function retry(slideId: string, seg: EditSeg): void {
               placeholder="Spoken words…"
               :aria-label="`Slide ${i + 1}, spoken words`"
               :value="row.seg.text"
+              :data-seg="row.seg.key"
               :data-testid="`script-text-${page.slide_id}-${row.j}`"
               @focus="enter(i)"
+              @keydown="onKey(page.slide_id, row.seg, $event)"
               @input="onText(page.slide_id, row.seg, $event)"
               @blur="onLeave(page.slide_id, row.seg, $event)"
             ></textarea>
           </div>
-          <label v-else class="pause" title="Pause, in seconds">
+          <label v-else class="pause" title="Pause, in seconds — clear it to remove it">
             <span aria-hidden="true">⏸</span>
             <input
               class="secs"
@@ -246,6 +302,7 @@ function retry(slideId: string, seg: EditSeg): void {
               step="0.1"
               :aria-label="`Slide ${i + 1}, pause in seconds`"
               :value="row.seg.seconds.toFixed(1)"
+              :data-seg="row.seg.key"
               :data-testid="`script-pause-${page.slide_id}-${row.j}`"
               @focus="enter(i)"
               @change="onPause(page.slide_id, row.seg, $event)"
@@ -399,13 +456,24 @@ function retry(slideId: string, seg: EditSeg): void {
   color: var(--dim);
   font-size: var(--text-xs);
 }
-/* a pause to add stays out of the way until the line is pointed at, or typed in
-   (then Tab reaches it) */
-.add-pause {
+/* adding stays out of the way until the line is pointed at, or typed in
+   (then Shift+Tab reaches it) */
+.more {
+  padding: 0 2px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--dim);
+  font-size: var(--text-xs);
+  cursor: pointer;
   opacity: 0;
 }
-.line-wrap:hover .add-pause,
-.line-wrap:focus-within .add-pause {
+.more:hover,
+.more:focus-visible {
+  color: var(--accent);
+}
+.line-wrap:hover .more,
+.line-wrap:focus-within .more {
   opacity: 1;
 }
 .secs {

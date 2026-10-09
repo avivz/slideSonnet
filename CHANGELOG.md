@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Added
+- **The script edits like a document: add and remove lines and pauses as you type.**
+  **Enter** splits a line where the cursor is — at its end, it starts a new, empty
+  line (saved once it has words); **Shift+Enter** is still a line break within the
+  line. **Backspace** at the start of a line deletes the pause before it, or joins
+  the line onto the one before (undoing a split); **Delete** at its end does the
+  same with what follows. A pause cleared or set to 0 goes away. Pointing at a
+  line (or typing in it) shows **+ pause** and **+ line** after it — a pause can be
+  added even where there's one already — in place of the hidden "0.0" field.
 - **`slidesonnet review summary`: every deck's conversations at a glance, fast.**
   It lists each conversation's id, title, slides (or "whole deck"), whether it's
   open or accepted, and whose turn it is — for the decks you name, or every deck

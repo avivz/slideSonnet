@@ -144,7 +144,7 @@ describe('script view', () => {
     await editor.flush()
   })
 
-  it('shows a real double pause as two; a pause can be added between two lines', async () => {
+  it('shows a real double pause as two; a pause can be added after any line', async () => {
     const server = new FakeServer()
     server.narration.a = {
       ...server.narration.a!,
@@ -154,17 +154,95 @@ describe('script view', () => {
     const w = mount(ScriptView, { attachTo: document.body })
     const pauses = () => w.findAll('[data-testid^="script-pause-a-"]').map((p) => p.attributes('data-testid'))
     expect(pauses()).toEqual(['script-pause-a-1', 'script-pause-a-2'])
-    // only between two lines with no pause yet (not after the slide's last line)
-    expect(w.findAll('[data-testid^="script-add-pause-a-"]').map((p) => p.attributes('data-testid'))).toEqual([
-      'script-add-pause-a-3',
-    ])
-    const add = w.get('[data-testid="script-add-pause-a-3"]')
-    await add.setValue('0.4')
-    await add.trigger('change')
-    expect(pauses()).toEqual(['script-pause-a-1', 'script-pause-a-2', 'script-pause-a-4'])
+    // after the pauses a line already has, too
+    await w.get('[data-testid="script-add-pause-a-0"]').trigger('click')
+    await flushPromises()
+    expect(pauses()).toEqual(['script-pause-a-1', 'script-pause-a-2', 'script-pause-a-3'])
+    expect(document.activeElement).toBe(w.get('[data-testid="script-pause-a-3"]').element) // to set its length
+    await w.get('[data-testid="script-add-pause-a-4"]').trigger('click')
     await editor.flush()
     const saved = server.narration.a?.segments.map((s) => (s.kind === 'pause' ? s.seconds : s.text))
-    expect(saved?.slice(1, -1)).toEqual(['One.', 0.3, 0.5, 'Two.', 0.4, 'Three.']) // within the start/end silences
+    expect(saved?.slice(1, -1)).toEqual(['One.', 0.3, 0.5, 1, 'Two.', 1, 'Three.']) // within the start/end silences
+  })
+
+  it('a pause cleared, set to 0, or deleted across from a line goes away', async () => {
+    const server = new FakeServer()
+    server.narration.a = {
+      ...server.narration.a!,
+      segments: [
+        speech('One.'), { kind: 'pause', seconds: 0.3 }, speech('Two.'), { kind: 'pause', seconds: 0.5 },
+        speech('Three.'), { kind: 'pause', seconds: 0.7 }, speech('Four.'), { kind: 'pause', seconds: 0.9 }, speech('Five.'),
+      ],
+    }
+    const { editor } = await setup(server)
+    const w = mount(ScriptView, { attachTo: document.body })
+    await w.get('[data-testid="script-pause-a-1"]').setValue('')
+    await w.get('[data-testid="script-pause-a-2"]').setValue('0') // (the pauses after shift down one)
+    // Backspace at the start of a line takes the pause before it
+    const four = w.get('[data-testid="script-text-a-4"]')
+    ;(four.element as HTMLTextAreaElement).setSelectionRange(0, 0)
+    await four.trigger('keydown', { key: 'Backspace' })
+    // Delete at the end of a line takes the pause after it
+    const moved = w.get('[data-testid="script-text-a-3"]')
+    expect(moved.element).toBe(four.element) // the same line, one place up
+    ;(moved.element as HTMLTextAreaElement).setSelectionRange(5, 5)
+    await moved.trigger('keydown', { key: 'Delete' })
+    expect(w.findAll('[data-testid^="script-pause-a-"]')).toHaveLength(0)
+    await editor.flush()
+    const saved = server.narration.a?.segments.map((s) => (s.kind === 'pause' ? s.seconds : s.text))
+    expect(saved?.slice(1, -1)).toEqual(['One.', 'Two.', 'Three.', 'Four.', 'Five.'])
+  })
+
+  it('Enter splits a line where the cursor is (at its end: a new empty line); Backspace at a line’s start joins it back', async () => {
+    const server = new FakeServer()
+    server.narration.a = {
+      ...server.narration.a!,
+      segments: [speech('One. Two.'), { kind: 'pause', seconds: 0.4 }, speech('Three.')],
+    }
+    const { editor } = await setup(server)
+    const middle = () => editor.draftFor('a')?.middle.map((s) => (s.kind === 'pause' ? s.seconds : s.text))
+    const w = mount(ScriptView, { attachTo: document.body })
+    const line = w.get('[data-testid="script-text-a-0"]')
+    ;(line.element as HTMLTextAreaElement).focus()
+    ;(line.element as HTMLTextAreaElement).setSelectionRange(4, 4)
+    await line.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(middle()).toEqual(['One.', 'Two.', 0.4, 'Three.']) // the pause still follows the words it followed
+    const two = w.get('[data-testid="script-text-a-1"]').element as HTMLTextAreaElement
+    expect([document.activeElement, two.selectionStart]).toEqual([two, 0])
+    // Shift+Enter is a line break inside the line, as before
+    await w.get('[data-testid="script-text-a-1"]').trigger('keydown', { key: 'Enter', shiftKey: true })
+    expect(middle()).toHaveLength(4)
+    // Backspace at the start of a line right after another joins the two
+    await w.get('[data-testid="script-text-a-1"]').trigger('keydown', { key: 'Backspace' })
+    await flushPromises()
+    expect(middle()).toEqual(['One. Two.', 0.4, 'Three.'])
+    const one = w.get('[data-testid="script-text-a-0"]').element as HTMLTextAreaElement
+    expect([document.activeElement, one.selectionStart]).toEqual([one, 4])
+    // at a line's end: a new, empty line, with the cursor in it (written once it has words)
+    one.setSelectionRange(9, 9)
+    await w.get('[data-testid="script-text-a-0"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(middle()).toEqual(['One. Two.', '', 0.4, 'Three.'])
+    expect(document.activeElement).toBe(w.get('[data-testid="script-text-a-1"]').element)
+    await editor.flush()
+    expect(server.narration.a?.segments.filter((s) => s.kind === 'speech').map((s) => s.text)).toEqual(['One. Two.', 'Three.'])
+  })
+
+  it('a line can be added after any line, empty, with the cursor in it', async () => {
+    const server = new FakeServer()
+    server.narration.a = {
+      ...server.narration.a!,
+      segments: [speech('One.'), { kind: 'pause', seconds: 0.4 }, speech('Two.')],
+    }
+    const { editor } = await setup(server)
+    const w = mount(ScriptView, { attachTo: document.body })
+    await w.get('[data-testid="script-add-line-a-0"]').trigger('click')
+    await flushPromises()
+    // after the pause the line ends with
+    expect(editor.draftFor('a')?.middle.map((s) => (s.kind === 'pause' ? s.seconds : s.text))).toEqual(['One.', 0.4, '', 'Two.'])
+    expect(document.activeElement).toBe(w.get('[data-testid="script-text-a-2"]').element)
+    expect(editor.currentId).toBe('a')
   })
 
   // under review the server notes the edit right after saving it: an outside change
